@@ -5,8 +5,12 @@ if (
 )
   throw new Error("INVALID_MODE");
 const nextConfig: NextConfig = {
-  distDir:
-    process.env.JOMCALL_MODE === "local" ? ".next-local" : ".next-mock",
+  // Vercel expects the default ".next"; locally, keep mock and local builds apart.
+  distDir: process.env.VERCEL
+    ? ".next"
+    : process.env.JOMCALL_MODE === "local"
+      ? ".next-local"
+      : ".next-mock",
   logging: {
     incomingRequests: {
       ignore: [/^\/api\/auth\/(confirm|recovery)/, /^\/invite/],
