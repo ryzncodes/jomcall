@@ -1,0 +1,12 @@
+{
+  "project": "jomcall-local",
+  "network": "jomcall-local",
+  "cli": "2.98.2",
+  "ports": [
+    54621,
+    54622,
+    54624,
+    54625
+  ],
+  "exclude": "realtime,storage-api,imgproxy,studio,postgres-meta,edge-runtime,logflare,vector,supavisor"
+}

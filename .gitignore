@@ -1,0 +1,72 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+
+# Build output
+.next/
+dist/
+build/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local data and media
+*.log
+recordings/
+data/
+*.wav
+*.mp3
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Speech benchmark spike: local data only
+*.parquet
+*.m4a
+*.flac
+*.ogg
+*.opus
+*.aac
+spikes/speech-benchmark/data/
+spikes/speech-benchmark/results/raw/
+spikes/speech-benchmark/.cache/
+
+# Local frontend review tooling
+.playwright-cli/
+output/playwright/
+
+# Next.js generated declarations and compiler caches
+web/next-env.d.ts
+*.tsbuildinfo
+
+# Original synthetic UI test tone; never customer audio.
+!web/public/audio/sample-tone.wav
+
+# Isolated local runtime outputs
+.next-mock/
+.next-local/
+.superpowers/
+supabase/.temp/
+
+# Project-owned optional local inference runtime and models
+.local/
+
+# Synthetic local model evaluation output
+output/phase2/
+
+# Local agent tooling and private keys
+.claude/
+*.pem
+*.key
+signing_keys.json
+coverage/
+
+# Browser QA screenshots stay local to keep the repository small.
+# Curated images for the README live in docs/images/.
+docs/frontend/screenshots/
+.playwright-mcp/

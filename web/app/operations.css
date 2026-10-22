@@ -1,0 +1,1211 @@
+/* Operational views: directory, appointment calendar and connected tools. */
+.crm-main {
+  max-width: 1500px;
+}
+.crm-heading-icon {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--secondary);
+}
+.crm-overview {
+  display: flex;
+  gap: 35px;
+  border-block: 1px solid var(--line);
+  padding: 22px 0;
+  margin-bottom: 28px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.crm-overview > span {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.crm-overview strong {
+  font-size: 23px;
+  color: var(--ink);
+  font-weight: 500;
+}
+.crm-overview > span:last-child {
+  margin-left: auto;
+}
+.contact-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(340px, 1fr);
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.contact-directory {
+  min-width: 0;
+}
+.crm-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 21px 24px;
+  border-bottom: 1px solid var(--line);
+}
+.crm-search input {
+  width: 100%;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline-offset: 4px;
+  min-height: 30px;
+  font-size: 13px;
+}
+.crm-filter-tabs {
+  display: flex;
+  gap: 16px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--line);
+  overflow: auto;
+}
+.crm-filter-tabs button {
+  font-size: 11px;
+  min-height: 55px;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  color: var(--secondary);
+}
+.crm-filter-tabs button[aria-pressed="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.directory-label {
+  display: flex;
+  justify-content: space-between;
+  padding: 19px 24px 12px;
+  font-size: 11px;
+  color: var(--secondary);
+}
+.directory-row {
+  width: 100%;
+  display: flex;
+  text-align: left;
+  align-items: center;
+  gap: 14px;
+  padding: 20px 24px;
+  min-height: 88px;
+  border-bottom: 1px solid var(--line);
+}
+.directory-row:hover,
+.directory-row.selected {
+  background: var(--wash);
+}
+.directory-row.selected {
+  box-shadow: inset 3px 0 var(--ink);
+}
+.crm-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--wash);
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: -0.04em;
+  border: 1px solid var(--line);
+}
+.directory-row > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+.directory-row strong {
+  font-size: 13px;
+  font-weight: 500;
+  display: block;
+  overflow-wrap: anywhere;
+}
+.directory-row small {
+  font-size: 10px;
+  display: block;
+  color: var(--secondary);
+  margin-top: 7px;
+  line-height: 1.6;
+}
+.directory-stage {
+  font-size: 10px;
+  color: var(--secondary);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.directory-stage svg {
+  flex-shrink: 0;
+}
+.crm-footnote {
+  font-size: 11px;
+  color: var(--secondary);
+  line-height: 1.8;
+  padding: 24px;
+}
+.contact-desk > .contact-profile {
+  border-left: 1px solid var(--line);
+  padding: 28px;
+  background: var(--paper);
+  min-height: 650px;
+  display: block;
+  text-align: left;
+}
+.profile-identity {
+  text-align: center;
+  padding: 10px 0 24px;
+}
+.crm-avatar.large {
+  width: 68px;
+  height: 68px;
+  font-size: 22px;
+  margin: 0 auto 18px;
+  background: var(--accent);
+}
+.profile-identity h2 {
+  font-size: 25px;
+  overflow-wrap: anywhere;
+}
+.profile-identity p {
+  font-size: 11px;
+  color: var(--secondary);
+  margin: 10px 0 3px;
+}
+.crm-text-button {
+  font-size: 12px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  line-height: 1.5;
+}
+.profile-actions {
+  display: grid;
+  gap: 9px;
+}
+.profile-actions .button {
+  font-size: 12px;
+}
+.profile-section {
+  border-top: 1px solid var(--line);
+  margin-top: 26px;
+  padding-top: 24px;
+}
+.profile-section h3 {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 15px;
+  margin-bottom: 17px;
+}
+.crm-switch-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  font-size: 12px;
+  min-height: 52px;
+}
+.crm-switch-row small {
+  display: block;
+  color: var(--secondary);
+  font-size: 11px;
+  line-height: 1.7;
+  margin-top: 6px;
+}
+.crm-switch-row input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--ink);
+  flex-shrink: 0;
+}
+.crm-caption {
+  font-size: 11px;
+  color: var(--secondary);
+  line-height: 1.8;
+  margin-top: 12px;
+}
+.consent-log {
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.consent-log summary {
+  font-size: 12px;
+  min-height: 48px;
+  align-content: center;
+  cursor: pointer;
+}
+.consent-log summary span {
+  float: right;
+  color: var(--secondary);
+}
+.consent-log ol {
+  list-style: none;
+  padding: 0 0 10px;
+}
+.consent-log li {
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+.consent-log strong {
+  display: block;
+  font-weight: 500;
+  line-height: 1.7;
+}
+.consent-log li > span {
+  display: block;
+  color: var(--secondary);
+  margin-top: 5px;
+  font-size: 10px;
+}
+.section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.section-title a {
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+}
+.section-title h3 {
+  margin: 0;
+}
+.profile-booking {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 17px;
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+.profile-booking > span:nth-child(2) {
+  flex: 1;
+  min-width: 100px;
+}
+.profile-booking strong {
+  font-weight: 500;
+  display: block;
+}
+.profile-booking small {
+  display: block;
+  margin-top: 5px;
+  color: var(--secondary);
+}
+.profile-timeline {
+  list-style: none;
+  padding: 0 0 0 15px;
+  border-left: 1px solid var(--line);
+}
+.profile-timeline li {
+  margin-top: 20px;
+  position: relative;
+}
+.profile-timeline li:before {
+  content: "";
+  position: absolute;
+  left: -19px;
+  top: 3px;
+  background: var(--paper);
+  border: 1px solid var(--secondary);
+  border-radius: 50%;
+  width: 7px;
+  height: 7px;
+}
+.profile-timeline small {
+  font-size: 10px;
+  color: var(--secondary);
+}
+.profile-timeline p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+}
+.profile-privacy {
+  border-top: 1px solid var(--line);
+  margin-top: 24px;
+  padding-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+}
+.profile-privacy button {
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+}
+.profile-placeholder {
+  min-height: 570px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: center;
+  align-items: center;
+  gap: 20px;
+  color: var(--secondary);
+}
+.profile-placeholder h2 {
+  font-size: 23px;
+  color: var(--ink);
+}
+.profile-placeholder p {
+  font-size: 13px;
+  max-width: 25ch;
+  line-height: 1.8;
+}
+.profile-orbit {
+  width: 130px;
+  height: 130px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  outline: 1px solid var(--line);
+  outline-offset: 16px;
+  margin-bottom: 25px;
+}
+.crm-back {
+  display: none;
+}
+.crm-empty {
+  padding: 50px 25px;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 18px;
+  text-align: center;
+  color: var(--secondary);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.crm-empty p {
+  max-width: 35ch;
+}
+.crm-empty a {
+  text-decoration: underline;
+}
+.crm-empty h3 {
+  font-size: 17px;
+  color: var(--ink);
+}
+.crm-chip {
+  font-size: 10px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  padding: 5px 8px;
+  border-radius: 5px;
+  line-height: 1.5;
+  white-space: nowrap;
+  color: var(--secondary);
+  background: var(--surface);
+}
+.crm-chip.confirmed,
+.crm-chip.connected {
+  background: var(--wash);
+  color: var(--ink);
+}
+.crm-chip.requested,
+.crm-chip.error {
+  background: #f3ebd6;
+  color: #71501e;
+  border-color: #e7d8b7;
+}
+.crm-chip.cancelled {
+  text-decoration: line-through;
+}
+.connection-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--secondary);
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.connection-dot.connected {
+  background: #658245;
+}
+.connection-dot.error {
+  background: #b07b32;
+}
+.booking-connection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-block: 1px solid var(--line);
+  padding: 18px 0;
+  margin-bottom: 28px;
+  font-size: 12px;
+  color: var(--secondary);
+  line-height: 1.7;
+}
+.booking-connection a {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--ink);
+  white-space: nowrap;
+  min-height: 44px;
+}
+.booking-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(330px, 0.8fr);
+  gap: 28px;
+  align-items: start;
+}
+.booking-calendar {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.calendar-heading {
+  padding: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+.calendar-heading h2 {
+  font-size: 21px;
+  text-transform: capitalize;
+}
+.calendar-heading > div {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+.calendar-heading .crm-text-button {
+  text-decoration: none;
+}
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.calendar-weekdays {
+  padding: 14px 0;
+  font-size: 10px;
+  text-align: center;
+  color: var(--secondary);
+  border-top: 1px solid var(--line);
+}
+.calendar-grid button {
+  min-height: 88px;
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  text-align: left;
+  font-size: 12px;
+  position: relative;
+}
+.calendar-grid button:nth-child(7n) {
+  border-right: 0;
+}
+.calendar-grid button.outside {
+  color: var(--secondary);
+  background: var(--paper);
+}
+.calendar-grid button.is-today > span:first-child {
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.calendar-grid button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #23392f;
+  box-shadow: inset 0 0 0 1px #708b50;
+}
+.calendar-grid button:hover {
+  box-shadow: inset 0 0 0 1px var(--secondary);
+}
+.calendar-count {
+  font-size: 9px;
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.calendar-count i,
+.calendar-legend i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+}
+.calendar-count-label {
+  display: none;
+}
+.calendar-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 19px 20px;
+  border-top: 1px solid var(--line);
+  font-size: 10px;
+  color: var(--secondary);
+}
+.calendar-legend span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.calendar-rules {
+  border-top: 1px solid var(--line);
+  padding: 24px;
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  background: var(--paper);
+}
+.calendar-rules strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.calendar-rules a {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--secondary);
+  margin-top: 8px;
+  min-height: 44px;
+}
+.booking-agenda {
+  min-width: 0;
+}
+.agenda-heading {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 20px;
+}
+.agenda-heading > span {
+  font-size: 11px;
+  color: var(--secondary);
+}
+.agenda-heading h2 {
+  font-size: 25px;
+  margin: 10px 0 20px;
+  text-transform: capitalize;
+}
+.agenda-filters {
+  display: flex;
+  gap: 10px;
+}
+.agenda-filters select {
+  min-width: 0;
+  width: 50%;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  min-height: 44px;
+  padding: 8px;
+  font-size: 11px;
+}
+.agenda-booking {
+  display: flex;
+  gap: 20px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+.agenda-time {
+  min-width: 50px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.agenda-time strong {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: 17px;
+}
+.agenda-time > span {
+  font-size: 10px;
+  color: var(--secondary);
+}
+.agenda-content {
+  min-width: 0;
+  flex: 1;
+  border-left: 2px solid var(--line);
+  padding-left: 18px;
+}
+.agenda-booking.confirmed .agenda-content {
+  border-color: #7f9b62;
+}
+.agenda-content h3 {
+  font-size: 16px;
+  margin: 13px 0 8px;
+  overflow-wrap: anywhere;
+}
+.agenda-content > a {
+  font-size: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 44px;
+}
+.agenda-content > p {
+  font-size: 10px;
+  color: var(--secondary);
+  margin: 8px 0;
+  line-height: 1.8;
+}
+.agenda-actions {
+  display: flex;
+  gap: 18px;
+  margin-top: 13px;
+  flex-wrap: wrap;
+}
+.agenda-actions button {
+  font-size: 11px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  min-height: 44px;
+}
+.crm-notice {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--secondary);
+}
+.crm-notice:not(:empty) {
+  padding: 12px 0 20px;
+}
+.integration-summary {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  border-block: 1px solid var(--line);
+  padding: 24px 0;
+  margin-bottom: 12px;
+}
+.integration-symbol {
+  background: var(--accent);
+  color: #23392f;
+  border-radius: 9px;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+}
+.integration-summary > div:nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.integration-summary span {
+  font-size: 11px;
+  color: var(--secondary);
+}
+.integration-summary strong {
+  font-size: 17px;
+  font-weight: 500;
+}
+.integration-summary > a {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  min-height: 44px;
+}
+.integration-group {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 30px;
+  margin-top: 38px;
+  padding-bottom: 38px;
+  border-bottom: 1px solid var(--line);
+}
+.integration-group-heading h2 {
+  font-size: 21px;
+  margin-bottom: 13px;
+}
+.integration-group-heading p {
+  font-size: 12px;
+  color: var(--secondary);
+  line-height: 1.9;
+  max-width: 32ch;
+}
+.connector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+.connector {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  min-width: 0;
+  padding: 24px;
+}
+.connector > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+.connector-icon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  flex-shrink: 0;
+}
+.connector h3 {
+  font-size: 19px;
+  margin-bottom: 13px;
+}
+.connector > p {
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--secondary);
+  min-height: 68px;
+}
+.connector-scope {
+  display: block;
+  color: var(--secondary);
+  font-size: 10px;
+  border-bottom: 1px solid var(--line);
+  padding: 20px 0;
+}
+.connector-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 21px 0;
+}
+.connector-actions .button {
+  font-size: 11px;
+  padding: 12px 17px;
+}
+.connector-actions .crm-text-button {
+  font-size: 11px;
+}
+.connector-health {
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
+}
+.connector-health summary {
+  font-size: 11px;
+  color: var(--secondary);
+  min-height: 44px;
+  align-content: center;
+  cursor: pointer;
+}
+.connector-health summary > span {
+  float: right;
+  margin-top: 6px;
+}
+.connector-health p {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--secondary);
+  margin: 10px 0;
+}
+.connector-health dl {
+  font-size: 10px;
+  line-height: 1.8;
+}
+.connector-health dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  margin: 10px 0;
+}
+.connector-health dd {
+  margin: 0;
+  text-align: right;
+}
+.connector-health .crm-text-button {
+  font-size: 10px;
+}
+.integrations-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 24px 0;
+  font-size: 12px;
+  color: var(--secondary);
+  line-height: 1.8;
+}
+.integrations-footer > svg {
+  flex-shrink: 0;
+}
+.integrations-footer small {
+  display: block;
+  font-size: 11px;
+  margin-top: 8px;
+}
+.integrations-footer > a {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+  color: var(--ink);
+  min-height: 44px;
+}
+.integration-result {
+  padding: 15px 20px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  background: var(--wash);
+}
+.integration-result button {
+  margin-left: auto;
+}
+.crm-dialog {
+  position: fixed;
+  z-index: 100;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(540px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 34px;
+  box-shadow: 0 24px 100px #0003;
+}
+.crm-dialog h2 {
+  font-size: 25px;
+  letter-spacing: -0.04em;
+  padding-right: 30px;
+  line-height: 1.2;
+}
+.crm-dialog > p {
+  font-size: 13px;
+  color: var(--secondary);
+  line-height: 1.8;
+  margin: 15px 0 25px;
+}
+.crm-dialog-close {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+}
+.crm-dialog form {
+  display: grid;
+  gap: 20px;
+}
+.crm-dialog .product-field input,
+.crm-dialog .product-field select {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 5px;
+  padding: 10px;
+  font: inherit;
+}
+.crm-dialog .button {
+  font-size: 12px;
+}
+.crm-dialog-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.crm-form-error {
+  font-size: 12px;
+  line-height: 1.8;
+  background: var(--wash);
+  padding: 12px;
+  border-left: 2px solid var(--ink);
+}
+.crm-dialog button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+[data-theme="dark"] .crm-chip.requested,
+[data-theme="dark"] .crm-chip.error {
+  background: #483f2c;
+  color: #f0d59b;
+  border-color: #6c5a34;
+}
+[data-theme="dark"] .crm-avatar.large {
+  color: #23392f;
+}
+@media (min-width: 1600px) {
+  .calendar-count-label {
+    display: inline;
+  }
+}
+@media (max-width: 1200px) {
+  .crm-heading-icon {
+    display: none;
+  }
+  .integration-group {
+    grid-template-columns: 1fr;
+    gap: 23px;
+  }
+  .integration-group-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 30px;
+  }
+  .integration-group-heading p {
+    max-width: 55ch;
+  }
+  .booking-desk {
+    grid-template-columns: 1fr;
+  }
+  .contact-desk {
+    grid-template-columns: 1fr;
+  }
+  .contact-desk > .contact-profile {
+    display: none;
+    border-left: 0;
+  }
+  .contact-desk.has-profile > .contact-profile {
+    display: block;
+  }
+  .contact-desk.has-profile > .contact-directory {
+    display: none;
+  }
+  .crm-back {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 12px;
+    min-height: 44px;
+  }
+  .profile-identity {
+    text-align: left;
+  }
+  .crm-avatar.large {
+    margin: 0 0 18px;
+  }
+  .contact-desk > .contact-profile {
+    padding: 24px;
+  }
+  .profile-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .calendar-grid button {
+    min-height: 80px;
+  }
+  .crm-overview > span:last-child {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .crm-main {
+    padding: 26px 20px 45px;
+  }
+  .crm-heading-icon {
+    display: none;
+  }
+  .crm-main .product-page-heading {
+    gap: 20px;
+    flex-direction: column;
+  }
+  .crm-main .product-page-heading h1 {
+    max-width: 20ch;
+  }
+  .crm-overview {
+    gap: 26px;
+    padding: 17px 0;
+    margin-bottom: 22px;
+  }
+  .crm-overview > span {
+    font-size: 10px;
+    gap: 8px;
+  }
+  .crm-overview strong {
+    font-size: 21px;
+  }
+  .directory-row {
+    padding: 18px 16px;
+    gap: 10px;
+  }
+  .directory-stage {
+    font-size: 9px;
+    gap: 4px;
+    max-width: 83px;
+  }
+  .directory-row strong {
+    font-size: 12px;
+  }
+  .crm-search {
+    padding: 16px;
+  }
+  .crm-filter-tabs {
+    padding: 0 16px;
+    gap: 16px;
+  }
+  .crm-filter-tabs button {
+    font-size: 10px;
+  }
+  .directory-label {
+    padding-inline: 16px;
+  }
+  .contact-desk > .contact-profile {
+    padding: 20px;
+  }
+  .profile-actions {
+    grid-template-columns: 1fr;
+  }
+  .booking-connection {
+    flex-wrap: wrap;
+    font-size: 11px;
+    gap: 9px;
+  }
+  .booking-connection > span:nth-child(2) {
+    flex: 1;
+  }
+  .booking-connection > a {
+    margin-left: 16px;
+    font-size: 11px;
+    min-height: 32px;
+  }
+  .calendar-heading {
+    padding: 16px 12px;
+    gap: 5px;
+  }
+  .calendar-heading h2 {
+    font-size: 18px;
+  }
+  .calendar-heading .icon-button {
+    width: 44px;
+    min-width: 44px;
+  }
+  .calendar-heading .crm-text-button {
+    font-size: 10px;
+  }
+  .calendar-grid button {
+    min-height: 62px;
+    padding: 9px 8px;
+    gap: 10px;
+    font-size: 11px;
+  }
+  .calendar-weekdays {
+    font-size: 9px;
+  }
+  .calendar-legend {
+    padding: 16px 12px;
+    font-size: 9px;
+  }
+  .booking-desk {
+    gap: 30px;
+  }
+  .agenda-heading h2 {
+    font-size: 24px;
+  }
+  .agenda-booking {
+    gap: 16px;
+  }
+  .integration-summary {
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 20px 0;
+  }
+  .integration-summary > a {
+    margin-left: 64px;
+    font-size: 11px;
+  }
+  .integration-summary strong {
+    font-size: 16px;
+  }
+  .integration-group {
+    margin-top: 28px;
+    padding-bottom: 28px;
+  }
+  .integration-group-heading {
+    display: block;
+  }
+  .integration-group-heading h2 {
+    font-size: 22px;
+  }
+  .connector-grid {
+    grid-template-columns: 1fr;
+  }
+  .connector {
+    padding: 22px;
+  }
+  .connector > p {
+    min-height: 0;
+  }
+  .connector > header {
+    margin-bottom: 22px;
+  }
+  .connector-actions .button {
+    font-size: 12px;
+  }
+  .integrations-footer {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    font-size: 11px;
+  }
+  .integrations-footer > div {
+    flex: 1;
+  }
+  .integrations-footer > a {
+    margin-left: 40px;
+  }
+  .integration-result {
+    flex-wrap: wrap;
+  }
+  .integration-result button {
+    margin-left: 0;
+  }
+  .crm-dialog {
+    padding: 26px 22px;
+  }
+  .crm-dialog h2 {
+    font-size: 23px;
+  }
+  .crm-dialog .field-pair {
+    gap: 12px;
+  }
+  .crm-dialog-actions {
+    flex-direction: column-reverse;
+  }
+  .crm-dialog-actions .button {
+    width: 100%;
+  }
+  .crm-dialog .product-field {
+    font-size: 12px;
+  }
+}
+
+/* Avoid low-contrast intermediate colors when a connection button changes state. */
+.product-workspace .button,
+.crm-dialog .button {
+  transition: transform 0.18s var(--ease);
+}

@@ -1,0 +1,99 @@
+/* Daily work stays visible. Configuration is available on demand. */
+.product-workspace .workspace-sidebar .app-navigation {
+  display: block;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+  scrollbar-width: thin;
+}
+.product-workspace .workspace-sidebar .app-quick-navigation { display: none; }
+.navigation-daily { display: grid; gap: 2px; }
+.product-workspace .workspace-sidebar .app-navigation a,
+.app-navigation summary,
+.navigation-dialog .navigation-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--secondary);
+  border-radius: 6px;
+}
+.app-navigation summary { list-style: none; cursor: pointer; }
+.app-navigation summary::-webkit-details-marker { display: none; }
+.app-navigation summary > svg { flex-shrink: 0; }
+.navigation-groups { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; }
+.navigation-caret { margin-left: auto; transition: transform 160ms ease; }
+.app-navigation details[open] .navigation-caret { transform: rotate(180deg); }
+.app-navigation summary:hover,
+.navigation-dialog .navigation-link:hover { background: var(--wash); color: var(--ink); }
+.app-navigation details[open] > summary { color: var(--ink); }
+.navigation-children { margin: 2px 0 8px 21px; padding-left: 8px; border-left: 1px solid var(--line); }
+.product-workspace .workspace-sidebar .navigation-children a { font-size: 12px; padding-inline: 10px; gap: 8px; }
+.product-workspace .workspace-sidebar .navigation-children a > svg:not(.navigation-complete) { display: none; }
+.navigation-complete { margin-left: auto; flex-shrink: 0; }
+.navigation-dialog .navigation-link.active { color: var(--ink); background: var(--wash); }
+.product-workspace .sidebar-disclosure { padding: 12px 10px; font-size: 10px; align-items: center; }
+.product-workspace .sidebar-disclosure strong { display: none; }
+.product-workspace .sidebar-bottom > a { padding: 12px 10px; }
+.navigation-dialog {
+  position: fixed;
+  z-index: 101;
+  inset: 12px 12px 12px auto;
+  width: min(400px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 20px 80px #0003;
+  overflow: hidden;
+}
+.navigation-dialog > header { display: flex; align-items: flex-start; gap: 12px; padding: 20px; border-bottom: 1px solid var(--line); }
+.navigation-dialog > header > div { flex: 1; }
+.navigation-dialog h2 { font-family: Manrope, sans-serif; font-size: 23px; }
+.navigation-dialog header p { color: var(--secondary); font-size: 12px; line-height: 1.6; margin-top: 6px; }
+.navigation-dialog .icon-button { flex-shrink: 0; }
+.navigation-dialog-links { overflow-y: auto; padding: 8px 16px 24px; overscroll-behavior: contain; }
+.navigation-dialog section + section { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 8px; }
+.navigation-dialog h3 { font-size: 11px; color: var(--secondary); font-weight: 400; padding: 12px; }
+.navigation-dialog .navigation-link { min-height: 46px; }
+.navigation-dialog .navigation-link > svg { flex-shrink: 0; }
+@media (max-width: 760px) {
+  .product-workspace .workspace-sidebar { gap: 14px 10px; padding: 16px 16px 0; }
+  .product-workspace .workspace-sidebar .app-navigation { display: none; }
+  .product-workspace .workspace-sidebar .app-quick-navigation {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-column: 1 / -1;
+    width: 100%;
+    gap: 4px;
+    overflow: visible;
+  }
+  .product-workspace .workspace-sidebar .app-quick-navigation a,
+  .product-workspace .workspace-sidebar .app-quick-navigation button {
+    position: relative;
+    min-width: 0;
+    min-height: 54px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: 0;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    color: var(--secondary);
+    font-size: 10px;
+    padding: 7px 4px;
+    margin: 0;
+    line-height: 1.4;
+  }
+  .product-workspace .workspace-sidebar .app-quick-navigation button > span { margin: 0; font-size: 10px; }
+  .product-workspace .workspace-sidebar .app-quick-navigation .active { background: var(--wash); color: var(--ink); box-shadow: inset 0 -2px var(--ink); }
+  .navigation-current-dot { position: absolute; top: 7px; right: calc(50% - 17px); width: 5px; height: 5px; border-radius: 50%; background: var(--ink); }
+}
+@media (prefers-reduced-motion: reduce) { .navigation-caret { transition: none; } }

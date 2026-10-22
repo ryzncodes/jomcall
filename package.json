@@ -1,0 +1,52 @@
+{
+  "name": "jomcall",
+  "private": true,
+  "version": "0.1.0",
+  "license": "FSL-1.1-ALv2",
+  "type": "module",
+  "workspaces": [
+    "web",
+    "packages/*",
+    "engine"
+  ],
+  "scripts": {
+    "local:check": "node scripts/local/check.mjs",
+    "local:start": "node scripts/local/start.mjs",
+    "local:stop": "node scripts/local/stop.mjs",
+    "dev:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run dev -w web -- --port 4181",
+    "dev:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run dev -w web -- --port 4182",
+    "build:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run build -w web",
+    "build:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run build -w web",
+    "typecheck": "npm run typecheck -w web && tsc --noEmit -p tsconfig.json",
+    "test:local": "node --conditions=react-server --env-file-if-exists=.env.local --import tsx --test --test-concurrency=1",
+    "test:guards": "node --test tests/local/*.test.mjs",
+    "db:migrate:local": "node --env-file=.env.local scripts/local/migrate.mjs",
+    "db:verify-migrations": "node --env-file=.env.local scripts/local/migration-check.mjs",
+    "dev:engine": "JOMCALL_MODE=local node --env-file=.env.local --import tsx engine/src/index.ts",
+    "contracts:generate": "node --import tsx scripts/contracts/generate.ts",
+    "check:core": "npm run test:local -- tests/api/*.test.ts tests/db/*.test.ts tests/domain/*.test.ts tests/engine/*.test.ts tests/local/*.test.mjs",
+    "start:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run start -w web -- --port 4182",
+    "start:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run start -w web -- --port 4181",
+    "model:prepare": "node scripts/local/model-prepare.mjs",
+    "model:start": "node scripts/local/model-start.mjs",
+    "model:stop": "node scripts/local/model-stop.mjs",
+    "check:phase2": "npm run check:core && npm run test:local -- tests/inference/ollama.test.ts tests/inference/budget.test.ts",
+    "check:local-model": "JOMCALL_MODEL_PROVIDER=ollama npm run test:local -- tests/inference/quality.test.ts",
+    "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --import tsx engine/src/agent/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.118.0",
+    "nodemailer": "10.1.1",
+    "pg": "8.23.1",
+    "pg-boss": "12.38.0",
+    "server-only": "0.0.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "8.0.2",
+    "@types/pg": "8.23.1",
+    "prettier": "3.6.2",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2"
+  }
+}

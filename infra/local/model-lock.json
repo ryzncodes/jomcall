@@ -1,0 +1,12 @@
+{
+  "runtimeVersion": "0.40.5",
+  "runtimeSha256": "75f9907dafa2fd4c61b5967de2ebb81ccc17eb28da9172edbad0dbc717474dcf",
+  "runtimeSource": "https://github.com/ollama/ollama/releases/download/v0.40.5/ollama-darwin.tgz",
+  "runtimeLicense": "MIT",
+  "runtimeBytes": 174448498,
+  "model": "qwen3:4b",
+  "modelDigest": "359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7",
+  "modelBytes": 2497293931,
+  "modelLicense": "Apache-2.0",
+  "modelSource": "https://ollama.com/library/qwen3:4b"
+}

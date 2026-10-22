@@ -1,0 +1,8 @@
+{
+  "name": "@jomcall/inference",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "FSL-1.1-ALv2",
+  "exports": "./src/index.ts"
+}
