@@ -176,7 +176,7 @@ Each sub-project gets its own plan and ends in a demo.
 | Decision | Notes |
 |---|---|
 | Contributor agreement (CLA) | Needed only if dual-licensing may happen later; decide before accepting outside contributions |
-| Default LLM provider and model | If Anthropic, take model IDs from the current API reference, not from examples; never hardcode in more than one place |
+| Default LLM provider and model | Decided 2026-11-13: hosted `anthropic/claude-haiku-5.5` through OpenRouter as the main path, chosen on the 48-case evaluation (`docs/qa/2026-11-13-agent-tool-calling.md`); the local model adapter stays for self-hosting. Direct Anthropic API versus OpenRouter for production is still open. Take model IDs from the provider's current model list; never hardcode in more than one place |
 | Auth provider | e.g. Supabase Auth, Auth.js, or other |
 | Payment provider | Billplz, Stripe MY, or both |
 | Default calendar | Google Calendar, Cal.com, or a built-in calendar |

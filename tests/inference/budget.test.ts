@@ -58,3 +58,23 @@ test("conversation packing keeps recent complete pairs before current input and 
   assert.equal(withTool.messages.at(-1)?.content, "tool ".repeat(400));
   assert.ok(JSON.stringify(withTool).length < 6000);
 });
+
+// The response schema steers decoding; it is not message text. Counting it
+// left too little room for a tool result after the rules and question.
+test("input budget counts message bytes only, not the response schema", () => {
+  const messages = [
+    { role: "system" as const, content: "r".repeat(2500) },
+    { role: "user" as const, content: "q".repeat(300) },
+    { role: "assistant" as const, content: "c".repeat(200) },
+    { role: "user" as const, content: "t".repeat(1500) },
+  ];
+  assert.equal(packModelInput(messages).messages.length, 4);
+  assert.throws(
+    () =>
+      packModelInput([
+        ...messages,
+        { role: "user", content: "x".repeat(1500) },
+      ]),
+    /INPUT_BUDGET_EXCEEDED/,
+  );
+});

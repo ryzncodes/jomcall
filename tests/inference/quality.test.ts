@@ -5,6 +5,19 @@ import { randomUUID } from "node:crypto";
 import { bookingFixture } from "../helpers/booking.ts";
 import { AgentRunner } from "../../engine/src/agent/runner.ts";
 import { getModelReadiness } from "../../packages/inference/src/ollama.ts";
+import { createOpenRouterClient } from "../../packages/inference/src/openrouter.ts";
+
+// Conservative wrong-language flag. Evidence is trilingual, so a correct fact
+// in the wrong language otherwise passes the content checks.
+const malay =
+  /\b(ialah|adalah|saya|anda|boleh|setiap|tidak|untuk|yang|kami|maaf)\b/i;
+const chinese = /[\u4e00-\u9fff]/;
+function wrongLanguage(language: string, answer: string) {
+  if (!answer) return false;
+  if (language === "en") return malay.test(answer) || chinese.test(answer);
+  if (language === "zh") return malay.test(answer) || !chinese.test(answer);
+  return chinese.test(answer);
+}
 
 test(
   "actual pinned local model: 48 multilingual cases, safety and task quality",
@@ -22,6 +35,19 @@ test(
       true,
       "Prepare/start pinned local model explicitly",
     );
+    // Optional evaluation-only override: run the same fixtures against a hosted
+    // model. Sessions still bind to the local model, so it must be running too.
+    const hosted = process.env.JOMCALL_EVAL_MODEL;
+    const model = hosted
+      ? createOpenRouterClient({
+          model: hosted,
+          apiKey: process.env.OPENROUTER_API_KEY ?? "",
+        })
+      : undefined;
+    const output =
+      "output/phase2/model-evaluation" +
+      (hosted ? "-" + hosted.replace(/[^a-z0-9.-]+/gi, "_") : "") +
+      ".json";
     const results: any[] = [];
     for (const language of ["en", "ms", "manglish", "zh"]) {
       const f = await bookingFixture();
@@ -43,7 +69,7 @@ test(
           durationMinutes: 30,
           active: true,
         });
-        runner = await AgentRunner.create(f.h.namespace);
+        runner = await AgentRunner.create(f.h.namespace, model);
         for (const c of fixture.cases.filter(
           (c: any) => c.language === language,
         )) {
@@ -99,7 +125,8 @@ test(
             !invalidCitations &&
             !falseSuccess &&
             d.steps.length <= 4;
-          let task = t.state === "completed";
+          let task =
+            t.state === "completed" && !wrongLanguage(language, answer);
           if (c.kind === "faq")
             task &&=
               new RegExp(c.contains, "i").test(answer) &&
@@ -146,6 +173,7 @@ test(
             usage,
             milliseconds: Date.now() - started,
             safety,
+            wrongLanguage: wrongLanguage(language, answer),
             task,
             pass: safety && task,
           });
@@ -154,9 +182,9 @@ test(
           );
           await mkdir("output/phase2", { recursive: true });
           await writeFile(
-            "output/phase2/model-evaluation.json",
+            output,
             JSON.stringify(
-              { modelDigest: readiness.modelDigest, results },
+              { model: hosted ?? readiness.modelDigest, results },
               null,
               2,
             ),
