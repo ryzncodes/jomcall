@@ -102,7 +102,7 @@ Docker must be running. Order, each long-running command in its own terminal:
 5. `npm run dev:voice`.
 6. `JOMCALL_VOICE_PROVIDER=hosted npm run dev:local`, then Agent, then Test in the app.
 
-Keys go in the ignored root file `.env.hosted`, never in git: `DEEPGRAM_API_KEY` (voice worker), `ANTHROPIC_API_KEY` (agent process) and `GOOGLE_CLOUD_API_KEY` (voice worker). `npm run dev:agent` and `npm run dev:voice` both load the file, and each process reads only its own key. The owner approved these three hosted services on 2026-11-13 as opt-in exceptions, on only when `JOMCALL_VOICE_PROVIDER=hosted`.
+Keys go in the ignored root file `.env.hosted`, never in git: `DEEPGRAM_API_KEY` (voice worker), `ANTHROPIC_API_KEY` (agent process) and `GOOGLE_CLOUD_API_KEY` (voice worker). `npm run dev:agent` and `npm run dev:voice` both load the file, and each process uses only its own key (both load the whole file). While the agent runs, `npm run check:core` reports 2 failures in `tests/engine/voice-server.test.ts` because those tests need port 54633 free. The owner approved these three hosted services on 2026-11-13 as opt-in exceptions, on only when `JOMCALL_VOICE_PROVIDER=hosted`.
 
 What leaves the machine: microphone audio goes to Deepgram; conversation text goes to Anthropic and to Google (text to speech). All three are outside Malaysia. Use fake conversations only. A PDPA cross-border decision is needed before any real caller.
 

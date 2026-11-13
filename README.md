@@ -85,6 +85,7 @@ Run these in order, each long-running one in its own terminal, from the reposito
 
 ```sh
 npm run local:start                              # database and auth
+npm run db:migrate:local                         # applies this branch's two voice migrations
 npm run livekit:prepare -- --download            # first time only: pulls the pinned LiveKit image
 npm run livekit:start                            # LiveKit server in Docker, loopback only
 npm run voice:prewarm -- --preset Kore           # first time per voice preset: fills the fixed-line cache
@@ -93,7 +94,7 @@ npm run dev:voice                                # voice worker
 JOMCALL_VOICE_PROVIDER=hosted npm run dev:local  # app at http://127.0.0.1:4182
 ```
 
-The web app needs `JOMCALL_VOICE_PROVIDER=hosted` as well; without it the panel reports voice as unavailable. `local:start` writes the LiveKit URL and development keys to both env files. Without the prewarm step the filler phrases are silent. Open the app, then Agent, then Test, and start a voice test.
+The web app needs `JOMCALL_VOICE_PROVIDER=hosted` as well; without it the panel reports voice as unavailable. `local:start` writes the LiveKit URL and development keys to both env files. Without the prewarm step the filler phrases are silent. Open the local app at `http://127.0.0.1:4182`; opening it as `http://localhost:4182` is rejected after sign-in with "CSRF REJECTED" (verified in the browser on 2026-11-14). Then go to Agent, then Test, and start a voice test. The agent test panel was checked to render with "Voice test ready" and the "Start voice test" button, but no spoken call has been made through it yet.
 
 To stop: press Ctrl+C in the agent, voice and web terminals, run `npm run livekit:stop`, then `npm run local:stop`. A running agent or voice worker makes the `local:start` port check fail, so stop them first. Ports 54630 to 54634 are used by voice and all bind to `127.0.0.1`. Details: [local operations guide](infra/local/README.md#local-livekit-server-browser-voice). Measured speed and open decisions: [voice QA record](docs/qa/2026-11-14-voice-milestone-a.md).
 

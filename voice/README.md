@@ -80,8 +80,7 @@ like the agent's 54633, so stop the worker before `npm run local:start` (preflig
 ## Transitive licences
 
 Gathered from the installed packages' metadata (`License-Expression`, `License`, then
-`License ::` classifiers) in `voice/.venv` after `uv sync` against `uv.lock`. Every locked
-package is MIT, Apache-2.0, BSD, ISC, PSF or MPL-2.0 class. Those that are not a plain single
+`License ::` classifiers) in `voice/.venv` after `uv sync` against `uv.lock`. Every locked package's own metadata is MIT, Apache-2.0, BSD, ISC, PSF or MPL-2.0 class, with one exception in its bundled binaries: the `av` 19.0.2 wheel (BSD-3-Clause, required by livekit-agents and loaded at runtime) bundles FFmpeg built with libx264 and libx265, which are GPL-2.0-or-later. JomCall does not redistribute these binaries. The owner's decision on this is open (see AGENTS.md). Those that are not a plain single
 permissive licence:
 
 | Package | Licence | Note |

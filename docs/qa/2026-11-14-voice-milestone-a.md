@@ -4,11 +4,13 @@ Date: 2026-11-14. Branch `feat/voice-milestone-a`, not merged, not pushed. Desig
 
 ## Method
 
-A scripted caller (`npm run check:voice-speed`, `voice/tools/replay.py`) joins a real LiveKit room, plays recorded clips of the twenty script turns, and records the agent's audio as it arrives. The definitions below come from the `definitions` block in `voice/tools/replay_core.py`.
+A scripted caller (`npm run check:voice-speed`, `voice/tools/replay.py`) joins a real LiveKit room, plays synthesized clips of the twenty script turns (Gemini text to speech, voice Puck, made once with `npm run check:voice-speed -- --prepare`; synthetic speech may endpoint faster than a human caller), and records the agent's audio as it arrives. The definitions below come from the `definitions` block in `voice/tools/replay_core.py`.
 
 - **First sound** is the time from the last caller speech frame (t0) to the first agent audio burst. A burst is audio above an energy threshold for a minimum length, so a filler phrase counts.
 - **Answer start** is the time from t0 to the first burst at or after the earliest time the real answer could sound. That time comes from the voice worker's stage log, or is estimated from the brain's first-sentence time. Earlier bursts are fillers.
 - Arrival times are measured at the client, so network and jitter-buffer delay are inside every number. Turns that are truncated, contaminated, unverified or hit the ceiling are left out of the answer statistics, and a goal gets no verdict when data is missing.
+
+- Answer start on tool turns is the spoken lead-in sentence, which the prompt requires before the tool runs, not the tool's outcome. `heardAtMs` is the worker's estimate (end-of-speech arrival minus 600 ms).
 
 The owner chose a short path on 2026-11-14: one clean measured run instead of a three-run median.
 
@@ -26,7 +28,7 @@ Run 3 numbers:
 | ------------------------------------------ | --------------------------------------------------------- | ------------------------- |
 | First sound, median                        | 1.42 s                                                    | 1.5 s on all twenty turns |
 | First sound, 90th percentile               | 2.02 s                                                    |                           |
-| Turns with first sound within 1.5 s        | 15 of 20                                                  | 20 of 20                  |
+| Turns with first sound within 1.5 s        | 16 of 20                                                  | 20 of 20                  |
 | Slowest first sound                        | 5.4 s, the first turn of one call (cause not established) |                           |
 | Answer start, turns without a tool, median | 3.02 s (11 of 12 turns observed)                          | 2.5 s                     |
 | Answer start, turns with a tool, median    | 3.67 s (6 of 8 turns observed)                            | 4 s                       |
@@ -45,14 +47,18 @@ Run 3 numbers:
 
 ## Outcome against the four goals (design section 8)
 
-| Goal                                                | Outcome                                                                             |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| First sound within 1.5 s on all twenty              | Missed. 15 of 20 within 1.5 s; median 1.42 s; one turn took 5.4 s.                  |
-| Plain answer start, median 2.5 s                    | Missed by about 0.5 s (3.02 s, 11 of 12 turns observed).                            |
-| Tool answer start, median 4 s                       | Met on the observed turns (3.67 s, 6 of 8). Two tool turns were not observed.       |
-| No stretch of more than three seconds without sound | No figure is recorded in this write-up. Read it from the run output before judging. |
+| Goal                                                | Outcome                                                                                                                                                  |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First sound within 1.5 s on all twenty              | Missed. 16 of 20 within 1.5 s (over: t01 5.42 s, t11 2.13 s, t14 2.02 s, t07 1.54 s); median 1.42 s.                                                     |
+| Plain answer start, median 2.5 s                    | Missed by about 0.5 s (3.02 s, 11 of 12 turns observed).                                                                                                 |
+| Tool answer start, median 4 s                       | Not decided by the tool (6 of 8 turns observed). Partial median 3.67 s, under 4 s; two of the six observed turns were over 4 s (t05 4.77 s, t19 4.50 s). |
+| No stretch of more than three seconds without sound | Missed. Longest gap 5.4 s (t01, the same first-turn outlier); every other turn's longest gap was at most 2.8 s.                                          |
 
 Two Manglish utterances were split mid-sentence by endpointing, and their message and booking were not recorded. This counts as a product defect, not a timeout.
+
+## After run 3
+
+The review found that a split utterance lost its first half whenever a filler was playing (the cause of the two lost Manglish turns in run 3). It was fixed in this branch after the run and is covered by unit tests; it was not re-measured live.
 
 ## Open decision for the owner
 
@@ -66,7 +72,7 @@ The spoken-path 48-case gate (`npm run check:voice-model`), latest full run (run
 
 - The Google speech limit of about 11 requests per minute blocks more than roughly one concurrent call. This blocks milestone B. The owner is in contact with Google.
 - The fast-lane answer cache uses word lists that cannot fully exclude time-dependent questions. Before real callers, the owner must decide: an allow-list, model-labelled cacheability, or clock-free answers, plus expiry.
-- The false-success check does not catch past-tense delivery claims such as "I've passed your message on".
+- The false-success check does not catch past-tense delivery claims such as "I've passed your message on". It also misses common booking claims such as "I've booked you in" or "dah tempah".
 - Read-back before a booking is a prompt rule, not enforced in code, in milestone A.
 - Deepgram endpointing sometimes splits Manglish utterances.
 - Call audio and conversation text cross the border to Deepgram, Anthropic and Google. A PDPA decision is needed before real callers.
