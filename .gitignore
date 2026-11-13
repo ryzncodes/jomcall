@@ -75,3 +75,6 @@ docs/frontend/screenshots/
 voice/.venv/
 voice/.cache/
 .pytest_cache/
+
+# Voice speed replay output
+output/voice/

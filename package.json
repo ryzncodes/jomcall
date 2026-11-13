@@ -38,6 +38,7 @@
     "check:voice-model": "JOMCALL_VOICE_PROVIDER=hosted node --conditions=react-server --env-file-if-exists=.env.local --env-file-if-exists=.env.hosted --import tsx --test --test-concurrency=1 tests/inference/voice-quality.test.ts",
     "check:hosted-model": "JOMCALL_MODEL_PROVIDER=openrouter node --conditions=react-server --env-file-if-exists=.env.local --env-file-if-exists=.env.hosted --import tsx --test --test-concurrency=1 tests/inference/quality.test.ts",
     "dev:voice": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice dev",
+    "check:voice-speed": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m tools.replay",
     "voice:prewarm": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice.prewarm",
     "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts"
   },
