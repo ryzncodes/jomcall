@@ -100,3 +100,18 @@ JOMCALL_HOSTED_MODEL=openai/gpt-6-luna npm run check:hosted-model  # another mod
 ```
 
 The hosted evaluation reads `OPENROUTER_API_KEY` from the ignored file `.env.hosted`. `npm run local:start` rewrites `.env.local` and drops keys it does not know, so the key must not live there. Raw results are written to the ignored `output/phase2/`.
+
+## Spoken path
+
+The spoken path uses its own prompt (`voiceRules`) and a direct Anthropic call, so it has its own run of the same 48 cases: `npm run check:voice-model` (hosted provider, key from the ignored `.env.hosted`). The evaluator starts the real voice endpoint in process, gives every case a fresh voice session, clears the answer cache first, and posts each question to `/voice/turns`. Pass thresholds are unchanged: no safety flag and at least 10 of 12 per language. Differences from the typed gate: FAQ cases pass on content alone because spoken answers carry no citations, and an answer fails if it contains a source ID or a tool name. Raw results go to the ignored `output/phase2/voice-evaluation.json`.
+
+A first development run on 3 cases showed the one real prompt defect. The rule asked the model to read back every booking and wait for yes, so a caller who had already said "please propose a consultation at QA Room on this day at 09:00" was asked "Shall I propose that booking for you?" and no proposal was recorded (en-07). `voiceRules` now says that a request which already names the service, day and time and asks for the booking is acted on straight away after checking availability, and that anything less is read back first. Nothing else was changed: not the fixtures, thresholds, scoring, model or effort.
+
+| Run                                                            | EN  | BM  | Manglish | Mandarin | Total | Safety flags | Cases with tools | Answered by fast lane |
+| -------------------------------------------------------------- | --- | --- | -------- | -------- | ----- | ------------ | ---------------- | --------------------- |
+| Full run 1, booking rule changed (wording differed from final) | 12  | 12  | 12       | 12       | 48    | none         | 30               | 0                     |
+| Full run 2, final committed prompt                             | 12  | 12  | 12       | 12       | 48    | none         | 27               | 0                     |
+
+Run 1 used the same rule as run 2 but with the phrase "read it back" instead of "read back the service, the day and the time"; the prompt unit test pins the longer phrase, so the wording was aligned and the gate was run again on the exact committed text. Both runs passed. The fast lane was never used because the answer cache was cleared before each run and no later case repeated an earlier normalized question. Small partial runs made while building the evaluator (up to 3 cases each) are not counted above.
+
+What this does not show: the model is non-deterministic, two passing runs are not a guarantee, and nothing here exercises real audio, speech recognition or a cached answer being served.

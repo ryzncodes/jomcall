@@ -32,6 +32,7 @@
     "model:stop": "node scripts/local/model-stop.mjs",
     "check:phase2": "npm run check:core && npm run test:local -- tests/inference/ollama.test.ts tests/inference/budget.test.ts tests/inference/openrouter.test.ts tests/inference/provider.test.ts tests/inference/safety.test.ts",
     "check:local-model": "JOMCALL_MODEL_PROVIDER=ollama npm run test:local -- tests/inference/quality.test.ts",
+    "check:voice-model": "JOMCALL_VOICE_PROVIDER=hosted node --conditions=react-server --env-file-if-exists=.env.local --env-file-if-exists=.env.hosted --import tsx --test --test-concurrency=1 tests/inference/voice-quality.test.ts",
     "check:hosted-model": "JOMCALL_MODEL_PROVIDER=openrouter node --conditions=react-server --env-file-if-exists=.env.local --env-file-if-exists=.env.hosted --import tsx --test --test-concurrency=1 tests/inference/quality.test.ts",
     "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts"
   },
