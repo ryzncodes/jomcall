@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   fastLaneKey,
+  mentionsLiveState,
   spokenLanguage,
 } from "../../packages/domain/src/agent-test/fast-lane.ts";
 
@@ -137,4 +138,50 @@ test("spokenLanguage picks zh, ms or en", () => {
   // Manglish with no Malay marker word lands on en; the cache needs one of three.
   assert.equal(spokenLanguage("Parking free ke?"), "en");
   assert.equal(spokenLanguage("QA Studio 的 address saya"), "zh");
+});
+
+for (const q of [
+  "Kedai tutup pukul berapa hari ni",
+  "Is the shop open tonite please",
+  "Is the shop open tmr please",
+  "Is the shop open tmrw please",
+  "你们今日营业吗请问",
+  "你们明日开门吗请问",
+  "Are you open at the moment please",
+  "Are you currently open please",
+  "Is the shop still open please",
+  "Kedai ada buka lagi tak",
+  "你们还开着吗请问",
+  "Is there any slot available please",
+  "Ada slot kosong tak kat sini",
+  "Are you open right now please",
+  "Kedai masih buka tak sana",
+]) {
+  test(`live-state question "${q}" has no key`, () => {
+    assert.equal(fastLaneKey(q), null);
+  });
+}
+
+test("static opening hours keep a key", () => {
+  assert.notEqual(fastLaneKey("Is the shop open on weekends please"), null);
+});
+
+test("mentionsLiveState flags live answers and passes static ones", () => {
+  assert.equal(mentionsLiveState("Yes, we are open now until 6 pm."), true);
+  assert.equal(mentionsLiveState("Ya, kami masih buka sekarang."), true);
+  assert.equal(mentionsLiveState("我们现在还在营业。"), true);
+  assert.equal(
+    mentionsLiveState("We are at 12 Jalan Contoh, Petaling Jaya."),
+    false,
+  );
+  assert.equal(
+    mentionsLiveState("Kami buka 9 pagi hingga 6 petang setiap hari."),
+    false,
+  );
+  assert.equal(mentionsLiveState("我们的地址是样本路十二号。"), false);
+  assert.equal(
+    mentionsLiveState("It costs RM 80 for our consultation."),
+    false,
+  );
+  assert.equal(mentionsLiveState("Today's special is closed."), true);
 });
