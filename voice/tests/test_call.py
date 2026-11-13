@@ -749,3 +749,50 @@ async def test_the_calls_http_clients_are_closed_when_it_ends(make):
     rig.call.hangup()
     await settle()
     assert rig.task.done() and sorted(closed) == ["brain", "voice"]
+
+
+# --- one sentence cut in two by endpointing --------------------------------
+
+async def test_a_transcript_right_after_another_is_joined_into_one_turn(make):
+    rig = await make([(0, STARTED), (10_000, DONE)], [(0, STARTED), (100, sentence("Ok.")), (0, DONE)])
+    rig.ears.say("book a table")
+    await settle()
+    await rig.clock.advance(config.MERGE_WINDOW_MS - 100)
+    rig.ears.say("for two people")
+    await settle()
+    await rig.clock.advance(300)
+    assert rig.brain.closed >= 1  # the first stream was closed
+    assert [c[2] for c in rig.brain.calls] == ["book a table", "book a table for two people"]
+    assert rig.spoken[-1] == "S:Ok."
+
+
+async def test_a_transcript_after_the_window_is_a_normal_new_turn(make):
+    rig = await make([(0, STARTED), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)])
+    rig.ears.say("book a table")
+    await settle()
+    await rig.clock.advance(config.MERGE_WINDOW_MS + 100)
+    rig.ears.say("for two people")
+    await settle()
+    assert [c[2] for c in rig.brain.calls] == ["book a table", "for two people"]
+
+
+async def test_once_an_answer_has_started_the_next_transcript_is_a_new_turn(make):
+    rig = await make([(0, STARTED), (50, sentence("Dah.")), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)])
+    rig.ears.say("book a table")
+    await settle()
+    await rig.clock.advance(200)
+    assert "S:Dah." in rig.spoken
+    rig.ears.say("for two people")
+    await settle()
+    assert [c[2] for c in rig.brain.calls] == ["book a table", "for two people"]
+
+
+async def test_three_pieces_in_quick_succession_all_join(make):
+    rig = await make(
+        [(0, STARTED), (10_000, DONE)], [(0, STARTED), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)]
+    )
+    for piece in ("one", "two", "three"):
+        rig.ears.say(piece)
+        await settle()
+        await rig.clock.advance(300)
+    assert rig.brain.calls[-1][2] == "one two three"

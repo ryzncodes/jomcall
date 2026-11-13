@@ -35,6 +35,13 @@ STT_LANGUAGE = "multi"
 STT_ENDPOINTING_MS = 300
 STT_SAMPLE_RATE = 16_000
 
+# Deepgram sometimes sends final transcripts and no end-of-speech (seen once: 15 s).
+# If words are pending and nothing was heard for this long, the utterance has ended.
+FLUSH_AFTER_FINAL_MS = 1_000
+# A transcript arriving this soon after the previous one, before any answer audio for
+# it, is the rest of the same sentence that endpointing cut in two: the two are joined.
+MERGE_WINDOW_MS = 700
+
 # --- Speaking: Gemini text-to-speech on the Google Agent Platform endpoint ---
 TTS_MODEL = "gemini-3.8-flash-lite-tts"
 TTS_URL = (

@@ -126,6 +126,8 @@ class Call:
         self._last_filler: str | None = None
         self.fixed_lines_skipped = 0
         # (task, kind, started at, seconds long) of the filler now playing, if any
+        # The previous utterance, kept only to join a sentence endpointing cut in two.
+        self._prev: tuple[_Turn, str, float] | None = None
         self._filler_play: tuple[asyncio.Task, str, float, float] | None = None
 
     def hangup(self) -> None:
@@ -344,6 +346,12 @@ class Call:
                 self._spawn(self._say_fixed(fillers.REPEAT[self._lang]))
             return
         eos = self._wall_ms()
+        prev, self._prev = self._prev, None
+        if prev is not None:
+            before, before_text, before_at = prev
+            fresh = self._clock.now() - before_at <= config.MERGE_WINDOW_MS / 1000
+            if fresh and self._turn is before and "firstFrameAtMs" not in before.stages:
+                text = before_text + " " + text  # one sentence, cut by endpointing
         self._cancel_turn()  # a new turn supersedes a running one
         lang = fillers.guess_language(text)
         self._lang = lang
@@ -357,6 +365,7 @@ class Call:
         turn.stages.update(eosAtMs=eos, heardAtMs=heard)
         self.turns.append(turn.record)
         self._turn = turn
+        self._prev = (turn, text, self._clock.now())
         turn.mark = self._clock.now() - config.EARS_LAG_MS / 1000  # estimated end of speech
         turn.run = asyncio.ensure_future(self._run_turn(turn, text, heard))
         turn.run.add_done_callback(_log_failure)
