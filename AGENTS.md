@@ -13,6 +13,7 @@ It answers Malaysian SMEs' phone calls and WhatsApp messages 24/7 with an AI age
 | `docs/research/voice-options.md` | Text-to-speech options and techniques for natural-sounding calls |
 | `docs/superpowers/plans/2026-10-15-speech-benchmark-spike.md` | Plan for the speech-provider benchmark (sub-project 1) |
 | `docs/superpowers/specs/2026-11-13-inbound-voice-design.md` | Approved design for inbound voice: browser call first (milestone A), phone line second |
+| `docs/superpowers/plans/2026-11-13-inbound-voice-milestone-a.md` | Build plan for the browser voice call (milestone A), 13 tasks |
 
 ## Current state (2026-10-16)
 

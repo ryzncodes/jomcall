@@ -127,7 +127,7 @@ The spoken path must pass the 48 cases through this endpoint, as text in and tex
 
 1. The worker streams microphone audio to Deepgram and receives interim and final text.
 2. Deepgram declares the end of the turn after 0.3 s of silence. The worker posts the transcript to the voice turn endpoint with a credential bound to this one test session.
-3. **Fast lane.** The endpoint first matches the transcript against the session's frozen knowledge with the existing local search. On a strong match it returns a prepared answer immediately, without the model. Below the bar it goes on to step 4. The bar and the "prepared answer" form are fixed by measurement on the 48 cases plus paraphrases; a wrong fast answer is worse than a slow right one.
+3. **Fast lane.** The endpoint first looks for an answer the brain itself gave earlier, for the same agent snapshot and language, to the same question after light normalization. On a hit it returns that answer immediately, without the model. It never composes a new answer. Questions that carry a date, an amount or a reference to an earlier turn are never served this way. A wrong fast answer is worse than a slow right one, so the rule is strict and coverage is whatever it turns out to be.
 4. **Brain.** The endpoint starts the model and streams events: `sentence` as each sentence completes, `tool` when a tool is chosen, `done`.
 5. **Race the clock.** If no sentence has arrived 0.8 s after the transcript, the worker plays a short neutral acknowledgement. If a tool is chosen, it plays a filler tied to that action. If a sentence arrives first, no filler plays.
 6. The worker sends each sentence to the voice and plays audio as it arrives, at most two voice requests per turn: the first sentence, then the rest.
@@ -203,7 +203,7 @@ A real Malaysian number over SIP into the same worker; the disclosure for record
 - **Script.** Twenty spoken turns: eight BM, eight Manglish, four English; twelve plain questions answerable from the fixture knowledge, four booking requests, two messages, two handoffs. The owner speaks them through the browser; the same turns are also replayed from recorded clips so runs are comparable.
 - **Speed.** First sound within 1.5 s on all twenty. Real answer starting within 2.5 s median on the twelve plain turns and 4 s median on the eight tool turns. No stretch of more than three seconds without sound.
 - **Correctness.** Reply language matches on all twenty; all eight tool turns record the right proposal; no reply claims a completed action; bookings are read back first; no reasoning, tool name or source ID is spoken.
-- **Fast lane.** On the 48 cases and their paraphrases, no fast-lane answer is wrong. Coverage is reported, not targeted.
+- **Fast lane.** No fast-lane answer differs from what the brain answers to the same question. Coverage is reported, not targeted.
 - **The gate follows the brain.** The 48 cases pass through the voice turn endpoint with the same thresholds.
 - **Regression.** `npm run check:phase2` and `npm run check:hosted-model` still pass.
 - **Throttling is recorded.** A run with refused voice requests does not count toward the speed goal.
@@ -214,12 +214,13 @@ If the speed goals in §8 are missed after the measures in §5.5, the owner choo
 
 ## 10. Left to the builder
 
-The voice turn endpoint's wire format and credential scheme; the fast lane's matching bar and how prepared answers are produced; whether Deepgram is reached through LiveKit's adapter or a custom one, by measurement; where filler audio is cached; the layout of the voice controls in the panel; test structure.
+The voice turn endpoint's wire format and credential scheme; whether Deepgram is reached through LiveKit's adapter or a custom one, by measurement; where filler audio is cached; the layout of the voice controls in the panel; test structure.
 
 Known limits the builder must handle: a session allows twenty turns and one active turn at a time today, which read-back turns, interruptions and restarts on a changed transcript will exceed or collide with; tools that record something run only on the final transcript, never on an interim one; a cancelled turn must not leave a proposal behind.
 
 ## 11. Calls made by the assistant, for the owner to check
 
+- The fast lane is a cache of the brain's own earlier answers, not a separate matcher that writes answers from the knowledge. Simpler to keep right; it helps only once a question has been asked before.
 - Spoken answers are grounded by storing the evidence supplied with each turn and by the gate's content checks, not by citations.
 - The typed path keeps OpenRouter and the JSON decision for now; only the spoken path uses Anthropic directly and the new output shape.
 - Speed goals: first sound 1.5 s, real answer 2.5 s median without a tool and 4 s with one.
