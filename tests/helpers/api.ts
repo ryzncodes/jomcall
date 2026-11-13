@@ -2,10 +2,13 @@ import { closeServices } from "../../web/lib/server/services.ts";
 import { createServer } from "node:http";
 import type { createHarness } from "./local.ts";
 import { handleAuth } from "../../web/lib/server/auth.ts";
-import { dispatchCore } from "../../web/lib/server/api.ts";
+import { createDispatch, type CoreDeps } from "../../web/lib/server/api.ts";
 export async function createApiHarness(
   h: Awaited<ReturnType<typeof createHarness>>,
+  deps: CoreDeps = {},
 ) {
+  // Fakes for outside services are passed in here, never set globally.
+  const dispatchCore = createDispatch(deps);
   process.env.JOMCALL_MODE = "local";
   process.env.NODE_ENV = "test";
   process.env.JOMCALL_QUEUE_NAMESPACE = h.namespace;
