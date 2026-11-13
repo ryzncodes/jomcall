@@ -42,41 +42,56 @@ export default function VoiceTest({
   const room = useRef<Room | null>(null),
     audio = useRef<HTMLDivElement>(null),
     starting = useRef(false),
+    startBtn = useRef<HTMLButtonElement>(null),
+    stopBtn = useRef<HTMLButtonElement>(null),
+    focusNext = useRef<"start" | "stop" | null>(null),
     generation = useRef(0),
     timers = useRef<{ tick?: number; poll?: number; think?: number }>({}),
     callerSpoke = useRef(false);
   const closed =
     detail.state === "closed" || Date.parse(detail.expires_at) <= Date.now();
 
+  // Everything an attempt may have acquired (local mic tracks, the room) is
+  // released here; safe to call repeatedly and on a half-connected room.
+  const release = useCallback((r: Room) => {
+    r.removeAllListeners();
+    try {
+      for (const p of r.localParticipant.getTrackPublications())
+        p.track?.stop();
+    } catch {
+      // already disconnected
+    }
+    void r.disconnect(true).catch(() => undefined);
+  }, []);
+  // True when this attempt was stopped while an await was pending. Whatever
+  // the attempt acquired is released by the callback, so nothing is left open.
+  const gone = (mine: number, undo?: () => void) => {
+    if (generation.current === mine) return false;
+    undo?.();
+    return true;
+  };
+
   const teardown = useCallback(() => {
     generation.current++;
+    starting.current = false;
     window.clearInterval(timers.current.tick);
     window.clearInterval(timers.current.poll);
     window.clearTimeout(timers.current.think);
     const r = room.current;
     room.current = null;
     callerSpoke.current = false;
-    if (r) {
-      // Detach our handlers first so a deliberate stop is not reported as a drop.
-      r.removeAllListeners();
-      try {
-        for (const p of r.localParticipant.getTrackPublications())
-          p.track?.stop();
-      } catch {
-        // already disconnected
-      }
-      void r.disconnect(true).catch(() => undefined);
-    }
+    // Handlers are removed first so a deliberate stop is not reported as a drop.
+    if (r) release(r);
     audio.current?.replaceChildren();
-  }, []);
+  }, [release]);
 
   const finish = useCallback(
-    (why?: Problem) => {
+    (why?: Problem, message?: string) => {
       teardown();
       setPhase("idle");
       setHeard("listening");
       setRemaining(CALL_SECONDS);
-      setAnnounce("");
+      setAnnounce(message ?? "");
       if (why) setProblem(why);
       onChanged();
     },
@@ -97,6 +112,13 @@ export default function VoiceTest({
     return () => onLive(false);
   }, [phase, onLive]);
 
+  useEffect(() => {
+    const next = focusNext.current;
+    if (!next) return;
+    focusNext.current = null;
+    (next === "stop" ? stopBtn : startBtn).current?.focus();
+  }, [phase]);
+
   async function start() {
     if (starting.current || phase !== "idle" || closed) return;
     starting.current = true;
@@ -104,6 +126,7 @@ export default function VoiceTest({
     setProblem(undefined);
     setError(undefined);
     const mine = ++generation.current;
+    let r: Room | undefined;
     try {
       // Ask for the microphone only now, after the button press, and before
       // any server session exists: a refusal must not leave a call open.
@@ -111,12 +134,13 @@ export default function VoiceTest({
         const probe = await navigator.mediaDevices.getUserMedia({
           audio: true,
         });
+        // The probe only proves permission; release it straight away.
         for (const t of probe.getTracks()) t.stop();
       } catch {
-        if (generation.current === mine) finish("mic");
+        if (!gone(mine)) finish("mic");
         return;
       }
-      if (generation.current !== mine) return;
+      if (gone(mine)) return;
       let grant;
       try {
         grant = await client.execute(
@@ -125,7 +149,7 @@ export default function VoiceTest({
           crypto.randomUUID(),
         );
       } catch (e) {
-        if (generation.current !== mine) return;
+        if (gone(mine)) return;
         setPhase("idle");
         if (e instanceof CoreError && e.code === "VOICE_DISABLED")
           setProblem("disabled");
@@ -134,9 +158,9 @@ export default function VoiceTest({
         else onChanged();
         return;
       }
-      if (generation.current !== mine) return;
+      if (gone(mine)) return;
       setPhase("connecting");
-      const r = new Room({ adaptiveStream: false, dynacast: false });
+      r = new Room({ adaptiveStream: false, dynacast: false });
       room.current = r;
       r.on(RoomEvent.TrackSubscribed, (track) => {
         if (track.kind !== Track.Kind.Audio) return;
@@ -170,14 +194,13 @@ export default function VoiceTest({
         } else setHeard("listening");
       });
       r.on(RoomEvent.Disconnected, () => finish("dropped"));
-      await r.connect(grant.url, grant.token);
-      if (generation.current !== mine) {
-        void r.disconnect(true);
-        return;
-      }
-      await r.localParticipant.setMicrophoneEnabled(true);
-      if (generation.current !== mine) return;
-      void r.startAudio().catch(() => undefined);
+      const mineRoom = r;
+      await mineRoom.connect(grant.url, grant.token);
+      if (gone(mine, () => release(mineRoom))) return;
+      await mineRoom.localParticipant.setMicrophoneEnabled(true);
+      // A track created while Stop ran is not in teardown's snapshot.
+      if (gone(mine, () => release(mineRoom))) return;
+      void mineRoom.startAudio().catch(() => undefined);
       const ends = Math.min(
         Date.parse(grant.expiresAt),
         Date.now() + CALL_SECONDS * 1000,
@@ -197,19 +220,20 @@ export default function VoiceTest({
         setRemaining(n);
         if (n === 60) setAnnounce(w("One minute left.", "Tinggal satu minit."));
         if (n <= 0) {
-          setAnnounce(
+          finish(
+            "expired",
             w(
               "Time is up. Voice test ended.",
               "Masa tamat. Ujian suara tamat.",
             ),
           );
-          finish("expired");
         }
       }, 1000);
       // Spoken turns are saved by the voice worker; pull them in while live.
       timers.current.poll = window.setInterval(onChanged, 4000);
     } catch (e) {
-      if (generation.current !== mine) return;
+      const orphan = r;
+      if (gone(mine, () => orphan && release(orphan))) return;
       const denied =
         e instanceof DOMException &&
         ["NotAllowedError", "NotFoundError", "SecurityError"].includes(e.name);
@@ -219,7 +243,8 @@ export default function VoiceTest({
       else setProblem("dropped");
       onChanged();
     } finally {
-      starting.current = false;
+      // A newer attempt owns the flag once this one was stopped.
+      if (generation.current === mine) starting.current = false;
     }
   }
 
@@ -281,9 +306,10 @@ export default function VoiceTest({
           <button
             type="button"
             className="button secondary-button"
+            ref={stopBtn}
             onClick={() => {
-              setAnnounce(w("Voice test ended.", "Ujian suara tamat."));
-              finish();
+              focusNext.current = "start";
+              finish(undefined, w("Voice test ended.", "Ujian suara tamat."));
             }}
           >
             <Stop size={16} />
@@ -295,7 +321,11 @@ export default function VoiceTest({
             className="button button-dark"
             disabled={!!reason}
             aria-describedby={reason ? "voice-reason" : undefined}
-            onClick={() => void start()}
+            ref={startBtn}
+            onClick={() => {
+              focusNext.current = "stop";
+              void start();
+            }}
           >
             <Microphone size={16} />
             {w("Start voice test", "Mulakan ujian suara")}
