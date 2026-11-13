@@ -113,7 +113,7 @@ The evaluator also checks order for the 8 booking cases: at least one spoken sen
 | ------------------------------------------------------------------------------ | --- | --- | -------- | -------- | ----- | ------------ | ---------------- | --------- | ------------------------------------------------- |
 | Full run 1, first rule (booked with no read-back; departs from spec, reverted) | 12  | 12  | 12       | 12       | 48    | none         | 30               | 0         | not measured (all 8 recorded silently per review) |
 | Full run 2, same first rule, wording adjusted for the prompt test              | 12  | 12  | 12       | 12       | 48    | none         | 27               | 0         | not measured                                      |
-| Full run 3, read-back-first rule (final)                                       | 12  | 12  | 12       | 11       | 47    | none         | 27               | 0         | 8 of 8                                            |
+| Full run 3, read-back-first rule (final)                                       | 12  | 12  | 11       | 12       | 47    | none         | 27               | 0         | 8 of 8                                            |
 
 Runs 1 and 2 passed the old scoring but are not valid evidence for the final prompt. Run 3 is the gate for the committed prompt: it passed (every language at least 10 of 12, no safety flag). The one failure is manglish-08: it read the slot back, checked availability, then asked "Nak saya rekodkan tempahan ini...? Sila jawab ya" instead of booking in the same turn, so no proposal was recorded. Small filtered runs made while building and tuning (2 to 3 cases) are not counted above and are written to a separate ignored file.
 
