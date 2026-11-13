@@ -12,6 +12,7 @@ It answers Malaysian SMEs' phone calls and WhatsApp messages 24/7 with an AI age
 | `docs/frontend/screens.md` | Every frontend screen to build, grouped by area, with priorities |
 | `docs/research/voice-options.md` | Text-to-speech options and techniques for natural-sounding calls |
 | `docs/superpowers/plans/2026-10-15-speech-benchmark-spike.md` | Plan for the speech-provider benchmark (sub-project 1) |
+| `docs/superpowers/specs/2026-11-13-inbound-voice-design.md` | Approved design for inbound voice: browser call first (milestone A), phone line second |
 
 ## Current state (2026-10-16)
 
@@ -33,5 +34,5 @@ It answers Malaysian SMEs' phone calls and WhatsApp messages 24/7 with an AI age
 - **No personal data in git.** No real call audio, transcripts or customer data; use clearly fake sample data (fake names, fake numbers).
 - **Malaysia first.** UI in BM and English; amounts in MYR (store as integer sen); times in `Asia/Kuala_Lumpur`; phone numbers in E.164; mobile-first, because owners check calls on their phones.
 - **Compliance is visible in the UI:** AI and recording disclosure setting, consent records, do-not-contact switch, PDPA export and delete.
-- **License:** FSL-1.1-ALv2 (see `LICENSE.md`). Only add dependencies whose licenses allow use in commercial, source-available software (MIT, Apache-2.0, BSD, ISC and similar). Avoid GPL/AGPL dependencies.
+- **License:** FSL-1.1-ALv2 (see `LICENSE.md`). Only add dependencies whose licenses allow use in commercial, source-available software (MIT, Apache-2.0, BSD, ISC and similar). Avoid GPL/AGPL dependencies. One exception, accepted by the owner on 2026-11-13: the voice service may use LiveKit's turn-detector model under the proprietary LiveKit Model License. It is optional, is not redistributed here, and the service must work without it.
 - Commits: small, Conventional Commits style. Work on a feature branch, not `main`.
