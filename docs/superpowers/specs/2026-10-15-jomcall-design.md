@@ -176,7 +176,7 @@ Each sub-project gets its own plan and ends in a demo.
 | Decision | Notes |
 |---|---|
 | Contributor agreement (CLA) | Needed only if dual-licensing may happen later; decide before accepting outside contributions |
-| Default LLM provider and model | Decided 2026-11-13: hosted `anthropic/claude-haiku-5.5` through OpenRouter as the main path, chosen on the 48-case evaluation (`docs/qa/2026-11-13-agent-tool-calling.md`); the local model adapter stays for self-hosting. Direct Anthropic API versus OpenRouter for production is still open. Take model IDs from the provider's current model list; never hardcode in more than one place |
+| Default LLM provider and model | Decided 2026-11-13: hosted `anthropic/claude-haiku-5.5` through OpenRouter as the main path, chosen on the 48-case evaluation (`docs/qa/2026-11-13-agent-tool-calling.md`); the local model adapter stays for self-hosting. Direct Anthropic API versus OpenRouter for production is still open for the text path. Spoken path, decided 2026-11-13: Anthropic API direct, `claude-haiku-5-5`, as plain speech with native tools streamed by sentence (not the typed JSON schema). Speech to text: Deepgram `nova-3`, multilingual. Text to speech: Google Gemini `gemini-3.8-flash-lite-tts` on the Agent Platform endpoint. All three are opt-in (`JOMCALL_VOICE_PROVIDER=hosted`); see `AGENTS.md` and `docs/superpowers/specs/2026-11-13-inbound-voice-design.md`. Take model IDs from the provider's current model list; never hardcode in more than one place |
 | Auth provider | e.g. Supabase Auth, Auth.js, or other |
 | Payment provider | Billplz, Stripe MY, or both |
 | Default calendar | Google Calendar, Cal.com, or a built-in calendar |

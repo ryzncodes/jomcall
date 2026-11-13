@@ -90,3 +90,22 @@ Stop `dev:agent` before `local:stop`; restart after `local:start` and `db:migrat
 ## Local LiveKit server (browser voice)
 
 LiveKit (Apache-2.0) runs as one Docker container from the official `livekit/livekit-server` image, pinned by digest in `infra/local/livekit-lock.json` (no macOS binary is published upstream). `npm run livekit:prepare -- --download` pulls it; `livekit:start` writes the config with generated development keys into the ignored `.local/livekit/` and publishes signal 54630/tcp, RTC 54631/tcp and 54632/udp on `127.0.0.1` only; `livekit:stop` removes only the container it started. The keys (`LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`) are written once by `local:start` to both env files and never use a `NEXT_PUBLIC_` name.
+
+### Running a voice test
+
+Docker must be running. Order, each long-running command in its own terminal:
+
+1. `npm run local:start`, then `npm run db:migrate:local` if there is a new migration.
+2. `npm run livekit:prepare -- --download` (first time only), then `npm run livekit:start`.
+3. `npm run voice:prewarm -- --preset Kore` (first time per voice preset; without it the filler phrases are silent).
+4. `JOMCALL_VOICE_PROVIDER=hosted npm run dev:agent`.
+5. `npm run dev:voice`.
+6. `JOMCALL_VOICE_PROVIDER=hosted npm run dev:local`, then Agent, then Test in the app.
+
+Keys go in the ignored root file `.env.hosted`, never in git: `DEEPGRAM_API_KEY` (voice worker), `ANTHROPIC_API_KEY` (agent process) and `GOOGLE_CLOUD_API_KEY` (voice worker). `npm run dev:agent` and `npm run dev:voice` both load the file, and each process reads only its own key. The owner approved these three hosted services on 2026-11-13 as opt-in exceptions, on only when `JOMCALL_VOICE_PROVIDER=hosted`.
+
+What leaves the machine: microphone audio goes to Deepgram; conversation text goes to Anthropic and to Google (text to speech). All three are outside Malaysia. Use fake conversations only. A PDPA cross-border decision is needed before any real caller.
+
+Ports, all on `127.0.0.1`: 54630 LiveKit signal (tcp), 54631 LiveKit media (tcp), 54632 LiveKit media (udp), 54633 spoken-turn endpoint inside the agent process, 54634 voice worker health listener. All five are listed in `services.json`, so `local:start` refuses to run while the agent or the voice worker is up.
+
+To stop: Ctrl+C in the agent, voice and web terminals, `npm run livekit:stop`, then `npm run local:stop`. Measured speed and open decisions: [voice QA record](../../docs/qa/2026-11-14-voice-milestone-a.md).
