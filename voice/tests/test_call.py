@@ -796,3 +796,100 @@ async def test_three_pieces_in_quick_succession_all_join(make):
         await settle()
         await rig.clock.advance(300)
     assert rig.brain.calls[-1][2] == "one two three"
+
+
+# --- the real event order: an interim always comes before the second transcript ---
+
+async def test_a_split_utterance_joins_while_a_filler_is_playing(make):
+    rig = await make([(0, STARTED), (10_000, DONE)], [(0, STARTED), (50, sentence("Ok.")), (0, DONE)])
+    rig.voice.clip_seconds = 1.0
+    rig.ears.say("first")
+    await settle()
+    await rig.clock.advance(NEUTRAL_AT + 100)  # the neutral filler is playing
+    assert any(w == "start" and l.startswith("C:") for w, l, _ in rig.sink.events)
+    rig.ears.interim()
+    await settle()
+    assert any(w == "cancelled" for w, _, _ in rig.sink.events)  # hushed, not a barge-in
+    assert rig.brain.closed == 0  # the first turn is still the held fragment
+    await rig.clock.advance(100)
+    rig.ears.say("second")
+    await settle()
+    await rig.clock.advance(200)
+    assert [c[2] for c in rig.brain.calls] == ["first", "first second"]
+    assert rig.brain.closed >= 1  # the first stream was closed before the joined turn
+    assert rig.spoken[-1] == "S:Ok."
+    _no_overlap(rig.sink.events)
+
+
+async def test_the_window_counts_to_the_first_words_of_the_new_piece(make):
+    rig = await make([(0, STARTED), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)])
+    rig.ears.say("first")
+    await settle()
+    await rig.clock.advance(config.MERGE_WINDOW_MS - 50)
+    rig.ears.interim()
+    await settle()
+    await rig.clock.advance(400)  # the second transcript is delivered after the window
+    rig.ears.say("second")
+    await settle()
+    assert [c[2] for c in rig.brain.calls] == ["first", "first second"]
+
+
+async def test_words_after_the_window_are_a_new_turn_even_with_a_filler(make):
+    rig = await make([(0, STARTED), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)])
+    rig.voice.clip_seconds = 3.0
+    rig.ears.say("first")
+    await settle()
+    await rig.clock.advance(config.MERGE_WINDOW_MS + 100)
+    rig.ears.interim()
+    await settle()
+    rig.ears.say("second")
+    await settle()
+    assert [c[2] for c in rig.brain.calls] == ["first", "second"]
+
+
+async def test_after_an_answer_frame_the_interim_is_a_barge_in_and_two_turns(make):
+    rig = await make([(0, STARTED), (50, sentence("Dah.")), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)])
+    rig.sink.hold = True
+    rig.ears.say("first")
+    await settle()
+    await rig.clock.advance(200)
+    before = rig.sink.stops
+    rig.ears.interim()
+    await settle()
+    assert rig.sink.stops > before and rig.brain.closed == 1
+    rig.sink.release()
+    rig.ears.say("second")
+    await settle()
+    assert [c[2] for c in rig.brain.calls] == ["first", "second"]
+
+
+async def test_three_fragments_with_interims_and_a_filler_join_and_reach_the_brain_once(make):
+    rig = await make(
+        [(0, STARTED), (10_000, DONE)], [(0, STARTED), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)]
+    )
+    rig.voice.clip_seconds = 1.0
+    for piece in ("one", "two", "three"):
+        rig.ears.say(piece)
+        await settle()
+        await rig.clock.advance(NEUTRAL_AT + 100)
+        if piece != "three":
+            rig.ears.interim()
+            await settle()
+    assert [c[2] for c in rig.brain.calls] == ["one", "one two", "one two three"]
+    assert sum(1 for c in rig.brain.calls if "three" in c[2]) == 1
+
+
+async def test_an_ears_failure_ends_the_call_as_ears_failed_without_a_traceback(caplog):
+    async def broken():
+        raise RuntimeError("secret words from the caller")
+        yield  # pragma: no cover
+
+    rig2 = Rig()
+    rig2.ears.events = broken
+    with caplog.at_level("DEBUG"):
+        rig2.task = asyncio.create_task(rig2.call.run())
+        await settle()
+        await rig2.clock.advance(100)
+    assert rig2.call.end_reason == "ears_failed"
+    assert all(r.exc_info is None and "secret" not in r.getMessage() for r in caplog.records)
+    await rig2.finish()

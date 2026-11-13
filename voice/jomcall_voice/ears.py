@@ -47,6 +47,8 @@ async def assemble(events: AsyncIterator, sleep=asyncio.sleep) -> AsyncIterator[
             queue.put_nowait(None)
 
     pump_task = asyncio.create_task(pump())
+    # Retrieved here or by `await` below, so asyncio never logs it with a traceback.
+    pump_task.add_done_callback(lambda t: t.cancelled() or t.exception())
     pieces: list[str] = []
     swallow_end = False
     getter: asyncio.Task | None = None
@@ -73,6 +75,7 @@ async def assemble(events: AsyncIterator, sleep=asyncio.sleep) -> AsyncIterator[
                 continue
             event, getter = getter.result(), None
             if event is None:
+                await pump_task  # an STT failure ends the call, it is not a hangup
                 return
             kind = event.type
             if kind == stt.SpeechEventType.START_OF_SPEECH:

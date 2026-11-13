@@ -131,3 +131,29 @@ async def test_interim_words_are_reported_without_their_text():
     await settle()
     assert [(e.kind, e.text) for e in out] == [("interim", "words")]
     task.cancel()
+
+
+async def test_a_failing_speech_engine_raises_from_assemble_and_logs_nothing(caplog):
+    class Broken:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise RuntimeError("secret words")
+
+    clock = FakeClock()
+    got = []
+
+    async def run():
+        async for e in assemble(Broken(), sleep=clock.sleep):
+            got.append(e)
+
+    with caplog.at_level("DEBUG"):
+        task = asyncio.create_task(run())
+        await settle()
+        assert task.done() and isinstance(task.exception(), RuntimeError)
+        import gc
+
+        gc.collect()
+        await settle()
+    assert got == [] and not caplog.records

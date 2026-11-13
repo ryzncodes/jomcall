@@ -103,6 +103,9 @@ class Call(TurnMixin):
         # (task, kind, started at, seconds long) of the filler now playing, if any
         # The previous utterance, kept only to join a sentence endpointing cut in two.
         self._prev: tuple[_Turn, str, float] | None = None
+        # When the first words of the next piece arrived (interim or final); the join
+        # window is measured to this moment, not to when the transcript is delivered.
+        self._piece_at: float | None = None
         self._filler_play: tuple[asyncio.Task, str, float, float] | None = None
 
     def hangup(self) -> None:
@@ -157,7 +160,8 @@ class Call(TurnMixin):
         try:
             async for event in self._ears.events():
                 self._on_ear(event)
-        except Exception:
+        except Exception as error:  # class name only: a message could carry a transcript
+            log.warning("ears failed: %s", type(error).__name__)
             return self._end("ears_failed")
         self._end("hangup")
 
@@ -267,6 +271,24 @@ class Call(TurnMixin):
             task.add_done_callback(lambda _t: self._maybe_finish(turn))
         return task
 
+    def _stop_filler(self) -> None:
+        """Stop a playing filler whatever it has left, leaving the turn itself running."""
+        if self._filler_play is None:
+            return
+        self._filler_play[0].cancel()
+        self._sink.stop()
+
+    def _joinable(self, started: float) -> bool:
+        """May words heard at `started` join the last delivered utterance? Yes while the
+        window is open and no answer audio has reached the sink, filler or not."""
+        if self._prev is None:
+            return False
+        before, _, delivered = self._prev
+        return (
+            started - delivered <= config.MERGE_WINDOW_MS / 1000
+            and "firstFrameAtMs" not in before.stages
+        )
+
     def _cancel_turn(self) -> None:
         turn, self._turn = self._turn, None
         if turn:
@@ -282,22 +304,34 @@ class Call(TurnMixin):
         if event.kind == "speech_start":
             return
         if event.kind == "interim":
-            if event.text.strip() and self._playing:
+            if not event.text.strip():
+                return
+            if self._prev is not None and self._piece_at is None:
+                self._piece_at = self._clock.now()
+            if self._piece_at is not None and self._joinable(self._piece_at):
+                # Probably the rest of the last sentence: hush a filler, keep the
+                # fragment's turn until the words arrive and join it.
+                if self._filler_play is not None:
+                    self._stop_filler()
+                elif self._playing:
+                    self._cancel_turn()
+                return
+            if self._playing:
                 self._cancel_turn()  # barge-in: stop audio, close the brain stream
             return
         text = event.text.strip()
         idle = (self._turn is None or (self._turn.run and self._turn.run.done())) and not self._playing
+        started, self._piece_at = self._piece_at, None
         if not text:
             if idle:  # noise with nothing in it: ask once, never over an answer
                 self._spawn(self._say_fixed(fillers.REPEAT[self._lang]))
             return
         eos = self._wall_ms()
-        prev, self._prev = self._prev, None
-        if prev is not None:
-            before, before_text, before_at = prev
-            fresh = self._clock.now() - before_at <= config.MERGE_WINDOW_MS / 1000
-            if fresh and self._turn is before and "firstFrameAtMs" not in before.stages:
-                text = before_text + " " + text  # one sentence, cut by endpointing
+        if self._prev is not None and self._joinable(
+            self._clock.now() if started is None else started
+        ):
+            text = self._prev[1] + " " + text  # one sentence, cut by endpointing
+        self._prev = None
         self._cancel_turn()  # a new turn supersedes a running one
         lang = fillers.guess_language(text)
         self._lang = lang
