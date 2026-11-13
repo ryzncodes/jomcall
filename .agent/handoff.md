@@ -1,5 +1,37 @@
 # Handoff
 
+## 2026-11-14 — browser voice call, milestone A
+
+Branch `feat/voice-milestone-a` (builds on PR #6; not merged, not pushed).
+
+**Changed**
+- Database support for spoken turns and an answer cache; spoken rules and tools; streamed Anthropic client; `startVoiceTest` web command; loopback NDJSON turn endpoint in the agent process (`127.0.0.1:54633`).
+- Pinned local LiveKit server in Docker (ports 54630-54632, loopback). Python worker in `voice/` (health listener 54634). Voice controls in the agent test panel (app on 4182 only).
+- Scripted caller that measures speed. Docs: `AGENTS.md`, `README.md`, `infra/local/README.md`, design spec section 10, `docs/qa/2026-11-14-voice-milestone-a.md`.
+- Owner approved on 2026-11-13, opt-in only with `JOMCALL_VOICE_PROVIDER=hosted`: Deepgram (`DEEPGRAM_API_KEY`, worker), Anthropic direct (`ANTHROPIC_API_KEY`, agent), Google TTS (`GOOGLE_CLOUD_API_KEY`, worker). Keys in `.env.hosted`.
+
+**Verified**
+- `npm run check:voice-model`, run 4: 48/48, 12 per language, no safety flags, read-back before the first tool on 8 of 8 booking cases.
+- `npm run check:voice-speed`, run 3 (20 turns, 3 calls): 20 of 20 answered, 0 timeouts, 0 refused voice requests. First sound median 1.42 s (p90 2.02 s, 16 of 20 within 1.5 s). Plain answer start median 3.02 s (goal 2.5 s, missed). Tool answer start: partial median 3.67 s over 6 of 8 observed turns (tool verdict: not decided). Silence goal missed (5.4 s, t01).
+
+**Review and next steps**
+- The final whole-branch review is done. Its fix wave is these commits: `fix(api): return up to 60 turns of a test session`; `fix(voice): keep the first half of a split utterance when a filler is playing`; `chore: pin the Anthropic SDK version exactly`; `docs: correct the voice measurement record and run instructions`.
+- The pull request for this branch must target `docs/inbound-voice-design` (PR #6) or wait for #6 to merge.
+- Open owner decisions: speed goals (design §9); the `av`/FFmpeg licence question; the fast-lane cache design before real callers; PDPA cross-border.
+
+**Not verified**
+- The owner spoke to the agent through the browser panel on 2026-11-14 (Chrome, desktop) and judged it "sounds great"; it was a free conversation, not the scripted twenty turns, with no timings recorded. Still unchecked: stop-during-connect races, 390 px width, dark theme, BM text, accessibility.
+- Rule rewording in commit 61e053e was not re-gated.
+- Cause of one 5.4 s first turn. Single measured run only (owner's choice).
+- Open limits (one line each in the QA record): Google speech limit (~11 requests/min, milestone B blocker); answer cache time-dependence decision; past-tense false-success check; read-back is a prompt rule only; Manglish endpointing splits; PDPA cross-border decision; fake test organizations left by each measured run.
+- Turn detector not installed (`livekit-agents` pinned 1.6.0).
+
+**Next, in order**
+1. Owner speaks the 20 turns in the browser (plan Task 12, Step 5).
+2. Owner decides: accept the speed numbers, or switch to the speech-to-speech model (design section 9).
+3. Final whole-branch review.
+4. Merge PR #5, then PR #6, then open a pull request for this branch. Each merge needs the owner's explicit approval.
+
 ## 2026-11-13 — agent tool calling and hosted model
 
 Branch `fix/agent-tool-calling`.

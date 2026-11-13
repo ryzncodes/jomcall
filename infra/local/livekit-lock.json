@@ -1,0 +1,8 @@
+{
+  "image": "docker.io/livekit/livekit-server",
+  "version": "v1.13.11",
+  "digest": "sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20",
+  "digestKind": "multi-arch image index (linux/amd64, linux/arm64)",
+  "license": "Apache-2.0",
+  "source": "https://hub.docker.com/r/livekit/livekit-server"
+}

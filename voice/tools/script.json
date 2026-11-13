@@ -1,0 +1,25 @@
+{
+  "note": "Twenty caller turns for the voice speed replay. Every question is answerable from the knowledge in tests/fixtures/agent-evaluation.json (consultation price, address, opening hours, duration) or is a booking, message or handoff request against the resource 'QA Room'. All names and details are fictional. 'esok' / 'tomorrow' is the day after today in Kuala Lumpur, which is the day the fixture schedule opens.",
+  "turns": [
+    { "id": "t01", "language": "ms", "kind": "plain", "text": "Berapakah harga konsultasi di sini?", "expectTool": null },
+    { "id": "t02", "language": "manglish", "kind": "plain", "text": "Eh, consultation price how much ah?", "expectTool": null },
+    { "id": "t03", "language": "en", "kind": "plain", "text": "Where is your studio located?", "expectTool": null },
+    { "id": "t04", "language": "ms", "kind": "plain", "text": "Apakah waktu operasi anda setiap hari?", "expectTool": null },
+    { "id": "t05", "language": "manglish", "kind": "booking", "text": "Can propose one consultation at QA Room esok, nine in the morning ah? Check availability dulu.", "expectTool": "book_slot" },
+    { "id": "t06", "language": "ms", "kind": "plain", "text": "Berapa lama tempoh satu sesi konsultasi?", "expectTool": null },
+    { "id": "t07", "language": "manglish", "kind": "plain", "text": "Opening hours macam mana ah? Buka sampai pukul berapa?", "expectTool": null },
+    { "id": "t08", "language": "en", "kind": "plain", "text": "How long does one consultation take?", "expectTool": null },
+    { "id": "t09", "language": "ms", "kind": "message", "text": "Tolong ambil pesanan ini untuk kakitangan. Saya akan tiba lewat sedikit esok.", "expectTool": "take_message" },
+    { "id": "t10", "language": "manglish", "kind": "plain", "text": "Address kat mana ah? Saya nak datang esok.", "expectTool": null },
+    { "id": "t11", "language": "ms", "kind": "plain", "text": "Boleh beritahu berapa bayaran untuk satu konsultasi?", "expectTool": null },
+    { "id": "t12", "language": "en", "kind": "booking", "text": "Please propose a consultation at QA Room tomorrow at ten in the morning.", "expectTool": "book_slot" },
+    { "id": "t13", "language": "manglish", "kind": "plain", "text": "Consultation duration berapa lama ah?", "expectTool": null },
+    { "id": "t14", "language": "ms", "kind": "handoff", "text": "Saya mahu bantuan manusia untuk permintaan luar biasa saya.", "expectTool": "handoff_to_human" },
+    { "id": "t15", "language": "manglish", "kind": "message", "text": "Help me take message ah: I sampai late sikit esok.", "expectTool": "take_message" },
+    { "id": "t16", "language": "ms", "kind": "plain", "text": "Di manakah alamat studio anda?", "expectTool": null },
+    { "id": "t17", "language": "manglish", "kind": "booking", "text": "Nak consultation at QA Room esok pukul ten in the morning, propose dulu ya.", "expectTool": "book_slot" },
+    { "id": "t18", "language": "manglish", "kind": "plain", "text": "Studio buka setiap hari ke? Pukul berapa buka ah?", "expectTool": null },
+    { "id": "t19", "language": "ms", "kind": "booking", "text": "Tolong cadangkan konsultasi di QA Room esok jam sembilan pagi. Semak ketersediaan dahulu.", "expectTool": "book_slot" },
+    { "id": "t20", "language": "en", "kind": "handoff", "text": "Please ask a staff member to help me with an unusual request.", "expectTool": "handoff_to_human" }
+  ]
+}

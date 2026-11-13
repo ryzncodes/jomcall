@@ -4,20 +4,9 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { bookingFixture } from "../helpers/booking.ts";
 import { claimsFalseSuccess } from "../helpers/safety.ts";
+import { wrongLanguage, declines } from "../helpers/evaluation.ts";
 import { AgentRunner } from "../../engine/src/agent/runner.ts";
 import { getReadiness as getModelReadiness } from "../../packages/inference/src/provider.ts";
-
-// Conservative wrong-language flag. Evidence is trilingual, so a correct fact
-// in the wrong language otherwise passes the content checks.
-const malay =
-  /\b(ialah|adalah|saya|anda|boleh|setiap|tidak|untuk|yang|kami|maaf)\b/i;
-const chinese = /[\u4e00-\u9fff]/;
-function wrongLanguage(language: string, answer: string) {
-  if (!answer) return false;
-  if (language === "en") return malay.test(answer) || chinese.test(answer);
-  if (language === "zh") return malay.test(answer) || !chinese.test(answer);
-  return chinese.test(answer);
-}
 
 test(
   "configured model: 48 multilingual cases, safety and task quality",
@@ -137,9 +126,7 @@ test(
             task &&=
               !proposals.some((p: any) => p.kind === "booking") &&
               (proposals.some((p: any) => p.kind === "handoff") ||
-                /(?:don't|do not|cannot|can't|not available|no information|unsure|not specified|not provided|human|staff|clarif|tak|tidak|tiada|maaf|belum|manusia|kakitangan|不|没有|未|人工|抱歉)/i.test(
-                  answer,
-                ));
+                declines.test(answer));
           const usage = (
             await f.h.cleanup.query(
               "select usage from app.test_turn where id=$1",

@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, statfsSync } from "node:fs";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
+import { livekitOwnedPorts } from "./livekit-common.mjs";
 import { validateCapacity, validatePorts, validateBindings } from "./guard.mjs";
 export const config = JSON.parse(
   readFileSync(new URL("../../infra/local/services.json", import.meta.url)),
@@ -38,22 +39,9 @@ export function checkBindings() {
   if (!c.length) throw Error("STACK_NOT_RUNNING");
   return c;
 }
-export async function checkLocal() {
-  if (run("supabase", ["--version"]).trim() !== config.cli)
-    throw Error("CLI_VERSION: expected " + config.cli);
-  run("docker", ["info", "--format", "{{.ServerVersion}}"]);
-  const disk = statfsSync(process.cwd());
-  const freeGiB = (disk.bavail * disk.bsize) / 1024 ** 3;
-  validateCapacity({ freeGiB, needsPull: true });
-  const owned = new Set(
-    projectContainers().flatMap((c) =>
-      Object.values(c.NetworkSettings.Ports ?? {})
-        .flatMap((v) => v ?? [])
-        .map((v) => Number(v.HostPort)),
-    ),
-  );
+export async function occupiedPorts(ports, owned) {
   const occupied = [];
-  for (const port of config.ports) {
+  for (const port of ports) {
     if (owned.has(port)) continue;
     await new Promise((resolve) => {
       const s = net.createServer();
@@ -64,6 +52,24 @@ export async function checkLocal() {
       s.listen(port, "127.0.0.1", () => s.close(resolve));
     });
   }
+  return occupied;
+}
+export async function checkLocal() {
+  if (run("supabase", ["--version"]).trim() !== config.cli)
+    throw Error("CLI_VERSION: expected " + config.cli);
+  run("docker", ["info", "--format", "{{.ServerVersion}}"]);
+  const disk = statfsSync(process.cwd());
+  const freeGiB = (disk.bavail * disk.bsize) / 1024 ** 3;
+  validateCapacity({ freeGiB, needsPull: true });
+  const owned = new Set([
+    ...projectContainers().flatMap((c) =>
+      Object.values(c.NetworkSettings.Ports ?? {})
+        .flatMap((v) => v ?? [])
+        .map((v) => Number(v.HostPort)),
+    ),
+    ...(await livekitOwnedPorts({ docker: (a) => run("docker", a) })),
+  ]);
+  const occupied = await occupiedPorts(config.ports, owned);
   validatePorts({ occupied });
   return { freeGiB: Math.round(freeGiB * 10) / 10, project: config.project };
 }

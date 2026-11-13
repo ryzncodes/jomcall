@@ -1,0 +1,944 @@
+{
+ "generatedAtUtc": "20261113T153005Z",
+ "endSilenceS": 3.5,
+ "note": "Timings and fake script ids only, copied from a real local run (run 2).",
+ "rows": [
+  {
+   "id": "t01",
+   "call": 1,
+   "bursts": [
+    {
+     "startMs": 1921.6763330623507,
+     "endMs": 2611.7552502453327
+    },
+    {
+     "startMs": 3121.245374903083,
+     "endMs": 7111.784666068852
+    },
+    {
+     "startMs": 7281.649791169912,
+     "endMs": 10161.904750149697
+    }
+   ],
+   "windowMs": 13671.68950010091,
+   "firstSoundMs": 1921.6763330623507,
+   "longestSilentGapMs": 1921.6763330623507,
+   "endedBy": "quiet",
+   "skewMs": 546.35205078125,
+   "brain": {
+    "transcriptMs": 395.716796875,
+    "firstSentenceMs": 1668.716796875,
+    "totalMs": 1668.716796875
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 77,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t02",
+   "call": 1,
+   "bursts": [
+    {
+     "startMs": 2347.8508749976754,
+     "endMs": 2698.9648749493062
+    },
+    {
+     "startMs": 3658.366209361702,
+     "endMs": 5728.737542163581
+    },
+    {
+     "startMs": 5908.926459029317,
+     "endMs": 8008.531209304929
+    }
+   ],
+   "windowMs": 11508.747749961913,
+   "firstSoundMs": 2347.8508749976754,
+   "longestSilentGapMs": 2347.8508749976754,
+   "endedBy": "quiet",
+   "skewMs": 912.5390625,
+   "brain": {
+    "transcriptMs": 311.591064453125,
+    "firstSentenceMs": 1479.591064453125,
+    "totalMs": 1479.591064453125
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 64,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t03",
+   "call": 1,
+   "bursts": [
+    {
+     "startMs": 1901.1180829256773,
+     "endMs": 2591.0932079330087
+    },
+    {
+     "startMs": 4700.507041998208,
+     "endMs": 8591.26095822081
+    },
+    {
+     "startMs": 8791.903499979526,
+     "endMs": 9532.324458230287
+    },
+    {
+     "startMs": 10140.935374889523,
+     "endMs": 12470.929582826793
+    },
+    {
+     "startMs": 12710.825916845351,
+     "endMs": 14851.348083224148
+    },
+    {
+     "startMs": 14970.92566685751,
+     "endMs": 17811.19812488556
+    }
+   ],
+   "windowMs": 20001.781042199582,
+   "firstSoundMs": 1901.1180829256773,
+   "longestSilentGapMs": 2109.413834065199,
+   "endedBy": "ceiling",
+   "skewMs": 614.658203125,
+   "brain": {
+    "transcriptMs": 308.56787109375,
+    "firstSentenceMs": 2878.56787109375,
+    "totalMs": 3148.56787109375
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 181,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t04",
+   "call": 1,
+   "bursts": [
+    {
+     "startMs": 1840.5705001205206,
+     "endMs": 2810.751875154674
+    },
+    {
+     "startMs": 4360.514500178397,
+     "endMs": 5841.146375276148
+    },
+    {
+     "startMs": 5990.984792355448,
+     "endMs": 8310.429500173777
+    },
+    {
+     "startMs": 8410.521292127669,
+     "endMs": 10150.64612518996
+    },
+    {
+     "startMs": 10750.619834288955,
+     "endMs": 14100.702333953232
+    },
+    {
+     "startMs": 14359.999500215054,
+     "endMs": 16150.717917121947
+    },
+    {
+     "startMs": 16430.974750313908,
+     "endMs": 18550.522042196244
+    }
+   ],
+   "windowMs": 20001.138667110354,
+   "firstSoundMs": 1840.5705001205206,
+   "longestSilentGapMs": 1840.5705001205206,
+   "endedBy": "ceiling",
+   "skewMs": 565.454833984375,
+   "brain": {
+    "transcriptMs": 312.81396484375,
+    "firstSentenceMs": 2609.81396484375,
+    "totalMs": 2970.81396484375
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 210,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t05",
+   "call": 1,
+   "bursts": [
+    {
+     "startMs": 2001.4113751240075,
+     "endMs": 2351.346832923591
+    },
+    {
+     "startMs": 5471.188957802951,
+     "endMs": 11811.321166101843
+    },
+    {
+     "startMs": 12391.464000102133,
+     "endMs": 12891.330749951303
+    },
+    {
+     "startMs": 13100.551915820688,
+     "endMs": 15991.585916131735
+    },
+    {
+     "startMs": 16151.465833187103,
+     "endMs": 18191.57450016588
+    },
+    {
+     "startMs": 18410.39212513715,
+     "endMs": 20011.235915813595
+    }
+   ],
+   "windowMs": 20001.77816580981,
+   "firstSoundMs": 2001.4113751240075,
+   "longestSilentGapMs": 3119.84212487936,
+   "endedBy": "ceiling",
+   "skewMs": 567.6572265625,
+   "brain": {
+    "transcriptMs": 312.01904296875,
+    "firstSentenceMs": 3858.01904296875,
+    "totalMs": 5476.01904296875
+   },
+   "state": "completed",
+   "tools": [
+    "check_availability"
+   ],
+   "proposals": [],
+   "answerChars": 321,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t06",
+   "call": 1,
+   "bursts": [
+    {
+     "startMs": 1941.311416681856,
+     "endMs": 2631.1530826985836
+    },
+    {
+     "startMs": 4891.365792136639,
+     "endMs": 8661.33437467739
+    },
+    {
+     "startMs": 8870.1848750934,
+     "endMs": 11091.134167034179
+    },
+    {
+     "startMs": 11641.102207824588,
+     "endMs": 14030.939624868333
+    },
+    {
+     "startMs": 14281.127499882132,
+     "endMs": 15041.195874791592
+    },
+    {
+     "startMs": 15161.698292009532,
+     "endMs": 20000.452082827687
+    }
+   ],
+   "windowMs": 20001.053374726325,
+   "firstSoundMs": 1941.311416681856,
+   "longestSilentGapMs": 2260.2127094380558,
+   "endedBy": "ceiling",
+   "skewMs": 650.61572265625,
+   "brain": {
+    "transcriptMs": 306.89013671875,
+    "firstSentenceMs": 3145.89013671875,
+    "totalMs": 3537.89013671875
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 246,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t07",
+   "call": 1,
+   "bursts": [
+    {
+     "startMs": 2051.045041065663,
+     "endMs": 2521.016458272934
+    },
+    {
+     "startMs": 5710.678666364402,
+     "endMs": 12031.108291111887
+    },
+    {
+     "startMs": 12481.19325004518,
+     "endMs": 14761.728333067149
+    },
+    {
+     "startMs": 15250.732291024178,
+     "endMs": 16461.375416014344
+    },
+    {
+     "startMs": 16601.590333040804,
+     "endMs": 20011.62270804867
+    }
+   ],
+   "windowMs": 20002.118416130543,
+   "firstSoundMs": 2051.045041065663,
+   "longestSilentGapMs": 3189.6622080914676,
+   "endedBy": "ceiling",
+   "skewMs": 590.552978515625,
+   "brain": {
+    "transcriptMs": 310.157958984375,
+    "firstSentenceMs": 4084.157958984375,
+    "totalMs": 4274.157958984375
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 228,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t08",
+   "call": 2,
+   "bursts": [
+    {
+     "startMs": 2114.2922090366483,
+     "endMs": 2464.336834140122
+    },
+    {
+     "startMs": 2984.7850422374904,
+     "endMs": 5404.071875140071
+    },
+    {
+     "startMs": 5524.100709240884,
+     "endMs": 5755.425458997488
+    }
+   ],
+   "windowMs": 9264.215667266399,
+   "firstSoundMs": 2114.2922090366483,
+   "longestSilentGapMs": 2114.2922090366483,
+   "endedBy": "quiet",
+   "skewMs": 605.76318359375,
+   "brain": {
+    "transcriptMs": 396.2158203125,
+    "firstSentenceMs": 1361.2158203125,
+    "totalMs": 1361.2158203125
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 35,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t09",
+   "call": 2,
+   "bursts": [
+    {
+     "startMs": 2154.4712921604514,
+     "endMs": 3114.0724171325564
+    },
+    {
+     "startMs": 3714.329667389393,
+     "endMs": 7284.8368750326335
+    },
+    {
+     "startMs": 7974.223334342241,
+     "endMs": 10464.646584112197
+    },
+    {
+     "startMs": 10883.523709140718,
+     "endMs": 15485.12529231608
+    },
+    {
+     "startMs": 15773.910000454634,
+     "endMs": 20014.593334160745
+    }
+   ],
+   "windowMs": 20005.804125219584,
+   "firstSoundMs": 2154.4712921604514,
+   "longestSilentGapMs": 2154.4712921604514,
+   "endedBy": "ceiling",
+   "skewMs": 878.19921875,
+   "brain": {
+    "transcriptMs": 311.19384765625,
+    "firstSentenceMs": 1350.19384765625,
+    "totalMs": 3049.19384765625
+   },
+   "state": "completed",
+   "tools": [
+    "take_message"
+   ],
+   "proposals": [
+    "message"
+   ],
+   "answerChars": 288,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t10",
+   "call": 2,
+   "bursts": [
+    {
+     "startMs": 2103.5299580544233,
+     "endMs": 2574.0932922251523
+    },
+    {
+     "startMs": 3154.2030833661556,
+     "endMs": 3504.187125004828
+    },
+    {
+     "startMs": 3633.7264999747276,
+     "endMs": 4864.920000303537
+    },
+    {
+     "startMs": 5413.4982083924115,
+     "endMs": 8594.100000094622
+    },
+    {
+     "startMs": 8914.198917336762,
+     "endMs": 9524.168791938573
+    },
+    {
+     "startMs": 10103.935583028942,
+     "endMs": 13104.608250074089
+    },
+    {
+     "startMs": 13334.060917142779,
+     "endMs": 16174.069208316505
+    },
+    {
+     "startMs": 16664.465458132327,
+     "endMs": 20014.698249977082
+    }
+   ],
+   "windowMs": 20005.184583365917,
+   "firstSoundMs": 2103.5299580544233,
+   "longestSilentGapMs": 2103.5299580544233,
+   "endedBy": "ceiling",
+   "skewMs": 646.789794921875,
+   "brain": {
+    "transcriptMs": 310.277099609375,
+    "firstSentenceMs": 2949.277099609375,
+    "totalMs": 3275.277099609375
+   },
+   "state": "completed",
+   "tools": [
+    "search_knowledge"
+   ],
+   "proposals": [],
+   "answerChars": 236,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t11",
+   "call": 2,
+   "bursts": [
+    {
+     "startMs": 2084.214959293604,
+     "endMs": 2554.2366250790656
+    },
+    {
+     "startMs": 4254.05904231593,
+     "endMs": 4323.6545000597835
+    },
+    {
+     "startMs": 4534.043624997139,
+     "endMs": 7933.698542173952
+    },
+    {
+     "startMs": 8554.636625107378,
+     "endMs": 9054.111459050328
+    },
+    {
+     "startMs": 9173.621458932757,
+     "endMs": 9273.784958980978
+    },
+    {
+     "startMs": 9473.919041920453,
+     "endMs": 12123.745708949864
+    },
+    {
+     "startMs": 12344.783124979585,
+     "endMs": 14873.634374924004
+    },
+    {
+     "startMs": 15604.659459087998,
+     "endMs": 20013.55795910582
+    }
+   ],
+   "windowMs": 20003.923791926354,
+   "firstSoundMs": 2084.214959293604,
+   "longestSilentGapMs": 2084.214959293604,
+   "endedBy": "ceiling",
+   "skewMs": 625.152099609375,
+   "brain": {
+    "transcriptMs": 310.479736328125,
+    "firstSentenceMs": 2882.479736328125,
+    "totalMs": 3207.479736328125
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 203,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t12",
+   "call": 2,
+   "bursts": [],
+   "windowMs": 15005.17495861277,
+   "firstSoundMs": null,
+   "longestSilentGapMs": null,
+   "endedBy": "timeout",
+   "skewMs": null,
+   "brain": null,
+   "state": null,
+   "tools": null,
+   "proposals": null,
+   "answerChars": null,
+   "fastServed": null,
+   "unverifiedReason": "no stored voice turn matched",
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t13",
+   "call": 2,
+   "bursts": [
+    {
+     "startMs": 2134.603916667402,
+     "endMs": 2954.4404589012265
+    },
+    {
+     "startMs": 4943.82308376953,
+     "endMs": 9054.350791722536
+    },
+    {
+     "startMs": 9514.513874892145,
+     "endMs": 11974.650999754667
+    },
+    {
+     "startMs": 12234.457833692431,
+     "endMs": 16374.618333987892
+    },
+    {
+     "startMs": 16504.24191681668,
+     "endMs": 19194.30241663009
+    },
+    {
+     "startMs": 19313.782791607082,
+     "endMs": 20014.455666989088
+    }
+   ],
+   "windowMs": 20004.82820859179,
+   "firstSoundMs": 2134.603916667402,
+   "longestSilentGapMs": 2134.603916667402,
+   "endedBy": "ceiling",
+   "skewMs": 663.582763671875,
+   "brain": {
+    "transcriptMs": 314.00927734375,
+    "firstSentenceMs": 3323.00927734375,
+    "totalMs": 5891.00927734375
+   },
+   "state": "completed",
+   "tools": [
+    "check_availability",
+    "book_slot"
+   ],
+   "proposals": [
+    "booking"
+   ],
+   "answerChars": 244,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t14",
+   "call": 2,
+   "bursts": [
+    {
+     "startMs": 2214.1080000437796,
+     "endMs": 2683.9952908828855
+    },
+    {
+     "startMs": 4704.375125002116,
+     "endMs": 5044.722458105534
+    },
+    {
+     "startMs": 5384.4263749197125,
+     "endMs": 7354.43625016138
+    },
+    {
+     "startMs": 7914.685749914497,
+     "endMs": 8294.413415938616
+    },
+    {
+     "startMs": 8484.274874906987,
+     "endMs": 12204.28779091686
+    },
+    {
+     "startMs": 12864.447208121419,
+     "endMs": 13424.304958190769
+    },
+    {
+     "startMs": 13864.126165863127,
+     "endMs": 16924.27429113537
+    },
+    {
+     "startMs": 17304.625208023936,
+     "endMs": 20003.725874926895
+    }
+   ],
+   "windowMs": 20004.94054099545,
+   "firstSoundMs": 2214.1080000437796,
+   "longestSilentGapMs": 2214.1080000437796,
+   "endedBy": "ceiling",
+   "skewMs": 754.935302734375,
+   "brain": {
+    "transcriptMs": 310.119873046875,
+    "firstSentenceMs": 4763.119873046875,
+    "totalMs": 5027.119873046875
+   },
+   "state": "completed",
+   "tools": [
+    "handoff_to_human"
+   ],
+   "proposals": [
+    "handoff"
+   ],
+   "answerChars": 175,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t15",
+   "call": 3,
+   "bursts": [
+    {
+     "startMs": 3.8009160198271275,
+     "endMs": 179.66824978590012
+    },
+    {
+     "startMs": 859.7425827756524,
+     "endMs": 1119.7154580056667
+    },
+    {
+     "startMs": 1230.3623328916728,
+     "endMs": 1670.0135411135852
+    },
+    {
+     "startMs": 2210.701124742627,
+     "endMs": 5179.79358298704
+    }
+   ],
+   "windowMs": 8680.795582942665,
+   "firstSoundMs": 3.8009160198271275,
+   "longestSilentGapMs": 680.0743329897523,
+   "endedBy": "quiet",
+   "skewMs": null,
+   "brain": null,
+   "state": null,
+   "tools": null,
+   "proposals": null,
+   "answerChars": null,
+   "fastServed": null,
+   "unverifiedReason": "no stored voice turn matched",
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t16",
+   "call": 3,
+   "bursts": [
+    {
+     "startMs": 1870.4317077063024,
+     "endMs": 2560.4127079620957
+    },
+    {
+     "startMs": 3060.5981666594744,
+     "endMs": 5230.16133274883
+    },
+    {
+     "startMs": 5380.888582672924,
+     "endMs": 7530.164374727756
+    },
+    {
+     "startMs": 7940.0463327765465,
+     "endMs": 8340.494791734964
+    },
+    {
+     "startMs": 8440.740916877985,
+     "endMs": 8860.655124988407
+    },
+    {
+     "startMs": 9340.272166766226,
+     "endMs": 12270.182667057961
+    }
+   ],
+   "windowMs": 15771.19508292526,
+   "firstSoundMs": 1870.4317077063024,
+   "longestSilentGapMs": 1870.4317077063024,
+   "endedBy": "quiet",
+   "skewMs": 585.48486328125,
+   "brain": {
+    "transcriptMs": 310.81103515625,
+    "firstSentenceMs": 1400.81103515625,
+    "totalMs": 1420.81103515625
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 111,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t17",
+   "call": 3,
+   "bursts": [
+    {
+     "startMs": 2031.3003328628838,
+     "endMs": 2861.3215826824307
+    },
+    {
+     "startMs": 4251.048000063747,
+     "endMs": 5990.893041938543
+    },
+    {
+     "startMs": 6530.657374765724,
+     "endMs": 11760.66504208371
+    },
+    {
+     "startMs": 11881.510416977108,
+     "endMs": 13091.058582756668
+    },
+    {
+     "startMs": 13381.437041796744,
+     "endMs": 13661.591541711241
+    },
+    {
+     "startMs": 14061.167750041932,
+     "endMs": 17231.42616705969
+    }
+   ],
+   "windowMs": 20001.724124886096,
+   "firstSoundMs": 2031.3003328628838,
+   "longestSilentGapMs": 2031.3003328628838,
+   "endedBy": "ceiling",
+   "skewMs": 580.48388671875,
+   "brain": {
+    "transcriptMs": 310.72705078125,
+    "firstSentenceMs": 2670.72705078125,
+    "totalMs": 3113.72705078125
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 219,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t18",
+   "call": 3,
+   "bursts": [
+    {
+     "startMs": 1960.7209167443216,
+     "endMs": 2250.6702917069197
+    },
+    {
+     "startMs": 2430.631292052567,
+     "endMs": 2710.440916698426
+    },
+    {
+     "startMs": 3330.7360420003533,
+     "endMs": 3650.3161669149995
+    },
+    {
+     "startMs": 4060.451957862824,
+     "endMs": 7190.962999816984
+    },
+    {
+     "startMs": 7430.831624660641,
+     "endMs": 8660.631957687438
+    },
+    {
+     "startMs": 8980.737624689937,
+     "endMs": 10029.877041690052
+    },
+    {
+     "startMs": 10639.898749999702,
+     "endMs": 13820.632457956672
+    }
+   ],
+   "windowMs": 17320.99199993536,
+   "firstSoundMs": 1960.7209167443216,
+   "longestSilentGapMs": 1960.7209167443216,
+   "endedBy": "quiet",
+   "skewMs": 574.93798828125,
+   "brain": {
+    "transcriptMs": 306.083984375,
+    "firstSentenceMs": 1835.083984375,
+    "totalMs": 1849.083984375
+   },
+   "state": "completed",
+   "tools": [],
+   "proposals": [],
+   "answerChars": 133,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t19",
+   "call": 3,
+   "bursts": [
+    {
+     "startMs": 2111.2385420128703,
+     "endMs": 2590.7170420885086
+    },
+    {
+     "startMs": 5200.60587534681,
+     "endMs": 5521.106959078461
+    },
+    {
+     "startMs": 5700.0275840982795,
+     "endMs": 8021.038166936487
+    },
+    {
+     "startMs": 8180.521667003632,
+     "endMs": 11010.39758393541
+    },
+    {
+     "startMs": 11600.41187517345,
+     "endMs": 15670.450584255159
+    },
+    {
+     "startMs": 15770.45329194516,
+     "endMs": 19810.083292182535
+    },
+    {
+     "startMs": 19930.88629236445,
+     "endMs": 20010.22004218772
+    }
+   ],
+   "windowMs": 20000.868834089488,
+   "firstSoundMs": 2111.2385420128703,
+   "longestSilentGapMs": 2609.888833258301,
+   "endedBy": "ceiling",
+   "skewMs": 663.312744140625,
+   "brain": {
+    "transcriptMs": 305.089111328125,
+    "firstSentenceMs": 3605.089111328125,
+    "totalMs": 6978.089111328125
+   },
+   "state": "completed",
+   "tools": [
+    "check_availability",
+    "book_slot"
+   ],
+   "proposals": [
+    "booking"
+   ],
+   "answerChars": 340,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  },
+  {
+   "id": "t20",
+   "call": 3,
+   "bursts": [
+    {
+     "startMs": 2120.5692500807345,
+     "endMs": 2941.2340831384063
+    },
+    {
+     "startMs": 4381.17687497288,
+     "endMs": 6385.059708021581
+    },
+    {
+     "startMs": 6820.954167284071,
+     "endMs": 10571.272292397916
+    },
+    {
+     "startMs": 11010.751875117421,
+     "endMs": 13721.596874985844
+    },
+    {
+     "startMs": 13990.887000225484,
+     "endMs": 18921.591917276382
+    },
+    {
+     "startMs": 19261.0125830397,
+     "endMs": 20011.455042045563
+    }
+   ],
+   "windowMs": 20001.871958374977,
+   "firstSoundMs": 2120.5692500807345,
+   "longestSilentGapMs": 2120.5692500807345,
+   "endedBy": "ceiling",
+   "skewMs": 654.5322265625,
+   "brain": {
+    "transcriptMs": 310.177001953125,
+    "firstSentenceMs": 4127.177001953125,
+    "totalMs": 4330.177001953125
+   },
+   "state": "completed",
+   "tools": [
+    "handoff_to_human"
+   ],
+   "proposals": [
+    "handoff"
+   ],
+   "answerChars": 233,
+   "fastServed": false,
+   "unverifiedReason": null,
+   "extraStoredRows": 0,
+   "errorCode": null
+  }
+ ]
+}
