@@ -52,6 +52,34 @@ def _body(session_id: str, transcript: str, turn_id: str, heard_at_ms: float) ->
     return body
 
 
+def _new_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=3.0, read=30.0, write=5.0, pool=3.0),
+        limits=httpx.Limits(keepalive_expiry=config.HTTP_KEEPALIVE_S),
+    )
+
+
+class BrainClient:
+    """One HTTP client for a whole call, so turns reuse the connection.
+
+    Closing a turn's iterator early still drops that connection, which is how the
+    server learns the turn was aborted.
+    """
+
+    def __init__(self, base_url: str | None = None):
+        self._base_url = base_url
+        self._client = _new_client()
+
+    def __call__(self, session_id, token, transcript, client_turn_id, heard_at_ms):
+        return stream_turn(
+            session_id, token, transcript, client_turn_id, heard_at_ms,
+            base_url=self._base_url, client=self._client,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+
 async def stream_turn(
     session_id: str,
     token: str,
@@ -60,6 +88,7 @@ async def stream_turn(
     heard_at_ms: float,
     *,
     base_url: str | None = None,
+    client: httpx.AsyncClient | None = None,
 ) -> AsyncIterator[dict]:
     url = (base_url or config.turn_url()).rstrip("/") + "/voice/turns"
     headers = {
@@ -67,27 +96,30 @@ async def stream_turn(
         "content-type": "application/json",
     }
     body = _body(session_id, transcript, client_turn_id, heard_at_ms)
-    timeout = httpx.Timeout(connect=3.0, read=30.0, write=5.0, pool=3.0)
+    own = client is None
+    http = client or _new_client()
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", url, content=body, headers=headers) as response:
-                if response.status_code == 401:
-                    raise BrainUnauthorized("401")
-                if response.status_code in (400, 413):
-                    raise BrainRejected(str(response.status_code))
-                if response.status_code != 200:
-                    raise BrainUnavailable(str(response.status_code))
-                buffer = b""
-                async for chunk in response.aiter_bytes():
-                    buffer += chunk
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        if line.strip():
-                            yield _parse(line)
-                if buffer.strip():
-                    yield _parse(buffer)
+        async with http.stream("POST", url, content=body, headers=headers) as response:
+            if response.status_code == 401:
+                raise BrainUnauthorized("401")
+            if response.status_code in (400, 413):
+                raise BrainRejected(str(response.status_code))
+            if response.status_code != 200:
+                raise BrainUnavailable(str(response.status_code))
+            buffer = b""
+            async for chunk in response.aiter_bytes():
+                buffer += chunk
+                while b"\n" in buffer:
+                    line, buffer = buffer.split(b"\n", 1)
+                    if line.strip():
+                        yield _parse(line)
+            if buffer.strip():
+                yield _parse(buffer)
     except httpx.HTTPError as error:
         raise BrainUnavailable(type(error).__name__) from None
+    finally:
+        if own:
+            await http.aclose()
 
 
 def _parse(line: bytes) -> dict:

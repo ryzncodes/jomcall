@@ -43,6 +43,9 @@ TTS_URL = (
 )
 TTS_SAMPLE_RATE = 24_000  # 16-bit mono PCM
 TTS_TIMEOUT_S = 20.0
+# Idle connections stay open this long so a call's later requests skip the TLS
+# handshake (httpx's default of 5 s is shorter than the pause between turns).
+HTTP_KEEPALIVE_S = 60.0
 
 # --- The brain: the voice turn endpoint in the TypeScript agent process ---
 DEFAULT_TURN_URL = "http://127.0.0.1:54633"

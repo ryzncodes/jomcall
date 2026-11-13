@@ -199,3 +199,29 @@ async def test_fixed_clips_are_trimmed_when_stored_and_when_loaded_from_old_cach
     old._path("Lama.").write_bytes(clip)
     assert len(old.lookup("Lama.")) == len(stored)
     assert old._path("Lama.").read_bytes() == clip  # the file itself is not rewritten
+
+
+async def test_one_client_serves_every_request_of_a_voice_and_aclose_ends_it(tmp_path, monkeypatch):
+    import httpx
+
+    created = []
+    real = httpx.AsyncClient
+
+    class Counting(real):
+        def __init__(self, *a, **kw):
+            created.append(kw.get("limits"))
+            super().__init__(*a, **kw)
+
+    monkeypatch.setattr(httpx, "AsyncClient", Counting)
+
+    async def handler(req):
+        return Reply(chunks=sse(b"\x01\x00"))
+
+    async with FakeServer(handler) as server:
+        voice = make(server, tmp_path)
+        for text in ("a", "b", "c"):
+            [c async for c in voice.speak(text)]
+        assert len(created) == 1 and created[0].keepalive_expiry >= 30
+        client = voice._client
+        await voice.aclose()
+        assert client.is_closed and voice._client is None

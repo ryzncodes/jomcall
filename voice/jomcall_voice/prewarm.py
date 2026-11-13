@@ -61,7 +61,14 @@ def main() -> None:
     languages = tuple(x for x in args.languages.split(",") if x in fillers.LANGUAGES)
     if not languages:
         parser.error("no known language in --languages")
-    result = asyncio.run(prewarm(Voice(args.preset), _RealClock(), languages))
+    async def go() -> PrewarmResult:
+        voice = Voice(args.preset)
+        try:
+            return await prewarm(voice, _RealClock(), languages)
+        finally:
+            await voice.aclose()
+
+    result = asyncio.run(go())
     print(f"done: {result.synthesized} new, {result.skipped} already cached, {result.remaining} remaining")
 
 

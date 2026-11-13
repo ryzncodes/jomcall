@@ -150,6 +150,13 @@ class Call:
             for task in (cap, main, *self._bg):
                 task.cancel()
             self._cancel_turn()
+            for part in (self._brain, self._voice):  # close the call's HTTP clients
+                close = getattr(part, "aclose", None)
+                if close is not None:
+                    try:
+                        await close()
+                    except Exception as error:
+                        log.warning("close failed: %s", type(error).__name__)
         log.info(
             "call ended reason=%s turns=%d fixedLinesSkipped=%d",
             self.end_reason, len(self.turns), self.fixed_lines_skipped,

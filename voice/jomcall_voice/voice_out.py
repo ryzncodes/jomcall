@@ -51,9 +51,24 @@ class Voice:
         self._cache_dir = Path(cache_dir) if cache_dir else config.CACHE_DIR
         self._memory: dict[str, bytes] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._client: httpx.AsyncClient | None = None
 
     def __repr__(self) -> str:  # never show the key
         return f"Voice({self.preset!r})"
+
+    def _http(self) -> httpx.AsyncClient:
+        """One client per Voice, so a call's requests reuse the TLS connection."""
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(config.TTS_TIMEOUT_S, connect=5.0),
+                limits=httpx.Limits(keepalive_expiry=config.HTTP_KEEPALIVE_S),
+            )
+        return self._client
+
+    async def aclose(self) -> None:
+        client, self._client = self._client, None
+        if client is not None:
+            await client.aclose()
 
     def _api_key(self) -> str:
         return self._key or config.env("GOOGLE_CLOUD_API_KEY")
@@ -71,31 +86,29 @@ class Voice:
             },
         }
         headers = {"x-goog-api-key": self._api_key(), "content-type": "application/json"}
-        timeout = httpx.Timeout(config.TTS_TIMEOUT_S, connect=5.0)
         carry = b""
         trimmer = LeadTrimmer()
         got_audio = False
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                async with client.stream("POST", self._url, json=body, headers=headers) as r:
-                    if r.status_code == 429:
-                        raise VoiceRefused("429")
-                    if r.status_code != 200:
-                        raise VoiceFailed(str(r.status_code))
-                    async for line in r.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        pcm = carry + _audio_of(line[5:].strip())
-                        cut = len(pcm) - (len(pcm) % 2)
-                        carry = pcm[cut:]
-                        if cut:
-                            got_audio = True
-                            ready = trimmer.feed(pcm[:cut])
-                            if ready:
-                                yield ready
-                    tail = trimmer.flush()
-                    if tail:
-                        yield tail
+            async with self._http().stream("POST", self._url, json=body, headers=headers) as r:
+                if r.status_code == 429:
+                    raise VoiceRefused("429")
+                if r.status_code != 200:
+                    raise VoiceFailed(str(r.status_code))
+                async for line in r.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    pcm = carry + _audio_of(line[5:].strip())
+                    cut = len(pcm) - (len(pcm) % 2)
+                    carry = pcm[cut:]
+                    if cut:
+                        got_audio = True
+                        ready = trimmer.feed(pcm[:cut])
+                        if ready:
+                            yield ready
+                tail = trimmer.flush()
+                if tail:
+                    yield tail
         except httpx.HTTPError as error:
             raise VoiceFailed(type(error).__name__) from None
         if not got_audio:

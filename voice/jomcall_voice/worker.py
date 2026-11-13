@@ -123,7 +123,7 @@ async def entrypoint(ctx: JobContext) -> None:
         greeting=meta["greeting"],
         disclosure=meta["disclosure"],
         ears=DeepgramEars(track),
-        brain=brain_client.stream_turn,
+        brain=brain_client.BrainClient(),
         voice=Voice(meta["voice"]),
         clock=RealClock(),
         sink=RoomSink(source),

@@ -117,3 +117,44 @@ async def test_a_long_transcript_is_cut_to_fit_the_body_limit():
         body = server.requests[0].body
     assert len(body) < 8 * 1024
     assert json.loads(body)["transcript"].startswith("你好")
+
+
+async def test_a_brain_client_reuses_one_http_client_for_every_turn(monkeypatch):
+    import httpx
+
+    created = []
+    real = httpx.AsyncClient
+
+    class Counting(real):
+        def __init__(self, *a, **kw):
+            created.append(1)
+            super().__init__(*a, **kw)
+
+    monkeypatch.setattr(httpx, "AsyncClient", Counting)
+
+    async def handler(req):
+        return Reply(chunks=ndjson({"type": "done", "turnId": "t", "timings": {}}))
+
+    async with FakeServer(handler) as server:
+        brain = brain_client.BrainClient(base_url=server.url)
+        for _ in range(3):
+            assert [e async for e in brain(SESSION, "tok", "hi", TURN, 1.0)][0]["type"] == "done"
+        assert len(created) == 1 and len(server.requests) == 3
+        client = brain._client
+        await brain.aclose()
+        assert client.is_closed
+
+
+async def test_closing_a_turn_early_still_aborts_it_with_a_shared_client():
+    async def handler(req):
+        return Reply(chunks=ndjson({"type": "started", "turnId": "t"}), hold_open=True)
+
+    async with FakeServer(handler) as server:
+        brain = brain_client.BrainClient(base_url=server.url)
+        stream = brain(SESSION, "tok", "hi", TURN, 1.0)
+        await stream.__anext__()
+        await stream.aclose()
+        import asyncio
+
+        await asyncio.wait_for(server.client_gone.wait(), 2)
+        await brain.aclose()

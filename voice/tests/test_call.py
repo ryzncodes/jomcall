@@ -732,3 +732,20 @@ async def test_the_trouble_line_is_not_cut_by_an_answer(make):
 async def test_the_opening_is_never_cut(make):
     rig = await make([])
     assert rig.sink.stops == 0
+
+
+async def test_the_calls_http_clients_are_closed_when_it_ends(make):
+    rig = await make([])
+    closed = []
+
+    async def close_brain():
+        closed.append("brain")
+
+    async def close_voice():
+        closed.append("voice")
+
+    rig.brain.aclose = close_brain
+    rig.voice.aclose = close_voice
+    rig.call.hangup()
+    await settle()
+    assert rig.task.done() and sorted(closed) == ["brain", "voice"]
