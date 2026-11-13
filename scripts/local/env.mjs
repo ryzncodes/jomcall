@@ -1,19 +1,7 @@
 import { writeFileSync, readFileSync, existsSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { run } from "./check.mjs";
-export function writeEnvironment() {
-  const status = JSON.parse(run("supabase", ["status", "-o", "json"]));
-  const prior = existsSync(".env.local")
-    ? Object.fromEntries(
-        readFileSync(".env.local", "utf8")
-          .trim()
-          .split("\n")
-          .map((x) => {
-            const i = x.indexOf("=");
-            return [x.slice(0, i), x.slice(i + 1)];
-          }),
-      )
-    : {};
+export function buildEnvironment(status, prior) {
   const secret = (name) => prior[name] || randomBytes(32).toString("hex");
   const dbPassword = secret("LOCAL_APP_PASSWORD"),
     workerPassword = secret("LOCAL_WORKER_PASSWORD"),
@@ -27,6 +15,11 @@ export function writeEnvironment() {
     INVITATION_KEY: secret("INVITATION_KEY"),
     CSRF_SECRET: secret("CSRF_SECRET"),
     JOMCALL_QUEUE_NAMESPACE: "local",
+    // The web server signs room tokens; both values stay server-side (no NEXT_PUBLIC_).
+    LIVEKIT_URL: "ws://127.0.0.1:54630",
+    LIVEKIT_API_KEY:
+      prior.LIVEKIT_API_KEY || "API" + randomBytes(8).toString("hex"),
+    LIVEKIT_API_SECRET: secret("LIVEKIT_API_SECRET"),
     JOMCALL_MODEL_PROVIDER: prior.JOMCALL_MODEL_PROVIDER ?? "disabled",
     // Web and worker must agree on the hosted model or sessions fail with
     // MODEL_CHANGED. The hosted key is never written here; see .env.hosted.
@@ -48,6 +41,22 @@ export function writeEnvironment() {
     SMTP_HOST: "127.0.0.1",
     SMTP_PORT: "54625",
   };
+  return { root, shared };
+}
+export function writeEnvironment() {
+  const status = JSON.parse(run("supabase", ["status", "-o", "json"]));
+  const prior = existsSync(".env.local")
+    ? Object.fromEntries(
+        readFileSync(".env.local", "utf8")
+          .trim()
+          .split("\n")
+          .map((x) => {
+            const i = x.indexOf("=");
+            return [x.slice(0, i), x.slice(i + 1)];
+          }),
+      )
+    : {};
+  const { root, shared } = buildEnvironment(status, prior);
   for (const [path, values] of [
     [".env.local", root],
     ["web/.env.local", shared],

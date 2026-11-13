@@ -1,4 +1,10 @@
-import { turnInput, type TestTurn, type Readiness } from "./agent-test.ts";
+import {
+  turnInput,
+  voiceStart,
+  type TestTurn,
+  type TestReadiness,
+  type VoiceStartResult,
+} from "./agent-test.ts";
 import { proposalApply } from "./agent-test.ts";
 import {
   testStart,
@@ -184,13 +190,19 @@ export const commands = {
     "GET",
     "/agent-tests/readiness",
     empty,
-    out<Readiness>(),
+    out<TestReadiness>(),
   ),
   submitTestTurn: route(
     "POST",
     "/agent-tests/:id/turns",
     turnInput.extend({ id: uuid }),
     out<TestTurn>(),
+  ),
+  startVoiceTest: route(
+    "POST",
+    "/agent-tests/:id/voice",
+    voiceStart.extend({ id: uuid }),
+    out<VoiceStartResult>(),
   ),
   cancelTestTurn: route(
     "POST",

@@ -22,6 +22,8 @@ export function publicTurn(row: Record<string, any>): TestTurn {
     citations,
     error_code,
     created_at,
+    channel,
+    timings,
   } = row;
   return {
     id,
@@ -34,6 +36,8 @@ export function publicTurn(row: Record<string, any>): TestTurn {
     citations,
     error_code,
     created_at,
+    channel: channel ?? "text",
+    timings: timings ?? {},
   };
 }
 function requireModel(ready: Readiness) {

@@ -1,4 +1,7 @@
-import type { Readiness } from "../../contracts/src/agent-test.ts";
+import type {
+  Readiness,
+  VoiceReadiness,
+} from "../../contracts/src/agent-test.ts";
 import type { ModelClient } from "./index.ts";
 import {
   configuredModel,
@@ -66,6 +69,40 @@ export async function getReadiness(env: Env = process.env): Promise<Readiness> {
       reason: "HOSTED_MODEL_REQUIRED",
     };
   }
+}
+
+export type VoiceConfig = { url: string; apiKey: string; apiSecret: string };
+
+const livekitNames = [
+  "LIVEKIT_URL",
+  "LIVEKIT_API_KEY",
+  "LIVEKIT_API_SECRET",
+] as const;
+
+// A voice test needs the hosted voice provider switch and all three LiveKit
+// values. The reason names what is missing and never echoes a value.
+export function voiceConfig(
+  env: Env = process.env,
+): { config: VoiceConfig; reason: null } | { config: null; reason: string } {
+  const missing: string[] = [];
+  if (env.JOMCALL_VOICE_PROVIDER !== "hosted")
+    missing.push("JOMCALL_VOICE_PROVIDER=hosted");
+  for (const name of livekitNames) if (!env[name]) missing.push(name);
+  if (missing.length)
+    return { config: null, reason: "Voice needs " + missing.join(", ") };
+  return {
+    config: {
+      url: env.LIVEKIT_URL!,
+      apiKey: env.LIVEKIT_API_KEY!,
+      apiSecret: env.LIVEKIT_API_SECRET!,
+    },
+    reason: null,
+  };
+}
+
+export function voiceReadiness(env: Env = process.env): VoiceReadiness {
+  const { config, reason } = voiceConfig(env);
+  return { configured: config !== null, reason };
 }
 
 export async function createModelClient(

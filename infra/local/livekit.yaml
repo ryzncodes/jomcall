@@ -1,0 +1,13 @@
+# Template. `npm run livekit:start` writes the real file, with generated
+# development keys, into the ignored .local/livekit/ directory. Never put keys here.
+# Ports are the container's own; the host publishes them on 127.0.0.1 only.
+port: 54630
+rtc:
+  tcp_port: 54631
+  udp_port: 54632
+  use_external_ip: false
+  node_ip: 127.0.0.1
+logging:
+  level: info
+keys:
+  __LIVEKIT_API_KEY__: __LIVEKIT_API_SECRET__
