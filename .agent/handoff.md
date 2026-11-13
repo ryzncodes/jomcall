@@ -54,7 +54,7 @@ Branch `fix/safety-checker-negation`.
 
 Branch `docs/speech-decisions`.
 
-- Decision record: `docs/decisions/0001-speech-providers.md`. Text-to-speech: Google `gemini-3.8-flash-lite-tts`, preset chosen by the business. Speech-to-text: Google `gemini-3.5-transcribe-live`, provisional.
+- Decision record: `docs/decisions/0001-speech-providers.md`. Text-to-speech: Google `gemini-3.8-flash-lite-tts`, preset chosen by the business. Speech-to-text: Deepgram `nova-3` multilingual, chosen in a second round the same day.
 - Evidence: blind listening test of 7 hosted voices and 7 Gemini presets, streamed speed direct from Google, and three speech-to-text runs on 118 Revolab clips.
 - Local only, not in git: fal voice generator on the spike worktree (`.local/speech-spike`, uncommitted), clips and transcripts under `spikes/speech-benchmark/data/`, keys in `.env.hosted` (`FAL_KEY`, `GOOGLE_CLOUD_API_KEY`, `HF_TOKEN`).
 - Open: per-turn delay of three to four seconds as measured piecewise; Speechmatics and Deepgram untested; PDPA cross-border position.

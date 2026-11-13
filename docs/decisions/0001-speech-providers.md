@@ -1,18 +1,18 @@
 # 0001 — Speech providers for calls
 
-Date: 13 November 2026. Status: text-to-speech chosen; speech-to-text provisional. Owner: decided by the project owner in session, evidence gathered by the coding assistant.
+Date: 13 November 2026. Status: text-to-speech chosen; speech-to-text chosen after a second round the same day (see "Second round"). Owner: decided by the project owner in session, evidence gathered by the coding assistant.
 
 This closes sub-project 1 of the design spec (§9) far enough to start inbound voice. It supersedes the provider shortlist in the [speech benchmark plan](../superpowers/plans/2026-10-15-speech-benchmark-spike.md) and the recommended path in [voice options](../research/voice-options.md). The plan's USD 0 rule no longer applies: the owner allowed paid hosted services on this date.
 
 ## Decision
 
-| Part of a call | Choice                                                                                             | Standing                                                                            |
-| -------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Text-to-speech | Google `gemini-3.8-flash-lite-tts`, direct from Google. The business owner picks the preset voice. | Chosen                                                                              |
-| Speech-to-text | Google `gemini-3.5-transcribe-live`, direct from Google                                            | Provisional: the only tested option that streams. Accuracy is the known weak point. |
-| Language model | `anthropic/claude-haiku-5.5` through OpenRouter                                                    | Decided earlier; see [the QA record](../qa/2026-11-13-agent-tool-calling.md)        |
+| Part of a call | Choice                                                                                             | Standing                                                                                            |
+| -------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Text-to-speech | Google `gemini-3.8-flash-lite-tts`, direct from Google. The business owner picks the preset voice. | Chosen                                                                                              |
+| Speech-to-text | Deepgram `nova-3`, multilingual mode, live streaming, direct from Deepgram                         | Chosen in the second round. First round's provisional pick was Google `gemini-3.5-transcribe-live`. |
+| Language model | `anthropic/claude-haiku-5.5` through OpenRouter                                                    | Decided earlier; see [the QA record](../qa/2026-11-13-agent-tool-calling.md)                        |
 
-Both speech services run on one Google Cloud project key and were served from `asia-southeast1`. Speech-to-text must stay swappable, as the spec already requires.
+Text-to-speech runs on a Google Cloud project key and was served from `asia-southeast1`. Speech-to-text must stay swappable, as the spec already requires.
 
 ## Text-to-speech evidence
 
@@ -76,12 +76,31 @@ Our scorer is stricter than the leaderboard's own (Scribe v2 scores 9.0% there a
 - Roughly one word in five is wrong on phone audio. Some errors change the meaning: "I mana ada subscribe service you" was heard as "I want to unsubscribe service you". The agent must confirm anything it is about to act on.
 - Short-phrase scores are inflated by the scorer (digits against spelled-out numbers) and by one-word clips.
 
+## Second round: Deepgram and Speechmatics
+
+The owner supplied Deepgram and Speechmatics keys later on 13 November. Same 118 clips, same scorer, audio streamed in real time.
+
+| Model                                             | Phone audio (66)  | Short phrases (52) | Final text after the speaker stops           |
+| ------------------------------------------------- | ----------------- | ------------------ | -------------------------------------------- |
+| Deepgram `nova-3`, `language=multi`               | 23.4% [16.9–30.8] | 33.6% [22.2–47.9]  | 0.25 s median, 0.44 s at the 90th percentile |
+| Deepgram `nova-3`, `language=ms`                  | 37.1% [30.2–45.0] | 23.4% [14.0–33.7]  | 0.29 s median                                |
+| Google `gemini-3.5-transcribe-live` (first round) | 19.3% [13.8–25.5] | 35.5% [20.6–52.0]  | 1.40 s median, 1.62 s at the 90th percentile |
+
+- Deepgram in multilingual mode is about as accurate as Google on phone audio (the intervals overlap heavily) and returns its final text more than a second sooner.
+- Malay-only mode is clearly worse on phone audio, where callers mix in English.
+- Deepgram returned nothing for 1 phone clip and 5 short clips. The agent must handle hearing nothing.
+- The leaderboard's 67% for Deepgram does not reproduce: 28 empty phone results there, 1 here.
+- With a 0.3 s silence wait before the end of a turn is declared, as a real call needs, Deepgram's part of a turn measured 0.54 s median in the end-to-end run recorded in the [voice design](../superpowers/specs/2026-11-13-inbound-voice-design.md).
+- Speechmatics was dropped by the owner before a clean score existed: on one clip its final text arrived 0.7 to 0.9 s after the speaker stopped, and its free tier's two-session limit made the run fail intermittently.
+
+Not checked: Deepgram's price for multilingual streaming; Mandarin; data location (Deepgram is a United States service).
+
 ## Risks and open items
 
-- **Turn delay.** Final transcript 1.4 s after speech ends, then the language model, then about 0.6 s to first audio: three to four seconds per turn as measured piecewise. That is too slow for a call. Shorter end-of-speech detection and starting the model on interim text are untested.
-- **Not tested:** Speechmatics; Deepgram with correct language settings; any language hint; Mandarin for either service; phone-quality audio for text-to-speech; more than three live streams at once.
+- **Turn delay.** With Google for speech-to-text a turn measured 3.4 s end to end; with Deepgram and a changed model output shape, 2.27 s. Details are in the voice design.
+- **Not tested:** any language hint or vocabulary hint; Mandarin for either service; phone-quality audio for text-to-speech; more than three live streams at once.
 - **Rate limits.** The owner's trial Google project refused text-to-speech requests beyond about ten a minute per model. Production limits are unknown.
-- **Data leaves Malaysia.** Caller audio and agent text go to Google. The PDPA cross-border position (spec §10) is still open and must be settled before real callers.
+- **Data leaves Malaysia.** Caller audio goes to Deepgram and agent text to Google. The PDPA cross-border position (spec §10) is still open and must be settled before real callers.
 - **Prices** come from third-party trackers and fal.ai's API, not from the providers' own pages.
 - **Small samples.** One listener; 66 phone clips; speed measured from one machine in Malaysia.
 
