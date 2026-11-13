@@ -83,6 +83,7 @@ class FakeVoice:
         self.requests: list[str] = []
         self.cached_calls: list[str] = []  # every lookup() of a fixed line
         self.uncached: set[str] = set()
+        self.clip_seconds: float | None = None  # pad fixed clips to this length
         self.refuse: set[str] = set()
         self.opening_memory: set[str] = set()
 
@@ -102,7 +103,12 @@ class FakeVoice:
 
     def lookup(self, text):
         self.cached_calls.append(text)
-        return None if text in self.uncached else ("C:" + text).encode()
+        if text in self.uncached:
+            return None
+        data = ("C:" + text).encode()
+        if self.clip_seconds:
+            data = data.ljust(int(self.clip_seconds * 48_000), b"\0")
+        return data
 
 
 class FakeSink:
@@ -111,18 +117,31 @@ class FakeSink:
         self.hold = False
         self.stops = 0
         self.fail = False
+        self.clock: FakeClock | None = None
+        self.events: list[tuple] = []  # (what, label, seconds) in order
         self._gate = asyncio.Event()
 
     async def play(self, chunks):
         if self.fail:
             raise RuntimeError("sink broke")
         data = b"".join([c async for c in chunks])
-        if self.hold:
-            await self._gate.wait()
-        self.played.append(data.decode())
+        label = data.rstrip(b"\0").decode()
+        t = self.clock.now() if self.clock else 0.0
+        self.events.append(("start", label, t))
+        try:
+            if self.hold:
+                await self._gate.wait()
+            if self.clock and len(data) > 2000:  # padded clips take their length to play
+                await self.clock.sleep(len(data) / 48_000)
+        except asyncio.CancelledError:
+            self.events.append(("cancelled", label, self.clock.now() if self.clock else 0.0))
+            raise
+        self.events.append(("end", label, self.clock.now() if self.clock else 0.0))
+        self.played.append(label)
 
     def stop(self):
         self.stops += 1
+        self.events.append(("stop", "", self.clock.now() if self.clock else 0.0))
 
     def release(self):
         self._gate.set()
@@ -168,6 +187,7 @@ class Rig:
         self.ears = FakeEars()
         self.voice = FakeVoice()
         self.sink = FakeSink()
+        self.sink.clock = self.clock
         self.brain = FakeBrain(self.clock, *scripts)
         self.stages: list[dict] = []
         self.call = Call(
@@ -640,3 +660,75 @@ async def test_the_trouble_deadline_also_counts_from_the_estimated_end_of_speech
     assert fillers.TROUBLE["en"] not in rig.voice.cached_calls
     await rig.clock.advance(200)
     assert fillers.TROUBLE["en"] in rig.voice.cached_calls
+
+
+# --- an answer never waits behind a filler ---------------------------------
+
+def _no_overlap(events):
+    playing = None
+    for what, label, t in events:
+        if what == "start":
+            assert playing is None, f"{label} started while {playing} was playing"
+            playing = label
+        elif what in ("end", "cancelled"):
+            playing = None
+
+
+async def test_an_answer_cuts_an_action_filler_and_starts_at_once(make):
+    rig = await make(
+        [(0, STARTED), (150, {"type": "tool", "name": "check_availability"}), (200, sentence("Ada.")), (0, DONE)]
+    )
+    rig.voice.clip_seconds = 2.0
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(150)  # the action filler starts
+    base = len(rig.sink.events)
+    await rig.clock.advance(250)  # the sentence arrives 200 ms into the filler
+    kinds = [(w, l.split(":")[0]) for w, l, _ in rig.sink.events[base - 1 :]]
+    assert ("cancelled", "C") in kinds and ("stop", "") in kinds
+    assert rig.sink.events[-1][:2] == ("end", "S:Ada.") or rig.sink.events[-1][:2] == ("start", "S:Ada.")
+    start = [e for e in rig.sink.events if e[:2] == ("start", "S:Ada.")][0]
+    assert start[2] == 0.35  # 150 + 200 ms: no waiting for the filler's 2 s
+    _no_overlap(rig.sink.events)
+
+
+async def test_a_neutral_filler_with_little_left_finishes_first(make):
+    rig = await make([(0, STARTED), (NEUTRAL_AT + 900, sentence("Ada.")), (0, DONE)])
+    rig.voice.clip_seconds = 1.0  # starts at NEUTRAL_AT, ends 1000 ms later
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(NEUTRAL_AT + 1200)
+    first_play = next(i for i, e in enumerate(rig.sink.events) if e[0] == "start" and e[1].startswith("C:"))
+    assert not any(e[0] in ("cancelled", "stop") for e in rig.sink.events[first_play:])
+    ends = [t for w, l, t in rig.sink.events if w == "end" and l.startswith("C:")]
+    starts = [t for w, l, t in rig.sink.events if w == "start" and l == "S:Ada."]
+    assert starts and starts[0] >= ends[0]
+    _no_overlap(rig.sink.events)
+
+
+async def test_a_neutral_filler_with_a_lot_left_is_cut(make):
+    rig = await make([(0, STARTED), (NEUTRAL_AT + 300, sentence("Ada.")), (0, DONE)])
+    rig.voice.clip_seconds = 1.0  # 700 ms still to go when the answer is ready
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(NEUTRAL_AT + 400)
+    assert any(w == "cancelled" for w, _, _ in rig.sink.events)
+    start = [t for w, l, t in rig.sink.events if w == "start" and l == "S:Ada."][0]
+    assert abs(start - (NEUTRAL_AT + 300) / 1000) < 1e-6
+    _no_overlap(rig.sink.events)
+
+
+async def test_the_trouble_line_is_not_cut_by_an_answer(make):
+    rig = await make([(0, STARTED), (config.TROUBLE_MS - config.EARS_LAG_MS + 300, sentence("Ada.")), (0, DONE)])
+    rig.voice.clip_seconds = 1.0
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(config.TROUBLE_MS + 3000)
+    assert not any(w == "cancelled" for w, _, _ in rig.sink.events)
+    _no_overlap(rig.sink.events)
+    assert rig.sink.played[-1] == "S:Ada."
+
+
+async def test_the_opening_is_never_cut(make):
+    rig = await make([])
+    assert rig.sink.stops == 0

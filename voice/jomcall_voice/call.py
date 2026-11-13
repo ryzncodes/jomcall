@@ -88,6 +88,9 @@ STAGE_FIELDS = (
 )
 
 
+BYTES_PER_SECOND = config.TTS_SAMPLE_RATE * 2
+
+
 def _log_failure(task: asyncio.Task) -> None:
     # Class name only: an exception message could carry a transcript or a key.
     if not task.cancelled() and task.exception() is not None:
@@ -122,6 +125,8 @@ class Call:
         self._lang = "en"
         self._last_filler: str | None = None
         self.fixed_lines_skipped = 0
+        # (task, kind, started at, seconds long) of the filler now playing, if any
+        self._filler_play: tuple[asyncio.Task, str, float, float] | None = None
 
     def hangup(self) -> None:
         self._end("hangup")
@@ -194,6 +199,8 @@ class Call:
                 self._stamp(turn, "ttsRequestAtMs")
                 source = self._voice.opening(text) if opening else self._voice.speak(text)
                 async for chunk in source:
+                    if turn is not None and not opening and "firstTtsByteAtMs" not in turn.stages:
+                        self._cut_filler()  # the answer is ready: it never waits for a filler
                     self._stamp(turn, "firstTtsByteAtMs")
                     queue.put_nowait(chunk)
                 queue.put_nowait(None)
@@ -244,7 +251,27 @@ class Call:
         async with self._lock:
             if unless and unless():
                 return
-            await self._play(clip())
+            task = asyncio.current_task()
+            if kind and task is not None:
+                seconds = len(audio) / (BYTES_PER_SECOND)
+                self._filler_play = (task, kind, self._clock.now(), seconds)
+            try:
+                await self._play(clip())
+            finally:
+                if self._filler_play and self._filler_play[0] is task:
+                    self._filler_play = None
+
+    def _cut_filler(self) -> None:
+        """Stop a playing filler so the answer starts now. An action filler is always
+        cut; a neutral one that is nearly over is left to finish."""
+        if self._filler_play is None:
+            return
+        task, kind, started, seconds = self._filler_play
+        left = seconds - (self._clock.now() - started)
+        if kind == "neutral" and left < config.NEUTRAL_FINISH_MS / 1000:
+            return
+        task.cancel()
+        self._sink.stop()
 
     def _spawn(self, coro: Awaitable, turn: _Turn | None = None) -> asyncio.Task:
         task = asyncio.ensure_future(coro)

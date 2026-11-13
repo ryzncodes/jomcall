@@ -13,6 +13,7 @@ from pathlib import Path
 NEUTRAL_ACK_MS = 800  # no sentence yet: say a one-or-two-word acknowledgement
 TROUBLE_MS = 4_000  # still no sentence: say the trouble line, once
 CALL_CAP_S = 300  # hard cap on one call
+NEUTRAL_FINISH_MS = 250  # a neutral filler with less than this left is not cut by an answer
 MAX_VOICE_REQUESTS_PER_TURN = 2  # first sentence alone, the rest in one request
 
 # End of speech reaches the worker about 0.9 s after the caller stops (median 0.92 s,
