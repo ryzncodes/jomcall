@@ -10,6 +10,7 @@ import { voiceTools } from "../../packages/domain/src/agent-test/voice-prompt.ts
 
 type Script = {
   deltas?: string[];
+  raw?: unknown[];
   content?: unknown[];
   stop_reason?: string;
   fail?: unknown;
@@ -34,6 +35,7 @@ function fake(script: Script) {
           async *[Symbol.asyncIterator]() {
             if (script.fail) throw script.fail;
             for (const event of events) yield event;
+            for (const event of script.raw ?? []) yield event;
           },
           async finalMessage() {
             return {
@@ -131,6 +133,40 @@ test("a tool_use block yields a validated tool event after flushed text", async 
     name: "check_availability",
     input: { resourceId: uuid, fromDate: "2026-11-14", days: 2 },
   });
+});
+
+test("a tool_use block start announces the tool before the round completes", async () => {
+  const { events } = await collect({
+    deltas: ["Sekejap saya semak"],
+    raw: [
+      {
+        type: "content_block_start",
+        index: 1,
+        content_block: {
+          type: "tool_use",
+          id: "toolu_1",
+          name: "take_message",
+          input: {},
+        },
+      },
+    ],
+    stop_reason: "tool_use",
+    content: [
+      { type: "text", text: "Sekejap saya semak" },
+      {
+        type: "tool_use",
+        id: "toolu_1",
+        name: "take_message",
+        input: { text: "Hi" },
+      },
+    ],
+  });
+  assert.deepEqual(
+    events.map((e) => e.type),
+    ["sentence", "tool_start", "tool", "end"],
+  );
+  assert.deepEqual(events[0], { type: "sentence", text: "Sekejap saya semak" });
+  assert.deepEqual(events[1], { type: "tool_start", name: "take_message" });
 });
 
 test("invalid tool input, truncation and refusal fail closed", async () => {

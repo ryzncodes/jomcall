@@ -11,6 +11,9 @@ export const voiceModel = "claude-haiku-5-5";
 
 export type VoiceModelEvent =
   | { type: "sentence"; text: string }
+  // The model has started calling a tool; the validated `tool` follows once
+  // the whole round is complete.
+  | { type: "tool_start"; name: string }
   | { type: "tool"; id: string; name: string; input: unknown }
   | {
       type: "end";
@@ -30,10 +33,15 @@ function mapError(error: unknown): Error {
   return Error("MODEL_UNAVAILABLE");
 }
 
+// One client per process: building one per call would repeat its setup on
+// every spoken turn.
+let shared: Anthropic | undefined;
+const sharedClient = () => (shared ??= new Anthropic());
+
 export async function* streamVoiceModel(
   input: { stable: string; volatile: string; messages: unknown[] },
   signal: AbortSignal,
-  client: Pick<Anthropic, "messages"> = new Anthropic(),
+  client: Pick<Anthropic, "messages"> = sharedClient(),
 ): AsyncIterable<VoiceModelEvent> {
   if (signal.aborted) return;
   // The stable block carries the cache breakpoint; the volatile block (date and
@@ -64,6 +72,18 @@ export async function* streamVoiceModel(
     );
     for await (const event of stream) {
       if (signal.aborted) return;
+      if (
+        event.type === "content_block_start" &&
+        event.content_block.type === "tool_use"
+      ) {
+        // Text always comes before a tool call: speak what is pending first,
+        // so the caller hears the lead-in before the tool is announced.
+        const lead = pending.trim();
+        pending = "";
+        if (lead) yield { type: "sentence", text: lead };
+        yield { type: "tool_start", name: event.content_block.name };
+        continue;
+      }
       if (
         event.type !== "content_block_delta" ||
         event.delta.type !== "text_delta"

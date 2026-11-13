@@ -190,6 +190,8 @@ export async function runVoiceTurn(
     const usage: unknown[] = [];
     let firstSentenceAt: number | null = null;
     let tools = 0;
+    // Tools announced to the caller; always at least `tools`.
+    let announced = 0;
     let finished = false;
 
     for (let round = 0; round < MAX_MODEL_CALLS && !finished; round++) {
@@ -203,9 +205,18 @@ export async function runVoiceTurn(
           firstSentenceAt ??= deps.now();
           spoken.push(event.text);
           emit({ type: "sentence", text: event.text });
+        } else if (event.type === "tool_start") {
+          // Announce at once so the voice can start its filler; the tool runs
+          // only from the validated event that follows the round.
+          if (announced >= MAX_TOOL_CALLS) throw Error("TOOL_LIMIT");
+          announced++;
+          emit({ type: "tool", name: event.name });
         } else if (event.type === "tool") {
           if (tools >= MAX_TOOL_CALLS) throw Error("TOOL_LIMIT");
-          emit({ type: "tool", name: event.name });
+          if (announced <= tools) {
+            announced++;
+            emit({ type: "tool", name: event.name });
+          }
           checkAbort();
           const result = await executeTestTool(access, tools++, {
             name: event.name,

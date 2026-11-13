@@ -471,6 +471,81 @@ test("the stable prompt is byte-identical across turns with different evidence",
   }
 });
 
+test("a tool is announced once, at tool_start, before the round ends", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    let phase = "";
+    let calls = 0;
+    const model = async function* () {
+      calls++;
+      if (calls > 1) {
+        yield sentence("Staff will read that.");
+        yield end("Staff will read that.");
+        return;
+      }
+      yield sentence("Let me note that down.");
+      phase = "start";
+      yield { type: "tool_start", name: "take_message" } as const;
+      phase = "validated";
+      yield toolEvent("take_message", { text: "Hello from Contoh." });
+      yield end();
+    };
+    const announced: string[] = [];
+    const events = await f.run(
+      s,
+      "Please leave a message",
+      model as any,
+      new AbortController(),
+      (e) => {
+        if (e.type === "tool") announced.push(phase);
+      },
+    );
+    assert.deepEqual(announced, ["start"]);
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ["started", "sentence", "tool", "sentence", "done"],
+    );
+    const [turn] = await f.turns(s.id);
+    const n = (
+      await f.h.cleanup.query(
+        "select count(*)::int n from app.test_proposal where turn_id=$1",
+        [turn.id],
+      )
+    ).rows[0].n;
+    assert.equal(n, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a tool whose validated input is invalid fails the turn and runs nothing", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const model = async function* () {
+      yield { type: "tool_start", name: "take_message" } as const;
+      throw Error("MODEL_OUTPUT_INVALID");
+    };
+    const events = await f.run(s, "Please leave a message", model as any);
+    assert.deepEqual(events.at(-1), {
+      type: "error",
+      code: "MODEL_OUTPUT_INVALID",
+    });
+    const [turn] = await f.turns(s.id);
+    assert.equal(turn.state, "failed");
+    const n = (
+      await f.h.cleanup.query(
+        "select count(*)::int n from app.test_proposal where turn_id=$1",
+        [turn.id],
+      )
+    ).rows[0].n;
+    assert.equal(n, 0);
+  } finally {
+    await f.close();
+  }
+});
+
 test("stored usage carries the cache write count", async () => {
   const f = await fixture();
   try {
