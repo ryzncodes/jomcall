@@ -103,11 +103,7 @@ export async function prepareLivekit({
   log = console.log,
 }) {
   const lock = await readLock();
-  try {
-    docker(["info", "--format", "{{.ServerVersion}}"]);
-  } catch {
-    throw Error("DOCKER_UNAVAILABLE");
-  }
+  assertDocker(docker);
   if (download) docker(["pull", imageRef(lock)]);
   try {
     const info = verifyImage(docker, lock);
@@ -127,12 +123,36 @@ async function readState(dir) {
     return undefined;
   }
 }
+// Only a confirmed "No such container" counts as absent. Any other Docker
+// failure (daemon down, wrong context, timeout) must not look like absence.
 function inspectContainer(docker, id) {
   try {
-    return JSON.parse(docker(["inspect", id]))[0];
-  } catch {
-    return undefined;
+    return JSON.parse(docker(["inspect", "--type", "container", id]))[0];
+  } catch (e) {
+    if (/no such (container|object)/i.test(`${e.stderr ?? ""}${e.message}`))
+      return undefined;
+    throw Error("DOCKER_UNAVAILABLE");
   }
+}
+export function assertDocker(docker) {
+  try {
+    docker(["info", "--format", "{{.ServerVersion}}"]);
+  } catch {
+    throw Error("DOCKER_UNAVAILABLE");
+  }
+}
+// Host ports published by the LiveKit container this project started, if any.
+export async function livekitOwnedPorts({
+  docker = dockerRunner,
+  dir = stateDir,
+} = {}) {
+  const saved = await readState(dir);
+  if (!saved) return [];
+  const c = inspectContainer(docker, saved.id);
+  if (!owned(c, saved.id)) return [];
+  return Object.values(c.NetworkSettings?.Ports ?? {})
+    .flatMap((v) => v ?? [])
+    .map((v) => Number(v.HostPort));
 }
 const owned = (c, id) =>
   c &&
@@ -170,6 +190,7 @@ export async function startLivekit({
     secret = env.LIVEKIT_API_SECRET;
   if (!key || !secret) throw Error("LIVEKIT_KEYS_MISSING");
   const lock = await readLock();
+  assertDocker(docker);
   verifyImage(docker, lock);
   const saved = await readState(dir);
   if (saved) {

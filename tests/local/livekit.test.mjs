@@ -20,10 +20,13 @@ import {
   prepareLivekit,
   startLivekit,
   stopLivekit,
+  livekitOwnedPorts,
   containerName,
   labelKey,
   labelValue,
 } from "../../scripts/local/livekit-common.mjs";
+import net from "node:net";
+import { occupiedPorts } from "../../scripts/local/check.mjs";
 import { buildEnvironment } from "../../scripts/local/env.mjs";
 
 const template = await readFile(
@@ -35,12 +38,14 @@ const ref = imageRef(lock);
 const ID = "a".repeat(64);
 
 // Fake Docker: records calls, keeps one container in memory.
-function fakeDocker({ image = "ok", container } = {}) {
+function fakeDocker({ image = "ok", container, down = false } = {}) {
   const calls = [];
   const state = { container };
   const docker = (args) => {
     calls.push(args);
     const [cmd] = args;
+    if (down && cmd === "info")
+      throw Error("Cannot connect to the Docker daemon");
     if (cmd === "info") return "29.0.0";
     if (cmd === "pull") return "";
     if (cmd === "image") {
@@ -55,12 +60,15 @@ function fakeDocker({ image = "ok", container } = {}) {
             },
       ]);
     }
+    if (down) throw Error("Cannot connect to the Docker daemon");
     if (cmd === "inspect") {
       if (
         !state.container ||
-        ![state.container.Id, containerName].includes(args[1])
+        ![state.container.Id, containerName].includes(args.at(-1))
       )
-        throw Error("no such object");
+        throw Error(
+          "Error response from daemon: No such container: " + args.at(-1),
+        );
       return JSON.stringify([state.container]);
     }
     if (cmd === "run") {
@@ -305,4 +313,76 @@ test("LiveKit secret goes to root and web env, is generated once, preserved, and
   assert.equal(again.root.LIVEKIT_API_SECRET, first.root.LIVEKIT_API_SECRET);
   assert.equal(again.root.LIVEKIT_API_KEY, first.root.LIVEKIT_API_KEY);
   assert.equal(again.shared.LIVEKIT_API_SECRET, first.root.LIVEKIT_API_SECRET);
+});
+
+test("stop keeps its state file and fails when Docker errors; start reports DOCKER_UNAVAILABLE", async () => {
+  const dir = (await tmp()) + "/";
+  try {
+    await mkdir(dir, { recursive: true });
+    await writeFile(dir + "container.json", JSON.stringify({ id: ID }));
+    const down = fakeDocker({ down: true });
+    await assert.rejects(
+      stopLivekit({ docker: down.docker, dir }),
+      /DOCKER_UNAVAILABLE/,
+    );
+    assert.ok(!down.calls.some((c) => c[0] === "rm"));
+    assert.deepEqual(
+      JSON.parse(await readFile(dir + "container.json", "utf8")),
+      { id: ID },
+    );
+    await assert.rejects(
+      startLivekit({ docker: down.docker, dir, env, template, ready }),
+      /DOCKER_UNAVAILABLE/,
+    );
+    assert.ok(!down.calls.some((c) => c[0] === "image"));
+    // Confirmed gone: state is dropped and stop succeeds.
+    const gone = fakeDocker();
+    assert.equal(await stopLivekit({ docker: gone.docker, dir }), true);
+    await assert.rejects(readFile(dir + "container.json"));
+    assert.ok(
+      gone.calls.every((c) => c[0] !== "inspect" || c.includes("--type")),
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("preflight exemption covers only ports of the recorded, labelled LiveKit container", async () => {
+  const dir = (await tmp()) + "/";
+  try {
+    const bound = (p, proto) => [{ HostIp: "127.0.0.1", HostPort: String(p) }];
+    const ports = {
+      "54630/tcp": bound(54630),
+      "54631/tcp": bound(54631),
+      "54632/udp": bound(54632),
+    };
+    const f = fakeDocker();
+    await startLivekit({ docker: f.docker, dir, env, template, ready });
+    f.state.container.NetworkSettings = { Ports: ports };
+    assert.deepEqual(
+      await livekitOwnedPorts({ docker: f.docker, dir }),
+      [54630, 54631, 54632],
+    );
+    // Foreign container on the same name (unlabelled) is not exempted.
+    f.state.container.Config.Labels = {};
+    assert.deepEqual(await livekitOwnedPorts({ docker: f.docker, dir }), []);
+    // No recorded state: nothing is exempted, even for a labelled container.
+    f.state.container.Config.Labels = { [labelKey]: labelValue };
+    await rm(dir + "container.json");
+    assert.deepEqual(await livekitOwnedPorts({ docker: f.docker, dir }), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("port preflight skips ports we own and still flags a foreign listener", async () => {
+  const srv = net.createServer();
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  const port = srv.address().port;
+  try {
+    assert.deepEqual(await occupiedPorts([port], new Set()), [port]);
+    assert.deepEqual(await occupiedPorts([port], new Set([port])), []);
+  } finally {
+    await new Promise((r) => srv.close(r));
+  }
 });
