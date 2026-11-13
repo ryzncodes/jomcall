@@ -8,6 +8,7 @@ import {
 import { voiceSystem } from "../../../packages/domain/src/agent-test/voice-prompt.ts";
 import {
   fastLaneKey,
+  mentionsLiveState,
   spokenLanguage,
 } from "../../../packages/domain/src/agent-test/fast-lane.ts";
 import { claimsFalseSuccess } from "../../../packages/domain/src/agent-test/safety.ts";
@@ -246,7 +247,8 @@ export async function runVoiceTurn(
       { answer, timings: t, evidence, usage },
     );
     if (!saved) throw Error("TURN_CANCELLED");
-    if (standalone && tools === 0)
+    // An answer that speaks of the present moment is stale by the next call, whatever the question looked like.
+    if (standalone && tools === 0 && !mentionsLiveState(answer))
       await guarded(
         repo.voiceCachePut(request.sessionId, request.tokenHash, {
           language,

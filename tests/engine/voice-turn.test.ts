@@ -446,3 +446,81 @@ test("abort landing during the completion write emits no done", async () => {
     await f.close();
   }
 });
+
+const cached = async (f: any) =>
+  (
+    await f.h.cleanup.query(
+      "select count(*)::int n from app.voice_answer_cache where org_id=$1",
+      [f.h.orgA.id],
+    )
+  ).rows[0].n;
+const question = "What time are you open on weekdays?";
+
+test("an answer about the present moment is never cached", async () => {
+  const f = await fixture();
+  try {
+    const first = await f.makeSession();
+    const second = await f.makeSession();
+    const live = [
+      sentence("Yes, we are open now until 6 pm."),
+      end("Yes, we are open now until 6 pm."),
+    ];
+    const { model, seen } = f.scripted(live, live);
+    await f.run(first, question, model);
+    assert.equal((await f.turns(first.id))[0].state, "completed");
+    assert.equal(await cached(f), 0);
+    const events = await f.run(second, question, model);
+    assert.ok(!events.some((e) => e.type === "fast"));
+    assert.equal(seen.length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a turn that used a tool is not cached", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model } = f.scripted(
+      [toolEvent("take_message", { text: "Hello from Contoh." }), end()],
+      [sentence("Staff will read that."), end("Staff will read that.")],
+    );
+    const events = await f.run(s, question, model);
+    assert.equal(events.at(-1)?.type, "done");
+    assert.equal(await cached(f), 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a turn with earlier turns in the session is not cached", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const answer = [sentence("We open at nine."), end("We open at nine.")];
+    const { model } = f.scripted(answer, answer);
+    await f.run(s, "Do you have a room for four people?", model);
+    const before = await cached(f);
+    await f.run(s, question, model);
+    assert.equal((await f.turns(s.id)).length, 2);
+    assert.equal(await cached(f), before);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an unsafe reply is not cached", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model } = f.scripted([
+      sentence("Your appointment is confirmed."),
+      end("Your appointment is confirmed."),
+    ]);
+    await f.run(s, question, model);
+    assert.equal((await f.turns(s.id))[0].state, "failed");
+    assert.equal(await cached(f), 0);
+  } finally {
+    await f.close();
+  }
+});
