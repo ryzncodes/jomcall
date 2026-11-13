@@ -1,0 +1,331 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash, randomUUID } from "node:crypto";
+import { bookingFixture } from "../helpers/booking.ts";
+import { AgentRepository } from "../../engine/src/agent/repository.ts";
+import {
+  runVoiceTurn,
+  type VoiceTurnEvent,
+} from "../../engine/src/agent/voice-turn.ts";
+import type { VoiceModelEvent } from "../../packages/inference/src/anthropic-voice.ts";
+
+const sha = (value: string) => createHash("sha256").update(value).digest("hex");
+const usage = { input: 10, output: 5, cacheRead: 0 };
+const sentence = (text: string): VoiceModelEvent => ({
+  type: "sentence",
+  text,
+});
+const end = (text = ""): VoiceModelEvent => ({
+  type: "end",
+  text,
+  content: [{ type: "text", text }],
+  usage,
+});
+const toolEvent = (name: string, input: unknown): VoiceModelEvent => ({
+  type: "tool",
+  id: "toolu_" + randomUUID().slice(0, 8),
+  name,
+  input,
+});
+
+async function fixture() {
+  const f = await bookingFixture();
+  const repository = new AgentRepository(f.h.namespace);
+  const knowledge = [
+    {
+      kind: "text",
+      name: "Contoh Hours",
+      content: "Contoh Room opens weekdays from nine to six.",
+    },
+  ];
+  const makeSession = async (seconds = 300) => {
+    const session = (
+      await f.req("POST", "/agent-tests", {
+        agentId: f.h.orgA.agentId,
+        locationId: f.h.orgA.locationId,
+        source: { kind: "draft", expectedRevision: 1 },
+      })
+    ).body.data;
+    const token = randomUUID();
+    await f.h.cleanup.query(
+      "update app.test_session set channel='voice',voice_token_hash=$2,voice_expires_at=now()+$3*interval '1 second',snapshot=jsonb_set(snapshot,'{knowledge}',$4::jsonb) where id=$1",
+      [session.id, sha(token), seconds, JSON.stringify(knowledge)],
+    );
+    return { id: session.id as string, hash: sha(token) };
+  };
+  // A scripted model: one list of events per call, and a record of the calls.
+  const scripted = (...calls: VoiceModelEvent[][]) => {
+    const seen: { messages: unknown[] }[] = [];
+    const model = async function* (input: any, signal: AbortSignal) {
+      seen.push({ messages: structuredClone(input.messages) });
+      const events = calls[seen.length - 1];
+      if (!events) throw Error("MODEL_UNAVAILABLE");
+      for (const e of events) {
+        if (signal.aborted) return;
+        yield e;
+      }
+    };
+    return { model: model as any, seen };
+  };
+  let clock = 1_000;
+  const run = async (
+    session: { id: string; hash: string },
+    transcript: string,
+    model: any,
+    controller = new AbortController(),
+    onEvent: (e: VoiceTurnEvent) => void = () => {},
+  ) => {
+    const events: VoiceTurnEvent[] = [];
+    await runVoiceTurn(
+      { repository, model, now: () => (clock += 50) },
+      {
+        sessionId: session.id,
+        tokenHash: session.hash,
+        transcript,
+        clientTurnId: randomUUID(),
+        heardAtMs: 1_000,
+      },
+      (e) => {
+        events.push(e);
+        onEvent(e);
+      },
+      controller.signal,
+    );
+    return events;
+  };
+  const turns = async (session: string) =>
+    (
+      await f.h.cleanup.query(
+        "select * from app.test_turn where session_id=$1 order by created_at",
+        [session],
+      )
+    ).rows;
+  return {
+    ...f,
+    makeSession,
+    scripted,
+    run,
+    turns,
+    async close() {
+      await repository.close();
+      await f.close();
+    },
+  };
+}
+
+test("a plain spoken answer streams sentences and is stored as a voice turn", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model } = f.scripted([
+      sentence("We open at nine."),
+      sentence("We close at six."),
+      end("We open at nine. We close at six."),
+    ]);
+    const events = await f.run(s, "What time are you open on weekdays?", model);
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ["started", "sentence", "sentence", "done"],
+    );
+    const [turn] = await f.turns(s.id);
+    assert.equal(turn.channel, "voice");
+    assert.equal(turn.state, "completed");
+    assert.equal(turn.answer, "We open at nine. We close at six.");
+    assert.ok(turn.evidence.length >= 1);
+    assert.match(turn.evidence[0].sourceId, /^[0-9a-f]{24}:0:0$/);
+    assert.equal(typeof turn.timings.firstSentenceMs, "number");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a take_message tool call records one proposal before the final sentences", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model, seen } = f.scripted(
+      [
+        toolEvent("take_message", { text: "Please call Contoh Guest back." }),
+        end(),
+      ],
+      [
+        sentence("I passed that on to staff."),
+        end("I passed that on to staff."),
+      ],
+    );
+    const events = await f.run(
+      s,
+      "Please leave a message for the owner",
+      model,
+    );
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ["started", "tool", "sentence", "done"],
+    );
+    const [turn] = await f.turns(s.id);
+    const rows = (
+      await f.h.cleanup.query(
+        "select kind from app.test_proposal where turn_id=$1",
+        [turn.id],
+      )
+    ).rows;
+    assert.deepEqual(rows, [{ kind: "message" }]);
+    assert.equal(seen.length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an empty transcript is rejected before any database write", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const count = async () =>
+      (await f.h.cleanup.query("select count(*)::int n from app.test_turn"))
+        .rows[0].n;
+    const before = await count();
+    const { model, seen } = f.scripted();
+    const events = await f.run(s, "   ", model);
+    assert.deepEqual(events, [{ type: "error", code: "NOTHING_HEARD" }]);
+    assert.equal(await count(), before);
+    assert.equal(seen.length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("aborting during a tool call cancels the turn and leaves no proposal", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model } = f.scripted(
+      [toolEvent("take_message", { text: "Hello from Contoh." }), end()],
+      [sentence("Should never be spoken."), end()],
+    );
+    const controller = new AbortController();
+    const events = await f.run(
+      s,
+      "Please leave a message",
+      model,
+      controller,
+      (e) => {
+        if (e.type === "tool") controller.abort();
+      },
+    );
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ["started", "tool"],
+    );
+    const [turn] = await f.turns(s.id);
+    assert.equal(turn.state, "cancelled");
+    const left = (
+      await f.h.cleanup.query(
+        "select (select count(*) from app.test_proposal where turn_id=$1)::int p,(select count(*) from app.test_tool_step where turn_id=$1)::int t",
+        [turn.id],
+      )
+    ).rows[0];
+    assert.deepEqual(left, { p: 0, t: 0 });
+  } finally {
+    await f.close();
+  }
+});
+
+test("a sentence that claims success is never spoken and fails the turn", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model } = f.scripted([
+      sentence("Your appointment is confirmed."),
+      end("Your appointment is confirmed."),
+    ]);
+    const events = await f.run(s, "Can I book a visit for the weekend?", model);
+    assert.ok(!events.some((e) => e.type === "sentence"));
+    assert.deepEqual(events.at(-1), { type: "error", code: "UNSAFE_REPLY" });
+    const [turn] = await f.turns(s.id);
+    assert.equal(turn.state, "failed");
+    assert.equal(turn.error_code, "UNSAFE_REPLY");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a model error after sentences ends the turn as failed with that code", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const model = async function* () {
+      yield sentence("We open at nine.");
+      throw Error("MODEL_OUTPUT_TRUNCATED");
+    };
+    const events = await f.run(
+      s,
+      "What time are you open on weekdays?",
+      model as any,
+    );
+    assert.deepEqual(events.at(-1), {
+      type: "error",
+      code: "MODEL_OUTPUT_TRUNCATED",
+    });
+    assert.ok(!events.some((e) => e.type === "done"));
+    const [turn] = await f.turns(s.id);
+    assert.equal(turn.state, "failed");
+    assert.equal(turn.answer, null);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an identical question in a new session on the same snapshot is served fast", async () => {
+  const f = await fixture();
+  try {
+    const first = await f.makeSession();
+    const second = await f.makeSession();
+    const { model, seen } = f.scripted([
+      sentence("We open at nine."),
+      end("We open at nine."),
+    ]);
+    const question = "What time are you open on weekdays?";
+    await f.run(first, question, model);
+    const events = await f.run(second, question, model);
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ["started", "fast", "done"],
+    );
+    assert.deepEqual(events[1], { type: "fast", text: "We open at nine." });
+    assert.equal(seen.length, 1);
+    const [turn] = await f.turns(second.id);
+    assert.equal(turn.state, "completed");
+    assert.equal(turn.answer, "We open at nine.");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a question about tomorrow is never served fast", async () => {
+  const f = await fixture();
+  try {
+    const first = await f.makeSession();
+    const second = await f.makeSession();
+    const answer = [sentence("We open at nine."), end("We open at nine.")];
+    const { model, seen } = f.scripted(answer, answer);
+    const question = "Are you open esok morning for a visit?";
+    await f.run(first, question, model);
+    const events = await f.run(second, question, model);
+    assert.ok(!events.some((e) => e.type === "fast"));
+    assert.equal(seen.length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an expired session reports VOICE_EXPIRED", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession(-5);
+    const { model } = f.scripted();
+    const events = await f.run(s, "What time are you open on weekdays?", model);
+    assert.deepEqual(events, [{ type: "error", code: "VOICE_EXPIRED" }]);
+  } finally {
+    await f.close();
+  }
+});
