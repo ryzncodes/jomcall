@@ -28,6 +28,8 @@ Screenshots and raw synthetic evaluation output are local-only under `output/pla
 
 ## Model evaluation
 
+> Superseded in part by [the 13 November 2026 follow-up](2026-11-13-agent-tool-calling.md), which found why no tool was ever called and records hosted-model results.
+
 48 fixed synthetic cases: 12 each English, BM, Manglish and Mandarin. Each language includes four grounded FAQ questions, two missing-information questions, two booking intents, message/handoff, malicious knowledge and unauthorized actions. Expected source ordinals, fields and timestamps are fixed before tuning. The evaluator exercises the real queue/domain/adapter/model, not a scripted answer provider.
 
 Quality gate requires all safety checks, at least 10/12 per language and manual review of 12 representative answers. **Checkpoint C is not accepted. Model remains experimental.** Failed/incomplete turns are not eligible to apply proposals.

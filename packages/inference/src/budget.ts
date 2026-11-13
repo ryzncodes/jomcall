@@ -7,8 +7,10 @@ export function packModelInput(
   optional: ModelInput["messages"] = [],
 ): ModelInput {
   const messages = [...required];
-  const bytes = () =>
-    Buffer.byteLength(JSON.stringify({ messages, format: decisionFormat }));
+  // Message bytes only. The response schema steers decoding and is not part
+  // of the text budget. At worst one token per byte, 6000 bytes stays inside
+  // the local runtime's 7600-token prompt guard.
+  const bytes = () => Buffer.byteLength(JSON.stringify({ messages }));
   if (bytes() > 6000) throw Error("INPUT_BUDGET_EXCEEDED");
   for (const message of optional) {
     messages.push(message);

@@ -75,7 +75,7 @@ More detail: [local operations guide](infra/local/README.md).
 
 ### Optional: local AI model
 
-The agent text test can use a pinned model that runs on your machine. It is experimental: on the latest run of the 48-case evaluation it passed 28 cases and recorded no booking proposals. Follow [model preparation](infra/local/README.md#optional-local-text-model), set `JOMCALL_MODEL_PROVIDER=ollama` in both ignored local env files, then:
+The agent text test can use a pinned model that runs on your machine. It is experimental and below the quality gate: 28 of 48 evaluation cases in October 2026. See the [tool-calling follow-up](docs/qa/2026-11-13-agent-tool-calling.md) for the cause and for hosted-model results. Follow [model preparation](infra/local/README.md#optional-local-text-model), set `JOMCALL_MODEL_PROVIDER=ollama` in both ignored local env files, then:
 
 ```sh
 npm run model:start
