@@ -74,6 +74,14 @@ Run 4 used the same scripted caller on the final code of this branch (after the 
 
 The speed picture is unchanged: first sound is near the goal, answers are about 0.5 to 0.8 s slower than the goal.
 
+## Owner's spoken test
+
+On 2026-11-14 the owner spoke to the agent through the browser panel in Chrome (local app at `http://127.0.0.1:4182`), using an agent set up as an auto parts receptionist. Verdict, in the owner's words: "sounds great tbh". The owner noted the agent needs business knowledge filled in (basic prices and similar) before its answers are useful.
+
+This was a free conversation, not the scripted twenty turns, and no timings were recorded for it. It confirms the microphone prompt, the call start, playback and the conversation itself on one desktop browser. Still not checked: 390 px width, dark theme, BM interface text, the stop-during-connect cases and the accessibility check.
+
+The first start was refused because that agent had no greeting, AI introduction or recording notice. The refusal is correct, but its text says "before publishing" when it means "before a voice test".
+
 ## Open decision for the owner
 
 Per design section 9: accept the measured numbers, or switch the call path to the speech-to-speech model (figures in design section 2.1). This is the owner's call; nothing here chooses.

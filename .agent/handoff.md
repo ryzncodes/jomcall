@@ -20,7 +20,7 @@ Branch `feat/voice-milestone-a` (builds on PR #6; not merged, not pushed).
 - Open owner decisions: speed goals (design §9); the `av`/FFmpeg licence question; the fast-lane cache design before real callers; PDPA cross-border.
 
 **Not verified**
-- No human has used the browser panel: microphone prompt, playback, stop-during-connect races, 390 px width, dark theme, BM text, accessibility.
+- The owner spoke to the agent through the browser panel on 2026-11-14 (Chrome, desktop) and judged it "sounds great"; it was a free conversation, not the scripted twenty turns, with no timings recorded. Still unchecked: stop-during-connect races, 390 px width, dark theme, BM text, accessibility.
 - Rule rewording in commit 61e053e was not re-gated.
 - Cause of one 5.4 s first turn. Single measured run only (owner's choice).
 - Open limits (one line each in the QA record): Google speech limit (~11 requests/min, milestone B blocker); answer cache time-dependence decision; past-tense false-success check; read-back is a prompt rule only; Manglish endpointing splits; PDPA cross-border decision; fake test organizations left by each measured run.
