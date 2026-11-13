@@ -44,8 +44,8 @@ test("a take_message tool call records one proposal before the final sentences",
         end(),
       ],
       [
-        sentence("I passed that on to staff."),
-        end("I passed that on to staff."),
+        sentence("I have noted that for staff."),
+        end("I have noted that for staff."),
       ],
     );
     const events = await f.run(
