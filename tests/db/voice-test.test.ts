@@ -191,7 +191,11 @@ test("voice_complete stores answer, timings and evidence; a stale lease changes 
     assert.equal(row.lease_token, null);
     const next = await f.begin("Dan alamat?");
     assert.deepEqual(next.history, [
-      { input: "Kedai buka pukul berapa?", answer: done.answer },
+      {
+        input: "Kedai buka pukul berapa?",
+        answer: done.answer,
+        evidence: done.evidence,
+      },
     ]);
   } finally {
     await f.close();
@@ -374,6 +378,62 @@ test("an organization B voice session cannot read organization A's cached answer
       answer: entry.answer,
       evidence: entry.evidence,
     });
+  } finally {
+    await f.close();
+  }
+});
+
+test("voice_begin returns what the session recorded and each earlier turn's evidence, never the token hash", async () => {
+  const f = await voiceFixture();
+  try {
+    const first = await f.begin("Tolong ambil pesanan.");
+    assert.equal("voice_token_hash" in first.session, false);
+    assert.deepEqual(first.recorded, []);
+    await f.h.cleanup.query(
+      "insert into app.test_proposal(org_id,session_id,turn_id,attempt,step,kind,details)values($1,$2,$3,1,0,'message','{\"text\":\"sample message\"}')",
+      [f.h.orgA.id, f.session.id, first.turn.id],
+    );
+    await f.voice(
+      "voice_complete",
+      { answer: "Baik, pesanan direkod.", evidence: ["abc:2:0"] },
+      first.turn.id,
+      first.turn.lease_token,
+    );
+    // A cancelled turn's proposal is removed and never listed.
+    const dropped = await f.begin("Tolong sambung ke staf.");
+    await f.h.cleanup.query(
+      "insert into app.test_proposal(org_id,session_id,turn_id,attempt,step,kind,details)values($1,$2,$3,1,0,'handoff','{\"reason\":\"sample\"}')",
+      [f.h.orgA.id, f.session.id, dropped.turn.id],
+    );
+    const next = await f.begin("Dah direkod ke?");
+    assert.deepEqual(next.recorded, [
+      { kind: "message", details: { text: "sample message" } },
+    ]);
+    assert.deepEqual(next.history, [
+      {
+        input: "Tolong ambil pesanan.",
+        answer: "Baik, pesanan direkod.",
+        evidence: ["abc:2:0"],
+      },
+    ]);
+  } finally {
+    await f.close();
+  }
+});
+
+test("voice_complete refuses usage that is not a list", async () => {
+  const f = await voiceFixture();
+  try {
+    const { turn } = await f.begin();
+    await assert.rejects(
+      f.voice(
+        "voice_complete",
+        { answer: "Baik.", usage: { input: 1 } },
+        turn.id,
+        turn.lease_token,
+      ),
+      /MODEL_OUTPUT_INVALID/,
+    );
   } finally {
     await f.close();
   }
