@@ -93,6 +93,10 @@ async function start() {
   // Imported late so the console redirect above is in place first.
   const { bookingFixture } = await import("../../tests/helpers/booking.ts");
   const f = await bookingFixture();
+  // The harness put its API in a throwaway "test_<uuid>" namespace. The running
+  // agent serves "local" and looks a voice session up by id AND namespace, so the
+  // routes below must run in "local", as the real local web app does.
+  process.env.JOMCALL_QUEUE_NAMESPACE = "local";
   const fixture = JSON.parse(
     await readFile(
       new URL("../../tests/fixtures/agent-evaluation.json", import.meta.url),

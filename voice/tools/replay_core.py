@@ -526,6 +526,14 @@ def summarize(rows: list[dict], expected_turns: int = 20, end_silence_s: float =
     }
 
 
+def _partial_text(partial: dict | None) -> str:
+    if not partial:
+        return ""
+    value = partial.get("value")
+    shown = "no value" if value is None else f"{value:.0f} ms"
+    return f"; partial, not a verdict: {partial.get('n')} of {partial.get('of')} turns, {shown}"
+
+
 def _cell(value, width: int) -> str:
     text = "-" if value is None else (f"{value:.0f}" if isinstance(value, float) else str(value))
     return text.rjust(width)
@@ -566,7 +574,7 @@ def render_table(rows: list[dict], summary: dict) -> str:
     ]
     for name, g in s["goals"].items():
         verdict = "not measurable" if g["pass"] is None else ("PASS" if g["pass"] else "MISS")
-        why = f" - {g['reason']}; partial {g['partial']}" if g.get("reason") else (f" - {g['note']}" if g.get("note") else "")
+        why = f" - {g['reason']}{_partial_text(g.get('partial'))}" if g.get("reason") else (f" - {g['note']}" if g.get("note") else "")
         lines.append(f"goal {name}: {verdict} (target {g['targetMs']:.0f}, value {fmt(g['valueMs'])}){why}")
     lines.append("answer ms = first agent burst at/after the brain's first sentence; see 'definitions' in the output file")
     return "\n".join(lines)

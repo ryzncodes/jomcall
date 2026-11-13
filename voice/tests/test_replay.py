@@ -522,3 +522,11 @@ def test_clean_over_target_turn_is_a_certain_miss_among_excluded_turns():
     rows2 = passing_rows()
     rows2[0].update(firstSoundMs=1700.0, truncated=True)
     assert core.summarize(rows2, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
+
+
+def test_table_shows_partial_statistics_as_plain_text():
+    rows = passing_rows()
+    for r in rows:
+        r.update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
+    text = core.render_table(rows, core.summarize(rows, end_silence_s=3.5))
+    assert "{" not in text and "partial, not a verdict: 0 of 12 turns, no value" in text
