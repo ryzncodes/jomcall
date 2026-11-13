@@ -426,6 +426,9 @@ test("the agent process serves voice turns on 54633 when the provider is hosted"
         ...process.env,
         JOMCALL_MODE: "local",
         JOMCALL_VOICE_PROVIDER: "hosted",
+        // The agent refuses to start hosted voice without a model key; the
+        // health check below never calls the model.
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "not-a-real-key",
       },
       stdio: "ignore",
     },
