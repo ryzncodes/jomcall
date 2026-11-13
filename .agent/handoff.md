@@ -2,7 +2,7 @@
 
 ## 2026-11-14 — pre-launch fixes from the voice branch review
 
-Branch `fix/voice-prelaunch-hardening`, stacked on `feat/voice-milestone-a`. Not pushed, no pull request.
+Branch `fix/voice-prelaunch-hardening`, started from `feat/voice-milestone-a` and merged with `main` after the voice work landed there. Pushed, with a pull request against `main`; not merged.
 
 **Changed**
 - CI: `.github/workflows/ci.yml` runs typecheck, `test:guards`, the new `test:offline` (database-free domain and inference tests, including `anthropic-voice.test.ts`) and the Python voice tests. The API, database and engine tests are not in CI: they need the local Supabase stack.
