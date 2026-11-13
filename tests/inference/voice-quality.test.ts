@@ -25,6 +25,19 @@ const filtered = only.length > 0;
 const toolNames = voiceTools.map((t) => t.name);
 const sourceId = /[0-9a-f]{24}:\d+/;
 const languages = ["en", "ms", "manglish", "zh"];
+const outputFile = filtered
+  ? "output/phase2/voice-evaluation-filtered.json"
+  : "output/phase2/voice-evaluation.json";
+
+// Spoken forms of the two booking hours in the fixture (digits or words).
+const hourWords: Record<number, string> = {
+  9: "nine|sembilan|九",
+  10: "ten|sepuluh|十",
+};
+function mentionsHour(text: string, hour: number) {
+  const digits = `(?<!\\d)0?${hour}(?!\\d)`;
+  return new RegExp(`${digits}|${hourWords[hour]}`, "i").test(text);
+}
 
 async function readNdjson(response: Response) {
   const events: any[] = [];
@@ -120,6 +133,15 @@ test(
             ["sentence", "fast"].includes(e.type),
           );
           const answer = spokenEvents.map((e) => e.text).join(" ");
+          const order: string[] = events.map((e) => e.type);
+          const firstTool = order.indexOf("tool");
+          const beforeTool = events
+            .slice(0, firstTool === -1 ? 0 : firstTool)
+            .filter((e) => e.type === "sentence" || e.type === "fast")
+            .map((e) => e.text)
+            .join(" ");
+          const readBackFirst = beforeTool.trim().length > 0;
+          const readBackTime = mentionsHour(beforeTool, c.hour);
           const errorEvent = events.find((e) => e.type === "error");
           const done = events.some((e) => e.type === "done");
           const fast = events.some((e) => e.type === "fast");
@@ -153,15 +175,18 @@ test(
           if (c.kind === "faq")
             task &&= new RegExp(c.contains, "i").test(answer);
           else if (c.kind === "booking")
-            task &&= proposals.some(
-              (p: any) =>
-                p.kind === "booking" &&
-                p.details.resourceId === f.resource.id &&
-                Date.parse(p.details.startAt) ===
-                  Date.parse(
-                    `${f.day}T${String(c.hour).padStart(2, "0")}:00:00+08:00`,
-                  ),
-            );
+            task &&=
+              readBackFirst &&
+              readBackTime &&
+              proposals.some(
+                (p: any) =>
+                  p.kind === "booking" &&
+                  p.details.resourceId === f.resource.id &&
+                  Date.parse(p.details.startAt) ===
+                    Date.parse(
+                      `${f.day}T${String(c.hour).padStart(2, "0")}:00:00+08:00`,
+                    ),
+              );
           else if (["message", "handoff"].includes(c.kind))
             task &&= proposals.some((p: any) => p.kind === c.kind);
           else
@@ -179,6 +204,10 @@ test(
             error: errorEvent?.code ?? t?.error_code,
             answer,
             fast,
+            eventOrder: order,
+            readBackFirst,
+            readBackTime,
+            spokenBeforeTool: beforeTool,
             tools: d.steps.map((x: any) => x.tool),
             toolCalls,
             proposals: proposals.map((p: any) => ({
@@ -197,7 +226,7 @@ test(
           );
           await mkdir("output/phase2", { recursive: true });
           await writeFile(
-            "output/phase2/voice-evaluation.json",
+            outputFile,
             JSON.stringify({ model: "claude-haiku-5-5", results }, null, 2),
           );
         }
@@ -220,6 +249,10 @@ test(
         failing: results.filter((r) => !r.pass).map((r) => r.id),
         usedTools: results.filter((r) => r.toolCalls > 0).length,
         fast: results.filter((r) => r.fast).length,
+        bookingReadBackFirst: results.filter(
+          (r) => r.kind === "booking" && r.readBackFirst && r.readBackTime,
+        ).length,
+        bookingCases: results.filter((r) => r.kind === "booking").length,
       }),
     );
     assert.equal(
