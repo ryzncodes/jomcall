@@ -28,11 +28,32 @@ test("test inspection exposes persisted start time and bounded cited snapshot ex
         JSON.stringify([citation, "unknown-source"]),
       ],
     );
+    await f.h.cleanup.query(
+      "insert into app.test_turn(org_id,session_id,client_turn_id,request_hash,input,state,channel,timings,created_at)values($1,$2,$3,'fixture','Spoken?','completed','voice',$4,now()+interval '1 second')",
+      [
+        f.h.orgA.id,
+        s.id,
+        randomUUID(),
+        JSON.stringify({
+          transcriptMs: 420,
+          firstSentenceMs: 1300,
+          totalMs: 2600,
+        }),
+      ],
+    );
     const result = await f.req("GET", "/agent-tests/" + s.id);
     assert.equal(result.status, 200);
     assert.ok(
       Number.isFinite(Date.parse(result.body.data.turns[0].created_at)),
     );
+    assert.equal(result.body.data.turns[0].channel, "text");
+    assert.deepEqual(result.body.data.turns[0].timings, {});
+    assert.equal(result.body.data.turns[1].channel, "voice");
+    assert.deepEqual(result.body.data.turns[1].timings, {
+      transcriptMs: 420,
+      firstSentenceMs: 1300,
+      totalMs: 2600,
+    });
     assert.equal(result.body.data.sources.length, 1);
     assert.equal(result.body.data.sources[0].sourceId, citation);
     assert.equal(result.body.data.sources[0].title, "QA source");

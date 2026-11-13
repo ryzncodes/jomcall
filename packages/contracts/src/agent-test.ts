@@ -127,6 +127,13 @@ export type TestTurn = {
   answer: string | null;
   citations: string[];
   error_code: string | null;
+  channel: "text" | "voice";
+  // Spoken turns only: milliseconds from the caller finishing to each stage.
+  timings: {
+    transcriptMs?: number;
+    firstSentenceMs?: number | null;
+    totalMs?: number;
+  };
 };
 export type Proposal = {
   id: string;

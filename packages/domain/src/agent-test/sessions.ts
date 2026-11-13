@@ -173,7 +173,7 @@ export async function sessionDetail(
   const row = await loadSession(tx, ctx, id);
   const turns = (
     await tx.query(
-      "select id,session_id,revision,attempt,state,input,answer,citations,error_code,created_at from app.test_turn where org_id=$1 and session_id=$2 order by created_at,id limit 20",
+      "select id,session_id,revision,attempt,state,input,answer,citations,error_code,channel,timings,created_at from app.test_turn where org_id=$1 and session_id=$2 order by created_at,id limit 20",
       [ctx.orgId, id],
     )
   ).rows;
