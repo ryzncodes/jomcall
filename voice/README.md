@@ -102,3 +102,12 @@ This worker pins `livekit-agents` and `livekit-plugins-deepgram` to 1.6.0, the n
 release whose metadata does not require it, so the package is neither locked nor installed
 and JomCall neither loads nor redistributes it. Before upgrading past 1.6.0, re-check
 `Requires-Dist` for it and the licence note above.
+
+## Speed behaviour (speed batch)
+
+- **Stage times**: one JSON line per finished turn in `<JOMCALL_VOICE_STAGES_DIR or output/voice>/stages-<room>.jsonl` (git-ignored). Timestamps and flags only, never text.
+- **Deadlines** (neutral filler 800 ms, trouble line 4,000 ms) count from the estimated end of speech: arrival of the final transcript minus `EARS_LAG_MS` (600, an estimate from one run). `heardAtMs` sent to the brain uses the same estimate.
+- **Silence trimming**: fixed clips are trimmed at both ends on store and on load (old cache files are trimmed in memory); streamed answers lose leading silence (at most 400 ms).
+- **An answer never waits for a filler**: an action filler is cut when the first answer audio arrives; a neutral one with under 250 ms left finishes. The trouble line and the opening are never cut.
+- **Connections**: one HTTP client per `Voice` and per `BrainClient`, closed when the call ends (HTTP/1.1 keep-alive; `h2` is not installed and not added).
+- **Utterance safety** (`ears.assemble`): words pending with no end-of-speech for 1,000 ms are delivered anyway; a transcript within 700 ms of the previous one, before any answer audio, is joined to it and the first turn is cancelled.
