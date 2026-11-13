@@ -10,7 +10,8 @@
     54630,
     54631,
     54632,
-    54633
+    54633,
+    54634
   ],
   "exclude": "realtime,storage-api,imgproxy,studio,postgres-meta,edge-runtime,logflare,vector,supavisor"
 }

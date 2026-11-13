@@ -39,6 +39,10 @@ BODY_BUDGET_BYTES = 7_500  # leaves room for the JSON envelope
 PREWARM_MAX_PER_MIN = 8
 
 AGENT_NAME = "jomcall-voice"
+# The worker's own health HTTP server (the only listener livekit-agents 1.6.0 opens;
+# its Prometheus server stays off unless prometheus_port is set). Loopback only.
+WORKER_HOST = "127.0.0.1"
+WORKER_PORT = 54634
 CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
 
 # Brain error codes that end the call. Any other code gets the trouble line.

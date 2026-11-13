@@ -15,6 +15,15 @@ if it exists). Tests: `cd voice && uv run pytest` (no network, no keys, no LiveK
 Keys come from the environment only. The worker never prints or writes a key or the
 voice token, and never logs transcripts or answers.
 
+## Listeners
+
+The worker opens exactly one listening socket: livekit-agents' health HTTP server, bound to
+`127.0.0.1:54634` (`WORKER_HOST` / `WORKER_PORT` in `config.py`, passed as `host` / `port`
+in `worker.build_options()`). The library default is all interfaces on a random port, which
+`lsof` showed as two wildcard sockets (IPv4 and IPv6). Its Prometheus server only starts if
+`prometheus_port` is set, and it is not. Port 54634 is listed in `infra/local/services.json`
+like the agent's 54633, so stop the worker before `npm run local:start` (preflight).
+
 ## Files
 
 | File | Job | LiveKit import |

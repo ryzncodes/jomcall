@@ -7,7 +7,7 @@ import json
 import logging
 
 from livekit import rtc
-from livekit.agents import AutoSubscribe, JobContext
+from livekit.agents import AutoSubscribe, JobContext, WorkerOptions
 
 from . import brain_client, config
 from .call import Call
@@ -134,3 +134,17 @@ async def entrypoint(ctx: JobContext) -> None:
     ctx.room.on("disconnected", lambda *_: call.hangup())
     result = await call.run()
     ctx.shutdown(result.end_reason)
+
+
+def build_options() -> WorkerOptions:
+    # agent_name turns on explicit dispatch: jobs come only from the dispatch the
+    # JomCall API creates. LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET
+    # are read from the environment by the library. host/port bind the worker's
+    # health server to loopback on a fixed port (the library default is all
+    # interfaces on a random port).
+    return WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        agent_name=config.AGENT_NAME,
+        host=config.WORKER_HOST,
+        port=config.WORKER_PORT,
+    )
