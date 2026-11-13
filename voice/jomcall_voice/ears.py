@@ -8,7 +8,6 @@ logged or passed on (only the fact that words were heard); only the endpointed, 
 from __future__ import annotations
 
 import asyncio
-import time
 from typing import AsyncIterator
 
 from livekit import rtc
@@ -61,9 +60,8 @@ class DeepgramEars:
                         yield EarEvent("interim", "words")
                 elif event.type == stt.SpeechEventType.END_OF_SPEECH:
                     text, pieces = " ".join(pieces), []
-                    # The caller stopped about one endpointing window ago.
-                    heard = time.time() * 1000 - config.STT_ENDPOINTING_MS
-                    yield EarEvent("transcript", text, heard)
+                    # `call` derives when the caller stopped (see EARS_LAG_MS).
+                    yield EarEvent("transcript", text)
         finally:
             pump_task.cancel()
             await audio.aclose()

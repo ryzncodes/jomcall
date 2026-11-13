@@ -163,3 +163,39 @@ async def test_an_interrupted_opening_is_not_cached(tmp_path):
         await stream.__anext__()
         await stream.aclose()
         assert make(server, tmp_path).lookup("Hello.") is None
+
+
+def _pcm(n, amp):
+    import math
+    import struct
+
+    return struct.pack(f"<{n}h", *[int(amp * math.sin(i / 5)) for i in range(n)])
+
+
+async def test_streamed_answers_lose_their_leading_silence(tmp_path):
+    clip = b"\x00\x00" * 7200 + _pcm(4800, 8000)  # 300 ms of silence, then 200 ms of voice
+
+    async def handler(req):
+        return Reply(chunks=sse(clip[:5000], clip[5000:]))
+
+    async with FakeServer(handler) as server:
+        out = b"".join([c async for c in make(server, tmp_path).speak("x")])
+    assert len(out) < len(clip) - 2 * 4000
+    assert out.endswith(_pcm(4800, 8000))
+
+
+async def test_fixed_clips_are_trimmed_when_stored_and_when_loaded_from_old_cache(tmp_path):
+    clip = b"\x00\x00" * 7200 + _pcm(4800, 8000) + b"\x00\x00" * 7200
+
+    async def handler(req):
+        return Reply(chunks=sse(clip))
+
+    async with FakeServer(handler) as server:
+        stored = await make(server, tmp_path).cached("Baik.")
+    assert len(stored) < len(clip) // 2
+    # An untrimmed file left by an earlier version is trimmed in memory on load.
+    old = voice_out.Voice("Kore", api_key="k", url="http://x/tts", cache_dir=tmp_path)
+    old._path("Lama.").parent.mkdir(parents=True, exist_ok=True)
+    old._path("Lama.").write_bytes(clip)
+    assert len(old.lookup("Lama.")) == len(stored)
+    assert old._path("Lama.").read_bytes() == clip  # the file itself is not rewritten

@@ -15,6 +15,19 @@ TROUBLE_MS = 4_000  # still no sentence: say the trouble line, once
 CALL_CAP_S = 300  # hard cap on one call
 MAX_VOICE_REQUESTS_PER_TURN = 2  # first sentence alone, the rest in one request
 
+# End of speech reaches the worker about 0.9 s after the caller stops (median 0.92 s,
+# range 0.85-1.21 s in ONE measured run: Deepgram's 300 ms endpointing plus
+# transport and recognition). This is an estimate, not a constant of nature. 600 is
+# deliberately below that measured minimum, so the `heardAtMs` sent to the brain and the
+# filler deadlines never claim an end of speech earlier than the data supports. Revisit
+# it from the stage logs (`stages-*.jsonl`) once more calls exist.
+EARS_LAG_MS = 600
+
+# --- Silence trimming (16-bit PCM; amplitudes are absolute sample values) ---
+TRIM_THRESHOLD = 200  # a 10 ms window whose peak is below this counts as silent
+TRIM_PAD_MS = 20  # kept on each side of the voiced part
+LEAD_TRIM_MAX_MS = 400  # never drop more than this from the start of an answer
+
 # --- Hearing: Deepgram through livekit-plugins-deepgram ---
 STT_MODEL = "nova-3"
 STT_LANGUAGE = "multi"

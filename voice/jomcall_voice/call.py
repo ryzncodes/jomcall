@@ -318,11 +318,12 @@ class Call:
             record={"clientTurnId": "", "voiceRequests": 0, "voiceRefused": False, "voiceFailed": False},
         )
         turn.record["clientTurnId"] = turn.id
-        heard = event.heard_at_ms or eos
+        # The caller stopped about EARS_LAG_MS before the end of speech reached us.
+        heard = event.heard_at_ms or eos - config.EARS_LAG_MS
         turn.stages.update(eosAtMs=eos, heardAtMs=heard)
         self.turns.append(turn.record)
         self._turn = turn
-        turn.mark = self._clock.now()
+        turn.mark = self._clock.now() - config.EARS_LAG_MS / 1000  # estimated end of speech
         turn.run = asyncio.ensure_future(self._run_turn(turn, text, heard))
         turn.run.add_done_callback(_log_failure)
         turn.run.add_done_callback(lambda _t: self._maybe_finish(turn))
@@ -433,7 +434,8 @@ class Call:
         self._spawn(self._say_fixed(line, unless=lambda: turn.sentence_seen, turn=turn), turn)
 
     async def _timers(self, turn: _Turn) -> None:
-        await self._clock.sleep(config.NEUTRAL_ACK_MS / 1000)
+        # Deadlines count from the estimated end of speech (`mark`), not from arrival.
+        await self._clock.sleep(max(0.0, turn.mark + config.NEUTRAL_ACK_MS / 1000 - self._clock.now()))
         if not turn.sentence_seen and not turn.neutral_done and not turn.action_done:
             self._filler(turn, None)
         # The trouble clock runs from the latest of turn start and last tool event.

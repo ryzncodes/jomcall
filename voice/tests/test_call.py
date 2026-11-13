@@ -18,6 +18,7 @@ GREETING = "Hello, thanks for calling Kedai Contoh."
 DISCLOSURE = "This call is answered by an AI assistant and may be recorded."
 OPENING = GREETING + " " + DISCLOSURE
 BASE_MS = 1_700_000_000_000.0
+NEUTRAL_AT = config.NEUTRAL_ACK_MS - config.EARS_LAG_MS  # ms after the transcript arrives
 
 
 async def settle():
@@ -234,8 +235,8 @@ async def test_without_a_spoken_disclosure_the_call_does_not_proceed(make):
     assert not rig.ears.started
 
 
-async def test_sentence_at_300ms_plays_no_filler(make):
-    rig = await make([(0, STARTED), (300, sentence("Boleh.")), (0, DONE)])
+async def test_a_sentence_before_the_neutral_deadline_plays_no_filler(make):
+    rig = await make([(0, STARTED), (100, sentence("Boleh.")), (0, DONE)])
     rig.ears.say()
     await settle()
     await rig.clock.advance(1000)
@@ -260,7 +261,8 @@ async def test_no_sentence_by_800ms_plays_one_neutral_then_the_answer(make):
     rig = await make([(0, STARTED), (1200, sentence("Okay.")), (0, DONE)])
     rig.ears.say()
     await settle()
-    await rig.clock.advance(790)
+    # 800 ms after the estimated end of speech = 200 ms after the transcript arrives
+    await rig.clock.advance(NEUTRAL_AT - 10)
     assert rig.voice.cached_calls == []
     await rig.clock.advance(20)
     assert len(rig.voice.cached_calls) == 1
@@ -270,9 +272,9 @@ async def test_no_sentence_by_800ms_plays_one_neutral_then_the_answer(make):
     await rig.finish()
 
 
-async def test_tool_event_at_500ms_plays_the_action_filler_not_the_neutral(make):
+async def test_a_tool_event_before_the_neutral_deadline_plays_the_action_filler_not_the_neutral(make):
     rig = await make(
-        [(0, STARTED), (500, {"type": "tool", "name": "check_availability"}), (1500, sentence("Ada.")), (0, DONE)]
+        [(0, STARTED), (150, {"type": "tool", "name": "check_availability"}), (1500, sentence("Ada.")), (0, DONE)]
     )
     rig.ears.say()
     await settle()
@@ -556,7 +558,7 @@ async def test_any_opening_exception_ends_the_call_with_a_reason(make):
 # --- stage times ----------------------------------------------------------
 
 async def test_a_plain_turn_logs_its_stage_times_with_exact_fields(make):
-    rig = await make([(0, STARTED), (300, sentence("Rahsia jawapan.")), (0, DONE)])
+    rig = await make([(0, STARTED), (100, sentence("Rahsia jawapan.")), (0, DONE)])
     await rig.clock.advance(100)
     rig.ears.say("rahsia soalan", at=BASE_MS - 500)
     await settle()
@@ -567,8 +569,8 @@ async def test_a_plain_turn_logs_its_stage_times_with_exact_fields(make):
     assert row["clientTurnId"] == rig.call.turns[0]["clientTurnId"]
     assert row["heardAtMs"] == BASE_MS - 500
     assert row["eosAtMs"] == row["brainSentAtMs"] == BASE_MS + 100
-    assert row["firstSentenceAtMs"] == BASE_MS + 400
-    assert row["ttsRequestAtMs"] == row["firstTtsByteAtMs"] == row["firstFrameAtMs"] == BASE_MS + 400
+    assert row["firstSentenceAtMs"] == BASE_MS + 200
+    assert row["ttsRequestAtMs"] == row["firstTtsByteAtMs"] == row["firstFrameAtMs"] == BASE_MS + 200
     assert row["fillerKind"] is None and row["fillerAtMs"] is None
     assert row["voiceRefused"] is False and row["fixedLinesSkipped"] == 0
     assert "soalan" not in str(row) and "jawapan" not in str(row)
@@ -581,19 +583,19 @@ async def test_the_first_filler_is_stamped_and_never_counted_as_the_answer(make)
     await rig.clock.advance(2000)
     row = rig.stages[0]
     assert row["fillerKind"] == "neutral"
-    assert row["fillerAtMs"] == BASE_MS + 800
+    assert row["fillerAtMs"] == BASE_MS + NEUTRAL_AT
     assert row["firstFrameAtMs"] == BASE_MS + 1200 and row["ttsRequestAtMs"] == BASE_MS + 1200
 
 
 async def test_an_action_filler_is_stamped_as_action(make):
     rig = await make(
-        [(0, STARTED), (500, {"type": "tool", "name": "book_slot"}), (3000, sentence("Ok.")), (0, DONE)]
+        [(0, STARTED), (150, {"type": "tool", "name": "book_slot"}), (3000, sentence("Ok.")), (0, DONE)]
     )
     rig.ears.say()
     await settle()
     await rig.clock.advance(4000)
     assert rig.stages[0]["fillerKind"] == "action"
-    assert rig.stages[0]["fillerAtMs"] == BASE_MS + 500
+    assert rig.stages[0]["fillerAtMs"] == BASE_MS + 150
 
 
 async def test_refused_voice_and_skipped_lines_are_flagged_per_turn(make):
@@ -619,3 +621,22 @@ async def test_a_superseded_turn_is_logged_once_with_unknowns_as_null(make):
     await rig.clock.advance(100)
     assert len(rig.stages) == 2
     assert rig.stages[0]["firstSentenceAtMs"] is None and rig.stages[0]["firstFrameAtMs"] is None
+
+
+async def test_heard_at_defaults_to_the_arrival_minus_the_ears_lag(make):
+    rig = await make([(0, sentence("Ok.")), (0, DONE)])
+    await rig.clock.advance(50)
+    rig.ears.queue.put_nowait(EarEvent("transcript", "hello there"))
+    await settle()
+    assert rig.brain.calls[0][4] == BASE_MS + 50 - config.EARS_LAG_MS
+    assert rig.stages[0]["heardAtMs"] == rig.brain.calls[0][4]
+
+
+async def test_the_trouble_deadline_also_counts_from_the_estimated_end_of_speech(make):
+    rig = await make([(0, STARTED), (6000, sentence("Lambat.")), (0, DONE)])
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(config.TROUBLE_MS - config.EARS_LAG_MS - 100)
+    assert fillers.TROUBLE["en"] not in rig.voice.cached_calls
+    await rig.clock.advance(200)
+    assert fillers.TROUBLE["en"] in rig.voice.cached_calls

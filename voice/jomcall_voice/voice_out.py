@@ -21,6 +21,7 @@ from typing import AsyncIterator
 import httpx
 
 from . import config
+from .audio import LeadTrimmer, trim_silence
 
 
 class VoiceError(Exception):
@@ -72,6 +73,7 @@ class Voice:
         headers = {"x-goog-api-key": self._api_key(), "content-type": "application/json"}
         timeout = httpx.Timeout(config.TTS_TIMEOUT_S, connect=5.0)
         carry = b""
+        trimmer = LeadTrimmer()
         got_audio = False
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
@@ -88,7 +90,12 @@ class Voice:
                         carry = pcm[cut:]
                         if cut:
                             got_audio = True
-                            yield pcm[:cut]
+                            ready = trimmer.feed(pcm[:cut])
+                            if ready:
+                                yield ready
+                    tail = trimmer.flush()
+                    if tail:
+                        yield tail
         except httpx.HTTPError as error:
             raise VoiceFailed(type(error).__name__) from None
         if not got_audio:
@@ -110,17 +117,20 @@ class Voice:
         if key in self._memory:
             return self._memory[key]
         if path.is_file():
-            self._memory[key] = path.read_bytes()
+            # Clips cached before trimming existed are trimmed here, in memory.
+            self._memory[key] = trim_silence(path.read_bytes())
             return self._memory[key]
         return None
 
-    def _store(self, text: str, audio: bytes) -> None:
+    def _store(self, text: str, audio: bytes) -> bytes:
+        audio = trim_silence(audio)
         path = self._path(text)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(f".{os.getpid()}.tmp")
         tmp.write_bytes(audio)
         tmp.replace(path)
         self._memory[str(path)] = audio
+        return audio
 
     async def cached(self, text: str) -> bytes:
         """Audio for a fixed line, synthesizing it if missing (prewarm and opening)."""
@@ -133,8 +143,7 @@ class Voice:
             if hit is not None:
                 return hit
             audio = b"".join([chunk async for chunk in self.speak(text)])
-            self._store(text, audio)
-            return audio
+            return self._store(text, audio)
 
     async def opening(self, text: str) -> AsyncIterator[bytes]:
         """Streams the call opening; remembers it so the same text costs one request."""
