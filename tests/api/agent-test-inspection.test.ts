@@ -62,3 +62,39 @@ test("test inspection exposes persisted start time and bounded cited snapshot ex
     await f.close();
   }
 });
+test("test inspection returns every turn up to 60, then only the latest 60 in order", async () => {
+  const f = await createPhase2Harness();
+  try {
+    const s = (
+      await f.req("POST", "/agent-tests", {
+        agentId: f.h.orgA.agentId,
+        locationId: f.h.orgA.locationId,
+        source: { kind: "draft", expectedRevision: 1 },
+      })
+    ).body.data;
+    const seed = async (count: number) => {
+      await f.h.cleanup.query(
+        "delete from app.test_turn where org_id=$1 and session_id=$2",
+        [f.h.orgA.id, s.id],
+      );
+      await f.h.cleanup.query(
+        "insert into app.test_turn(org_id,session_id,client_turn_id,request_hash,input,state,channel,created_at) select $1,$2,gen_random_uuid(),'fixture','turn '||lpad(n::text,3,'0'),'completed','voice',now()+n*interval '1 second' from generate_series(1,$3::int) n",
+        [f.h.orgA.id, s.id, count],
+      );
+      const r = await f.req("GET", "/agent-tests/" + s.id);
+      assert.equal(r.status, 200);
+      return r.body.data.turns.map((t: { input: string }) => t.input);
+    };
+    const few = await seed(25);
+    assert.equal(few.length, 25);
+    assert.equal(few[0], "turn 001");
+    assert.equal(few[24], "turn 025");
+    const many = await seed(65);
+    assert.equal(many.length, 60);
+    assert.equal(many[0], "turn 006");
+    assert.equal(many[59], "turn 065");
+    assert.deepEqual(many, [...many].sort());
+  } finally {
+    await f.close();
+  }
+});
