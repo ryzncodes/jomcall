@@ -9,7 +9,7 @@ import type { VoiceModelEvent } from "../../packages/inference/src/anthropic-voi
 
 export const sha = (value: string) =>
   createHash("sha256").update(value).digest("hex");
-export const usage = { input: 10, output: 5, cacheRead: 0 };
+export const usage = { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 };
 export const sentence = (text: string): VoiceModelEvent => ({
   type: "sentence",
   text,
@@ -54,9 +54,14 @@ export async function fixture() {
   };
   // A scripted model: one list of events per call, and a record of the calls.
   const scripted = (...calls: VoiceModelEvent[][]) => {
-    const seen: { messages: unknown[] }[] = [];
+    const seen: { messages: unknown[]; stable: string; volatile: string }[] =
+      [];
     const model = async function* (input: any, signal: AbortSignal) {
-      seen.push({ messages: structuredClone(input.messages) });
+      seen.push({
+        messages: structuredClone(input.messages),
+        stable: input.stable,
+        volatile: input.volatile,
+      });
       const events = calls[seen.length - 1];
       if (!events) throw Error("MODEL_UNAVAILABLE");
       for (const e of events) {

@@ -107,7 +107,8 @@ export async function runVoiceTurn(
   try {
     checkAbort();
     emit({ type: "started", turnId });
-    const history: { input: string; answer: string }[] = envelope.history ?? [];
+    const history: { input: string; answer: string; evidence?: unknown[] }[] =
+      envelope.history ?? [];
     const language = spokenLanguage(input);
     const key = fastLaneKey(input);
     // A question that leans on earlier turns is never answered from the cache,
@@ -156,16 +157,27 @@ export async function runVoiceTurn(
 
     const access = repo.access(envelope);
     const evidence: Evidence[] = [];
-    addEvidence(
-      evidence,
-      searchKnowledge(buildKnowledgeIndex(envelope.session.snapshot), input),
-      500,
-    );
+    const index = buildKnowledgeIndex(envelope.session.snapshot);
+    addEvidence(evidence, searchKnowledge(index, input), 500);
+    // Chunks that earlier answers in this call relied on, newest turn first so
+    // the byte cap drops the oldest. An ID that no longer resolves is skipped.
+    for (const turn of [...history].reverse()) {
+      const ids = (turn.evidence ?? []).flatMap((e: any) => {
+        const id = typeof e === "string" ? e : e?.sourceId;
+        return typeof id === "string" ? [id] : [];
+      });
+      addEvidence(
+        evidence,
+        index.filter((hit) => ids.includes(hit.sourceId)),
+        500,
+      );
+    }
     const system = voiceSystem(
       envelope.session.snapshot.settings,
       envelope.resources ?? [],
       evidence,
       new Date(),
+      envelope.recorded ?? [],
     );
     const messages: unknown[] = [
       ...history.flatMap((h) => [

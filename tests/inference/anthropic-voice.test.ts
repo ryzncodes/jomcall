@@ -45,6 +45,7 @@ function fake(script: Script) {
                 input_tokens: 40,
                 output_tokens: 9,
                 cache_read_input_tokens: 30,
+                cache_creation_input_tokens: 4,
               },
             };
           },
@@ -98,7 +99,12 @@ test("text deltas become sentences in order, then end", async () => {
   );
   const end = events[2] as Extract<VoiceModelEvent, { type: "end" }>;
   assert.equal(end.text, "Kami buka 9 pagi. Tutup 6 petang.");
-  assert.deepEqual(end.usage, { input: 40, output: 9, cacheRead: 30 });
+  assert.deepEqual(end.usage, {
+    input: 40,
+    output: 9,
+    cacheRead: 30,
+    cacheWrite: 4,
+  });
 });
 
 test("a tool_use block yields a validated tool event after flushed text", async () => {

@@ -16,7 +16,12 @@ export type VoiceModelEvent =
       type: "end";
       text: string;
       content: unknown[];
-      usage: { input: number; output: number; cacheRead: number };
+      usage: {
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheWrite: number;
+      };
     };
 
 function mapError(error: unknown): Error {
@@ -107,6 +112,7 @@ export async function* streamVoiceModel(
       input: message.usage.input_tokens,
       output: message.usage.output_tokens,
       cacheRead: message.usage.cache_read_input_tokens ?? 0,
+      cacheWrite: message.usage.cache_creation_input_tokens ?? 0,
     },
   };
 }

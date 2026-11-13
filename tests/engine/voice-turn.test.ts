@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fixture, sentence, end, toolEvent } from "../helpers/voice-turn.ts";
+import {
+  fixture,
+  sentence,
+  end,
+  toolEvent,
+  usage,
+} from "../helpers/voice-turn.ts";
 
 test("a plain spoken answer streams sentences and is stored as a voice turn", async () => {
   const f = await fixture();
@@ -399,6 +405,86 @@ test("an unsafe reply is not cached", async () => {
     await f.run(s, question, model);
     assert.equal((await f.turns(s.id))[0].state, "failed");
     assert.equal(await cached(f), 0);
+  } finally {
+    await f.close();
+  }
+});
+
+const weekdays = "What time are you open on weekdays?";
+const unrelated = "Please tell me something else";
+
+test("evidence from earlier turns joins the fresh hits and is deduped", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const answer = [sentence("We open at nine."), end("We open at nine.")];
+    const { model, seen } = f.scripted(answer, answer, answer);
+    await f.run(s, weekdays, model);
+    // No search hit for this one, yet the earlier chunk is still supplied.
+    await f.run(s, unrelated, model);
+    assert.match(seen[1].volatile, /:0:0/);
+    // A hit and the same chunk from history appear once.
+    await f.run(s, weekdays, model);
+    assert.equal(seen[2].volatile.split('"sourceId"').length - 1, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("what the call recorded is stated to the model only when something was", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model, seen } = f.scripted(
+      [sentence("Hello there."), end("Hello there.")],
+      [toolEvent("take_message", { text: "Please call Contoh Guest." }), end()],
+      [sentence("Staff will read that."), end("Staff will read that.")],
+      [sentence("Anything else?"), end("Anything else?")],
+    );
+    await f.run(s, unrelated, model);
+    await f.run(s, "Please leave a message for staff", model);
+    await f.run(s, "Thank you very much", model);
+    assert.doesNotMatch(seen[0].volatile, /Recorded in this call/);
+    assert.doesNotMatch(seen[1].volatile, /Recorded in this call/);
+    assert.match(seen[3].volatile, /Recorded in this call/);
+    assert.match(
+      seen[3].volatile,
+      /message for staff: Please call Contoh Guest/,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+test("the stable prompt is byte-identical across turns with different evidence", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const answer = [sentence("We open at nine."), end("We open at nine.")];
+    const { model, seen } = f.scripted(answer, answer);
+    await f.run(s, unrelated, model);
+    await f.run(s, weekdays, model);
+    assert.notEqual(seen[0].volatile, seen[1].volatile);
+    assert.equal(seen[0].stable, seen[1].stable);
+  } finally {
+    await f.close();
+  }
+});
+
+test("stored usage carries the cache write count", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model } = f.scripted([
+      sentence("We open at nine."),
+      {
+        ...(end("We open at nine.") as any),
+        usage: { ...usage, cacheWrite: 7 },
+      },
+    ]);
+    await f.run(s, weekdays, model);
+    const [turn] = await f.turns(s.id);
+    assert.equal(turn.usage[0].cacheWrite, 7);
   } finally {
     await f.close();
   }
