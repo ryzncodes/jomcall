@@ -218,25 +218,40 @@ def choose(
     return random.choice(fresh)
 
 
-# --- Filler-only language guess -------------------------------------------
-# This is NOT language identification for the conversation (the brain decides
-# that). It only picks which language the filler line is in, so it stays tiny.
+# --- Conversation language guess ------------------------------------------
+# Small word lists, not a language identifier. A guess is "confident" only with clear
+# evidence; an unsure guess must never change the call's language (see `Call`).
 _MALAY = frozenset(
     "saya boleh tak tidak nak mahu esok pukul hari ini itu dan untuk dengan "
     "awak kamu anda tolong sila terima kasih macam mana berapa bila ada tempah "
-    "kedai buka tutup harga".split()
+    "kedai buka tutup harga tiada encik puan atau ya sudah belum lagi sini sana "
+    "barang temujanji ke kan".split()
 )
-_PARTICLES = frozenset("lah leh lor kan ke meh sia wor hor".split())
+_ENGLISH = frozenset(
+    "what when where who why how which do does did is are was can could will would "
+    "you your the this that please open close price much many book booking "
+    "appointment thanks thank tomorrow today need want have help there with for "
+    "and not any time".split()
+)
+_PARTICLES = frozenset("lah leh lor meh mah sia wor hor kot wei".split())
 _WORD = re.compile(r"[a-z']+")
 
 
-def guess_language(text: str) -> str:
-    if any("一" <= ch <= "鿿" for ch in text):
-        return "zh"
+def guess(text: str) -> tuple[str | None, bool]:
+    """(language, confident). Language is None when there is no evidence at all."""
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        return "zh", True
     words = _WORD.findall(text.lower())
-    malay = sum(w in _MALAY for w in words)
-    if any(w in _PARTICLES for w in words):
-        return "manglish"
-    if malay >= 2 or (malay == 1 and len(words) <= 2):
-        return "ms"
-    return "en"
+    ms = len(set(words) & _MALAY)
+    en = len(set(words) & _ENGLISH - _MALAY)
+    particle = any(w in _PARTICLES for w in words)
+    short = len(words) <= 4
+    if en and (ms or particle) and not (ms >= 3 and en == 1):
+        return "manglish", True  # English mixed with Malay words or a particle
+    if ms and not en:
+        return "ms", ms >= 2 or short
+    if ms >= 3 and en == 1:
+        return "ms", True  # Malay with one English loanword
+    if en and not ms:
+        return "en", en >= 2 or short
+    return None, False  # a lone particle, "okay", "hello": no evidence

@@ -69,12 +69,29 @@ def test_detail_is_trimmed_and_cleaned():
 @pytest.mark.parametrize(
     "text,expected",
     [
-        ("你好，我想订位", "zh"),
-        ("boleh saya tempah esok pukul sepuluh", "ms"),
-        ("can you check the slot lah", "manglish"),
-        ("I would like to book a table tomorrow", "en"),
-        ("", "en"),
+        ("Kedai buka pukul berapa", ("ms", True)),
+        ("Boleh ke esok?", ("ms", True)),
+        ("Kedai buka pukul berapa, ada appointment?", ("ms", True)),
+        ("Can book tomorrow ah, boleh?", ("manglish", True)),
+        ("can you check the slot lah", ("manglish", True)),
+        ("What time do you open?", ("en", True)),
+        ("I would like to book a table tomorrow", ("en", True)),
+        ("你好，我想订位", ("zh", True)),
+        ("Okay.", (None, False)),
+        ("Ok lah", (None, False)),  # a lone particle carries no language evidence
+        ("Hello", (None, False)),
+        ("", (None, False)),
+        ("no markers here at all just words", (None, False)),
     ],
 )
-def test_guess_language_is_a_small_filler_heuristic(text, expected):
-    assert fillers.guess_language(text) == expected
+def test_guess_is_confident_only_with_clear_evidence(text, expected):
+    assert fillers.guess(text) == expected
+
+
+def test_no_malay_marker_alone_is_not_english():
+    assert fillers.guess("Okay then") == (None, False)
+
+
+def test_ke_and_kan_alone_do_not_make_manglish():
+    assert fillers.guess("Betul kan") == ("ms", True)
+    assert fillers.guess("Ada ke") == ("ms", True)

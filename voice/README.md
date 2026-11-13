@@ -61,9 +61,7 @@ like the agent's 54633, so stop the worker before `npm run local:start` (preflig
 - **Barge-in** needs words: only a non-empty interim transcript while the agent is speaking
   interrupts it. Raw voice-activity detection alone does nothing, so noise or echo cannot
   abort a turn or spend one of the session's turns.
-- **Filler language** comes from a tiny local guess on the transcript (CJK characters,
-  a short Malay word list, Manglish particles). It is a filler-only heuristic; the brain
-  decides the real reply language.
+- **Conversation language is sticky.** Each call has one language (`ms|en|manglish|zh`). It starts from the opening text (Malay if that shows no evidence) and changes only on a *confident* guess: CJK characters; two or more distinct marker words of one language; or one marker word and none of another in an utterance of four words or fewer. The brain's own sentences are guessed the same way, which is the strongest signal because it answers in the caller's language. Missing Malay markers never mean English, and a lone particle ("ok lah") or "okay"/"hello" is no evidence, so the language does not flip on it. Fillers, trouble line, repeat request and goodbye all use the call language at the moment they are chosen. The word lists are small and live in `fillers.py`; the per-turn stage row gains an extra `language` key (the replay tool ignores unknown keys).
 - **Disclosure** is spoken before listening starts, every call. If it cannot be
   synthesized the call ends (`opening_failed`).
 

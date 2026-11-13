@@ -14,7 +14,7 @@ from jomcall_voice.call import STAGE_FIELDS, Call, EarEvent
 from jomcall_voice.voice_out import VoiceRefused
 
 SESSION = "11111111-1111-4111-8111-111111111111"
-GREETING = "Hello, thanks for calling Kedai Contoh."
+GREETING = "Hello, thanks for calling Contoh Shop."
 DISCLOSURE = "This call is answered by an AI assistant and may be recorded."
 OPENING = GREETING + " " + DISCLOSURE
 BASE_MS = 1_700_000_000_000.0
@@ -893,3 +893,94 @@ async def test_an_ears_failure_ends_the_call_as_ears_failed_without_a_traceback(
     assert rig2.call.end_reason == "ears_failed"
     assert all(r.exc_info is None and "secret" not in r.getMessage() for r in caplog.records)
     await rig2.finish()
+
+
+# --- the conversation language is sticky ------------------------------------
+
+async def _filler_language(rig, text, script_delay=1500):
+    """Say `text`, let the neutral filler play, return the language of that filler."""
+    before = len(rig.voice.cached_calls)
+    rig.ears.say(text)
+    await settle()
+    await rig.clock.advance(NEUTRAL_AT + 100)
+    line = rig.voice.cached_calls[before]
+    return next(lang for lang in fillers.LANGUAGES if line in fillers.NEUTRAL[lang])
+
+
+async def test_an_unsure_utterance_keeps_the_calls_language(make):
+    rig = await make([(0, STARTED), (5000, sentence("x")), (0, DONE)], [(0, STARTED), (5000, sentence("x")), (0, DONE)])
+    assert await _filler_language(rig, "Kedai buka pukul berapa") == "ms"
+    await rig.clock.advance(6000)
+    assert await _filler_language(rig, "Okay.") == "ms"  # unsure: no flip
+
+
+async def test_ok_lah_after_an_english_turn_stays_english(make):
+    rig = await make([(0, STARTED), (5000, DONE)], [(0, STARTED), (5000, DONE)])
+    assert await _filler_language(rig, "What time do you open?") == "en"
+    await rig.clock.advance(6000)
+    # a lone particle is no evidence: the English call stays English
+    assert await _filler_language(rig, "Ok lah") == "en"
+
+
+async def test_a_malay_opening_and_an_unsure_first_utterance_get_malay_fillers(make):
+    rig = Rig([(0, STARTED), (5000, DONE)])
+    rig.call = Call(
+        session_id=SESSION, token="t", greeting="Selamat datang ke kedai kami.",
+        disclosure="Panggilan ini dijawab oleh pembantu AI dan boleh dirakam, tolong maklum.",
+        ears=rig.ears, brain=rig.brain, voice=rig.voice, clock=rig.clock, sink=rig.sink,
+        wall_ms=lambda: BASE_MS + rig.clock.now() * 1000,
+    )
+    await rig.start()
+    assert await _filler_language(rig, "Hello") == "ms"
+    await rig.finish()
+
+
+async def test_with_no_evidence_in_the_opening_the_language_starts_as_malay(make):
+    rig = Rig([(0, STARTED), (5000, DONE)])
+    rig.call = Call(
+        session_id=SESSION, token="t", greeting="", disclosure="Hmm.",
+        ears=rig.ears, brain=rig.brain, voice=rig.voice, clock=rig.clock, sink=rig.sink,
+    )
+    await rig.start()
+    assert await _filler_language(rig, "Okay") == "ms"
+    await rig.finish()
+
+
+async def test_the_brains_answer_language_updates_the_next_fillers(make):
+    answer = "Sure, we open at nine in the morning and close at six, and you can book an appointment."
+    rig = await make(
+        [(0, STARTED), (50, sentence(answer)), (0, DONE)],
+        [(0, STARTED), (5000, DONE)],
+    )
+    rig.call._lang = "ms"
+    rig.ears.say("Hello")  # unsure
+    await settle()
+    await rig.clock.advance(300)
+    assert rig.call._lang == "en"  # the answer was clearly English
+    assert await _filler_language(rig, "Okay") == "en"
+
+
+async def test_the_language_flips_only_on_confident_evidence(make):
+    scripts = [[(0, STARTED), (5000, DONE)] for _ in range(5)]
+    rig = await make(*scripts)
+    seen = []
+    for text in ("Kedai buka pukul berapa", "Okay.", "What time do you open?", "Hmm ok", "你好，我想订位"):
+        seen.append(await _filler_language(rig, text))
+        await rig.clock.advance(6000)
+    assert seen == ["ms", "ms", "en", "en", "zh"]
+
+
+async def test_trouble_repeat_and_goodbye_use_the_call_language(make):
+    rig = await make([(0, STARTED), (9000, DONE)])
+    assert await _filler_language(rig, "Boleh ke esok?") == "ms"
+    await rig.clock.advance(config.TROUBLE_MS)
+    assert fillers.TROUBLE["ms"] in rig.voice.cached_calls
+    rig.call.hangup()
+
+
+async def test_the_stage_row_carries_the_language_as_an_extra_key(make):
+    rig = await make([(0, STARTED), (50, sentence("Ada.")), (0, DONE)])
+    rig.ears.say("Kedai buka pukul berapa")
+    await settle()
+    await rig.clock.advance(500)
+    assert rig.stages[0]["language"] == "ms"

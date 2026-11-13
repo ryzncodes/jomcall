@@ -97,7 +97,10 @@ class Call(TurnMixin):
         self._playing = 0
         self._turn: _Turn | None = None
         self._bg: set[asyncio.Task] = set()
-        self._lang = "en"
+        # Sticky conversation language: only confident evidence changes it. Starts from
+        # the opening text; with no evidence there, Malay.
+        self._lang = "ms"
+        self._observe(" ".join(x for x in (self._greeting, self._disclosure) if x))
         self._last_filler: str | None = None
         self.fixed_lines_skipped = 0
         # (task, kind, started at, seconds long) of the filler now playing, if any
@@ -107,6 +110,12 @@ class Call(TurnMixin):
         # window is measured to this moment, not to when the transcript is delivered.
         self._piece_at: float | None = None
         self._filler_play: tuple[asyncio.Task, str, float, float] | None = None
+
+    def _observe(self, text: str) -> None:
+        """Update the call language from text, if it is clear enough. Never logged."""
+        language, confident = fillers.guess(text)
+        if confident and language:
+            self._lang = language
 
     def hangup(self) -> None:
         self._end("hangup")
@@ -333,8 +342,8 @@ class Call(TurnMixin):
             text = self._prev[1] + " " + text  # one sentence, cut by endpointing
         self._prev = None
         self._cancel_turn()  # a new turn supersedes a running one
-        lang = fillers.guess_language(text)
-        self._lang = lang
+        self._observe(text)
+        lang = self._lang
         turn = _Turn(
             id=self._new_id(), lang=lang,
             record={"clientTurnId": "", "voiceRequests": 0, "voiceRefused": False, "voiceFailed": False},

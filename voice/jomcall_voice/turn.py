@@ -19,7 +19,7 @@ log = logging.getLogger("jomcall_voice.call")
 STAGE_FIELDS = (
     "clientTurnId", "heardAtMs", "eosAtMs", "brainSentAtMs", "firstSentenceAtMs",
     "ttsRequestAtMs", "firstTtsByteAtMs", "firstFrameAtMs", "fillerKind", "fillerAtMs",
-    "voiceRefused", "fixedLinesSkipped",
+    "voiceRefused", "fixedLinesSkipped", "language",
 )
 
 
@@ -65,6 +65,7 @@ class TurnMixin:
             "fillerAtMs": stages.get("fillerAtMs"),
             "voiceRefused": bool(turn.record.get("voiceRefused")),
             "fixedLinesSkipped": turn.skipped,
+            "language": turn.lang,
         }
         try:
             self._stage_log(record)
@@ -110,6 +111,7 @@ class TurnMixin:
             if not text:
                 return False
             self._stamp(turn, "firstSentenceAtMs")
+            self._observe(text)  # the brain answers in the caller's language
             if turn.sentence_seen:
                 turn.rest.append(text)
             else:
@@ -156,7 +158,7 @@ class TurnMixin:
             turn.neutral_done = True
         else:
             turn.action_done = True
-        line = fillers.choose(action, turn.lang, self._last_filler, None)
+        line = fillers.choose(action, self._lang, self._last_filler, None)
         if line:
             self._last_filler = line
             self._spawn(
@@ -171,7 +173,7 @@ class TurnMixin:
         if turn.trouble_done:
             return
         turn.trouble_done = True
-        line = fillers.TROUBLE[turn.lang]
+        line = fillers.TROUBLE[self._lang]
         self._spawn(self._say_fixed(line, unless=lambda: turn.sentence_seen, turn=turn), turn)
 
     async def _timers(self, turn: _Turn) -> None:
