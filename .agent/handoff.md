@@ -49,3 +49,11 @@ Branch `fix/safety-checker-negation`.
 - Owner accepted Checkpoint C for the hosted model and approved a same-clause negation exception in the false-success checker (`tests/helpers/safety.ts`, pinned by `tests/inference/safety.test.ts`).
 - Run 7: 48/48, no safety flags; `npm run check:hosted-model` exits zero. Runs vary by a case or two.
 - Next: speech benchmark (spec §9 sub-project 1). Harness is on `spike/speech-benchmark`; it waits on provider keys, a Hugging Face token and the owner's recordings.
+
+## 2026-11-14 — phone line research
+
+Branch `claude/vigorous-noether-dff306` (worktree), not pushed.
+
+- Added `docs/research/phone-line-options.md`: providers for a Malaysian number over SIP, LiveKit SIP inbound set-up, Malaysian rules, call forwarding per carrier, three set-ups with cost at 300 minutes a month.
+- Nothing built, nothing signed up for. Web research only; weak claims are labelled in the document.
+- Next: owner answers section 9; phone SIPPALS and INVITE with the section 8 questions; buy one Plivo or Twilio number for a trial only on the owner's say.
