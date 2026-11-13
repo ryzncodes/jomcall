@@ -239,7 +239,7 @@ def rescore_file(path: Path, end_silence: float | None) -> int:
     out.write_text(json.dumps({"definitions": core.DEFINITIONS, **result}, indent=2) + "\n", encoding="utf-8")
     print(core.render_table(result["rows"], result["summary"]))
     print("not recomputable from the saved run: " + "; ".join(result["notRecomputable"]))
-    print(f"wrote {out.relative_to(ROOT)}")
+    print(f"wrote {out}")
     return 0
 
 

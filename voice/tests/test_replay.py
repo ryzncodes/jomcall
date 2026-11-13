@@ -274,7 +274,7 @@ def test_a_filler_that_runs_a_little_past_the_expected_time_is_still_a_filler():
     # expected 2517, floor 2417: the filler ends at 2464, the answer starts at 2985
     assert core.resolve_answer([B(2114, 2464), B(2985, 5404)], 2517) == (2985, None)
     value, why = core.resolve_answer([B(600, 3500)], 2000)  # far past: contiguous
-    assert value is None and "contiguous" in why
+    assert value is None and "straddles" in why
     assert "no agent audio" in core.resolve_answer([B(100, 500)], 2000)[1]
 
 
@@ -575,3 +575,35 @@ def test_rescoring_saved_run_two_gives_the_corrected_numbers():
     assert s["goals"]["plainAnswerMedianWithin2500"]["pass"] is None
     assert set(result["notRecomputable"]) >= {"contaminatedByPreSound", "mergedBySplitByLength", "stages", "bargedIn"}
     assert all(r["answerSource"] in ("estimate", None) for r in rows.values())
+
+
+def test_goal_four_needs_an_observed_answer_on_every_turn():
+    rows = clean_rows()
+    rows[2].update(answerMs=None, suspectDropped=True, trailingQuietMs=1000.0, longestSilentGapMs=900.0)  # a filler and nothing more
+    g = core.summarize(rows, end_silence_s=3.5)["goals"]["noSilenceOver3000"]
+    assert g["pass"] is None
+    rows2 = clean_rows()
+    rows2[3].update(answerMs=None, answerNotObserved=True)
+    assert core.summarize(rows2, end_silence_s=3.5)["goals"]["noSilenceOver3000"]["pass"] is None
+    rows3 = clean_rows()
+    rows3[4]["merged"] = True
+    assert core.summarize(rows3, end_silence_s=3.5)["goals"]["noSilenceOver3000"]["pass"] is None
+
+
+def test_quiet_after_a_dropped_answer_counts_as_a_gap_and_can_make_goal_four_false():
+    rows = clean_rows()
+    rows[2].update(answerMs=None, suspectDropped=True, trailingQuietMs=3600.0, longestSilentGapMs=900.0)
+    g = core.summarize(rows, end_silence_s=3.5)["goals"]["noSilenceOver3000"]
+    assert g["pass"] is False and g["valueMs"] == 3600.0
+    r = scored(tm=timing(bursts=[B(2000, 2400)], window=2400.0 + 3500.0))
+    assert r["trailingQuietMs"] == 3500.0 and r["suspectDropped"] is True
+
+
+def test_rescore_with_a_relative_path_does_not_crash(tmp_path, monkeypatch, capsys):
+    from tools import replay
+
+    src = Path(__file__).parent / "fixtures" / "replay_run2.json"
+    (tmp_path / "replay-x.json").write_text(src.read_text())
+    monkeypatch.chdir(tmp_path)
+    assert replay.rescore_file(Path("replay-x.json"), None) == 0
+    assert (tmp_path / "rescored-x.json").exists() and "wrote" in capsys.readouterr().out

@@ -103,6 +103,8 @@ DEFINITIONS = {
     "turnMatching": f"a stored voice row belongs to the turn whose caller speech start .. speech end + {CALLER_TAIL_MS:g} ms window (wall clock) contains its estimated heard time; the last completed row wins, extras are counted",
     "goals": "pass is true only from all turns of the group, clean; false only on a timeout that is not an endpoint error or a clean value over target; otherwise null with a reason and the partial value, never a verdict",
     "percentile": "nearest rank: the value at ceil(p * n) in sorted order",
+    "straddle": f"a burst starting before the earliest answer time and ending within {STRADDLE_TOLERANCE_MS:g} ms after it is treated as a filler; one ending later makes answerMs null",
+    "silenceGoal": "true only when every turn also has an observed answer; for a turn whose answer never arrived (suspectDropped) the quiet from the last burst to the end of listening counts as a gap",
     "arrival": "agent frame times are the arrival times of decoded frames at this client, so network and jitter-buffer delay is inside every number",
 }
 
@@ -302,7 +304,7 @@ def resolve_answer(bursts: list[Burst], expected_ms: float | None, slack_ms: flo
             return burst.start_ms, None
         if burst.end_ms - floor <= STRADDLE_TOLERANCE_MS:
             continue  # a filler that ran a little past the earliest answer time
-        return None, "filler and answer audio are contiguous; the start of the answer cannot be separated"
+        return None, "a burst straddles the earliest answer time (filler and answer may be contiguous); the start of the answer cannot be separated"
     return None, "no agent audio at or after the brain's first sentence"
 
 
@@ -656,6 +658,7 @@ def score_turn(turn: dict, call_no: int, timing: TurnTiming, stored: dict | None
         "bursts": [{"startMs": b.start_ms, "endMs": b.end_ms} for b in bursts],
         "answerNotObserved": not_observed,
         "tailCut": tail_cut,
+        "trailingQuietMs": (timing.window_ms - bursts[-1].end_ms) if bursts else None,
         "contaminated": contaminated_by is not None,
         "contaminatedBy": contaminated_by,
         "unverified": unverified is not None,
@@ -721,7 +724,14 @@ def _endpoint(r: dict) -> bool:
 def _gap_for_stats(r: dict) -> float | None:
     if r.get("contaminated"):
         return None
-    return r.get("gapBeforeAnswerMs") if r.get("tailCut") else r.get("longestSilentGapMs")
+    gap = r.get("gapBeforeAnswerMs") if r.get("tailCut") else r.get("longestSilentGapMs")
+    if r.get("suspectDropped") and not r.get("tailCut") and r.get("trailingQuietMs") is not None and not _endpoint(r):
+        gap = max(gap or 0.0, r["trailingQuietMs"])  # the answer never came: that silence is real
+    return gap
+
+
+def _observed_answer(r: dict) -> bool:
+    return r.get("answerMs") is not None and not (r.get("suspectDropped") or r.get("answerNotObserved") or _endpoint(r))
 
 
 def _goal(target: float, value: float | None, ok: bool | None, reason: str | None = None, partial: dict | None = None) -> dict:
@@ -776,10 +786,10 @@ def summarize(rows: list[dict], expected_turns: int = 20, end_silence_s: float =
     elif top_gap is not None and top_gap > GOAL_MAX_SILENCE_MS:
         silence = _goal(GOAL_MAX_SILENCE_MS, top_gap, False)
         silence["note"] = "a clean gap is over target"
-    elif complete and len(gaps) == len(rows) and not any(r["tailCut"] for r in rows):
+    elif complete and len(gaps) == len(rows) and not any(r["tailCut"] for r in rows) and all(_observed_answer(r) for r in rows):
         silence = _goal(GOAL_MAX_SILENCE_MS, top_gap, True)
     else:
-        silence = _goal(GOAL_MAX_SILENCE_MS, None, None, "some turns are contaminated, tail-cut or not run, so gaps after the answer are not fully seen", {"n": len(gaps), "of": expected_turns, "value": top_gap})
+        silence = _goal(GOAL_MAX_SILENCE_MS, None, None, "some turns are contaminated, tail-cut, not run or have no observed answer, so gaps after the answer are not fully seen", {"n": len(gaps), "of": expected_turns, "value": top_gap})
     stage_rows = [r["stages"] for r in rows if r.get("stages")]
     stage_names = ("heardToEos", "eosToBrainSent", "brainSentToFirstSentence", "firstSentenceToTtsRequest", "ttsRequestToFirstByte", "firstByteToFirstFrame", "heardToFiller")
     stages = None
