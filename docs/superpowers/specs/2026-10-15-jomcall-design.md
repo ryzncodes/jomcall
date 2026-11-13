@@ -177,6 +177,7 @@ Each sub-project gets its own plan and ends in a demo.
 |---|---|
 | Contributor agreement (CLA) | Needed only if dual-licensing may happen later; decide before accepting outside contributions |
 | Default LLM provider and model | Decided 2026-11-13: hosted `anthropic/claude-haiku-5.5` through OpenRouter as the main path, chosen on the 48-case evaluation (`docs/qa/2026-11-13-agent-tool-calling.md`); the local model adapter stays for self-hosting. Direct Anthropic API versus OpenRouter for production is still open. Take model IDs from the provider's current model list; never hardcode in more than one place |
+| Default speech providers | Decided 2026-11-13: Google `gemini-3.8-flash-lite-tts` for text-to-speech, preset voice chosen by the business; Google `gemini-3.5-transcribe-live` provisionally for speech-to-text. Evidence and open risks: `docs/decisions/0001-speech-providers.md` |
 | Auth provider | e.g. Supabase Auth, Auth.js, or other |
 | Payment provider | Billplz, Stripe MY, or both |
 | Default calendar | Google Calendar, Cal.com, or a built-in calendar |
