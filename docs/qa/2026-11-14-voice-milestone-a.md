@@ -86,4 +86,4 @@ The spoken-path 48-case gate (`npm run check:voice-model`), latest full run (run
 - The effect of the 61e053e rule rewording on the 48-case gate.
 - Real phone audio, real callers, and more than one concurrent call.
 - A three-run median. One run only, by the owner's choice.
-- The final whole-branch review has not been done. Pull requests #5 (speech provider decision) and #6 (design and plan) are open and unmerged; this branch builds on #6.
+- The final whole-branch review was done on 2026-11-14 and its fixes are on this branch; those fixes were checked by unit tests and one scoped review, not by another live run. Pull requests #5 (speech provider decision) and #6 (design and plan) are open and unmerged; this branch builds on #6.
