@@ -341,6 +341,33 @@ const cached = async (f: any) =>
   ).rows[0].n;
 const question = "What time are you open on weekdays?";
 
+test("a booking resource change stops old cached answers being served", async () => {
+  const f = await fixture();
+  try {
+    const answer = [sentence("We open at nine."), end("We open at nine.")];
+    await f.run(await f.makeSession(), question, f.scripted(answer).model);
+    assert.equal(await cached(f), 1);
+    const again = await f.run(
+      await f.makeSession(),
+      question,
+      f.scripted().model,
+    );
+    assert.ok(again.some((e) => e.type === "fast"));
+    // A new active resource at the location: the old answer may be wrong now.
+    await f.h.cleanup.query(
+      "insert into app.booking_resource(org_id,location_id,name,duration_minutes)values($1,$2,'Bilik Contoh Baru',30)",
+      [f.h.orgA.id, f.h.orgA.locationId],
+    );
+    const { model, seen } = f.scripted(answer);
+    const after = await f.run(await f.makeSession(), question, model);
+    assert.ok(!after.some((e) => e.type === "fast"));
+    assert.equal(seen.length, 1);
+    assert.equal(await cached(f), 2);
+  } finally {
+    await f.close();
+  }
+});
+
 test("an answer about the present moment is never cached", async () => {
   const f = await fixture();
   try {

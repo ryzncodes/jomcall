@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
+  cacheKey,
   fastLaneKey,
   mentionsLiveState,
   spokenLanguage,
@@ -184,4 +185,26 @@ test("mentionsLiveState flags live answers and passes static ones", () => {
     false,
   );
   assert.equal(mentionsLiveState("Today's special is closed."), true);
+});
+
+test("the cache key carries a fingerprint of the active booking resources", () => {
+  const q = "kedai buka pukul berapa";
+  const a = { id: "11111111-1111-4111-8111-111111111111", revision: 1 };
+  const b = { id: "22222222-2222-4222-8222-222222222222", revision: 1 };
+  const key = cacheKey(q, [a, b])!;
+  assert.match(key, /^kedai buka pukul berapa\|r:[0-9a-f]{16}$/);
+  // Order does not matter; the set and each revision do.
+  assert.equal(cacheKey(q, [b, a]), key);
+  assert.notEqual(cacheKey(q, [a]), key);
+  assert.notEqual(cacheKey(q, []), key);
+  assert.notEqual(cacheKey(q, [a, { ...b, revision: 2 }]), key);
+  assert.notEqual(cacheKey(q, []), cacheKey(q, [a]));
+  // The question itself is still part of the key.
+  assert.notEqual(cacheKey("kedai tutup pukul berapa", [a, b]), key);
+});
+
+test("a key that would exceed the database limit is not cached", () => {
+  const long = "a".repeat(390);
+  assert.equal(cacheKey(long, []), null);
+  assert.equal(Buffer.byteLength(cacheKey("a".repeat(381), [])!), 400);
 });

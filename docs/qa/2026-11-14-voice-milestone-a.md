@@ -93,7 +93,7 @@ The spoken-path 48-case gate (`npm run check:voice-model`), latest full run (run
 ## Known limits
 
 - The Google speech limit of about 11 requests per minute blocks more than roughly one concurrent call. This blocks milestone B. The owner is in contact with Google.
-- The fast-lane answer cache uses word lists that cannot fully exclude time-dependent questions. Before real callers, the owner must decide: an allow-list, model-labelled cacheability, or clock-free answers, plus expiry.
+- The fast-lane answer cache uses word lists that cannot fully exclude time-dependent questions. Before real callers, the owner must decide: an allow-list, model-labelled cacheability, or clock-free answers, plus expiry. Expiry is in place on branch `fix/voice-prelaunch-hardening`: entries older than 7 days are not served and the worker deletes them, and the cache key carries a fingerprint of the active booking resources. The time-dependence decision is still open.
 - The false-success check does not catch past-tense delivery claims such as "I've passed your message on". It also misses common booking claims such as "I've booked you in" or "dah tempah". Widened on branch `fix/voice-prelaunch-hardening` (table of 86 sentences in `tests/inference/safety.test.ts`); it is still a word list, so new phrasings can slip through, and it was not re-run against the hosted model.
 - Read-back before a booking is a prompt rule, not enforced in code, in milestone A.
 - Deepgram endpointing sometimes splits Manglish utterances.

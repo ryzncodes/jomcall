@@ -1,6 +1,7 @@
 // The fast lane serves an answer the brain gave earlier, for the same agent
 // snapshot, to the same question. It never composes a new answer. These are
 // the pure key and language functions; the database lookup lives elsewhere.
+import { createHash } from "node:crypto";
 
 const MAX_KEY_BYTES = 400; // app.voice_answer_cache.key limit, in UTF-8 octets
 const MIN_WORDS = 4;
@@ -172,6 +173,27 @@ export function fastLaneKey(transcript: string): string | null {
   const key = words
     .join(" ")
     .replace(/([\u4e00-\u9fff]) (?=[\u4e00-\u9fff])/g, "$1");
+  return Buffer.byteLength(key, "utf8") > MAX_KEY_BYTES ? null : key;
+}
+
+// The stored key: the question plus a fingerprint of the location's active
+// booking resources (id and revision of each). Adding, removing, renaming or
+// retiming a resource changes the fingerprint, so answers cached before the
+// change are no longer found. Null when the result would not fit the column.
+export function cacheKey(
+  questionKey: string,
+  resources: { id: string; revision?: number }[],
+): string | null {
+  const print = createHash("sha256")
+    .update(
+      resources
+        .map((r) => `${r.id}:${r.revision ?? 0}`)
+        .sort()
+        .join(","),
+    )
+    .digest("hex")
+    .slice(0, 16);
+  const key = `${questionKey}|r:${print}`;
   return Buffer.byteLength(key, "utf8") > MAX_KEY_BYTES ? null : key;
 }
 
