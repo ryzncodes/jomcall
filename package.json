@@ -43,7 +43,7 @@
     "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^1.8.0",
+    "@anthropic-ai/sdk": "1.8.0",
     "@supabase/supabase-js": "2.118.0",
     "livekit-server-sdk": "2.19.2",
     "nodemailer": "10.1.1",
