@@ -2,9 +2,9 @@ import { modelDecisionSchema } from "../../contracts/src/agent-test.ts";
 import { decisionFormat } from "./budget.ts";
 import type { ModelClient } from "./index.ts";
 
-// EVALUATION ONLY. This client is not wired into the worker: sessions,
-// readiness and the loopback guards still assume the local model. It sends
-// prompt text to openrouter.ai, so use it with synthetic fixtures only.
+// Hosted model client. Opt-in through JOMCALL_MODEL_PROVIDER=openrouter; see
+// provider.ts. Every request sends the prompt, customer text and retrieved
+// knowledge to openrouter.ai and its upstream provider, outside this machine.
 
 const unsupported = new Set([
   "$schema",

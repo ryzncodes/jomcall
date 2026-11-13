@@ -67,6 +67,14 @@ Ordinary startup never installs or pulls a model. Default provider is disabled. 
 
 Runtime binds numeric loopback, disables cloud features and uses one model/request at a time. Start, readiness and inference verify the recorded PID, exact project executable and sole listener on port 11434. Stop never stops another installation. Run lifecycle/worker commands from the repository root; Next runs from `web/`. No new Docker service is required. Model outage does not disable staff bookings or the 4181 mock preview. Structured model output is untrusted and parsed against the same tool schemas as server execution.
 
+## Optional hosted text model
+
+Set `JOMCALL_MODEL_PROVIDER=openrouter` for the local web and agent processes, and put `OPENROUTER_API_KEY` in the ignored root file `.env.hosted`, which only `npm run dev:agent` and `npm run check:hosted-model` load. The default model ID lives in one place, `packages/inference/src/provider.ts`; `JOMCALL_HOSTED_MODEL` overrides it and `npm run local:start` preserves that override in both env files.
+
+Readiness for a hosted model reports configuration only. It makes no network request, and the web process does not hold the key, so a missing or rejected key shows up as a failed turn (`HOSTED_MODEL_REQUIRED` or `MODEL_UNAVAILABLE`), not as an unavailable model. A session pins `openrouter:<model id>` on its first turn; switching provider or model afterwards fails that session with `MODEL_CHANGED`.
+
+This is the one runtime path that leaves the machine, and only when selected. Prompt text, customer text and retrieved knowledge go to openrouter.ai and its upstream provider. Requests omit `temperature`, so answers are not reproducible run to run. The test panel states that text leaves the computer whenever a hosted model is selected.
+
 ## Local bookings and text tests
 
 Create a branch schedule under Branch hours, then add a resource under Bookings. Each resource has capacity one and a 15–240-minute duration. Requests do not reserve a slot. Review and confirm separately; current hours and confirmed occupancy are rechecked under database locks. Failed rescheduling preserves the original slot. Only Kuala Lumpur scheduling is supported. External calendars remain disconnected.

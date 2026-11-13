@@ -23,7 +23,7 @@ It answers Malaysian SMEs' phone calls and WhatsApp messages 24/7 with an AI age
 ## Frontend work: how to start
 
 - Stack per spec: Next.js + TypeScript (`web` service). UI component library, auth provider and payment provider are open decisions (spec §10); pick sensible defaults and note them, or ask the owner.
-- Keep server-selected modes isolated: mock preview at 4181 uses existing fictional browser data; local app at 4182 uses named commands from `packages/contracts/src/core.ts`. Never fall back to mock records on a local error. Unsupported integrations stay explicitly unavailable. Read root `README.md`, `infra/local/README.md` and the Phase 1 spec/plan before backend work. All runtime services stay local unless the owner explicitly changes that constraint.
+- Keep server-selected modes isolated: mock preview at 4181 uses existing fictional browser data; local app at 4182 uses named commands from `packages/contracts/src/core.ts`. Never fall back to mock records on a local error. Unsupported integrations stay explicitly unavailable. Read root `README.md`, `infra/local/README.md` and the Phase 1 spec/plan before backend work. All runtime services stay local unless the owner explicitly changes that constraint. One exception was approved by the owner on 2026-11-13: the agent's language model may be a hosted model through OpenRouter when `JOMCALL_MODEL_PROVIDER=openrouter` is set (see `packages/inference/src/provider.ts`). It is opt-in, off by default, and only the agent worker holds the key. Do not add other outbound calls on the strength of that exception.
 - Start with the screens that decide whether an owner trusts the product: guided setup with browser test call, agent test panel, call log (see `docs/frontend/screens.md`).
 
 ## Rules

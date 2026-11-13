@@ -11,3 +11,9 @@ export {
   getModelReadiness,
   configuredModel,
 } from "./ollama.ts";
+export {
+  configuredProvider,
+  createModelClient,
+  getReadiness,
+  defaultHostedModel,
+} from "./provider.ts";

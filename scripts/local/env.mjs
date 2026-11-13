@@ -28,6 +28,11 @@ export function writeEnvironment() {
     CSRF_SECRET: secret("CSRF_SECRET"),
     JOMCALL_QUEUE_NAMESPACE: "local",
     JOMCALL_MODEL_PROVIDER: prior.JOMCALL_MODEL_PROVIDER ?? "disabled",
+    // Web and worker must agree on the hosted model or sessions fail with
+    // MODEL_CHANGED. The hosted key is never written here; see .env.hosted.
+    ...(prior.JOMCALL_HOSTED_MODEL
+      ? { JOMCALL_HOSTED_MODEL: prior.JOMCALL_HOSTED_MODEL }
+      : {}),
   };
   const root = {
     ...shared,

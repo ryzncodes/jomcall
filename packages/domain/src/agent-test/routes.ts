@@ -1,4 +1,4 @@
-import { getModelReadiness } from "../../../inference/src/ollama.ts";
+import { getReadiness as getModelReadiness } from "../../../inference/src/provider.ts";
 import { submitTurn, controlTurn } from "./turns.ts";
 import { applyBookingProposal } from "./proposals.ts";
 import type { PoolClient } from "pg";
