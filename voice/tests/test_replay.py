@@ -241,52 +241,62 @@ def test_summary_passes_when_all_goals_met():
 
 
 def test_silence_goal_cannot_pass_while_a_turn_ends_after_three_seconds_or_less():
-    s = core.summarize(passing_rows())  # default end silence 1.5 s
-    g = s["goals"]["noSilenceOver3000"]
-    assert g["pass"] is None and "--end-silence" in g["notDecided"]
+    g = core.summarize(passing_rows(), end_silence_s=1.5)["goals"]["noSilenceOver3000"]
+    assert g["pass"] is None and "--end-silence" in g["reason"]
     assert core.summarize(passing_rows(), end_silence_s=3.0)["goals"]["noSilenceOver3000"]["pass"] is None
+    assert core.END_SILENCE_S == 3.5
 
 
-def test_summary_marks_each_miss_and_timeouts():
+def test_clean_run_gives_true_and_false_verdicts():
     rows = passing_rows()
-    rows[0]["firstSoundMs"] = 1600.0  # one slow first sound fails the every-turn goal
+    rows[0]["firstSoundMs"] = 1600.0
     for r in rows[:12]:
-        r["answerMs"] = 2700.0  # plain median over 2.5 s
+        r["answerMs"] = 2700.0
     for r in rows[12:]:
         r["answerMs"] = 4100.0
     rows[5]["longestSilentGapMs"] = 3200.0
     s = core.summarize(rows, end_silence_s=3.5)
     assert [g["pass"] for g in s["goals"].values()] == [False, False, False, False]
-    timeout = passing_rows()
-    timeout[3].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
-    s2 = core.summarize(timeout, end_silence_s=3.5)
-    assert s2["timeouts"] == 1 and s2["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False
-    assert s2["goals"]["noSilenceOver3000"]["pass"] is False
-    assert s2["answerNotMeasuredTurns"] == ["t03"]
 
 
-def test_median_goal_is_not_a_pass_when_turns_without_a_value_were_dropped():
+def test_one_timeout_makes_goal_one_false_and_goals_two_three_unmeasured():
     rows = passing_rows()
-    for r in rows[:4]:  # four plain turns have no answer start (e.g. contiguous filler)
-        r["answerMs"] = None
-    g = core.summarize(rows, end_silence_s=3.5)["goals"]["plainAnswerMedianWithin2500"]
-    assert g["pass"] is None and "4 of 12" in g["notDecided"]
-    slow = passing_rows()
-    for r in slow[4:12]:
-        r["answerMs"] = 2900.0
-    for r in slow[:4]:
-        r["answerMs"] = None
-    assert core.summarize(slow, end_silence_s=3.5)["goals"]["plainAnswerMedianWithin2500"]["pass"] is False
-    none = passing_rows()
-    for r in none[12:]:
-        r["answerMs"] = None
-    assert core.summarize(none, end_silence_s=3.5)["goals"]["toolAnswerMedianWithin4000"]["pass"] is None
+    rows[3].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
+    rows[14].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
+    s = core.summarize(rows, end_silence_s=3.5)
+    g = s["goals"]
+    assert g["firstSoundWithin1500OnEveryTurn"]["pass"] is False
+    assert g["plainAnswerMedianWithin2500"]["pass"] is None and "1 of 12" in g["plainAnswerMedianWithin2500"]["reason"]
+    assert g["toolAnswerMedianWithin4000"]["pass"] is None and g["toolAnswerMedianWithin4000"]["partial"]["n"] == 7
+    assert g["noSilenceOver3000"]["pass"] is None
+    assert s["timedOutTurns"] == ["t03", "t14"] and s["answerNotMeasuredTurns"] == ["t03", "t14"]
+
+
+def test_truncated_turn_and_the_contaminated_next_turn_are_excluded_and_goals_are_null():
+    rows = passing_rows()
+    rows[12]["truncated"] = True  # the late answer of t12 ...
+    rows[13]["contaminated"] = True
+    rows[13]["firstSoundMs"] = 40.0  # ... shows up as a tiny first sound of t13
+    s = core.summarize(rows, end_silence_s=3.5)
+    assert s["truncatedTurns"] == ["t12"] and s["contaminatedTurns"] == ["t13"]
+    assert s["firstSoundMs"]["all"]["n"] == 18 and s["firstSoundMs"]["all"]["max"] == 1000.0
+    assert s["answerMs"]["tool"]["n"] == 6
+    for name in ("firstSoundWithin1500OnEveryTurn", "toolAnswerMedianWithin4000", "noSilenceOver3000"):
+        g = s["goals"][name]
+        assert g["pass"] is None and "truncated" in g["reason"], name
+    assert s["goals"]["toolAnswerMedianWithin4000"]["partial"] == {"n": 6, "of": 8, "value": 3000.0}
+    assert s["goals"]["plainAnswerMedianWithin2500"]["pass"] is True  # plain group is fully clean
+
+
+def test_dropped_answers_also_block_a_verdict():
+    rows = passing_rows()
+    rows[2]["suspectDropped"] = True
+    assert core.summarize(rows, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
 
 
 def test_summary_of_a_partial_run_is_not_a_pass():
     s = core.summarize(passing_rows()[:7], end_silence_s=3.5)
-    assert s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
-    assert s["goals"]["noSilenceOver3000"]["pass"] is None
+    assert all(g["pass"] is None for g in s["goals"].values())
     assert s["turnsRun"] == 7 and s["turnsPlanned"] == 20
 
 
@@ -339,7 +349,7 @@ def test_row_for_timeout_truncation_and_dropped_answer():
     assert r["timedOut"] and r["firstSoundMs"] is None and "firstSoundMs" in r["notMeasured"]
     assert r["suspectDropped"] is True  # the brain finished a turn nobody heard
     cut = build_row(TURN, 1, timing(window=2500.0), chosen, None)
-    assert cut["possiblyTruncated"] is True  # the brain finished after listening stopped
+    assert cut["truncated"] is True  # the brain finished after listening stopped
     quiet_after = build_row(TURN, 1, timing(bursts=[B(900, 1400)]), chosen, None)
     assert quiet_after["answerMs"] is None and quiet_after["suspectDropped"] is True
 
@@ -422,3 +432,37 @@ async def test_prepare_is_rate_limited_resumable_and_stops_on_429(tmp_path):
                                     voice_out.VoiceRefused, voice_out.VoiceError, say=lambda _: None)
         assert (second.skipped, second.synthesized, second.remaining) == (3, 3, 0)
         assert len(server.requests) - before == 3
+
+
+def test_attach_marks_the_turn_after_a_truncated_one_contaminated():
+    sent = [(TURN, timing(window=2500.0, wall=1_000_000.0)), (TURN, timing(wall=1_020_000.0)), (TURN, timing(wall=1_040_000.0))]
+    rows = attach(sent, [stored(1_000_300), stored(1_020_300), stored(1_040_300)], 1)
+    assert [r["truncated"] for r in rows] == [True, False, False]
+    assert [r["contaminated"] for r in rows] == [False, True, False]
+
+
+def test_rms_of_an_int16_memoryview_equals_rms_of_the_same_bytes():
+    data = struct.pack("<6h", 100, -200, 300, -400, 500, -600)
+    view = memoryview(bytearray(data)).cast("h")
+    assert len(view) == 6 and core.rms(view) == core.rms(data) > 0
+    assert core.rms(memoryview(data)) == core.rms(data)
+
+
+def test_ceiling_ends_a_turn_that_never_goes_quiet():
+    tr = core.TurnTracker(0.0, end_silence_s=3.5, ceiling_s=20.0)
+    feed(tr, [(1.0, 19.9)])
+    assert tr.status(19.0) is None and tr.status(20.0) == "ceiling"
+
+
+async def test_pump_say_wait_fails_clearly_when_frames_never_go_out():
+    async def stuck(data):
+        await asyncio.sleep(10)
+
+    pump = core.Pump(stuck, FakeClock(), 24_000)
+    task = asyncio.ensure_future(pump.run())
+    await asyncio.sleep(0)
+    with pytest.raises(core.PumpStalled, match="not sent within"):
+        await pump.say_wait(pcm(1000, 480), timeout_s=0.05)
+    pump.stop()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)

@@ -14,8 +14,12 @@ How each number is defined (also written into every output file):
 * firstSoundMs: t0 to the start of the first burst.
 * longestSilentGapMs: the longest stretch without a burst from t0 to the end of
   the last burst (the wait for the first sound counts as a gap).
-* turn end: END_SILENCE_S of quiet after a burst, or TURN_TIMEOUT_S after t0
-  with no burst at all (recorded as a timeout).
+* turn end: END_SILENCE_S (3.5 s) of quiet after a burst, TURN_CEILING_S after
+  t0, or TURN_TIMEOUT_S with no burst at all (recorded as a timeout). The tool
+  cannot see the brain live, so after the call the stored rows decide: a turn
+  whose brain was still working after the tool stopped listening is `truncated`,
+  and the next turn of that call is `contaminated` (its first sound may be the
+  late answer). Both are excluded from every statistic and goal.
 * answerMs: the tool cannot tell a filler from an answer by ear. The brain's
   `firstSentenceMs` is measured from the worker's `heardAtMs`, which is NOT t0:
   it comes after the caller's endpointing wait and the final transcript. The
@@ -46,8 +50,11 @@ ENERGY_THRESHOLD = 120.0  # RMS on the int16 scale, about -48 dBFS
 FRAME_MS = 20
 MERGE_GAP_MS = 100.0
 MIN_BURST_MS = 40.0
-END_SILENCE_S = 1.5
-TURN_TIMEOUT_S = 15.0
+END_SILENCE_S = 3.5  # above the 3 s silence goal, so a long gap is seen, not mistaken for the end
+TURN_TIMEOUT_S = 15.0  # no sound at all
+TURN_CEILING_S = 20.0  # hard limit per turn
+PUMP_TIMEOUT_S = 60.0
+HELPER_TIMEOUT_S = 60.0
 GREETING_TIMEOUT_S = 30.0
 ANSWER_SLACK_MS = 50.0
 SKEW_PLAUSIBLE_MS = (-300.0, 3000.0)
@@ -74,7 +81,11 @@ DEFINITIONS = {
     "turnMatching": f"each stored voice row is assigned to the caller turn whose t0 window (wall clock, {WINDOW_TOLERANCE_MS:g} ms early tolerance) contains its estimated heardAt; the last completed row in a window is used and extra rows are counted",
     "brain": "stored turn timings (transcriptMs, firstSentenceMs, totalMs), measured by the brain from the worker's heardAtMs, not from t0",
     "longestSilentGapMs": "longest stretch without a burst between t0 and the end of the last burst, including the wait for the first sound",
-    "turnEnd": f"{END_SILENCE_S:g} s of quiet after a burst, or {TURN_TIMEOUT_S:g} s with no burst (timeout)",
+    "turnEnd": f"{END_SILENCE_S:g} s of quiet after a burst, {TURN_CEILING_S:g} s ceiling, or {TURN_TIMEOUT_S:g} s with no burst (timeout)",
+    "truncated": "the stored brain turn finished (skewMs + totalMs after t0) more than 500 ms after the tool stopped listening",
+    "contaminated": "the turn after a truncated one in the same call: the late answer may be counted as its first sound",
+    "exclusion": "truncated and contaminated turns are left out of every median, percentile, first-sound and gap statistic and listed by id",
+    "goals": "pass is true/false only when computed from ALL turns of the group with none truncated, contaminated, timed out, dropped or unmeasured; otherwise null with a reason and the partial statistics, never a verdict. A timeout makes goal 1 false; for goals 2-3 it is unmeasured",
     "percentile": "nearest rank: the value at ceil(p * n) in sorted order",
     "arrival": "agent frame times are the arrival times of decoded frames at this client, so network and jitter-buffer delay is inside every number",
 }
@@ -88,8 +99,9 @@ class ScriptError(ValueError):
 
 def rms(pcm: bytes | memoryview) -> float:
     """RMS of little-endian 16-bit mono samples."""
+    raw = pcm.tobytes() if isinstance(pcm, memoryview) else bytes(pcm)  # len(memoryview) counts items, not bytes
     samples = array("h")
-    samples.frombytes(bytes(pcm)[: len(pcm) - (len(pcm) % 2)])
+    samples.frombytes(raw[: len(raw) - (len(raw) % 2)])
     if not samples:
         return 0.0
     return math.sqrt(sum(x * x for x in samples) / len(samples))
@@ -181,7 +193,9 @@ class TurnTracker:
         min_burst_ms: float = MIN_BURST_MS,
         end_silence_s: float = END_SILENCE_S,
         timeout_s: float = TURN_TIMEOUT_S,
+        ceiling_s: float = TURN_CEILING_S,
     ):
+        self._ceiling = ceiling_s
         self.t0 = t0
         self._threshold, self._merge, self._min = threshold, merge_gap_ms, min_burst_ms
         self._end_silence, self._timeout = end_silence_s, timeout_s
@@ -205,6 +219,8 @@ class TurnTracker:
     def status(self, now: float) -> str | None:
         elapsed_ms = (now - self.t0) * 1000
         bursts = self.bursts()
+        if bursts and elapsed_ms >= self._ceiling * 1000:
+            return "ceiling"
         if bursts:
             return "quiet" if elapsed_ms - bursts[-1].end_ms >= self._end_silence * 1000 else None
         return "timeout" if elapsed_ms >= self._timeout * 1000 else None
@@ -304,6 +320,10 @@ def match_rows(t0_walls: list[float | None], stored: list[dict]) -> tuple[list[d
 
 # --- the caller's side: paced frames ---------------------------------------------
 
+class PumpStalled(Exception):
+    pass
+
+
 class Pump:
     """Sends 20 ms frames in real time: queued speech first, silence otherwise."""
 
@@ -329,6 +349,13 @@ class Pump:
         else:
             self._waiting = (len(self._speech), future)
         return future
+
+    async def say_wait(self, pcm: bytes, timeout_s: float = PUMP_TIMEOUT_S) -> float:
+        """`say`, failing with PumpStalled if the last frame is not sent in time."""
+        try:
+            return await asyncio.wait_for(self.say(pcm), timeout_s)
+        except asyncio.TimeoutError:
+            raise PumpStalled(f"the caller audio was not sent within {timeout_s:g} s") from None
 
     def stop(self) -> None:
         self._stop = True
@@ -413,50 +440,57 @@ def spread(values: list[float]) -> dict:
     }
 
 
-def _goal(target: float, value: float | None, ok: bool | None, reason: str | None = None) -> dict:
-    out = {"targetMs": target, "valueMs": value, "pass": ok}
+def _usable(r: dict) -> bool:
+    return not (r.get("truncated") or r.get("contaminated") or r.get("timedOut") or r.get("suspectDropped"))
+
+
+def _goal(target: float, value: float | None, ok: bool | None, reason: str | None = None, partial: dict | None = None) -> dict:
+    out: dict = {"targetMs": target, "valueMs": value, "pass": ok}
     if ok is None:
-        out["notDecided"] = reason or "not enough measured turns"
+        out["reason"] = reason or "not enough measured turns"
+        out["partial"] = partial
     return out
 
 
-def _group_goal(target: float, rows: list[dict], key: str) -> dict:
-    """A median goal. True only when every turn of the group has a value."""
-    values = [r[key] for r in rows if r.get(key) is not None]
-    mid = median(values)
-    if mid is None:
-        return _goal(target, None, None, f"none of {len(rows)} turns has an answer start")
-    if mid > target:
-        return _goal(target, mid, False)  # the measured turns already miss
-    if len(values) < len(rows):
-        return _goal(target, mid, None, f"{len(rows) - len(values)} of {len(rows)} turns have no answer start, so the median may be understated")
-    return _goal(target, mid, True)
+def _decide(target, rows, key, stat, expected, extra_reason=None) -> dict:
+    """pass is a verdict only if every turn of the group is clean and has a value."""
+    clean = [r[key] for r in rows if _usable(r) and r.get(key) is not None]
+    value = stat(clean) if clean else None
+    bad = len(rows) - len(clean)
+    if len(rows) != expected or extra_reason or bad:
+        why = extra_reason or (f"{bad} of {len(rows)} turns are truncated, contaminated, timed out, dropped or unmeasured" if bad else "not every turn was run")
+        return _goal(target, None, None, why, {"n": len(clean), "of": expected, "value": value})
+    return _goal(target, value, value <= target)
 
 
 def summarize(rows: list[dict], expected_turns: int = 20, end_silence_s: float = END_SILENCE_S) -> dict:
     """Per-turn rows to a summary. A row is a dict as built by `replay.build_row`."""
-    plain = [r for r in rows if r["expectTool"] is None]
-    tool = [r for r in rows if r["expectTool"] is not None]
+    ok = [r for r in rows if not (r.get("truncated") or r.get("contaminated"))]
+    plain_all = [r for r in rows if r["expectTool"] is None]
+    tool_all = [r for r in rows if r["expectTool"] is not None]
+    plain = [r for r in ok if r["expectTool"] is None]
+    tool = [r for r in ok if r["expectTool"] is not None]
     got = lambda rs, k: [r[k] for r in rs if r.get(k) is not None]
     timeouts = [r for r in rows if r["timedOut"]]
-    first_all = got(rows, "firstSoundMs")
-    gaps = got(rows, "longestSilentGapMs")
-    complete = len(rows) == expected_turns
-    first_ok = None if not complete else (not timeouts and len(first_all) == expected_turns and max(first_all) <= GOAL_FIRST_SOUND_MS)
+    gaps = got(ok, "longestSilentGapMs")
     top_gap = max(gaps) if gaps else None
-    if end_silence_s <= GOAL_MAX_SILENCE_MS / 1000:
-        silence = _goal(GOAL_MAX_SILENCE_MS, top_gap, None, f"a turn ends after {end_silence_s:g} s of quiet, so a longer gap cannot be seen; run with --end-silence above 3")
-    elif timeouts:
-        silence = _goal(GOAL_MAX_SILENCE_MS, top_gap, False)
-    elif not gaps or not complete:
-        silence = _goal(GOAL_MAX_SILENCE_MS, top_gap, None, "not every turn was run")
+    if timeouts and len(rows) == expected_turns:
+        first = _goal(GOAL_FIRST_SOUND_MS, None, False, None)  # the caller heard nothing
+        first["note"] = f"{len(timeouts)} turn(s) timed out with no sound"
     else:
-        silence = _goal(GOAL_MAX_SILENCE_MS, top_gap, top_gap <= GOAL_MAX_SILENCE_MS)
+        first = _decide(GOAL_FIRST_SOUND_MS, rows, "firstSoundMs", max, expected_turns)
+    if end_silence_s <= GOAL_MAX_SILENCE_MS / 1000:
+        silence = _goal(GOAL_MAX_SILENCE_MS, None, None, f"a turn ends after {end_silence_s:g} s of quiet, so a longer gap cannot be seen; run with --end-silence above 3", {"value": top_gap})
+    else:
+        silence = _decide(GOAL_MAX_SILENCE_MS, rows, "longestSilentGapMs", max, expected_turns)
     return {
         "turnsPlanned": expected_turns,
         "turnsRun": len(rows),
         "endSilenceS": end_silence_s,
         "timeouts": len(timeouts),
+        "timedOutTurns": [r["id"] for r in timeouts],
+        "truncatedTurns": [r["id"] for r in rows if r.get("truncated")],
+        "contaminatedTurns": [r["id"] for r in rows if r.get("contaminated")],
         "refusedVoiceRequests": {
             "value": None,
             "notMeasured": "the worker keeps refusals only in memory (voiceRefused) and logs nothing about them, so they cannot be observed from outside; see suspectedDroppedAnswerTurns",
@@ -465,17 +499,17 @@ def summarize(rows: list[dict], expected_turns: int = 20, end_silence_s: float =
         "fastLaneTurns": sum(1 for r in rows if r.get("fastServed")),
         "turnsWithStoredRow": sum(1 for r in rows if r.get("brain") is not None),
         "extraStoredRows": sum(r.get("extraStoredRows") or 0 for r in rows),
-        "firstSoundMs": {"all": spread(first_all), "plain": spread(got(plain, "firstSoundMs")), "tool": spread(got(tool, "firstSoundMs"))},
+        "statisticsOver": "turns that are not truncated or contaminated",
+        "firstSoundMs": {"all": spread(got(ok, "firstSoundMs")), "plain": spread(got(plain, "firstSoundMs")), "tool": spread(got(tool, "firstSoundMs"))},
         "answerMs": {"plain": spread(got(plain, "answerMs")), "tool": spread(got(tool, "answerMs"))},
         "longestSilentGapMs": top_gap,
         "goals": {
-            "firstSoundWithin1500OnEveryTurn": _goal(GOAL_FIRST_SOUND_MS, max(first_all) if first_all else None, first_ok),
-            "plainAnswerMedianWithin2500": _group_goal(GOAL_PLAIN_ANSWER_MS, plain, "answerMs"),
-            "toolAnswerMedianWithin4000": _group_goal(GOAL_TOOL_ANSWER_MS, tool, "answerMs"),
+            "firstSoundWithin1500OnEveryTurn": first,
+            "plainAnswerMedianWithin2500": _decide(GOAL_PLAIN_ANSWER_MS, plain_all, "answerMs", median, len(plain_all)) if len(rows) == expected_turns else _goal(GOAL_PLAIN_ANSWER_MS, None, None, "not every turn was run", {"value": median(got(plain, "answerMs"))}),
+            "toolAnswerMedianWithin4000": _decide(GOAL_TOOL_ANSWER_MS, tool_all, "answerMs", median, len(tool_all)) if len(rows) == expected_turns else _goal(GOAL_TOOL_ANSWER_MS, None, None, "not every turn was run", {"value": median(got(tool, "answerMs"))}),
             "noSilenceOver3000": silence,
         },
         "answerNotMeasuredTurns": [r["id"] for r in rows if r.get("answerMs") is None],
-        "possiblyTruncatedTurns": [r["id"] for r in rows if r.get("possiblyTruncated")],
     }
 
 
@@ -494,8 +528,10 @@ def render_table(rows: list[dict], summary: dict) -> str:
             notes.append("timeout")
         if r.get("fastServed"):
             notes.append("fast")
-        if r.get("possiblyTruncated"):
-            notes.append("maybe-cut")
+        if r.get("truncated"):
+            notes.append("truncated")
+        if r.get("contaminated"):
+            notes.append("contaminated")
         if r.get("expectedToolUsed") is False:
             notes.append(f"no {r['expectTool']}")
         lines.append(
@@ -515,7 +551,7 @@ def render_table(rows: list[dict], summary: dict) -> str:
     ]
     for name, g in s["goals"].items():
         verdict = "not measurable" if g["pass"] is None else ("PASS" if g["pass"] else "MISS")
-        why = f" - {g['notDecided']}" if g.get("notDecided") else ""
+        why = f" - {g['reason']}; partial {g['partial']}" if g.get("reason") else (f" - {g['note']}" if g.get("note") else "")
         lines.append(f"goal {name}: {verdict} (target {g['targetMs']:.0f}, value {fmt(g['valueMs'])}){why}")
     lines.append("answer ms = first agent burst at/after the brain's first sentence; see 'definitions' in the output file")
     return "\n".join(lines)

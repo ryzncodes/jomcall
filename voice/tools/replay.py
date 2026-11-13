@@ -59,7 +59,11 @@ async def helper(*args: str) -> dict:
         "node", "--conditions=react-server", "--import", "tsx", str(TOOLS_DIR / "session.mts"), *args,
         cwd=ROOT, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
     )
-    out, err = await process.communicate()
+    try:
+        out, err = await asyncio.wait_for(process.communicate(), core.HELPER_TIMEOUT_S)
+    except asyncio.TimeoutError:
+        process.kill()
+        raise CannotRun(f"session helper '{args[0]}' did not finish within {core.HELPER_TIMEOUT_S:g} s") from None
     if process.returncode != 0:
         lines = err.decode(errors="replace").strip().splitlines()
         raise CannotRun(lines[-1][:300] if lines else f"session helper exited {process.returncode}")
@@ -175,7 +179,10 @@ async def run_call(call_no: int, batch: list[dict], audio: dict[str, bytes], end
                 break
             while not frames.empty():
                 frames.get_nowait()
-            t0 = await pump.say(audio[turn["id"]])
+            try:
+                t0 = await pump.say_wait(audio[turn["id"]])
+            except core.PumpStalled as error:
+                raise CannotRun(str(error)) from None
             t0_wall = pump.t0_wall_ms
             turn_tracker = core.TurnTracker(t0, end_silence_s=end_silence)
             ended = await core.listen(frames, clock, turn_tracker)
@@ -238,7 +245,8 @@ def build_row(turn: dict, call_no: int, timing: core.TurnTiming, stored: dict | 
         "endedBy": timing.ended_by,
         "windowMs": timing.window_ms,
         "bursts": [{"startMs": b.start_ms, "endMs": b.end_ms} for b in timing.bursts],
-        "possiblyTruncated": bool(brain and brain["totalMs"] is not None and skew is not None and skew + brain["totalMs"] > timing.window_ms + 500),
+        "truncated": bool(brain and brain["totalMs"] is not None and skew is not None and skew + brain["totalMs"] > timing.window_ms + 500),
+        "contaminated": False,
         "skewMs": skew,
         "brain": brain,
         "extraStoredRows": extra_rows,
@@ -262,6 +270,9 @@ def attach(sent: list[tuple[dict, core.TurnTiming]], stored_turns: list[dict], c
     for i, (turn, timing) in enumerate(sent):
         reason = None if chosen[i] is not None else f"no stored voice turn in this turn's window ({len(voice)} stored, {stray} outside every window)"
         rows.append(build_row(turn, call_no, timing, chosen[i], reason, extra[i]))
+    for earlier, later in zip(rows, rows[1:]):
+        if earlier["truncated"]:
+            later["contaminated"] = True  # the late answer may land inside this turn
     return rows
 
 
