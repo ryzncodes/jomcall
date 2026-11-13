@@ -128,7 +128,7 @@ def load_audio(script: list[dict], preset: str) -> dict[str, bytes]:
 
 # --- one call --------------------------------------------------------------------------------
 
-async def run_call(call_no: int, batch: list[dict], audio: dict[str, bytes], end_silence: float) -> tuple[str, list[tuple[dict, core.TurnTiming]]]:
+async def run_call(call_no: int, batch: list[dict], audio: dict[str, bytes], end_silence: float) -> tuple[str, str, list[tuple[dict, core.TurnTiming]]]:
     from livekit import rtc  # kept out of the module top so the pure parts import without it
 
     clock = RealClock()
@@ -173,23 +173,30 @@ async def run_call(call_no: int, batch: list[dict], audio: dict[str, bytes], end
                 "(npm run dev:voice) and are the speech keys set?"
             )
         joined = clock.now()
+        last_sound = tracker.t0 + tracker.bursts()[-1].end_ms / 1000 if tracker.bursts() else None
         for turn in batch:
             if done and clock.now() - joined > core.CALL_BUDGET_S:
                 break  # leave the rest for a fresh call: the call cap is 300 s
             if gone.is_set() or pump_task.done():
                 break
-            while not frames.empty():
-                frames.get_nowait()
+            # Do not rely on barge-in: let the agent finish, then speak.
+            quiet = await core.wait_quiet(frames, clock, last_sound_t=last_sound)
             try:
                 t0 = await pump.say_wait(audio[turn["id"]])
             except core.PumpStalled as error:
                 raise CannotRun(str(error)) from None
             t0_wall = pump.t0_wall_ms
             turn_tracker = core.TurnTracker(t0, end_silence_s=end_silence)
+            while not frames.empty():  # everything heard while the caller spoke, before and after t0
+                turn_tracker.feed(*frames.get_nowait())
             ended = await core.listen(frames, clock, turn_tracker)
             timing = turn_tracker.result(clock.now(), ended)
             timing.t0_wall_ms = t0_wall
+            timing.speech_start_wall_ms = pump.speech_start_wall_ms
+            timing.barged_in = not quiet
             done.append((turn, timing))
+            bursts = turn_tracker.bursts()
+            last_sound = t0 + bursts[-1].end_ms / 1000 if bursts else last_sound
     finally:
         pump.stop()
         await asyncio.gather(pump_task, return_exceptions=True)
@@ -197,105 +204,44 @@ async def run_call(call_no: int, batch: list[dict], audio: dict[str, bytes], end
             task.cancel()
         await asyncio.gather(*readers, return_exceptions=True)
         await room.disconnect()
-    return session_id, done
+    return session_id, info["room"], done
 
 
 # --- rows ---------------------------------------------------------------------------------
 
-def build_row(turn: dict, call_no: int, timing: core.TurnTiming, stored: dict | None, stored_reason: str | None, extra_rows: int = 0) -> dict:
-    not_measured: dict[str, str] = {}
-    brain = None
-    skew = None
-    if stored is not None:
-        t = stored.get("timings") or {}
-        brain = {k: t.get(k) for k in ("transcriptMs", "firstSentenceMs", "totalMs")}
-        if timing.t0_wall_ms is not None and stored.get("heardEstMs") is not None:
-            skew = stored["heardEstMs"] - timing.t0_wall_ms
-    if timing.first_sound_ms is None:
-        answer_ms, answer_reason = None, "no agent sound before the turn timed out"
-    else:
-        answer_ms, answer_reason = core.resolve_answer(timing.bursts, None if brain is None else brain["firstSentenceMs"], skew)
-    if brain is None:
-        not_measured["brain"] = stored_reason or "no stored turn row"
-    if answer_ms is None:
-        not_measured["answerMs"] = answer_reason or "unknown"
-    if timing.first_sound_ms is None:
-        not_measured["firstSoundMs"] = f"no agent sound within {core.TURN_TIMEOUT_S:.0f} s of t0 (timeout)"
-    tools = stored["tools"] if stored else None
-    proposals = stored["proposals"] if stored else None
-    expected_used = None
-    if stored is not None and turn["expectTool"] is not None:
-        expected_used = turn["expectTool"] in tools or PROPOSAL_OF.get(turn["expectTool"]) in proposals
-    # Without a trustworthy stored end time a late answer cannot be ruled out.
-    low, high = core.SKEW_PLAUSIBLE_MS
-    if stored is None:
-        unverified_reason = "no stored voice turn matched"
-    elif stored.get("state") != "completed":
-        unverified_reason = f"stored turn state is {stored.get('state')}"
-    elif brain["totalMs"] is None:
-        unverified_reason = "stored turn has no totalMs"
-    elif skew is None:
-        unverified_reason = "no wall-clock t0 or creation time to place the brain's clock"
-    elif not low <= skew <= high:
-        unverified_reason = f"implausible skew ({skew:.0f} ms)"
-    else:
-        unverified_reason = None
-    # A completed brain turn whose answer never reached the ears: the signature of a
-    # refused or failed voice request (the worker keeps no log of it), or of a cut-off.
-    suspect = bool(
-        stored is not None and stored.get("state") == "completed" and brain["firstSentenceMs"] is not None
-        and (timing.first_sound_ms is None or (answer_reason or "").startswith("no agent audio at or after"))
-    )
-    not_measured["readBackBeforeProposal"] = (
-        "the stored turn keeps the whole answer, not the order of spoken text and tool calls; "
-        "the 48-case voice test (npm run check:voice-model) is the brain-side check"
-    )
-    not_measured["replyLanguage"] = "not judged here: the stored answer text is deliberately not read or kept"
-    return {
-        "id": turn["id"], "call": call_no, "language": turn["language"], "kind": turn["kind"], "expectTool": turn["expectTool"],
-        "firstSoundMs": timing.first_sound_ms,
-        "answerMs": answer_ms,
-        "longestSilentGapMs": timing.longest_silent_gap_ms,
-        "timedOut": timing.ended_by == "timeout",
-        "endedBy": timing.ended_by,
-        "windowMs": timing.window_ms,
-        "bursts": [{"startMs": b.start_ms, "endMs": b.end_ms} for b in timing.bursts],
-        "truncated": timing.ended_by == "ceiling" or (
-            unverified_reason is None and skew + brain["totalMs"] > timing.window_ms + 500
-        ),
-        "unverified": unverified_reason is not None,
-        "unverifiedReason": unverified_reason,
-        "contaminated": False,
-        "skewMs": skew,
-        "brain": brain,
-        "extraStoredRows": extra_rows,
-        "fastServed": None if stored is None else bool((stored.get("timings") or {}).get("fastLane")),
-        "answerChars": None if stored is None else stored.get("answerChars"),
-        "state": None if stored is None else stored.get("state"),
-        "errorCode": None if stored is None else stored.get("errorCode"),
-        "tools": tools,
-        "proposals": proposals,
-        "expectedToolUsed": expected_used,
-        "suspectDropped": suspect,
-        "readBackBeforeProposal": None,
-        "notMeasured": not_measured,
-    }
-
-
-def attach(sent: list[tuple[dict, core.TurnTiming]], stored_turns: list[dict], call_no: int) -> list[dict]:
-    voice = [s for s in stored_turns if s.get("channel") == "voice"]
-    chosen, extra, stray = core.match_rows([timing.t0_wall_ms for _, timing in sent], voice)
+def attach(sent: list[tuple[dict, core.TurnTiming]], stored_turns: list[dict], call_no: int, stages: list[dict] | None = None) -> list[dict]:
+    voice = [x for x in stored_turns if x.get("channel") == "voice"]
+    windows = [
+        None if t.speech_start_wall_ms is None or t.t0_wall_ms is None else (t.speech_start_wall_ms, t.t0_wall_ms + core.CALLER_TAIL_MS)
+        for _, t in sent
+    ]
+    chosen, extra, stray = core.match_rows(windows, voice)
     rows = []
     for i, (turn, timing) in enumerate(sent):
         reason = None if chosen[i] is not None else f"no stored voice turn in this turn's window ({len(voice)} stored, {stray} outside every window)"
-        rows.append(build_row(turn, call_no, timing, chosen[i], reason, extra[i]))
-    for earlier, later in zip(rows, rows[1:]):
-        if earlier["truncated"] or earlier["unverified"]:
-            later["contaminated"] = True  # the late answer may land inside this turn
+        row = chosen[i]
+        stage = core.join_stage(row, stages or [], None if row is None else row.get("heardEstMs"))
+        rows.append(core.score_turn(turn, call_no, timing, row, reason, extra[i], stage))
+    core.link_endpoint_errors(rows)
+    if len(voice) != len(sent):
+        for r in rows:
+            r["notMeasured"]["storedRowCount"] = f"{len(voice)} stored voice rows for {len(sent)} turns in this call"
     return rows
 
 
 # --- main -----------------------------------------------------------------------------------
+
+def rescore_file(path: Path, end_silence: float | None) -> int:
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    script = core.load_script(TOOLS_DIR / "script.json")
+    result = core.rescore(saved, script, end_silence)
+    out = path.with_name(path.stem.replace("replay-", "rescored-") + ".json")
+    out.write_text(json.dumps({"definitions": core.DEFINITIONS, **result}, indent=2) + "\n", encoding="utf-8")
+    print(core.render_table(result["rows"], result["summary"]))
+    print("not recomputable from the saved run: " + "; ".join(result["notRecomputable"]))
+    print(f"wrote {out.relative_to(ROOT)}")
+    return 0
+
 
 def write_output(args, calls: list[dict], rows: list[dict]) -> Path:
     summary = core.summarize(rows, end_silence_s=args.end_silence)
@@ -331,11 +277,12 @@ async def measure(args) -> int:
                 break
             size = core.plan_calls(len(pending), args.turns_per_call)[0]
             print(f"call {call_no}: {min(size, len(pending))} turns", flush=True)
-            session_id, done = await run_call(call_no, pending[:size], audio, args.end_silence)
+            session_id, room, done = await run_call(call_no, pending[:size], audio, args.end_silence)
             await asyncio.sleep(1.0)  # the last turn's row is written as its reply ends
             stored = (await helper("turns", session_id))["turns"]
-            rows += attach(done, stored, call_no)
-            calls.append({"call": call_no, "sessionId": session_id, "turnsRun": len(done)})
+            stages = core.read_stages(Path(args.stages_dir) / f"stages-{room}.jsonl")
+            rows += attach(done, stored, call_no, stages)
+            calls.append({"call": call_no, "sessionId": session_id, "room": room, "turnsRun": len(done), "stageRows": len(stages)})
             pending = pending[len(done):]
             if not done:
                 break
@@ -355,9 +302,13 @@ def main() -> None:
     parser.add_argument("--prepare", action="store_true", help="only synthesize the caller's audio, then stop")
     parser.add_argument("--preset", default="Puck", help="caller voice; must differ from the agent's (Kore in the fixture)")
     parser.add_argument("--turns-per-call", type=int, default=core.TURNS_PER_CALL)
+    parser.add_argument("--stages-dir", default=str(OUTPUT_DIR), help="where the worker writes stages-<room>.jsonl")
+    parser.add_argument("--rescore", metavar="FILE", help="recompute flags and summary from a saved run; no network")
     parser.add_argument("--end-silence", type=float, default=core.END_SILENCE_S)
     args = parser.parse_args()
     try:
+        if args.rescore:
+            sys.exit(rescore_file(Path(args.rescore), args.end_silence if "--end-silence" in sys.argv else None))
         if args.prepare:
             script = core.load_script(TOOLS_DIR / "script.json")
             try:

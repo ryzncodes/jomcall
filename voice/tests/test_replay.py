@@ -9,7 +9,7 @@ from fake_http import FakeServer, Reply
 from jomcall_voice import config, voice_out
 from test_voice_out import sse
 from tools import replay_core as core
-from tools.replay import attach, build_row
+from tools.replay import attach
 
 SCRIPT = Path(__file__).resolve().parent.parent / "tools" / "script.json"
 
@@ -152,64 +152,6 @@ async def test_listen_ends_a_turn_with_real_queue_and_clock_scaled_down():
 B = core.Burst
 
 
-def test_answer_is_the_first_burst_at_or_after_skew_plus_brain_first_sentence():
-    bursts = [B(600, 1000), B(2600, 3600)]  # a filler, then the answer
-    assert core.resolve_answer(bursts, 2000, 0) == (2600, None)
-    assert core.resolve_answer([B(2600, 3600)], 2000, 0) == (2600, None)  # no filler at all
-
-
-def test_neutral_ack_at_heard_at_plus_800_is_not_taken_for_the_answer():
-    # The worker heard the caller finish 500 ms after t0; the brain's first sentence
-    # came 1400 ms after that. The neutral ack plays at about heardAt + 800.
-    skew, first_sentence = 500, 1400
-    ack = B(skew + 800, skew + 1200)  # 1300..1700 after t0, before the answer exists
-    answer = B(skew + first_sentence + 400, skew + first_sentence + 2000)  # 2300.. after TTS
-    assert core.resolve_answer([ack, answer], first_sentence, skew) == (2300, None)
-    # With the brain's clock wrongly taken as t0 the floor (1350) falls inside the ack
-    # and the answer start is lost rather than misreported.
-    assert core.resolve_answer([ack, answer], first_sentence, 0)[0] != 2300
-
-
-def test_contiguous_filler_and_answer_is_not_guessed():
-    value, why = core.resolve_answer([B(600, 3500)], 2000, 0)
-    assert value is None and "contiguous" in why
-
-
-def test_answer_missing_without_brain_time_skew_or_audio():
-    assert core.resolve_answer([B(100, 500)], None, 0)[0] is None
-    assert "wall-clock" in core.resolve_answer([B(100, 500)], 2000, None)[1]
-    value, why = core.resolve_answer([B(100, 500)], 2000, 0)
-    assert value is None and "no agent audio" in why
-
-
-def test_implausible_clock_skew_gives_no_answer_time():
-    for skew in (-1000, 5000):
-        value, why = core.resolve_answer([B(6000, 7000)], 1000, skew)
-        assert value is None and "implausible" in why
-
-
-def test_stored_rows_are_matched_to_turns_by_time_window():
-    walls = [1_000_000.0, 1_020_000.0, 1_040_000.0]
-
-    def stored(heard, state="completed", transcript=400):
-        return {"createdMs": heard + transcript, "timings": {"transcriptMs": transcript}, "state": state, "tag": heard}
-
-    rows = [
-        stored(1_000_500),
-        stored(1_001_000, state="failed"),  # an extra row in window 0 (two finals)
-        stored(1_020_600),
-        stored(1_039_600),  # window 1 reaches 300 ms before the next t0
-        stored(1_039_900),  # past that: it belongs to turn 2 (heard a little before its t0)
-        stored(900_000),  # before everything
-    ]
-    chosen, extra, stray = core.match_rows(walls, rows)
-    assert chosen[0]["tag"] == 1_000_500 and extra[0] == 1  # last COMPLETED row wins
-    assert chosen[1]["tag"] == 1_039_600 and extra[1] == 1  # window 1 is [t0-300, next t0-300)
-    assert chosen[2]["tag"] == 1_039_900 and extra[2] == 0 and stray == 1
-    assert chosen[0]["heardEstMs"] == 1_000_500
-    assert core.match_rows([None, 5.0], [stored(5.0)])[0][0] is None  # a turn that never got a t0
-
-
 # --- numbers --------------------------------------------------------------------------------
 
 def test_median_and_nearest_rank_percentile():
@@ -219,151 +161,7 @@ def test_median_and_nearest_rank_percentile():
     assert core.percentile(list(range(1, 13)), 0.9) == 11  # ceil(10.8) = 11th of 12
 
 
-def row(i, expect, first, answer, gap=500.0, timed_out=False, fast=False):
-    return {
-        "id": f"t{i:02d}", "call": 1, "language": "en", "kind": "plain" if expect is None else "booking",
-        "expectTool": expect, "firstSoundMs": first, "answerMs": answer, "longestSilentGapMs": gap,
-        "timedOut": timed_out, "fastServed": fast, "brain": {"firstSentenceMs": 1000}, "possiblyTruncated": False,
-        "expectedToolUsed": None if expect is None else True, "suspectDropped": False, "extraStoredRows": 0,
-    }
-
-
-def passing_rows():
-    return [row(i, None, 900.0, 1800.0) for i in range(12)] + [row(12 + i, "book_slot", 1000.0, 3000.0) for i in range(8)]
-
-
-def test_summary_passes_when_all_goals_met():
-    s = core.summarize(passing_rows(), end_silence_s=3.5)
-    assert all(g["pass"] is True for g in s["goals"].values())
-    assert s["answerMs"]["plain"]["median"] == 1800 and s["answerMs"]["tool"]["n"] == 8
-    assert s["timeouts"] == 0 and s["turnsRun"] == 20 and s["longestSilentGapMs"] == 500
-    assert s["refusedVoiceRequests"]["value"] is None and s["refusedVoiceRequests"]["notMeasured"]
-
-
-def test_silence_goal_cannot_pass_while_a_turn_ends_after_three_seconds_or_less():
-    g = core.summarize(passing_rows(), end_silence_s=1.5)["goals"]["noSilenceOver3000"]
-    assert g["pass"] is None and "--end-silence" in g["reason"]
-    assert core.summarize(passing_rows(), end_silence_s=3.0)["goals"]["noSilenceOver3000"]["pass"] is None
-    assert core.END_SILENCE_S == 3.5
-
-
-def test_clean_run_gives_true_and_false_verdicts():
-    rows = passing_rows()
-    rows[0]["firstSoundMs"] = 1600.0
-    for r in rows[:12]:
-        r["answerMs"] = 2700.0
-    for r in rows[12:]:
-        r["answerMs"] = 4100.0
-    rows[5]["longestSilentGapMs"] = 3200.0
-    s = core.summarize(rows, end_silence_s=3.5)
-    assert [g["pass"] for g in s["goals"].values()] == [False, False, False, False]
-
-
-def test_one_timeout_makes_goal_one_false_and_goals_two_three_unmeasured():
-    rows = passing_rows()
-    rows[3].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
-    rows[14].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
-    s = core.summarize(rows, end_silence_s=3.5)
-    g = s["goals"]
-    assert g["firstSoundWithin1500OnEveryTurn"]["pass"] is False
-    assert g["plainAnswerMedianWithin2500"]["pass"] is None and "1 of 12" in g["plainAnswerMedianWithin2500"]["reason"]
-    assert g["toolAnswerMedianWithin4000"]["pass"] is None and g["toolAnswerMedianWithin4000"]["partial"]["n"] == 7
-    assert g["noSilenceOver3000"]["pass"] is None
-    assert s["timedOutTurns"] == ["t03", "t14"] and s["answerNotMeasuredTurns"] == ["t03", "t14"]
-
-
-def test_truncated_turn_and_the_contaminated_next_turn_are_excluded_and_goals_are_null():
-    rows = passing_rows()
-    rows[12]["truncated"] = True  # the late answer of t12 ...
-    rows[13]["contaminated"] = True
-    rows[13]["firstSoundMs"] = 40.0  # ... shows up as a tiny first sound of t13
-    s = core.summarize(rows, end_silence_s=3.5)
-    assert s["truncatedTurns"] == ["t12"] and s["contaminatedTurns"] == ["t13"]
-    assert s["firstSoundMs"]["all"]["n"] == 18 and s["firstSoundMs"]["all"]["max"] == 1000.0
-    assert s["answerMs"]["tool"]["n"] == 6
-    for name in ("firstSoundWithin1500OnEveryTurn", "toolAnswerMedianWithin4000", "noSilenceOver3000"):
-        g = s["goals"][name]
-        assert g["pass"] is None and "truncated" in g["reason"], name
-    assert s["goals"]["toolAnswerMedianWithin4000"]["partial"] == {"n": 6, "of": 8, "value": 3000.0}
-    assert s["goals"]["plainAnswerMedianWithin2500"]["pass"] is True  # plain group is fully clean
-
-
-def test_dropped_answers_also_block_a_verdict():
-    rows = passing_rows()
-    rows[2]["suspectDropped"] = True
-    assert core.summarize(rows, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
-
-
-def test_summary_of_a_partial_run_is_not_a_pass():
-    s = core.summarize(passing_rows()[:7], end_silence_s=3.5)
-    assert all(g["pass"] is None for g in s["goals"].values())
-    assert s["turnsRun"] == 7 and s["turnsPlanned"] == 20
-
-
-def test_table_has_no_text_of_turns_and_names_goals():
-    rows = passing_rows()
-    rows[2]["fastServed"] = True
-    rows[3]["suspectDropped"] = True
-    text = core.render_table(rows, core.summarize(rows, end_silence_s=3.5))
-    assert "fast" in text and "PASS" in text and "not observable" in text and "t03" in text
-    assert text.count("\n") > 20
-
-
 # --- rows from stored turns --------------------------------------------------------------------
-
-def timing(first=900.0, bursts=None, window=6000.0, ended="quiet", gap=900.0, wall=1_000_000.0):
-    return core.TurnTiming(first, bursts if bursts is not None else [B(900, 1400), B(2600, 4000)], gap, ended, window, wall)
-
-
-TURN = {"id": "t12", "language": "en", "kind": "booking", "text": "x", "expectTool": "book_slot"}
-
-
-def stored(heard=1_000_300, **over):
-    base = {"channel": "voice", "state": "completed", "errorCode": None, "answerChars": 120,
-            "createdMs": heard + 500, "timings": {"transcriptMs": 500, "firstSentenceMs": 2000, "totalMs": 3500},
-            "tools": ["check_availability", "book_slot"], "proposals": ["booking"]}
-    base.update(over)
-    return base
-
-
-def test_row_combines_client_and_stored_evidence_and_keeps_no_text():
-    chosen, extra, _ = core.match_rows([1_000_000.0], [stored()])
-    r = build_row(TURN, 2, timing(), chosen[0], None, extra[0])
-    # heard 300 ms after t0, first sentence 2000 ms later: the 900 filler is skipped, the 2600 burst is the answer
-    assert r["skewMs"] == 300 and r["firstSoundMs"] == 900 and r["answerMs"] == 2600
-    assert r["brain"]["firstSentenceMs"] == 2000 and r["expectedToolUsed"] is True and r["fastServed"] is False
-    assert r["answerChars"] == 120 and r["proposals"] == ["booking"] and r["readBackBeforeProposal"] is None
-    assert "readBackBeforeProposal" in r["notMeasured"] and r["suspectDropped"] is False
-    assert "text" not in r and "answer" not in r and "input" not in r
-
-
-def test_row_without_stored_turn_says_why():
-    r = build_row(TURN, 1, timing(), None, "no stored voice turn in this turn's window")
-    assert r["brain"] is None and r["answerMs"] is None and r["expectedToolUsed"] is None
-    assert "window" in r["notMeasured"]["brain"] and "answerMs" in r["notMeasured"]
-
-
-def test_row_for_timeout_truncation_and_dropped_answer():
-    chosen = core.match_rows([1_000_000.0], [stored()])[0][0]
-    r = build_row(TURN, 1, timing(first=None, bursts=[], gap=None, ended="timeout", window=15000.0), chosen, None)
-    assert r["timedOut"] and r["firstSoundMs"] is None and "firstSoundMs" in r["notMeasured"]
-    assert r["suspectDropped"] is True  # the brain finished a turn nobody heard
-    cut = build_row(TURN, 1, timing(window=2500.0), chosen, None)
-    assert cut["truncated"] is True  # the brain finished after listening stopped
-    quiet_after = build_row(TURN, 1, timing(bursts=[B(900, 1400)]), chosen, None)
-    assert quiet_after["answerMs"] is None and quiet_after["suspectDropped"] is True
-
-
-def test_attach_matches_by_window_ignores_text_rows_and_flags_fast_lane():
-    sent = [(TURN, timing(wall=1_000_000.0)), (TURN, timing(wall=1_020_000.0))]
-    fast = stored(1_020_300, timings={"transcriptMs": 500, "firstSentenceMs": 100, "totalMs": 200, "fastLane": True})
-    ok = attach(sent, [stored(), fast, stored(1_000_350, channel="text")], 1)
-    assert [r["fastServed"] for r in ok] == [False, True] and [r["extraStoredRows"] for r in ok] == [0, 0]
-    split = attach(sent, [stored(1_000_300), stored(1_001_100), fast], 1)  # two finals in turn 0
-    assert split[0]["extraStoredRows"] == 1 and split[0]["brain"] is not None and split[1]["fastServed"] is True
-    missing = attach(sent, [stored()], 1)
-    assert missing[1]["brain"] is None and "window" in missing[1]["notMeasured"]["brain"]
-
 
 # --- pacing of the caller's audio -----------------------------------------------------------------
 
@@ -434,13 +232,6 @@ async def test_prepare_is_rate_limited_resumable_and_stops_on_429(tmp_path):
         assert len(server.requests) - before == 3
 
 
-def test_attach_marks_the_turn_after_a_truncated_one_contaminated():
-    sent = [(TURN, timing(window=2500.0, wall=1_000_000.0)), (TURN, timing(wall=1_020_000.0)), (TURN, timing(wall=1_040_000.0))]
-    rows = attach(sent, [stored(1_000_300), stored(1_020_300), stored(1_040_300)], 1)
-    assert [r["truncated"] for r in rows] == [True, False, False]
-    assert [r["contaminated"] for r in rows] == [False, True, False]
-
-
 def test_rms_of_an_int16_memoryview_equals_rms_of_the_same_bytes():
     data = struct.pack("<6h", 100, -200, 300, -400, 500, -600)
     view = memoryview(bytearray(data)).cast("h")
@@ -468,65 +259,319 @@ async def test_pump_say_wait_fails_clearly_when_frames_never_go_out():
     await asyncio.gather(task, return_exceptions=True)
 
 
-def test_missing_stored_row_is_unverified_and_contaminates_the_next_turn():
-    sent = [(TURN, timing(wall=1_000_000.0)), (TURN, timing(wall=1_020_000.0))]
-    rows = attach(sent, [stored(1_020_300)], 1)
-    assert rows[0]["unverified"] and "no stored" in rows[0]["unverifiedReason"] and rows[0]["truncated"] is False
-    assert rows[1]["contaminated"] and rows[1]["unverified"] is False
-    full = passing_rows()
-    full[3]["unverified"], full[3]["unverifiedReason"] = True, "no stored voice turn matched"
-    full[4]["contaminated"] = True
-    s = core.summarize(full, end_silence_s=3.5)
-    assert s["unverifiedTurns"] == [{"id": "t03", "reason": "no stored voice turn matched"}]
-    assert s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
-    assert s["goals"]["noSilenceOver3000"]["pass"] is None
+# --- answer versus filler ---------------------------------------------------------------------
+
+B = core.Burst
 
 
-def test_other_unverified_causes_and_skew_range():
-    chosen = core.match_rows([1_000_000.0], [stored()])[0][0]
-    assert build_row(TURN, 1, timing(), {**chosen, "state": "failed"}, None)["unverified"]
-    no_total = {**chosen, "timings": {"transcriptMs": 500, "firstSentenceMs": 2000}}
-    assert "totalMs" in build_row(TURN, 1, timing(), no_total, None)["unverifiedReason"]
-    assert "wall-clock" in build_row(TURN, 1, timing(wall=None), chosen, None)["unverifiedReason"]
-    far = {**chosen, "heardEstMs": chosen["heardEstMs"] + 9000}
-    r = build_row(TURN, 1, timing(), far, None)
-    assert r["unverified"] and "implausible" in r["unverifiedReason"] and r["truncated"] is False
-    assert build_row(TURN, 1, timing(), chosen, None)["unverified"] is False
+def test_answer_is_the_first_burst_at_or_after_the_expected_time_minus_slack():
+    assert core.resolve_answer([B(600, 1000), B(2600, 3600)], 2000) == (2600, None)
+    assert core.resolve_answer([B(2600, 3600)], 2000) == (2600, None)  # no filler at all
+    assert core.resolve_answer([B(100, 500)], None)[0] is None
 
 
-def test_ceiling_turn_is_truncated_and_contaminates_the_next():
-    chosen = core.match_rows([1_000_000.0], [stored()])[0][0]
-    r = build_row(TURN, 1, timing(ended="ceiling", window=20000.0), chosen, None)
-    assert r["truncated"] is True
-    sent = [(TURN, timing(ended="ceiling", window=20000.0, wall=1_000_000.0)), (TURN, timing(wall=1_030_000.0))]
-    rows = attach(sent, [stored(1_000_300), stored(1_030_300)], 1)
-    assert rows[1]["contaminated"] is True
+def test_a_filler_that_runs_a_little_past_the_expected_time_is_still_a_filler():
+    # expected 2517, floor 2417: the filler ends at 2464, the answer starts at 2985
+    assert core.resolve_answer([B(2114, 2464), B(2985, 5404)], 2517) == (2985, None)
+    value, why = core.resolve_answer([B(600, 3500)], 2000)  # far past: contiguous
+    assert value is None and "contiguous" in why
+    assert "no agent audio" in core.resolve_answer([B(100, 500)], 2000)[1]
 
 
-def test_goal_one_is_false_for_a_timeout_even_in_a_partial_run():
-    rows = passing_rows()[:7]
-    rows[2].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
-    assert core.summarize(rows, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False
+def test_neutral_ack_before_the_synthesis_allowance_is_not_taken_for_the_answer():
+    skew, first_sentence = 500, 1400
+    expected = skew + first_sentence + core.ANSWER_FLOOR_MS  # 2450
+    ack = B(skew + 800, skew + 1200)
+    answer = B(skew + first_sentence + 900, skew + first_sentence + 3000)  # 2800: a ~900 ms sentence-to-audio lag
+    assert core.resolve_answer([ack, answer], expected) == (2800, None)
+    # A burst starting inside the synthesis allowance (the old, too early floor) is still a filler:
+    early = B(skew + first_sentence + 100, skew + first_sentence + 400)
+    assert core.resolve_answer([early, answer], expected) == (2800, None)
 
 
-def test_clean_over_target_turn_is_a_certain_miss_among_excluded_turns():
-    rows = passing_rows()
-    rows[0]["firstSoundMs"] = 1700.0
-    rows[0]["longestSilentGapMs"] = 3300.0
-    for i in (5, 6, 7):
-        rows[i]["unverified"] = True
+def test_stored_rows_are_matched_by_caller_speech_window():
+    windows = [(1_000_000.0, 1_006_000.0), (1_020_000.0, 1_026_000.0), None]
+
+    def stored(heard, state="completed", transcript=400):
+        return {"createdMs": heard + transcript, "timings": {"transcriptMs": transcript}, "state": state, "tag": heard}
+
+    rows = [
+        stored(1_002_500),  # finalised in the middle of the utterance: inside the window
+        stored(1_004_000, state="failed"),  # a second final in the same window
+        stored(1_025_900),  # up to 2 s after the speech ends
+        stored(999_000),  # before everything
+    ]
+    chosen, extra, stray = core.match_rows(windows, rows)
+    assert chosen[0]["tag"] == 1_002_500 and extra[0] == 1  # last COMPLETED row wins
+    assert chosen[1]["tag"] == 1_025_900 and extra[1] == 0
+    assert chosen[2] is None and stray == 1
+    assert chosen[0]["heardEstMs"] == 1_002_500
+
+
+async def test_wait_quiet_waits_for_the_agent_and_reports_a_hit_ceiling():
+    class Real:
+        def now(self):
+            return asyncio.get_running_loop().time()
+
+    clock, q = Real(), asyncio.Queue()
+    assert await core.wait_quiet(q, clock, quiet_s=0.1, last_sound_t=None) is True
+    t = clock.now()
+    q.put_nowait((t, 3000.0, 0.02))
+    started = clock.now()
+    assert await core.wait_quiet(q, clock, quiet_s=0.1, ceiling_s=1.0, last_sound_t=t) is True
+    assert clock.now() - started >= 0.09
+
+    async def keep_talking():
+        while True:
+            q.put_nowait((clock.now(), 3000.0, 0.02))
+            await asyncio.sleep(0.02)
+
+    task = asyncio.ensure_future(keep_talking())
+    assert await core.wait_quiet(q, clock, quiet_s=0.1, ceiling_s=0.3, last_sound_t=clock.now()) is False
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+
+
+def test_agent_audio_just_before_t0_marks_the_turn_contaminated():
+    tr = core.TurnTracker(10.0)
+    tr.feed(9.9, 3000.0, 0.02)  # 100 ms before t0
+    tr.feed(10.9, 3000.0, 0.5)
+    assert tr.result(14.0, "quiet").pre_sound is True
+    early = core.TurnTracker(10.0)
+    early.feed(9.0, 3000.0, 0.02)  # a second before: not contaminated
+    assert early.result(14.0, "quiet").pre_sound is False
+
+
+# --- numbers --------------------------------------------------------------------------------
+
+def timing(first=2000.0, bursts=None, window=12000.0, ended="quiet", wall=1_000_000.0, pre=False, start=995_000.0):
+    bursts = [B(2000, 2400), B(3200, 6000)] if bursts is None else bursts
+    gap = max((g for _, g in core.gaps_of(bursts)), default=None)
+    return core.TurnTiming(first, bursts, gap, ended, window, wall, start, pre)
+
+
+def turn(kind="plain", tool=None, text="x" * 40, tid="t01"):
+    return {"id": tid, "language": "en", "kind": kind, "text": text, "expectTool": tool}
+
+
+def stored(heard=1_000_300, **over):
+    base = {"channel": "voice", "state": "completed", "errorCode": None, "answerChars": 120, "inputChars": 40,
+            "createdMs": heard + 500, "clientTurnId": "c1",
+            "timings": {"transcriptMs": 500, "firstSentenceMs": 1500, "totalMs": 3000}, "tools": [], "proposals": []}
+    base.update(over)
+    return base
+
+
+def scored(t=None, tm=None, st="default", **kw):
+    st = stored() if st == "default" else st
+    row = None if st is None else {**st, "heardEstMs": core.estimate_heard_ms(st)}
+    return core.score_turn(t or turn(), 1, tm or timing(), row, "no stored voice turn matched", **kw)
+
+
+def test_row_flags_answer_from_the_estimate_and_keeps_no_text():
+    r = scored()
+    # heard 300 ms after t0, first sentence 1500 later, +550: the 2000 filler is skipped, 3200 is the answer
+    assert r["skewMs"] == 300 and r["answerExpectedMs"] == 2350 and r["answerMs"] == 3200 and r["answerSource"] == "estimate"
+    assert r["answerNotObserved"] is False and r["tailCut"] is False and r["contaminated"] is False and r["unverified"] is False
+    assert r["gapBeforeAnswerMs"] == 2000 and r["gapAfterAnswerMs"] is None and r["longestSilentGapMs"] == 2000
+    assert "text" not in r and "answer" not in r and "input" not in r and r["inputChars"] == 40
+    assert "readBackBeforeProposal" in r["notMeasured"]
+
+
+def test_how_a_turn_ended_does_not_invalidate_first_sound_or_answer_start():
+    r = scored(tm=timing(ended="ceiling", window=40000.0, bursts=[B(2000, 2400), B(3200, 39900)]))
+    assert r["firstSoundMs"] == 2000 and r["answerMs"] == 3200 and r["tailCut"] is True
+    assert r["endedBy"] == "ceiling" and "truncated" not in r
+    # tail-cut only takes the gap after the answer out of the statistics
+    s = core.summarize([r] * 20, end_silence_s=3.5)
+    assert s["goals"]["noSilenceOver3000"]["pass"] is None and s["firstSoundMs"]["all"]["n"] == 20
+
+
+def test_answer_not_observed_excludes_only_answer_statistics():
+    r = scored(tm=timing(bursts=[B(2000, 2400)], window=2900.0))  # expected 2350 + ... listening stopped too early?
+    assert r["answerNotObserved"] is False  # 2350 < 2900
+    late = scored(tm=timing(bursts=[B(2000, 2400)], window=2300.0))
+    assert late["answerNotObserved"] is True and late["answerMs"] is None and late["firstSoundMs"] == 2000
+    assert late["suspectDropped"] is False
+
+
+def test_contaminated_by_pre_t0_audio_or_an_implausible_first_sound():
+    assert scored(tm=timing(pre=True))["contaminated"] is True
+    early = scored(tm=timing(first=4.0, bursts=[B(4, 400), B(3200, 6000)]))
+    assert early["contaminated"] and "300" in early["contaminatedBy"]
+    assert scored(tm=timing(pre=None))["notMeasured"]["contaminated"]
+
+
+def test_unverified_causes_and_skew_range():
+    assert "no stored" in scored(st=None)["unverifiedReason"]
+    assert scored(st=stored(state="failed"))["unverified"]
+    assert "totalMs" in scored(st=stored(timings={"transcriptMs": 500, "firstSentenceMs": 1500}))["unverifiedReason"]
+    assert "wall-clock" in scored(tm=timing(wall=None))["unverifiedReason"]
+    far = scored(st=stored(heard=1_009_000))
+    assert far["unverified"] and "implausible" in far["unverifiedReason"] and far["firstSoundMs"] == 2000
+
+
+def test_stage_log_replaces_the_estimate_and_gives_a_breakdown():
+    stage = {"clientTurnId": "c1", "heardAtMs": 1_000_400.0, "eosAtMs": 1_000_420.0, "brainSentAtMs": 1_000_430.0,
+             "firstSentenceAtMs": 1_001_900.0, "ttsRequestAtMs": 1_001_910.0, "firstTtsByteAtMs": 1_002_600.0,
+             "firstFrameAtMs": 1_002_700.0, "fillerKind": "neutral", "fillerAtMs": 1_001_200.0, "voiceRefused": False}
+    r = scored(stage=stage)
+    assert r["answerSource"] == "stages" and r["answerExpectedMs"] == 2700 and r["skewMs"] == 400 and r["skewSource"] == "stages"
+    assert r["answerMs"] == 3200 and r["stages"]["ttsRequestToFirstByte"] == 690 and r["fillerKind"] == "neutral"
+    assert scored()["stages"] is None and scored()["answerSource"] == "estimate"
+
+
+def test_stage_reader_and_join(tmp_path):
+    f = tmp_path / "stages-room.jsonl"
+    f.write_text(json.dumps({"clientTurnId": "c1", "heardAtMs": 5.0, "voiceRefused": True, "extra": 1}) + "\nnot json\n"
+                 + json.dumps({"clientTurnId": "c2", "heardAtMs": 50_000.0}) + "\n")
+    rows = core.read_stages(f)
+    assert len(rows) == 2 and "extra" not in rows[0] and rows[0]["firstFrameAtMs"] is None
+    assert core.read_stages(tmp_path / "missing.jsonl") == []
+    assert core.join_stage({"clientTurnId": "c2"}, rows, None)["heardAtMs"] == 50_000.0
+    assert core.join_stage({"clientTurnId": "zz"}, rows, 49_000.0)["clientTurnId"] == "c2"  # nearest heardAtMs
+    assert core.join_stage(None, rows, 20_000.0) is None
+
+
+def test_merged_and_split_by_stored_input_length_and_by_neighbour():
+    long = scored(t=turn(text="x" * 50), st=stored(inputChars=107))
+    assert long["merged"] and "107" in long["endpointReason"]
+    short = scored(t=turn(text="x" * 50), st=stored(inputChars=10))
+    assert short["split"] and not short["merged"]
+    a = {**scored(t=turn("booking", "book_slot", tid="t12"), st=None), "call": 1}
+    b = {**scored(t=turn(tid="t13"), st=stored(tools=["check_availability", "book_slot"], proposals=["booking"], inputChars=None)), "call": 1}
+    rows = [a, b]
+    core.link_endpoint_errors(rows)
+    assert rows[0]["split"] and rows[1]["merged"]
+    c = {**scored(t=turn(text="x" * 50, tid="t01"), st=stored(inputChars=107)), "call": 1}
+    d = {**scored(t=turn(tid="t02"), st=None), "call": 1}
+    core.link_endpoint_errors([c, d])
+    assert d["split"]
+    e = {**scored(t=turn(tid="t05"), st=stored()), "call": 2}  # a neighbour in another call is never linked
+    core.link_endpoint_errors([a, e])
+    assert not e["merged"]
+
+
+# --- goals --------------------------------------------------------------------------------------
+
+def good(i, kind="plain", first=1000.0, answer=1800.0, gap=900.0):
+    return {"id": f"t{i:02d}", "call": 1, "language": "en", "kind": kind, "expectTool": None if kind == "plain" else "book_slot",
+            "firstSoundMs": first, "answerMs": answer, "longestSilentGapMs": gap, "gapBeforeAnswerMs": gap, "timedOut": False,
+            "answerNotObserved": False, "tailCut": False, "contaminated": False, "unverified": False, "merged": False, "split": False,
+            "bargedIn": False, "suspectDropped": False, "fastServed": False, "brain": {"firstSentenceMs": 1000}, "stages": None,
+            "voiceRefused": None, "extraStoredRows": 0, "expectedToolUsed": None}
+
+
+def clean_rows():
+    return [good(i) for i in range(12)] + [good(12 + i, "booking", answer=3000.0) for i in range(8)]
+
+
+def test_clean_run_gives_true_and_false_verdicts():
+    s = core.summarize(clean_rows(), end_silence_s=3.5)
+    assert all(g["pass"] is True for g in s["goals"].values())
+    rows = clean_rows()
+    rows[0]["firstSoundMs"] = 1600.0
+    for r in rows[:12]:
+        r["answerMs"] = 2700.0
+    for r in rows[12:]:
+        r["answerMs"] = 4100.0
+    rows[5]["longestSilentGapMs"] = 3200.0
+    assert [g["pass"] for g in core.summarize(rows, end_silence_s=3.5)["goals"].values()] == [False] * 4
+
+
+def test_silence_goal_needs_an_end_silence_above_three_seconds():
+    g = core.summarize(clean_rows(), end_silence_s=1.5)["goals"]["noSilenceOver3000"]
+    assert g["pass"] is None and "--end-silence" in g["reason"] and core.END_SILENCE_S == 3.5
+
+
+def test_one_timeout_makes_goal_one_false_and_leaves_answer_goals_undecided():
+    rows = clean_rows()
+    rows[3].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, gapBeforeAnswerMs=None, timedOut=True)
     s = core.summarize(rows, end_silence_s=3.5)
-    assert s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False
-    assert s["goals"]["noSilenceOver3000"]["pass"] is False
-    # an over-target turn that is itself excluded is not evidence
-    rows2 = passing_rows()
-    rows2[0].update(firstSoundMs=1700.0, truncated=True)
+    g = s["goals"]
+    assert g["firstSoundWithin1500OnEveryTurn"]["pass"] is False
+    assert g["plainAnswerMedianWithin2500"]["pass"] is None and g["plainAnswerMedianWithin2500"]["partial"]["n"] == 11
+    assert g["toolAnswerMedianWithin4000"]["pass"] is True
+    assert s["timedOutTurns"] == ["t03"]
+    partial = core.summarize(clean_rows()[:7], end_silence_s=3.5)
+    assert all(g["pass"] is None for g in partial["goals"].values())
+    partial_rows = clean_rows()[:7]
+    partial_rows[2].update(firstSoundMs=None, timedOut=True)
+    assert core.summarize(partial_rows, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False
+
+
+def test_each_flag_excludes_only_what_it_invalidates():
+    rows = clean_rows()
+    rows[0]["contaminated"] = True  # first sound and gaps out, answer stays
+    rows[1]["unverified"] = True  # answer out, first sound stays
+    rows[2]["answerNotObserved"] = True
+    rows[2]["answerMs"] = None
+    s = core.summarize(rows, end_silence_s=3.5)
+    assert s["firstSoundMs"]["all"]["n"] == 19
+    assert s["answerMs"]["plain"]["n"] == 10  # 12 plain minus the unverified and the unobserved turn
+    assert s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
+    assert s["goals"]["plainAnswerMedianWithin2500"]["pass"] is None
+    assert s["goals"]["toolAnswerMedianWithin4000"]["pass"] is True
+    assert s["contaminatedTurns"][0]["id"] == "t00" and s["answerNotObservedTurns"] == ["t02"]
+
+
+def test_certain_misses_survive_exclusions_but_excluded_values_are_not_evidence():
+    rows = clean_rows()
+    rows[0]["firstSoundMs"] = 1700.0
+    for i in (5, 6, 7):
+        rows[i]["contaminated"] = True
+    assert core.summarize(rows, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False
+    rows2 = clean_rows()
+    rows2[0].update(firstSoundMs=1700.0, contaminated=True)
     assert core.summarize(rows2, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
 
 
-def test_table_shows_partial_statistics_as_plain_text():
-    rows = passing_rows()
+def test_merged_turns_are_endpoint_errors_not_timeouts_and_not_answer_evidence():
+    rows = clean_rows()
+    rows[4].update(merged=True)
+    rows[3].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, gapBeforeAnswerMs=None, timedOut=True, split=True)
+    s = core.summarize(rows, end_silence_s=3.5)
+    assert s["endpointErrors"]["count"] == 2 and s["endpointErrors"]["merged"] == ["t04"] and s["endpointErrors"]["split"] == ["t03"]
+    assert s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None  # not a "false" from a timeout
+    assert s["goals"]["plainAnswerMedianWithin2500"]["pass"] is None
+
+
+def test_refused_requests_come_from_the_stage_log_when_present():
+    rows = clean_rows()
+    assert core.summarize(rows)["refusedVoiceRequests"]["value"] is None
+    rows[0]["voiceRefused"], rows[1]["voiceRefused"] = True, False
+    rows[0]["stages"] = {"ttsRequestToFirstByte": 700}
+    rows[1]["stages"] = {"ttsRequestToFirstByte": 900}
+    s = core.summarize(rows)
+    assert s["refusedVoiceRequests"] == {"value": 1, "source": "worker stage log"}
+    assert s["stages"]["medianMs"]["ttsRequestToFirstByte"] == 800 and s["stages"]["turns"] == 2
+
+
+def test_table_prints_partial_statistics_as_plain_text():
+    rows = clean_rows()
     for r in rows:
-        r.update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
+        r.update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, gapBeforeAnswerMs=None, timedOut=True)
     text = core.render_table(rows, core.summarize(rows, end_silence_s=3.5))
-    assert "{" not in text and "partial, not a verdict: 0 of 12 turns, no value" in text
+    assert "{" not in text and "partial, not a verdict: 0 of 12 turns, no value" in text and "timeout" in text
+
+
+# --- the saved run 2, rescored --------------------------------------------------------------------
+
+def test_rescoring_saved_run_two_gives_the_corrected_numbers():
+    saved = json.loads((Path(__file__).parent / "fixtures" / "replay_run2.json").read_text())
+    script = core.load_script(SCRIPT)
+    result = core.rescore(saved, script)
+    rows = {r["id"]: r for r in result["rows"]}
+    s = result["summary"]
+    assert "truncatedTurns" not in s and all("truncated" not in r for r in rows.values())
+    assert 2050 <= s["firstSoundMs"]["all"]["median"] <= 2130 and s["firstSoundMs"]["all"]["n"] == 18
+    # the turns the old rule called clean: plain answers start at least 2.9 s after the caller stopped
+    for tid in ("t01", "t02", "t08", "t16", "t18"):
+        assert rows[tid]["answerMs"] >= 2900, tid
+    assert s["endpointErrors"]["merged"] == ["t13"] and s["endpointErrors"]["split"] == ["t12"]
+    assert [x["id"] for x in s["unverifiedTurns"]] == ["t12", "t15"]
+    assert [x["id"] for x in s["contaminatedTurns"]] == ["t15"]
+    assert rows["t12"]["timedOut"] and s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False  # a clean first sound over 1.5 s
+    assert s["goals"]["plainAnswerMedianWithin2500"]["pass"] is None
+    assert set(result["notRecomputable"]) >= {"contaminatedByPreSound", "mergedBySplitByLength", "stages", "bargedIn"}
+    assert all(r["answerSource"] in ("estimate", None) for r in rows.values())

@@ -57,7 +57,7 @@ async function turns(sessionId: string) {
   const pool = adminPool();
   const turnRows = (
     await pool.query(
-      "select id,state,error_code,channel,length(answer) as answer_chars,timings,extract(epoch from created_at)*1000 as created_ms from app.test_turn where session_id=$1 order by created_at,id",
+      "select id,state,error_code,channel,length(answer) as answer_chars,length(input) as input_chars,client_turn_id,timings,extract(epoch from created_at)*1000 as created_ms from app.test_turn where session_id=$1 order by created_at,id",
       [sessionId],
     )
   ).rows;
@@ -80,6 +80,8 @@ async function turns(sessionId: string) {
     errorCode: t.error_code,
     channel: t.channel,
     answerChars: t.answer_chars,
+    inputChars: t.input_chars,
+    clientTurnId: t.client_turn_id,
     createdMs: Number(t.created_ms),
     timings: t.timings,
     tools: steps.filter((s) => s.turn_id === t.id).map((s) => s.tool),
