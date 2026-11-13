@@ -37,7 +37,7 @@ export async function fixture() {
       content: "Contoh Room opens weekdays from nine to six.",
     },
   ];
-  const makeSession = async (seconds = 300) => {
+  const makeSession = async (seconds = 300, docs = knowledge) => {
     const session = (
       await f.req("POST", "/agent-tests", {
         agentId: f.h.orgA.agentId,
@@ -48,7 +48,7 @@ export async function fixture() {
     const token = randomUUID();
     await f.h.cleanup.query(
       "update app.test_session set channel='voice',voice_token_hash=$2,voice_expires_at=now()+$3*interval '1 second',snapshot=jsonb_set(snapshot,'{knowledge}',$4::jsonb) where id=$1",
-      [session.id, sha(token), seconds, JSON.stringify(knowledge)],
+      [session.id, sha(token), seconds, JSON.stringify(docs)],
     );
     return { id: session.id as string, hash: sha(token), token };
   };

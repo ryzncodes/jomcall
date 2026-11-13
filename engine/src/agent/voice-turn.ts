@@ -50,11 +50,12 @@ const EVIDENCE_BYTES = 6000;
 
 type Evidence = { sourceId: string; title: string; excerpt: string };
 
+// Returns false when the next hit would not fit under the byte cap.
 function addEvidence(
   into: Evidence[],
   hits: Evidence[],
   excerptLength: number,
-) {
+): boolean {
   for (const hit of hits) {
     if (into.some((e) => e.sourceId === hit.sourceId)) continue;
     const next = {
@@ -63,9 +64,10 @@ function addEvidence(
       excerpt: Array.from(hit.excerpt).slice(0, excerptLength).join(""),
     };
     if (Buffer.byteLength(JSON.stringify([...into, next])) > EVIDENCE_BYTES)
-      break;
+      return false;
     into.push(next);
   }
+  return true;
 }
 
 function errorCode(error: unknown) {
@@ -156,26 +158,28 @@ export async function runVoiceTurn(
     }
 
     const access = repo.access(envelope);
-    const evidence: Evidence[] = [];
+    // `own` is what this turn found itself (search and tools) and is what gets
+    // stored; `shown` adds chunks inherited from earlier turns for the prompt
+    // only, so stored evidence never compounds from turn to turn.
+    const own: Evidence[] = [];
+    const shown: Evidence[] = [];
     const index = buildKnowledgeIndex(envelope.session.snapshot);
-    addEvidence(evidence, searchKnowledge(index, input), 500);
-    // Chunks that earlier answers in this call relied on, newest turn first so
-    // the byte cap drops the oldest. An ID that no longer resolves is skipped.
-    for (const turn of [...history].reverse()) {
-      const ids = (turn.evidence ?? []).flatMap((e: any) => {
-        const id = typeof e === "string" ? e : e?.sourceId;
-        return typeof id === "string" ? [id] : [];
-      });
-      addEvidence(
-        evidence,
-        index.filter((hit) => ids.includes(hit.sourceId)),
-        500,
-      );
-    }
+    const fresh = searchKnowledge(index, input);
+    addEvidence(own, fresh, 500);
+    addEvidence(shown, fresh, 500);
+    // Chunks that earlier answers relied on, newest turn first and in stored
+    // order; stop at the first one that does not fit, so the oldest drop first.
+    // An ID that no longer resolves is skipped.
+    inherited: for (const turn of [...history].reverse())
+      for (const e of turn.evidence ?? []) {
+        const id = typeof e === "string" ? (e as string) : (e as any)?.sourceId;
+        const hit = index.find((h) => h.sourceId === id);
+        if (hit && !addEvidence(shown, [hit], 500)) break inherited;
+      }
     const system = voiceSystem(
       envelope.session.snapshot.settings,
       envelope.resources ?? [],
-      evidence,
+      shown,
       new Date(),
       envelope.recorded ?? [],
     );
@@ -225,7 +229,7 @@ export async function runVoiceTurn(
           checkAbort();
           let shown: unknown = result;
           if (result.kind === "knowledge") {
-            addEvidence(evidence, result.items, 300);
+            addEvidence(own, result.items, 300);
             shown = {
               kind: "knowledge",
               items: result.items.map((h) => ({
@@ -267,7 +271,7 @@ export async function runVoiceTurn(
       request.tokenHash,
       turnId,
       lease,
-      { answer, timings: t, evidence, usage },
+      { answer, timings: t, evidence: own, usage },
     );
     if (!saved) throw Error("TURN_CANCELLED");
     // An answer that speaks of the present moment is stale by the next call, whatever the question looked like.
@@ -277,7 +281,7 @@ export async function runVoiceTurn(
           language,
           key,
           answer,
-          evidence,
+          evidence: own,
         }),
       );
     if (aborted()) return;

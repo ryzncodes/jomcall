@@ -169,6 +169,28 @@ test("a tool_use block start announces the tool before the round completes", asy
   assert.deepEqual(events[1], { type: "tool_start", name: "take_message" });
 });
 
+test("an unknown tool name is not announced early", async () => {
+  const { events } = await collect({
+    raw: [
+      {
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "tool_use", id: "t", name: "rm_rf", input: {} },
+      },
+    ],
+    stop_reason: "tool_use",
+    content: [
+      {
+        type: "tool_use",
+        id: "t",
+        name: "take_message",
+        input: { text: "Hi" },
+      },
+    ],
+  });
+  assert.ok(!events.some((e) => e.type === "tool_start"));
+});
+
 test("invalid tool input, truncation and refusal fail closed", async () => {
   await assert.rejects(
     collect({

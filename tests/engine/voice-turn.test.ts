@@ -564,3 +564,51 @@ test("stored usage carries the cache write count", async () => {
     await f.close();
   }
 });
+
+const ids = (text: string) =>
+  [...text.matchAll(/"sourceId":"([^"]+)"/g)].map((m) => m[1]);
+
+test("stored evidence is only this turn's own, never inherited", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const answer = [sentence("We open at nine."), end("We open at nine.")];
+    const { model } = f.scripted(answer, answer);
+    await f.run(s, weekdays, model);
+    await f.run(s, unrelated, model);
+    const [first, second] = await f.turns(s.id);
+    assert.ok(first.evidence.length >= 1);
+    assert.deepEqual(second.evidence, []);
+  } finally {
+    await f.close();
+  }
+});
+
+test("inherited evidence is newest first and the oldest is dropped at the cap", async () => {
+  const f = await fixture();
+  try {
+    // Six groups of five chunks, each about 1.6 KB once shown: only a few fit.
+    const docs = Array.from({ length: 30 }, (_, i) => ({
+      kind: "text",
+      name: `Doc ${Math.floor(i / 5)} ${i % 5}`,
+      content: `g${Math.floor(i / 5)}tag ` + "一".repeat(600),
+    }));
+    const s = await f.makeSession(300, docs);
+    const answer = [sentence("Ok."), end("Ok.")];
+    const { model, seen } = f.scripted(
+      ...Array.from({ length: 7 }, () => answer),
+    );
+    for (let g = 0; g < 6; g++) await f.run(s, `g${g}tag`, model);
+    await f.run(s, "nothing to find here", model);
+    const turns = await f.turns(s.id);
+    const stored = (n: number) =>
+      turns[n].evidence.map((e: any) => e.sourceId as string);
+    const shown = ids(seen[6].volatile);
+    assert.ok(stored(5).length >= 1);
+    assert.deepEqual(shown, stored(5));
+    for (const id of stored(4)) assert.ok(!shown.includes(id));
+    assert.ok(stored(4).length >= 1);
+  } finally {
+    await f.close();
+  }
+});

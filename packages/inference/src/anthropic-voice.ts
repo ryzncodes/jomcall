@@ -35,6 +35,7 @@ function mapError(error: unknown): Error {
 
 // One client per process: building one per call would repeat its setup on
 // every spoken turn.
+const toolNames = new Set(voiceTools.map((t) => t.name));
 let shared: Anthropic | undefined;
 const sharedClient = () => (shared ??= new Anthropic());
 
@@ -76,6 +77,9 @@ export async function* streamVoiceModel(
         event.type === "content_block_start" &&
         event.content_block.type === "tool_use"
       ) {
+        // Only a known tool name may be announced; anything else is left to
+        // the validated path, which fails the turn.
+        if (!toolNames.has(event.content_block.name)) continue;
         // Text always comes before a tool call: speak what is pending first,
         // so the caller hears the lead-in before the tool is announced.
         const lead = pending.trim();
