@@ -36,6 +36,7 @@ async function voiceFixture(seconds = 300) {
     turn: string | null = null,
     lease: string | null = null,
     hash = sha(token),
+    sessionId: string = session.id,
   ) =>
     (
       await agent.query(
@@ -43,7 +44,7 @@ async function voiceFixture(seconds = 300) {
         [
           action,
           f.h.namespace,
-          session.id,
+          sessionId,
           hash,
           turn,
           lease,
@@ -272,26 +273,41 @@ test("the answer cache is scoped to organization, snapshot and language", async 
       [f.session.id],
     );
     assert.equal(await f.voice("voice_cache_get", entry), null);
-    // Another organization's context sees nothing through row-level security.
-    const app = new pg.Client({
-      connectionString: process.env.APP_DATABASE_URL,
-    });
-    await app.connect();
-    try {
-      await app.query("begin");
-      await app.query("select set_config('app.org_id',$1,true)", [f.h.orgB.id]);
-      assert.equal(
-        (
+    // Row-level security: only an active manager of the owning organization
+    // reads the cache. Acting user, session and org are all set, so the zero
+    // for orgB is the policy at work and the one for orgA proves the setup.
+    const visibleTo = async (
+      actor: { userId: string; sessionId: string },
+      orgId: string,
+    ) => {
+      const app = new pg.Client({
+        connectionString: process.env.APP_DATABASE_URL,
+      });
+      await app.connect();
+      try {
+        await app.query("begin");
+        await app.query("select set_config('app.org_id',$1,true)", [orgId]);
+        await app.query("select set_config('app.user_id',$1,true)", [
+          actor.userId,
+        ]);
+        await app.query("select set_config('app.session_id',$1,true)", [
+          actor.sessionId,
+        ]);
+        const n = (
           await app.query(
             "select count(*)::int as n from app.voice_answer_cache",
           )
-        ).rows[0].n,
-        0,
-      );
-      await app.query("rollback");
-    } finally {
-      await app.end();
-    }
+        ).rows[0].n;
+        await app.query("rollback");
+        return n;
+      } finally {
+        await app.end();
+      }
+    };
+    assert.equal(await visibleTo(f.h.bob, f.h.orgB.id), 0);
+    assert.equal(await visibleTo(f.h.bob, f.h.orgA.id), 0);
+    assert.equal(await visibleTo(f.h.alice, f.h.orgB.id), 0);
+    assert.equal(await visibleTo(f.h.alice, f.h.orgA.id), 1);
     assert.equal(
       (
         await f.h.cleanup.query(
@@ -305,6 +321,59 @@ test("the answer cache is scoped to organization, snapshot and language", async 
       f.voice("voice_cache_put", { ...entry, language: "xx" }),
       /INVALID_CACHE_ENTRY/,
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test("an organization B voice session cannot read organization A's cached answers", async () => {
+  const f = await voiceFixture();
+  try {
+    const entry = {
+      language: "ms",
+      key: "kedai buka pukul berapa",
+      answer: "Kami buka 9 pagi hingga 6 petang.",
+      evidence: ["abc:2:0"],
+    };
+    assert.deepEqual(await f.voice("voice_cache_put", entry), {});
+    const sessionB = (
+      await f.api.request(f.h.bob, f.h.orgB.id, "POST", "/api/v1/agent-tests", {
+        agentId: f.h.orgB.agentId,
+        locationId: f.h.orgB.locationId,
+        source: { kind: "draft", expectedRevision: 1 },
+      })
+    ).body.data;
+    const tokenB = randomUUID();
+    // Same snapshot hash, same language and key: only the organization differs.
+    await f.h.cleanup.query(
+      "update app.test_session set channel='voice',voice_token_hash=$2,voice_expires_at=now()+interval '300 seconds',snapshot_hash=(select snapshot_hash from app.test_session where id=$3) where id=$1",
+      [sessionB.id, sha(tokenB), f.session.id],
+    );
+    const hashes = (
+      await f.h.cleanup.query(
+        "select org_id,snapshot_hash from app.test_session where id in($1,$2)",
+        [f.session.id, sessionB.id],
+      )
+    ).rows;
+    assert.equal(hashes.length, 2);
+    assert.equal(hashes[0].snapshot_hash, hashes[1].snapshot_hash);
+    assert.notEqual(hashes[0].org_id, hashes[1].org_id);
+    assert.equal(
+      await f.voice(
+        "voice_cache_get",
+        entry,
+        null,
+        null,
+        sha(tokenB),
+        sessionB.id,
+      ),
+      null,
+    );
+    // Control: orgA's own session still hits.
+    assert.deepEqual(await f.voice("voice_cache_get", entry), {
+      answer: entry.answer,
+      evidence: entry.evidence,
+    });
   } finally {
     await f.close();
   }
