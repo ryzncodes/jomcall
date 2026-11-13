@@ -84,7 +84,8 @@ DEFINITIONS = {
     "turnEnd": f"{END_SILENCE_S:g} s of quiet after a burst, {TURN_CEILING_S:g} s ceiling, or {TURN_TIMEOUT_S:g} s with no burst (timeout)",
     "truncated": "the stored brain turn finished (skewMs + totalMs after t0) more than 500 ms after the tool stopped listening",
     "contaminated": "the turn after a truncated one in the same call: the late answer may be counted as its first sound",
-    "exclusion": "truncated and contaminated turns are left out of every median, percentile, first-sound and gap statistic and listed by id",
+    "unverified": "no matched completed stored row, no totalMs, or no plausible skew: a late answer cannot be ruled out; excluded like truncated, and the next turn is contaminated. ceiling turns count as truncated",
+    "exclusion": "truncated, unverified and contaminated turns are left out of every median, percentile, first-sound and gap statistic and listed by id",
     "goals": "pass is true/false only when computed from ALL turns of the group with none truncated, contaminated, timed out, dropped or unmeasured; otherwise null with a reason and the partial statistics, never a verdict. A timeout makes goal 1 false; for goals 2-3 it is unmeasured",
     "percentile": "nearest rank: the value at ceil(p * n) in sorted order",
     "arrival": "agent frame times are the arrival times of decoded frames at this client, so network and jitter-buffer delay is inside every number",
@@ -441,7 +442,12 @@ def spread(values: list[float]) -> dict:
 
 
 def _usable(r: dict) -> bool:
-    return not (r.get("truncated") or r.get("contaminated") or r.get("timedOut") or r.get("suspectDropped"))
+    return not (r.get("truncated") or r.get("contaminated") or r.get("unverified") or r.get("timedOut") or r.get("suspectDropped"))
+
+
+def _certain_miss(rows: list[dict], key: str, target: float) -> bool:
+    """A clean, verified turn over target is a miss however many other turns are excluded."""
+    return any(_usable(r) and r.get(key) is not None and r[key] > target for r in rows)
 
 
 def _goal(target: float, value: float | None, ok: bool | None, reason: str | None = None, partial: dict | None = None) -> dict:
@@ -458,14 +464,14 @@ def _decide(target, rows, key, stat, expected, extra_reason=None) -> dict:
     value = stat(clean) if clean else None
     bad = len(rows) - len(clean)
     if len(rows) != expected or extra_reason or bad:
-        why = extra_reason or (f"{bad} of {len(rows)} turns are truncated, contaminated, timed out, dropped or unmeasured" if bad else "not every turn was run")
+        why = extra_reason or (f"{bad} of {len(rows)} turns are truncated, contaminated, unverified, timed out, dropped or unmeasured" if bad else "not every turn was run")
         return _goal(target, None, None, why, {"n": len(clean), "of": expected, "value": value})
     return _goal(target, value, value <= target)
 
 
 def summarize(rows: list[dict], expected_turns: int = 20, end_silence_s: float = END_SILENCE_S) -> dict:
     """Per-turn rows to a summary. A row is a dict as built by `replay.build_row`."""
-    ok = [r for r in rows if not (r.get("truncated") or r.get("contaminated"))]
+    ok = [r for r in rows if not (r.get("truncated") or r.get("contaminated") or r.get("unverified"))]
     plain_all = [r for r in rows if r["expectTool"] is None]
     tool_all = [r for r in rows if r["expectTool"] is not None]
     plain = [r for r in ok if r["expectTool"] is None]
@@ -474,13 +480,19 @@ def summarize(rows: list[dict], expected_turns: int = 20, end_silence_s: float =
     timeouts = [r for r in rows if r["timedOut"]]
     gaps = got(ok, "longestSilentGapMs")
     top_gap = max(gaps) if gaps else None
-    if timeouts and len(rows) == expected_turns:
+    if timeouts:
         first = _goal(GOAL_FIRST_SOUND_MS, None, False, None)  # the caller heard nothing
         first["note"] = f"{len(timeouts)} turn(s) timed out with no sound"
+    elif _certain_miss(rows, "firstSoundMs", GOAL_FIRST_SOUND_MS):
+        first = _goal(GOAL_FIRST_SOUND_MS, max(r["firstSoundMs"] for r in rows if _usable(r) and r.get("firstSoundMs") is not None), False)
+        first["note"] = "a clean, verified turn is over target"
     else:
         first = _decide(GOAL_FIRST_SOUND_MS, rows, "firstSoundMs", max, expected_turns)
     if end_silence_s <= GOAL_MAX_SILENCE_MS / 1000:
         silence = _goal(GOAL_MAX_SILENCE_MS, None, None, f"a turn ends after {end_silence_s:g} s of quiet, so a longer gap cannot be seen; run with --end-silence above 3", {"value": top_gap})
+    elif _certain_miss(rows, "longestSilentGapMs", GOAL_MAX_SILENCE_MS):
+        silence = _goal(GOAL_MAX_SILENCE_MS, max(r["longestSilentGapMs"] for r in rows if _usable(r) and r.get("longestSilentGapMs") is not None), False)
+        silence["note"] = "a clean, verified gap is over target"
     else:
         silence = _decide(GOAL_MAX_SILENCE_MS, rows, "longestSilentGapMs", max, expected_turns)
     return {
@@ -491,6 +503,7 @@ def summarize(rows: list[dict], expected_turns: int = 20, end_silence_s: float =
         "timedOutTurns": [r["id"] for r in timeouts],
         "truncatedTurns": [r["id"] for r in rows if r.get("truncated")],
         "contaminatedTurns": [r["id"] for r in rows if r.get("contaminated")],
+        "unverifiedTurns": [{"id": r["id"], "reason": r.get("unverifiedReason")} for r in rows if r.get("unverified")],
         "refusedVoiceRequests": {
             "value": None,
             "notMeasured": "the worker keeps refusals only in memory (voiceRefused) and logs nothing about them, so they cannot be observed from outside; see suspectedDroppedAnswerTurns",
@@ -532,6 +545,8 @@ def render_table(rows: list[dict], summary: dict) -> str:
             notes.append("truncated")
         if r.get("contaminated"):
             notes.append("contaminated")
+        if r.get("unverified"):
+            notes.append("unverified")
         if r.get("expectedToolUsed") is False:
             notes.append(f"no {r['expectTool']}")
         lines.append(

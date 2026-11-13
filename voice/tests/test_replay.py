@@ -466,3 +466,59 @@ async def test_pump_say_wait_fails_clearly_when_frames_never_go_out():
     pump.stop()
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
+
+
+def test_missing_stored_row_is_unverified_and_contaminates_the_next_turn():
+    sent = [(TURN, timing(wall=1_000_000.0)), (TURN, timing(wall=1_020_000.0))]
+    rows = attach(sent, [stored(1_020_300)], 1)
+    assert rows[0]["unverified"] and "no stored" in rows[0]["unverifiedReason"] and rows[0]["truncated"] is False
+    assert rows[1]["contaminated"] and rows[1]["unverified"] is False
+    full = passing_rows()
+    full[3]["unverified"], full[3]["unverifiedReason"] = True, "no stored voice turn matched"
+    full[4]["contaminated"] = True
+    s = core.summarize(full, end_silence_s=3.5)
+    assert s["unverifiedTurns"] == [{"id": "t03", "reason": "no stored voice turn matched"}]
+    assert s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None
+    assert s["goals"]["noSilenceOver3000"]["pass"] is None
+
+
+def test_other_unverified_causes_and_skew_range():
+    chosen = core.match_rows([1_000_000.0], [stored()])[0][0]
+    assert build_row(TURN, 1, timing(), {**chosen, "state": "failed"}, None)["unverified"]
+    no_total = {**chosen, "timings": {"transcriptMs": 500, "firstSentenceMs": 2000}}
+    assert "totalMs" in build_row(TURN, 1, timing(), no_total, None)["unverifiedReason"]
+    assert "wall-clock" in build_row(TURN, 1, timing(wall=None), chosen, None)["unverifiedReason"]
+    far = {**chosen, "heardEstMs": chosen["heardEstMs"] + 9000}
+    r = build_row(TURN, 1, timing(), far, None)
+    assert r["unverified"] and "implausible" in r["unverifiedReason"] and r["truncated"] is False
+    assert build_row(TURN, 1, timing(), chosen, None)["unverified"] is False
+
+
+def test_ceiling_turn_is_truncated_and_contaminates_the_next():
+    chosen = core.match_rows([1_000_000.0], [stored()])[0][0]
+    r = build_row(TURN, 1, timing(ended="ceiling", window=20000.0), chosen, None)
+    assert r["truncated"] is True
+    sent = [(TURN, timing(ended="ceiling", window=20000.0, wall=1_000_000.0)), (TURN, timing(wall=1_030_000.0))]
+    rows = attach(sent, [stored(1_000_300), stored(1_030_300)], 1)
+    assert rows[1]["contaminated"] is True
+
+
+def test_goal_one_is_false_for_a_timeout_even_in_a_partial_run():
+    rows = passing_rows()[:7]
+    rows[2].update(firstSoundMs=None, answerMs=None, longestSilentGapMs=None, timedOut=True)
+    assert core.summarize(rows, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False
+
+
+def test_clean_over_target_turn_is_a_certain_miss_among_excluded_turns():
+    rows = passing_rows()
+    rows[0]["firstSoundMs"] = 1700.0
+    rows[0]["longestSilentGapMs"] = 3300.0
+    for i in (5, 6, 7):
+        rows[i]["unverified"] = True
+    s = core.summarize(rows, end_silence_s=3.5)
+    assert s["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is False
+    assert s["goals"]["noSilenceOver3000"]["pass"] is False
+    # an over-target turn that is itself excluded is not evidence
+    rows2 = passing_rows()
+    rows2[0].update(firstSoundMs=1700.0, truncated=True)
+    assert core.summarize(rows2, end_silence_s=3.5)["goals"]["firstSoundWithin1500OnEveryTurn"]["pass"] is None

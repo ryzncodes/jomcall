@@ -63,6 +63,7 @@ async def helper(*args: str) -> dict:
         out, err = await asyncio.wait_for(process.communicate(), core.HELPER_TIMEOUT_S)
     except asyncio.TimeoutError:
         process.kill()
+        await process.wait()
         raise CannotRun(f"session helper '{args[0]}' did not finish within {core.HELPER_TIMEOUT_S:g} s") from None
     if process.returncode != 0:
         lines = err.decode(errors="replace").strip().splitlines()
@@ -225,6 +226,20 @@ def build_row(turn: dict, call_no: int, timing: core.TurnTiming, stored: dict | 
     expected_used = None
     if stored is not None and turn["expectTool"] is not None:
         expected_used = turn["expectTool"] in tools or PROPOSAL_OF.get(turn["expectTool"]) in proposals
+    # Without a trustworthy stored end time a late answer cannot be ruled out.
+    low, high = core.SKEW_PLAUSIBLE_MS
+    if stored is None:
+        unverified_reason = "no stored voice turn matched"
+    elif stored.get("state") != "completed":
+        unverified_reason = f"stored turn state is {stored.get('state')}"
+    elif brain["totalMs"] is None:
+        unverified_reason = "stored turn has no totalMs"
+    elif skew is None:
+        unverified_reason = "no wall-clock t0 or creation time to place the brain's clock"
+    elif not low <= skew <= high:
+        unverified_reason = f"implausible skew ({skew:.0f} ms)"
+    else:
+        unverified_reason = None
     # A completed brain turn whose answer never reached the ears: the signature of a
     # refused or failed voice request (the worker keeps no log of it), or of a cut-off.
     suspect = bool(
@@ -245,7 +260,11 @@ def build_row(turn: dict, call_no: int, timing: core.TurnTiming, stored: dict | 
         "endedBy": timing.ended_by,
         "windowMs": timing.window_ms,
         "bursts": [{"startMs": b.start_ms, "endMs": b.end_ms} for b in timing.bursts],
-        "truncated": bool(brain and brain["totalMs"] is not None and skew is not None and skew + brain["totalMs"] > timing.window_ms + 500),
+        "truncated": timing.ended_by == "ceiling" or (
+            unverified_reason is None and skew + brain["totalMs"] > timing.window_ms + 500
+        ),
+        "unverified": unverified_reason is not None,
+        "unverifiedReason": unverified_reason,
         "contaminated": False,
         "skewMs": skew,
         "brain": brain,
@@ -271,7 +290,7 @@ def attach(sent: list[tuple[dict, core.TurnTiming]], stored_turns: list[dict], c
         reason = None if chosen[i] is not None else f"no stored voice turn in this turn's window ({len(voice)} stored, {stray} outside every window)"
         rows.append(build_row(turn, call_no, timing, chosen[i], reason, extra[i]))
     for earlier, later in zip(rows, rows[1:]):
-        if earlier["truncated"]:
+        if earlier["truncated"] or earlier["unverified"]:
             later["contaminated"] = True  # the late answer may land inside this turn
     return rows
 
