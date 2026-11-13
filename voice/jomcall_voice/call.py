@@ -72,10 +72,20 @@ class _Turn:
     neutral_done: bool = False
     action_done: bool = False
     mark: float = 0.0  # latest of turn start and last tool event
+    stages: dict = field(default_factory=dict)  # wall-clock stage stamps (epoch ms)
+    skipped: int = 0  # fixed lines skipped in this turn
+    logged: bool = False
     trouble_done: bool = False
     rest: list[str] = field(default_factory=list)
     tasks: set[asyncio.Task] = field(default_factory=set)
     run: asyncio.Task | None = None
+
+
+STAGE_FIELDS = (
+    "clientTurnId", "heardAtMs", "eosAtMs", "brainSentAtMs", "firstSentenceAtMs",
+    "ttsRequestAtMs", "firstTtsByteAtMs", "firstFrameAtMs", "fillerKind", "fillerAtMs",
+    "voiceRefused", "fixedLinesSkipped",
+)
 
 
 def _log_failure(task: asyncio.Task) -> None:
@@ -94,12 +104,14 @@ class Call:
         ears: Ears, brain: Brain, voice: Voice, clock: Clock, sink: Sink,
         new_id: Callable[[], str] = lambda: str(uuid.uuid4()),
         wall_ms: Callable[[], float] = lambda: time.time() * 1000,
+        stage_log: Callable[[dict], None] | None = None,
     ):
         self._session_id, self._token = session_id, token
         self._greeting, self._disclosure = greeting.strip(), disclosure.strip()
         self._ears, self._brain, self._voice = ears, brain, voice
         self._clock, self._sink = clock, sink
         self._new_id, self._wall_ms = new_id, wall_ms
+        self._stage_log = stage_log
         self.turns: list[dict] = []
         self.end_reason: str | None = None
         self._ended = asyncio.Event()
@@ -169,14 +181,20 @@ class Call:
         finally:
             self._playing -= 1
 
-    async def _speak(self, text: str, opening: bool = False) -> None:
+    def _stamp(self, turn: _Turn | None, key: str) -> None:
+        if turn is not None and key not in turn.stages:
+            turn.stages[key] = self._wall_ms()
+
+    async def _speak(self, text: str, opening: bool = False, turn: _Turn | None = None) -> None:
         """One voice request, started now so audio is ready when the sink is free."""
         queue: asyncio.Queue = asyncio.Queue()
 
         async def produce() -> None:
             try:
+                self._stamp(turn, "ttsRequestAtMs")
                 source = self._voice.opening(text) if opening else self._voice.speak(text)
                 async for chunk in source:
+                    self._stamp(turn, "firstTtsByteAtMs")
                     queue.put_nowait(chunk)
                 queue.put_nowait(None)
             except VoiceError as error:
@@ -192,6 +210,7 @@ class Call:
                     return
                 if isinstance(item, Exception):
                     raise item
+                self._stamp(turn, "firstFrameAtMs")
                 yield item
 
         producer = asyncio.create_task(produce())
@@ -201,7 +220,10 @@ class Call:
         finally:
             producer.cancel()
 
-    async def _say_fixed(self, text: str, unless: Callable[[], bool] | None = None) -> None:
+    async def _say_fixed(
+        self, text: str, unless: Callable[[], bool] | None = None,
+        turn: _Turn | None = None, kind: str | None = None,
+    ) -> None:
         """A fixed line from the cache only. Never synthesized during a call:
         a missing one is skipped and counted (see `prewarm`)."""
         if unless and unless():
@@ -209,11 +231,20 @@ class Call:
         audio = self._voice.lookup(text)
         if audio is None:
             self.fixed_lines_skipped += 1
+            if turn is not None:
+                turn.skipped += 1
             return
+
+        async def clip() -> AsyncIterator[bytes]:
+            if turn is not None and kind and "fillerKind" not in turn.stages:
+                turn.stages["fillerKind"] = kind
+                turn.stages["fillerAtMs"] = self._wall_ms()
+            yield audio
+
         async with self._lock:
             if unless and unless():
                 return
-            await self._play(_once(audio))
+            await self._play(clip())
 
     def _spawn(self, coro: Awaitable, turn: _Turn | None = None) -> asyncio.Task:
         task = asyncio.ensure_future(coro)
@@ -221,11 +252,43 @@ class Call:
         group.add(task)
         task.add_done_callback(group.discard)
         task.add_done_callback(_log_failure)
+        if turn:
+            task.add_done_callback(lambda _t: self._maybe_finish(turn))
         return task
+
+    def _maybe_finish(self, turn: _Turn) -> None:
+        if turn.run is not None and turn.run.done() and not turn.tasks:
+            self._finish(turn)
+
+    def _finish(self, turn: _Turn) -> None:
+        """Write the turn's stage times once. Timestamps and flags only."""
+        if turn.logged or self._stage_log is None:
+            return
+        turn.logged = True
+        stages = turn.stages
+        record = {
+            "clientTurnId": turn.id,
+            "heardAtMs": stages.get("heardAtMs"),
+            "eosAtMs": stages.get("eosAtMs"),
+            "brainSentAtMs": stages.get("brainSentAtMs"),
+            "firstSentenceAtMs": stages.get("firstSentenceAtMs"),
+            "ttsRequestAtMs": stages.get("ttsRequestAtMs"),
+            "firstTtsByteAtMs": stages.get("firstTtsByteAtMs"),
+            "firstFrameAtMs": stages.get("firstFrameAtMs"),
+            "fillerKind": stages.get("fillerKind"),
+            "fillerAtMs": stages.get("fillerAtMs"),
+            "voiceRefused": bool(turn.record.get("voiceRefused")),
+            "fixedLinesSkipped": turn.skipped,
+        }
+        try:
+            self._stage_log(record)
+        except Exception as error:
+            log.warning("stage log failed: %s", type(error).__name__)
 
     def _cancel_turn(self) -> None:
         turn, self._turn = self._turn, None
         if turn:
+            self._finish(turn)
             for task in (turn.run, *turn.tasks):
                 if task and not task.done():
                     task.cancel()
@@ -246,6 +309,7 @@ class Call:
             if idle:  # noise with nothing in it: ask once, never over an answer
                 self._spawn(self._say_fixed(fillers.REPEAT[self._lang]))
             return
+        eos = self._wall_ms()
         self._cancel_turn()  # a new turn supersedes a running one
         lang = fillers.guess_language(text)
         self._lang = lang
@@ -254,11 +318,14 @@ class Call:
             record={"clientTurnId": "", "voiceRequests": 0, "voiceRefused": False, "voiceFailed": False},
         )
         turn.record["clientTurnId"] = turn.id
+        heard = event.heard_at_ms or eos
+        turn.stages.update(eosAtMs=eos, heardAtMs=heard)
         self.turns.append(turn.record)
         self._turn = turn
         turn.mark = self._clock.now()
-        turn.run = asyncio.ensure_future(self._run_turn(turn, text, event.heard_at_ms or self._wall_ms()))
+        turn.run = asyncio.ensure_future(self._run_turn(turn, text, heard))
         turn.run.add_done_callback(_log_failure)
+        turn.run.add_done_callback(lambda _t: self._maybe_finish(turn))
 
     # --- one turn -----------------------------------------------------------
 
@@ -268,6 +335,7 @@ class Call:
     async def _run_turn(self, turn: _Turn, transcript: str, heard_at_ms: float) -> None:
         stream = self._brain(self._session_id, self._token, transcript, turn.id, heard_at_ms)
         timer = asyncio.ensure_future(self._timers(turn))
+        self._stamp(turn, "brainSentAtMs")
         try:
             async for event in stream:
                 if not self._current(turn):
@@ -299,6 +367,7 @@ class Call:
             text = str(event.get("text", "")).strip()
             if not text:
                 return False
+            self._stamp(turn, "firstSentenceAtMs")
             if turn.sentence_seen:
                 turn.rest.append(text)
             else:
@@ -334,7 +403,7 @@ class Call:
             return
         turn.record["voiceRequests"] += 1
         try:
-            await self._speak(text)
+            await self._speak(text, turn=turn)
         except VoiceRefused:
             turn.record["voiceRefused"] = True  # say nothing; the call goes on
         except VoiceError:
@@ -348,14 +417,20 @@ class Call:
         line = fillers.choose(action, turn.lang, self._last_filler, None)
         if line:
             self._last_filler = line
-            self._spawn(self._say_fixed(line, unless=lambda: turn.sentence_seen), turn)
+            self._spawn(
+                self._say_fixed(
+                    line, unless=lambda: turn.sentence_seen, turn=turn,
+                    kind="neutral" if action is None else "action",
+                ),
+                turn,
+            )
 
     def _trouble(self, turn: _Turn) -> None:
         if turn.trouble_done:
             return
         turn.trouble_done = True
         line = fillers.TROUBLE[turn.lang]
-        self._spawn(self._say_fixed(line, unless=lambda: turn.sentence_seen), turn)
+        self._spawn(self._say_fixed(line, unless=lambda: turn.sentence_seen, turn=turn), turn)
 
     async def _timers(self, turn: _Turn) -> None:
         await self._clock.sleep(config.NEUTRAL_ACK_MS / 1000)

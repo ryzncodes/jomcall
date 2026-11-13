@@ -12,6 +12,7 @@ from livekit.agents import AutoSubscribe, JobContext, WorkerOptions
 from . import brain_client, config
 from .call import Call
 from .ears import DeepgramEars
+from .stages import StageWriter
 from .voice_out import Voice
 
 log = logging.getLogger("jomcall_voice.worker")
@@ -126,6 +127,7 @@ async def entrypoint(ctx: JobContext) -> None:
         voice=Voice(meta["voice"]),
         clock=RealClock(),
         sink=RoomSink(source),
+        stage_log=StageWriter(ctx.room.name),
     )
     ctx.room.on(
         "participant_disconnected",

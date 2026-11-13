@@ -10,13 +10,14 @@ import pytest
 
 from jomcall_voice import config, fillers
 from jomcall_voice.brain_client import BrainRejected, BrainUnauthorized
-from jomcall_voice.call import Call, EarEvent
+from jomcall_voice.call import STAGE_FIELDS, Call, EarEvent
 from jomcall_voice.voice_out import VoiceRefused
 
 SESSION = "11111111-1111-4111-8111-111111111111"
 GREETING = "Hello, thanks for calling Kedai Contoh."
 DISCLOSURE = "This call is answered by an AI assistant and may be recorded."
 OPENING = GREETING + " " + DISCLOSURE
+BASE_MS = 1_700_000_000_000.0
 
 
 async def settle():
@@ -167,6 +168,7 @@ class Rig:
         self.voice = FakeVoice()
         self.sink = FakeSink()
         self.brain = FakeBrain(self.clock, *scripts)
+        self.stages: list[dict] = []
         self.call = Call(
             session_id=SESSION,
             token="tok-test",
@@ -177,6 +179,8 @@ class Rig:
             voice=self.voice,
             clock=self.clock,
             sink=self.sink,
+            wall_ms=lambda: BASE_MS + self.clock.now() * 1000,
+            stage_log=self.stages.append,
         )
         self.task: asyncio.Task | None = None
 
@@ -547,3 +551,71 @@ async def test_any_opening_exception_ends_the_call_with_a_reason(make):
     assert rig.task.done()
     assert rig.task.result().end_reason == "opening_failed"
     assert not rig.ears.started
+
+
+# --- stage times ----------------------------------------------------------
+
+async def test_a_plain_turn_logs_its_stage_times_with_exact_fields(make):
+    rig = await make([(0, STARTED), (300, sentence("Rahsia jawapan.")), (0, DONE)])
+    await rig.clock.advance(100)
+    rig.ears.say("rahsia soalan", at=BASE_MS - 500)
+    await settle()
+    await rig.clock.advance(1000)
+    assert len(rig.stages) == 1
+    row = rig.stages[0]
+    assert list(row) == list(STAGE_FIELDS)
+    assert row["clientTurnId"] == rig.call.turns[0]["clientTurnId"]
+    assert row["heardAtMs"] == BASE_MS - 500
+    assert row["eosAtMs"] == row["brainSentAtMs"] == BASE_MS + 100
+    assert row["firstSentenceAtMs"] == BASE_MS + 400
+    assert row["ttsRequestAtMs"] == row["firstTtsByteAtMs"] == row["firstFrameAtMs"] == BASE_MS + 400
+    assert row["fillerKind"] is None and row["fillerAtMs"] is None
+    assert row["voiceRefused"] is False and row["fixedLinesSkipped"] == 0
+    assert "soalan" not in str(row) and "jawapan" not in str(row)
+
+
+async def test_the_first_filler_is_stamped_and_never_counted_as_the_answer(make):
+    rig = await make([(0, STARTED), (1200, sentence("Ok.")), (0, DONE)])
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(2000)
+    row = rig.stages[0]
+    assert row["fillerKind"] == "neutral"
+    assert row["fillerAtMs"] == BASE_MS + 800
+    assert row["firstFrameAtMs"] == BASE_MS + 1200 and row["ttsRequestAtMs"] == BASE_MS + 1200
+
+
+async def test_an_action_filler_is_stamped_as_action(make):
+    rig = await make(
+        [(0, STARTED), (500, {"type": "tool", "name": "book_slot"}), (3000, sentence("Ok.")), (0, DONE)]
+    )
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(4000)
+    assert rig.stages[0]["fillerKind"] == "action"
+    assert rig.stages[0]["fillerAtMs"] == BASE_MS + 500
+
+
+async def test_refused_voice_and_skipped_lines_are_flagged_per_turn(make):
+    rig = await make([(0, sentence("No voice.")), (0, DONE)], [(0, sentence("Fine.")), (0, DONE)])
+    rig.voice.refuse.add("No voice.")
+    rig.voice.uncached.update(fillers.NEUTRAL["en"])
+    rig.ears.say("one")
+    await settle()
+    await rig.clock.advance(100)
+    rig.ears.say("two")
+    await settle()
+    await rig.clock.advance(100)
+    assert [(r["voiceRefused"], r["fixedLinesSkipped"]) for r in rig.stages] == [(True, 0), (False, 0)]
+    assert rig.stages[0]["firstFrameAtMs"] is None
+
+
+async def test_a_superseded_turn_is_logged_once_with_unknowns_as_null(make):
+    rig = await make([(0, STARTED), (10_000, DONE)], [(0, sentence("Ok.")), (0, DONE)])
+    rig.ears.say("first")
+    await settle()
+    rig.ears.say("second")
+    await settle()
+    await rig.clock.advance(100)
+    assert len(rig.stages) == 2
+    assert rig.stages[0]["firstSentenceAtMs"] is None and rig.stages[0]["firstFrameAtMs"] is None
