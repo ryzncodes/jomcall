@@ -1,4 +1,8 @@
-import { getReadiness as getModelReadiness } from "../../../inference/src/provider.ts";
+import {
+  getReadiness as getModelReadiness,
+  voiceReadiness,
+} from "../../../inference/src/provider.ts";
+import { startVoiceTest } from "./voice-session.ts";
 import { submitTurn, controlTurn } from "./turns.ts";
 import { applyBookingProposal } from "./proposals.ts";
 import type { PoolClient } from "pg";
@@ -24,8 +28,11 @@ export async function agentTestRoute(
 ) {
   if (path === "/agent-tests/readiness" && method === "GET") {
     manager(ctx);
-    return getModelReadiness();
+    return { ...(await getModelReadiness()), voice: voiceReadiness() };
   }
+  const voice = path.match(/^\/agent-tests\/([^/]+)\/voice$/);
+  if (voice && method === "POST")
+    return startVoiceTest(tx, ctx, uuid.parse(voice[1]), body);
   const turn = path.match(
     /^\/agent-tests\/([^/]+)\/turns(?:\/([^/]+)\/(cancel|retry))?$/,
   );

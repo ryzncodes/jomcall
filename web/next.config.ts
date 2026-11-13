@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
       ignore: [/^\/api\/auth\/(confirm|recovery)/, /^\/invite/],
     },
   },
+  // Build-time mode switch: lets the mock build drop local-only code
+  // (voice testing, livekit-client) instead of shipping it unused.
+  env: { NEXT_PUBLIC_JOMCALL_MODE: process.env.JOMCALL_MODE ?? "mock" },
   devIndicators: false,
   images: { qualities: [75, 85] },
 };

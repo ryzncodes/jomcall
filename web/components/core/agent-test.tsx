@@ -1,6 +1,7 @@
 "use client";
 import { isResourceUnavailable } from "@/lib/core/client";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { ChatCircle, ArrowUpRight } from "@phosphor-icons/react";
 import type { SessionDetail } from "../../../packages/contracts/src/agent-test";
@@ -17,6 +18,12 @@ import { Field } from "./field";
 import { TestTranscript } from "./test-transcript";
 import { ProposalReview } from "./proposal-review";
 import { useExperience } from "../experience";
+// The voice control (and livekit-client) exists only in the local build. The
+// mode is a build-time constant, so the mock bundle drops this import.
+const VoiceTest =
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "local"
+    ? dynamic(() => import("./voice-test"))
+    : null;
 export function LocalAgentTest() {
   const { workspace } = useCore(),
     w = useWords();
@@ -50,7 +57,8 @@ function AgentTestManager() {
     [error, setError] = useState<unknown>(),
     [tick, setTick] = useState(0),
     [knowledgeQuery, setKnowledgeQuery] = useState(""),
-    [inspect, setInspect] = useState("");
+    [inspect, setInspect] = useState(""),
+    [voiceLive, setVoiceLive] = useState(false);
   const turnKey = useRef(crypto.randomUUID());
   const readiness = useResource(
     () => client.execute("testReadiness", {}),
@@ -144,7 +152,10 @@ function AgentTestManager() {
   return (
     <>
       <Heading
-        eyebrow={w("Agent studio · text test", "Studio ejen · ujian teks")}
+        eyebrow={w(
+          "Agent studio · text and voice test",
+          "Studio ejen · ujian teks dan suara",
+        )}
         title={w(
           "A good conversation starts here.",
           "Perbualan yang baik bermula di sini.",
@@ -165,10 +176,14 @@ function AgentTestManager() {
           {w("Text test", "Ujian teks")}
         </span>
         <small>
-          {w(
-            "Voice testing is not connected yet",
-            "Ujian suara belum disambungkan",
-          )}
+          {!VoiceTest
+            ? w(
+                "Voice test is not in this preview",
+                "Ujian suara tiada dalam pratonton ini",
+              )
+            : readiness.data?.voice.configured
+              ? w("Voice test ready", "Ujian suara sedia")
+              : w("Voice test not set up", "Ujian suara belum disediakan")}
         </small>
         <span className="core-model-state">
           {readiness.data?.available
@@ -345,8 +360,8 @@ function AgentTestManager() {
           )}
           <p>
             {w(
-              "Saved for 24 hours. No microphone, external messages or live calls.",
-              "Disimpan selama 24 jam. Tiada mikrofon, mesej luar atau panggilan langsung.",
+              "Saved for 24 hours. The microphone is used only for a voice test you start. No external messages or live calls.",
+              "Disimpan selama 24 jam. Mikrofon hanya digunakan untuk ujian suara yang anda mulakan. Tiada mesej luar atau panggilan langsung.",
             )}
           </p>
         </aside>
@@ -405,6 +420,21 @@ function AgentTestManager() {
                   )}
                 />
               ))}
+              {VoiceTest && (
+                <Suspense fallback={null}>
+                  <VoiceTest
+                    detail={detail}
+                    voice={readiness.data?.voice}
+                    onChanged={() => setTick((v) => v + 1)}
+                    onUnavailable={(e) => {
+                      setError(e);
+                      setDetail(undefined);
+                      setInspect("");
+                    }}
+                    onLive={setVoiceLive}
+                  />
+                </Suspense>
+              )}
               <form
                 className="core-test-composer"
                 onSubmit={async (e) => {
@@ -434,7 +464,7 @@ function AgentTestManager() {
                       setText(e.target.value);
                       turnKey.current = crypto.randomUUID();
                     }}
-                    disabled={running || a.busy}
+                    disabled={running || a.busy || voiceLive}
                   />
                 </Field>
                 <div className="core-actions">
@@ -459,6 +489,7 @@ function AgentTestManager() {
                     disabled={
                       running ||
                       a.busy ||
+                      voiceLive ||
                       !readiness.data?.available ||
                       !text.trim() ||
                       detail.turns.length >= 20

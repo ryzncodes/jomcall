@@ -1,5 +1,7 @@
 # Voice options for natural Malaysian calls
 
+> Decision taken 13 November 2026: see [0001 — Speech providers for calls](../decisions/0001-speech-providers.md). The notes below are the earlier research and are not updated.
+
 Research notes, 2026-10-15. Prices and free tiers come from provider pages and may change; items marked "unverified" were not confirmed from an official source. No provider has a published test of how natural it sounds in Malay or Manglish, so the final choice comes from a blind listening test with Malaysian listeners, at phone quality (8 kHz).
 
 ## Text-to-speech candidates

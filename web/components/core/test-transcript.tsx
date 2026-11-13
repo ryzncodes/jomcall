@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import type { SessionDetail } from "../../../packages/contracts/src/agent-test";
 import { useWords } from "./state";
+const seconds = (ms: number | null | undefined) =>
+  typeof ms === "number" && Number.isFinite(ms) ? (ms / 1000).toFixed(1) : "–";
 export function TestTranscript({
   session,
   onCancel,
@@ -44,12 +46,24 @@ export function TestTranscript({
         session.turns.map((t) => (
           <article key={t.id} className="core-test-turn">
             <div className="core-test-question">
-              <span className="eyebrow">{w("You", "Anda")}</span>
+              <span className="eyebrow">
+                {w("You", "Anda")}
+                {t.channel === "voice" && (
+                  <>
+                    {" · "}
+                    <span className="core-spoken-mark">
+                      {w("spoken", "disebut")}
+                    </span>
+                  </>
+                )}
+              </span>
               <p>{t.input}</p>
             </div>
             <div className="core-test-answer">
               <span className="eyebrow">
-                {w("Agent · text test", "Ejen · ujian teks")}
+                {t.channel === "voice"
+                  ? w("Agent · voice test", "Ejen · ujian suara")
+                  : w("Agent · text test", "Ejen · ujian teks")}
               </span>
               {t.answer ? (
                 <p>{t.answer}</p>
@@ -75,6 +89,18 @@ export function TestTranscript({
                             "Giliran ini tidak dapat diselesaikan.",
                           )}
                 </p>
+              )}
+              {t.channel === "voice" && t.state === "completed" && (
+                <small className="core-spoken-timing mono">
+                  {w(
+                    "Transcript → first sentence → total",
+                    "Transkrip → ayat pertama → jumlah",
+                  )}
+                  {": "}
+                  {seconds(t.timings.transcriptMs)} s →{" "}
+                  {seconds(t.timings.firstSentenceMs)} s →{" "}
+                  {seconds(t.timings.totalMs)} s
+                </small>
               )}
               {["queued", "running"].includes(t.state) && (
                 <small>

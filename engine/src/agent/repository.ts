@@ -29,6 +29,81 @@ export class AgentRepository {
       )
     ).rows[0].value;
   }
+  private async voice(
+    action: string,
+    session: string,
+    tokenHash: string,
+    turn: string | null = null,
+    lease: string | null = null,
+    data: unknown = {},
+  ) {
+    return (
+      await this.pool.query(
+        "select app_private.agent_voice($1,$2,$3,$4,$5,$6,$7)as value",
+        [
+          action,
+          this.namespace,
+          session,
+          tokenHash,
+          turn,
+          lease,
+          JSON.stringify(data),
+        ],
+      )
+    ).rows[0].value;
+  }
+  voiceBegin(
+    session: string,
+    tokenHash: string,
+    data: { input: string; clientTurnId: string },
+  ) {
+    return this.voice("voice_begin", session, tokenHash, null, null, data);
+  }
+  voiceComplete(
+    session: string,
+    tokenHash: string,
+    turn: string,
+    lease: string,
+    data: {
+      answer: string;
+      timings: unknown;
+      evidence: unknown;
+      usage: unknown;
+    },
+  ) {
+    return this.voice("voice_complete", session, tokenHash, turn, lease, data);
+  }
+  voiceFail(
+    session: string,
+    tokenHash: string,
+    turn: string,
+    lease: string,
+    code: string,
+  ) {
+    return this.voice("voice_fail", session, tokenHash, turn, lease, { code });
+  }
+  voiceCancel(session: string, tokenHash: string, turn: string, lease: string) {
+    return this.voice("voice_cancel", session, tokenHash, turn, lease);
+  }
+  voiceCacheGet(
+    session: string,
+    tokenHash: string,
+    data: { language: string; key: string },
+  ): Promise<{ answer: string; evidence: unknown[] } | null> {
+    return this.voice("voice_cache_get", session, tokenHash, null, null, data);
+  }
+  voiceCachePut(
+    session: string,
+    tokenHash: string,
+    data: {
+      language: string;
+      key: string;
+      answer: string;
+      evidence: unknown[];
+    },
+  ) {
+    return this.voice("voice_cache_put", session, tokenHash, null, null, data);
+  }
   access(envelope: any): ToolAccess {
     const { turn } = envelope;
     const op = (action: string, data?: unknown) =>

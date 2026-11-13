@@ -70,3 +70,11 @@ coverage/
 # Curated images for the README live in docs/images/.
 docs/frontend/screenshots/
 .playwright-mcp/
+
+# Voice worker
+voice/.venv/
+voice/.cache/
+.pytest_cache/
+
+# Voice speed replay output
+output/voice/
