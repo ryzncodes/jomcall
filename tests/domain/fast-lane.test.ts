@@ -48,6 +48,38 @@ for (const word of [
   });
 }
 
+for (const q of [
+  "今天几点开门吗",
+  "明天开门吗",
+  "Is the shop open now",
+  "Kedai buka malam ini kan",
+  "Kedai buka semalam pukul berapa",
+  "What about my booking please",
+  "Saya nak tahu booking saya status",
+  "几点开门",
+  "Is the shop open on Friday",
+  "Kedai buka hari Isnin pukul berapa",
+  "你们星期五开门吗请问",
+  "Kedai buka minggu depan pukul berapa",
+]) {
+  test(`time-relative or caller-specific "${q}" has no key`, () => {
+    assert.equal(fastLaneKey(q), null);
+  });
+}
+
+test("a CJK blocked word blocks even inside a long question", () => {
+  assert.equal(fastLaneKey("请问你们那个咨询价格是多少"), null);
+});
+
+test("a full-width digit counts as a digit", () => {
+  assert.equal(fastLaneKey("Kedai buka pukul ９ pagi atau tidak"), null);
+});
+
+test("a Mandarin FAQ of 6+ characters without blocked words gets a key", () => {
+  assert.equal(fastLaneKey("咨询价格是多少？"), "咨询价格是多少");
+  assert.equal(fastLaneKey("停车是免费的吗？"), "停车是免费的吗");
+});
+
 test("a blocked word inside a longer word does not block", () => {
   assert.equal(
     fastLaneKey("Adakah kedai itinerary tutorial tersedia"),
@@ -65,6 +97,7 @@ test("an oversized question has no key", () => {
 test("Chinese questions count each character as a word", () => {
   assert.equal(fastLaneKey("咨询价格是多少？"), "咨询价格是多少");
   assert.equal(fastLaneKey("几点开"), null);
+  assert.equal(fastLaneKey("几点开门"), null);
 });
 
 test("empty and punctuation-only text has no key", () => {

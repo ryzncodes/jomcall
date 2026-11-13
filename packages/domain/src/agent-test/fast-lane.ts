@@ -5,17 +5,94 @@
 const MAX_KEY_BYTES = 400; // app.voice_answer_cache.key limit, in UTF-8 octets
 const MIN_WORDS = 4;
 const PARTICLES = new Set(["ah", "lah", "ya", "kan", "eh", "uh", "um"]);
-// Dates, amounts and references to earlier turns must never come from cache.
-const UNCACHEABLE = new Set([
-  "esok",
+// Anything that depends on the day, the time or the caller must never come
+// from cache: dates, "now", weekdays, references to earlier turns, and first
+// person. Latin script matches whole words; multi-word entries match a run of
+// words. CJK has no word breaks, so those match as substrings.
+const UNCACHEABLE_WORDS = new Set([
+  // English
   "tomorrow",
   "today",
-  "tadi",
-  "itu",
+  "now",
+  "tonight",
+  "yesterday",
+  "this",
   "that",
   "it",
+  "next",
+  "last",
+  "later",
+  "my",
+  "mine",
+  "me",
+  "i",
+  "we",
+  "our",
+  "us",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+  // Malay
+  "esok",
+  "tadi",
+  "itu",
   "tu",
+  "sekarang",
+  "semalam",
+  "lusa",
+  "nanti",
+  "saya",
+  "aku",
+  "kami",
+  "kita",
+  "isnin",
+  "selasa",
+  "rabu",
+  "khamis",
+  "jumaat",
+  "sabtu",
+  "ahad",
 ]);
+const UNCACHEABLE_PHRASES = [
+  "hari ini",
+  "malam ini",
+  "pagi ini",
+  "petang ini",
+  "minggu ini",
+  "minggu depan",
+  "bulan ini",
+  "bulan depan",
+].map((p) => p.split(" "));
+const UNCACHEABLE_CJK = [
+  "今天",
+  "明天",
+  "昨天",
+  "后天",
+  "现在",
+  "今晚",
+  "今早",
+  "刚才",
+  "这个",
+  "那个",
+  "这周",
+  "下周",
+  "上周",
+  "这个月",
+  "下个月",
+  "我",
+  "我们",
+  "昨晚",
+  "明晚",
+  "明早",
+  "星期",
+  "礼拜",
+  "周",
+];
+const MIN_CJK_CHARS = 6;
 const CJK = /[一-鿿]/;
 // Same marker words as the wrong-language check in tests/inference/quality.test.ts.
 const MALAY =
@@ -30,10 +107,15 @@ export function fastLaneKey(transcript: string): string | null {
     // No spaces between Chinese characters: each one counts as a word.
     .replace(/([一-鿿])(?=[一-鿿])/g, "$1 ");
   const words = cleaned.split(/\s+/).filter((w) => w && !PARTICLES.has(w));
-  if (words.length < MIN_WORDS) return null;
-  if (words.some((w) => UNCACHEABLE.has(w))) return null;
-  for (let i = 0; i + 1 < words.length; i++)
-    if (words[i] === "hari" && words[i + 1] === "ini") return null;
+  const cjkChars = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
+  if (cjkChars > 0 ? cjkChars < MIN_CJK_CHARS : words.length < MIN_WORDS)
+    return null;
+  if (words.some((w) => UNCACHEABLE_WORDS.has(w))) return null;
+  const run = words.join(" ");
+  if (UNCACHEABLE_PHRASES.some((p) => ` ${run} `.includes(` ${p.join(" ")} `)))
+    return null;
+  const solid = cleaned.replace(/\s+/g, "");
+  if (UNCACHEABLE_CJK.some((w) => solid.includes(w))) return null;
   const key = words.join(" ").replace(/([一-鿿]) (?=[一-鿿])/g, "$1");
   return Buffer.byteLength(key, "utf8") > MAX_KEY_BYTES ? null : key;
 }
