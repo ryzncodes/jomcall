@@ -38,10 +38,20 @@ voice token, and never logs transcripts or answers.
   `x-goog-api-key` header. The request body mirrors what that class sends.
   Unverified against the live service until the end-to-end leg runs.
 - **Speech budget**: that endpoint allows about 11 requests a minute on this project. A
-  turn makes at most 2 voice requests (first sentence alone, the rest joined). Fixed
-  lines are synthesized once per preset and kept in `voice/.cache/` (gitignored). A 429
-  raises `VoiceRefused`, is never retried, and the turn is marked `voiceRefused`.
-  A filler line not yet cached costs one request the first time it is needed.
+  turn makes at most 2 voice requests (first sentence alone, the rest joined); the cap is
+  enforced in code from `MAX_VOICE_REQUESTS_PER_TURN`. A 429 raises `VoiceRefused`, is never
+  retried, and the turn is marked `voiceRefused`.
+- **Fixed lines are never synthesized during a call.** Fillers, trouble line, repeat request
+  and goodbye come from the cache only (`Voice.lookup`, no request). An uncached line is
+  skipped silently and counted as the call's `fixedLinesSkipped`. Fill the cache first with
+  `npm run voice:prewarm -- --preset Kore` (or `python -m jomcall_voice.prewarm --preset Kore
+  [--languages ms,en,manglish,zh]` inside `voice/`): at most 8 requests a minute, resumable,
+  stops on a 429 and says how many lines remain. Cache: `voice/.cache/<preset>/`, gitignored.
+  The call opening (greeting + disclosure) is the one line synthesized at call time; it is
+  cached by model + preset + text, so a repeat call with the same text costs no request.
+- **Barge-in** needs words: only a non-empty interim transcript while the agent is speaking
+  interrupts it. Raw voice-activity detection alone does nothing, so noise or echo cannot
+  abort a turn or spend one of the session's turns.
 - **Filler language** comes from a tiny local guess on the transcript (CJK characters,
   a short Malay word list, Manglish particles). It is a filler-only heuristic; the brain
   decides the real reply language.
@@ -52,8 +62,34 @@ voice token, and never logs transcripts or answers.
 
 | Package | Version | Licence |
 |---|---|---|
-| livekit-agents | 1.8.11 | Apache-2.0 |
-| livekit-plugins-deepgram | 1.8.11 | Apache-2.0 |
+| livekit-agents | 1.6.0 | Apache-2.0 |
+| livekit-plugins-deepgram | 1.6.0 | Apache-2.0 |
 | httpx | 0.28.1 | BSD-3-Clause |
 | pytest (dev) | 9.2.0 | MIT |
 | pytest-asyncio (dev) | 1.5.0 | Apache-2.0 |
+
+## Transitive licences
+
+Gathered from the installed packages' metadata (`License-Expression`, `License`, then
+`License ::` classifiers) in `voice/.venv` after `uv sync` against `uv.lock`. Every locked
+package is MIT, Apache-2.0, BSD, ISC, PSF or MPL-2.0 class. Those that are not a plain single
+permissive licence:
+
+| Package | Licence | Note |
+|---|---|---|
+| certifi | MPL-2.0 | Weak copyleft, file-level; used unmodified |
+| numpy | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | Bundled components, all permissive |
+| aiohttp | Apache-2.0 AND MIT | |
+| prometheus_client | Apache-2.0 AND BSD-2-Clause | |
+| packaging | Apache-2.0 OR BSD-2-Clause | |
+| cffi | MIT-0 | |
+| protobuf | BSD-3-Clause | Reported as "3-Clause BSD License" |
+
+**`livekit-local-inference` is not installed.** `livekit-agents` 1.6.1 through 1.8.11 declare
+it as a hard requirement (`livekit-local-inference>=0.2.7`, no extra). It is licensed
+`Apache-2.0 AND LicenseRef-LiveKit-Model`, ships a roughly 95 MB native library, and its
+model licence is the same proprietary LiveKit Model License as the optional turn detector.
+This worker pins `livekit-agents` and `livekit-plugins-deepgram` to 1.6.0, the newest 1.x
+release whose metadata does not require it, so the package is neither locked nor installed
+and JomCall neither loads nor redistributes it. Before upgrading past 1.6.0, re-check
+`Requires-Dist` for it and the licence note above.

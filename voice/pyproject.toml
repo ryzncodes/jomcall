@@ -5,8 +5,8 @@ description = "JomCall voice worker: LiveKit room, Deepgram ears, Gemini voice, 
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "httpx==0.28.1",
-    "livekit-agents==1.8.11",
-    "livekit-plugins-deepgram==1.8.11",
+    "livekit-agents==1.6.0",
+    "livekit-plugins-deepgram==1.6.0",
 ]
 
 [dependency-groups]

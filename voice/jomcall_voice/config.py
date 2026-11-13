@@ -35,6 +35,9 @@ DEFAULT_TURN_URL = "http://127.0.0.1:54633"
 BODY_LIMIT_BYTES = 8 * 1024
 BODY_BUDGET_BYTES = 7_500  # leaves room for the JSON envelope
 
+# Prewarm: stay well under the ~11 requests a minute the speech endpoint allows.
+PREWARM_MAX_PER_MIN = 8
+
 AGENT_NAME = "jomcall-voice"
 CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
 

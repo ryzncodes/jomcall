@@ -69,12 +69,20 @@ class FakeEars:
     def speech_start(self):
         self.queue.put_nowait(EarEvent("speech_start"))
 
+    def interim(self, text="hel"):
+        self.queue.put_nowait(EarEvent("interim", text))
+
 
 class FakeVoice:
+    """Counts requests the way the real Voice makes them: speak() and an
+    uncached opening() are requests; lookup() never is."""
+
     def __init__(self):
         self.requests: list[str] = []
-        self.cached_calls: list[str] = []
+        self.cached_calls: list[str] = []  # every lookup() of a fixed line
+        self.uncached: set[str] = set()
         self.refuse: set[str] = set()
+        self.opening_memory: set[str] = set()
 
     async def speak(self, text):
         self.requests.append(text)
@@ -82,9 +90,17 @@ class FakeVoice:
             raise VoiceRefused("429")
         yield ("S:" + text).encode()
 
-    async def cached(self, text):
+    async def opening(self, text):
+        if text in self.opening_memory:
+            yield ("S:" + text).encode()
+            return
+        async for chunk in self.speak(text):
+            yield chunk
+        self.opening_memory.add(text)
+
+    def lookup(self, text):
         self.cached_calls.append(text)
-        return ("C:" + text).encode()
+        return None if text in self.uncached else ("C:" + text).encode()
 
 
 class FakeSink:
@@ -92,9 +108,12 @@ class FakeSink:
         self.played: list[str] = []
         self.hold = False
         self.stops = 0
+        self.fail = False
         self._gate = asyncio.Event()
 
     async def play(self, chunks):
+        if self.fail:
+            raise RuntimeError("sink broke")
         data = b"".join([c async for c in chunks])
         if self.hold:
             await self._gate.wait()
@@ -293,18 +312,51 @@ async def test_empty_transcript_asks_to_repeat_and_skips_the_brain(make):
     await rig.finish()
 
 
-async def test_caller_speech_during_playback_stops_it_and_closes_the_brain_stream(make):
+async def test_words_during_playback_stop_it_and_close_the_brain_stream(make):
     rig = await make([(0, STARTED), (100, sentence("Panjang.")), (10_000, DONE)])
     rig.sink.hold = True
     rig.ears.say()
     await settle()
     await rig.clock.advance(200)
     assert rig.brain.opened == 1 and rig.brain.closed == 0
-    rig.ears.speech_start()
+    before = rig.sink.stops
+    rig.ears.interim()
     await settle()
-    assert rig.sink.stops >= 1
+    assert rig.sink.stops > before
     assert rig.brain.closed == 1
-    await rig.finish()
+    rig.sink.release()
+    await settle()
+    assert "S:Panjang." not in rig.spoken
+
+
+async def test_speech_start_alone_does_not_interrupt(make):
+    rig = await make([(0, STARTED), (100, sentence("Panjang.")), (10_000, DONE)])
+    rig.sink.hold = True
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(200)
+    before = rig.sink.stops
+    rig.ears.speech_start()
+    rig.ears.say("   ")  # the empty transcript noise would have produced
+    await settle()
+    assert rig.sink.stops == before
+    assert rig.brain.closed == 0
+    assert len(rig.call.turns) == 1
+    assert fillers.REPEAT["en"] not in rig.voice.cached_calls
+    rig.sink.release()
+    await settle()
+    assert "S:Panjang." in rig.spoken
+
+
+async def test_an_empty_interim_does_not_interrupt(make):
+    rig = await make([(0, STARTED), (100, sentence("Panjang.")), (10_000, DONE)])
+    rig.sink.hold = True
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(200)
+    rig.ears.interim("  ")
+    await settle()
+    assert rig.brain.closed == 0
 
 
 async def test_a_new_transcript_supersedes_the_running_turn(make):
@@ -434,3 +486,64 @@ async def test_at_300_seconds_the_call_says_goodbye_and_ends(make):
     assert rig.task.result().end_reason == "cap"
     assert rig.voice.cached_calls[-1] == fillers.GOODBYE["en"]
     assert rig.spoken[-1] == "C:" + fillers.GOODBYE["en"]
+
+
+async def test_a_tool_event_after_the_neutral_still_gets_its_action_filler(make):
+    rig = await make(
+        [(0, STARTED), (1500, {"type": "tool", "name": "check_availability"}), (10_000, sentence("Ada.")), (0, DONE)]
+    )
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(900)
+    assert len(rig.voice.cached_calls) == 1 and rig.voice.cached_calls[0] in fillers.NEUTRAL["en"]
+    await rig.clock.advance(700)  # t = 1600
+    assert rig.voice.cached_calls[1] in fillers.LINES["check_availability"]["en"]
+    # the trouble clock restarted at the tool event (1500): nothing at 4000 ...
+    await rig.clock.advance(2500)  # t = 4100
+    assert fillers.TROUBLE["en"] not in rig.voice.cached_calls
+    # ... and once, 4000 ms after it
+    await rig.clock.advance(1500)  # t = 5600
+    assert rig.voice.cached_calls.count(fillers.TROUBLE["en"]) == 1
+
+
+async def test_the_trouble_line_never_plays_once_the_answer_has_started(make):
+    rig = await make([(0, STARTED), (4100, sentence("Akhirnya.")), (0, DONE)])
+    rig.sink.hold = True  # the neutral filler holds the speaker past 4000 ms
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(4200)
+    rig.sink.release()
+    await settle()
+    assert "C:" + fillers.TROUBLE["en"] not in rig.spoken
+    assert "S:Akhirnya." in rig.spoken
+
+
+async def test_an_uncached_fixed_line_is_skipped_and_counted_never_synthesized(make):
+    rig = await make([(0, STARTED), (1200, sentence("Ok.")), (0, DONE)])
+    rig.voice.uncached.update(fillers.NEUTRAL["en"])
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(2000)
+    assert rig.voice.requests == [OPENING, "Ok."]
+    assert rig.call.fixed_lines_skipped == 1
+    assert rig.call.turns[0]["voiceRequests"] == 1
+
+
+async def test_four_sentences_still_make_exactly_two_requests(make):
+    rig = await make(
+        [(0, STARTED)] + [(0, sentence(f"S{i}.")) for i in range(1, 5)] + [(0, DONE)]
+    )
+    rig.ears.say()
+    await settle()
+    await rig.clock.advance(100)
+    assert rig.turn_requests() == ["S1.", "S2. S3. S4."]
+    assert rig.call.turns[0]["voiceRequests"] == config.MAX_VOICE_REQUESTS_PER_TURN
+
+
+async def test_any_opening_exception_ends_the_call_with_a_reason(make):
+    rig = Rig([])
+    rig.sink.fail = True
+    await rig.start()
+    assert rig.task.done()
+    assert rig.task.result().end_reason == "opening_failed"
+    assert not rig.ears.started

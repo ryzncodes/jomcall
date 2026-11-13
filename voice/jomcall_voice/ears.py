@@ -2,7 +2,7 @@
 
 nova-3, language "multi", 300 ms endpointing, interim results on. The plugin
 expresses all of that, so no custom adapter is needed. Interim text is never
-used or logged; only the endpointed, final transcript leaves this module.
+logged or passed on (only the fact that words were heard); only the endpointed, final transcript leaves this module.
 """
 
 from __future__ import annotations
@@ -51,9 +51,14 @@ class DeepgramEars:
             async for event in stream:
                 if event.type == stt.SpeechEventType.START_OF_SPEECH:
                     yield EarEvent("speech_start")
+                elif event.type == stt.SpeechEventType.INTERIM_TRANSCRIPT:
+                    # Words, not noise: this is what lets the caller interrupt.
+                    if event.alternatives and event.alternatives[0].text.strip():
+                        yield EarEvent("interim", "words")
                 elif event.type == stt.SpeechEventType.FINAL_TRANSCRIPT:
                     if event.alternatives and event.alternatives[0].text.strip():
                         pieces.append(event.alternatives[0].text.strip())
+                        yield EarEvent("interim", "words")
                 elif event.type == stt.SpeechEventType.END_OF_SPEECH:
                     text, pieces = " ".join(pieces), []
                     # The caller stopped about one endpointing window ago.

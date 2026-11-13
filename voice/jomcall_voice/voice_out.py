@@ -100,26 +100,53 @@ class Voice:
         ).hexdigest()[:40]
         return self._cache_dir / self.preset / f"{digest}.pcm"
 
-    async def cached(self, text: str) -> bytes:
-        """Audio for a fixed line: synthesized once per preset, then kept on disk."""
+    def lookup(self, text: str) -> bytes | None:
+        """Cache-only: audio for a fixed line if already synthesized, else None.
+
+        Never makes a request, so it is safe to call in the middle of a turn.
+        """
         path = self._path(text)
         key = str(path)
         if key in self._memory:
             return self._memory[key]
-        lock = self._locks.setdefault(key, asyncio.Lock())
-        async with lock:
-            if key in self._memory:
-                return self._memory[key]
-            if path.is_file():
-                audio = path.read_bytes()
-            else:
-                audio = b"".join([chunk async for chunk in self.speak(text)])
-                path.parent.mkdir(parents=True, exist_ok=True)
-                tmp = path.with_suffix(f".{os.getpid()}.tmp")
-                tmp.write_bytes(audio)
-                tmp.replace(path)
-            self._memory[key] = audio
+        if path.is_file():
+            self._memory[key] = path.read_bytes()
+            return self._memory[key]
+        return None
+
+    def _store(self, text: str, audio: bytes) -> None:
+        path = self._path(text)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(f".{os.getpid()}.tmp")
+        tmp.write_bytes(audio)
+        tmp.replace(path)
+        self._memory[str(path)] = audio
+
+    async def cached(self, text: str) -> bytes:
+        """Audio for a fixed line, synthesizing it if missing (prewarm and opening)."""
+        hit = self.lookup(text)
+        if hit is not None:
+            return hit
+        key = str(self._path(text))
+        async with self._locks.setdefault(key, asyncio.Lock()):
+            hit = self.lookup(text)
+            if hit is not None:
+                return hit
+            audio = b"".join([chunk async for chunk in self.speak(text)])
+            self._store(text, audio)
             return audio
+
+    async def opening(self, text: str) -> AsyncIterator[bytes]:
+        """Streams the call opening; remembers it so the same text costs one request."""
+        hit = self.lookup(text)
+        if hit is not None:
+            yield hit
+            return
+        parts: list[bytes] = []
+        async for chunk in self.speak(text):
+            parts.append(chunk)
+            yield chunk
+        self._store(text, b"".join(parts))  # only a complete opening is kept
 
 
 def _audio_of(data: str) -> bytes:

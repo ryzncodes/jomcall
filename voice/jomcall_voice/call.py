@@ -26,7 +26,9 @@ log = logging.getLogger("jomcall_voice.call")
 
 @dataclass(frozen=True)
 class EarEvent:
-    kind: Literal["speech_start", "transcript"]
+    # "speech_start" (raw VAD) is informational: only a non-empty "interim"
+    # transcript can interrupt the agent, so noise and echo cannot.
+    kind: Literal["speech_start", "interim", "transcript"]
     text: str = ""
     heard_at_ms: float = 0.0  # epoch ms when the caller stopped speaking
 
@@ -37,7 +39,8 @@ class Ears(Protocol):
 
 class Voice(Protocol):
     def speak(self, text: str) -> AsyncIterator[bytes]: ...
-    async def cached(self, text: str) -> bytes: ...
+    def opening(self, text: str) -> AsyncIterator[bytes]: ...
+    def lookup(self, text: str) -> bytes | None: ...  # cache only, never a request
 
 
 class Clock(Protocol):
@@ -57,6 +60,7 @@ Brain = Callable[[str, str, str, str, float], AsyncIterator[dict]]
 class CallResult:
     end_reason: str
     turns: list[dict]
+    fixed_lines_skipped: int = 0
 
 
 @dataclass
@@ -65,11 +69,19 @@ class _Turn:
     lang: str
     record: dict
     sentence_seen: bool = False
-    filler_done: bool = False
+    neutral_done: bool = False
+    action_done: bool = False
+    mark: float = 0.0  # latest of turn start and last tool event
     trouble_done: bool = False
     rest: list[str] = field(default_factory=list)
     tasks: set[asyncio.Task] = field(default_factory=set)
     run: asyncio.Task | None = None
+
+
+def _log_failure(task: asyncio.Task) -> None:
+    # Class name only: an exception message could carry a transcript or a key.
+    if not task.cancelled() and task.exception() is not None:
+        log.warning("background task failed: %s", type(task.exception()).__name__)
 
 
 async def _once(data: bytes) -> AsyncIterator[bytes]:
@@ -97,6 +109,7 @@ class Call:
         self._bg: set[asyncio.Task] = set()
         self._lang = "en"
         self._last_filler: str | None = None
+        self.fixed_lines_skipped = 0
 
     def hangup(self) -> None:
         self._end("hangup")
@@ -120,8 +133,11 @@ class Call:
             for task in (cap, main, *self._bg):
                 task.cancel()
             self._cancel_turn()
-        log.info("call ended reason=%s turns=%d", self.end_reason, len(self.turns))
-        return CallResult(self.end_reason or "hangup", self.turns)
+        log.info(
+            "call ended reason=%s turns=%d fixedLinesSkipped=%d",
+            self.end_reason, len(self.turns), self.fixed_lines_skipped,
+        )
+        return CallResult(self.end_reason or "hangup", self.turns, self.fixed_lines_skipped)
 
     async def _cap_timer(self) -> None:
         await self._clock.sleep(config.CALL_CAP_S)
@@ -133,8 +149,9 @@ class Call:
         if not self._disclosure:
             return self._end("opening_failed")
         try:
-            await self._speak(opening)
-        except VoiceError:
+            await self._speak(opening, opening=True)
+        except Exception as error:  # a voice, sink or key failure all mean no call
+            log.warning("opening failed: %s", type(error).__name__)
             return self._end("opening_failed")
         try:
             async for event in self._ears.events():
@@ -152,13 +169,14 @@ class Call:
         finally:
             self._playing -= 1
 
-    async def _speak(self, text: str) -> None:
+    async def _speak(self, text: str, opening: bool = False) -> None:
         """One voice request, started now so audio is ready when the sink is free."""
         queue: asyncio.Queue = asyncio.Queue()
 
         async def produce() -> None:
             try:
-                async for chunk in self._voice.speak(text):
+                source = self._voice.opening(text) if opening else self._voice.speak(text)
+                async for chunk in source:
                     queue.put_nowait(chunk)
                 queue.put_nowait(None)
             except VoiceError as error:
@@ -184,10 +202,13 @@ class Call:
             producer.cancel()
 
     async def _say_fixed(self, text: str, unless: Callable[[], bool] | None = None) -> None:
-        """A cached fixed line. A failure to get it is not worth a spoken apology."""
-        try:
-            audio = await self._voice.cached(text)
-        except VoiceError:
+        """A fixed line from the cache only. Never synthesized during a call:
+        a missing one is skipped and counted (see `prewarm`)."""
+        if unless and unless():
+            return
+        audio = self._voice.lookup(text)
+        if audio is None:
+            self.fixed_lines_skipped += 1
             return
         async with self._lock:
             if unless and unless():
@@ -199,6 +220,7 @@ class Call:
         group = turn.tasks if turn else self._bg
         group.add(task)
         task.add_done_callback(group.discard)
+        task.add_done_callback(_log_failure)
         return task
 
     def _cancel_turn(self) -> None:
@@ -213,7 +235,9 @@ class Call:
 
     def _on_ear(self, event: EarEvent) -> None:
         if event.kind == "speech_start":
-            if self._playing:
+            return
+        if event.kind == "interim":
+            if event.text.strip() and self._playing:
                 self._cancel_turn()  # barge-in: stop audio, close the brain stream
             return
         text = event.text.strip()
@@ -232,7 +256,9 @@ class Call:
         turn.record["clientTurnId"] = turn.id
         self.turns.append(turn.record)
         self._turn = turn
+        turn.mark = self._clock.now()
         turn.run = asyncio.ensure_future(self._run_turn(turn, text, event.heard_at_ms or self._wall_ms()))
+        turn.run.add_done_callback(_log_failure)
 
     # --- one turn -----------------------------------------------------------
 
@@ -256,6 +282,10 @@ class Call:
         except (BrainRejected, BrainUnavailable):
             if self._current(turn):
                 self._trouble(turn)
+        except Exception as error:
+            log.warning("turn failed: %s", type(error).__name__)
+            if self._current(turn):
+                self._trouble(turn)
         finally:
             timer.cancel()
             await stream.aclose()
@@ -275,9 +305,11 @@ class Call:
                 turn.sentence_seen = True
                 self._spawn(self._speak_sentence(turn, text), turn)
         elif kind == "tool":
-            if not turn.sentence_seen and not turn.filler_done:
-                action = event.get("name")
-                self._filler(turn, action if action in fillers.LINES else None)
+            if not turn.sentence_seen:
+                turn.mark = self._clock.now()  # the trouble clock restarts
+                if not turn.action_done:
+                    action = event.get("name")
+                    self._filler(turn, action if action in fillers.LINES else None)
         elif kind == "done":
             turn.record["timings"] = event.get("timings")
             return True
@@ -298,6 +330,8 @@ class Call:
             self._spawn(self._speak_sentence(turn, text), turn)
 
     async def _speak_sentence(self, turn: _Turn, text: str) -> None:
+        if turn.record["voiceRequests"] >= config.MAX_VOICE_REQUESTS_PER_TURN:
+            return
         turn.record["voiceRequests"] += 1
         try:
             await self._speak(text)
@@ -307,7 +341,10 @@ class Call:
             turn.record["voiceFailed"] = True
 
     def _filler(self, turn: _Turn, action: str | None) -> None:
-        turn.filler_done = True
+        if action is None:
+            turn.neutral_done = True
+        else:
+            turn.action_done = True
         line = fillers.choose(action, turn.lang, self._last_filler, None)
         if line:
             self._last_filler = line
@@ -317,12 +354,17 @@ class Call:
         if turn.trouble_done:
             return
         turn.trouble_done = True
-        self._spawn(self._say_fixed(fillers.TROUBLE[turn.lang]), turn)
+        line = fillers.TROUBLE[turn.lang]
+        self._spawn(self._say_fixed(line, unless=lambda: turn.sentence_seen), turn)
 
     async def _timers(self, turn: _Turn) -> None:
         await self._clock.sleep(config.NEUTRAL_ACK_MS / 1000)
-        if not turn.sentence_seen and not turn.filler_done:
+        if not turn.sentence_seen and not turn.neutral_done and not turn.action_done:
             self._filler(turn, None)
-        await self._clock.sleep((config.TROUBLE_MS - config.NEUTRAL_ACK_MS) / 1000)
-        if not turn.sentence_seen:
-            self._trouble(turn)
+        # The trouble clock runs from the latest of turn start and last tool event.
+        while not turn.sentence_seen and not turn.trouble_done:
+            wait = turn.mark + config.TROUBLE_MS / 1000 - self._clock.now()
+            if wait <= 0:
+                self._trouble(turn)
+                return
+            await self._clock.sleep(wait)

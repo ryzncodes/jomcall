@@ -126,3 +126,40 @@ async def test_a_failed_synthesis_is_not_cached(tmp_path):
 def test_the_key_never_shows_in_the_repr(tmp_path):
     voice = voice_out.Voice("Kore", api_key="secret-key", url="http://x", cache_dir=tmp_path)
     assert "secret-key" not in repr(voice)
+
+
+async def test_lookup_never_makes_a_request_and_sees_the_cache(tmp_path):
+    async def handler(req):
+        return Reply(chunks=sse(b"\x01\x00"))
+
+    async with FakeServer(handler) as server:
+        voice = make(server, tmp_path)
+        assert voice.lookup("Baik.") is None
+        assert server.requests == []
+        await voice.cached("Baik.")
+        assert make(server, tmp_path).lookup("Baik.") == b"\x01\x00"
+        assert len(server.requests) == 1
+
+
+async def test_the_opening_is_cached_by_model_preset_and_text(tmp_path):
+    async def handler(req):
+        return Reply(chunks=sse(b"\x01\x00", b"\x02\x00"))
+
+    async with FakeServer(handler) as server:
+        first = b"".join([c async for c in make(server, tmp_path).opening("Hello. AI.")])
+        second = b"".join([c async for c in make(server, tmp_path).opening("Hello. AI.")])
+        assert len(server.requests) == 1
+        assert first == second == b"\x01\x00\x02\x00"
+        await make(server, tmp_path, "Leda").cached("Hello. AI.")
+        assert len(server.requests) == 2  # another preset is another entry
+
+
+async def test_an_interrupted_opening_is_not_cached(tmp_path):
+    async def handler(req):
+        return Reply(chunks=sse(b"\x01\x00", b"\x02\x00"))
+
+    async with FakeServer(handler) as server:
+        stream = make(server, tmp_path).opening("Hello.")
+        await stream.__anext__()
+        await stream.aclose()
+        assert make(server, tmp_path).lookup("Hello.") is None

@@ -162,6 +162,18 @@ GOODBYE: dict[str, str] = {
     "zh": "谢谢您来电，再见。",
 }
 
+def fixed_lines(languages: tuple[str, ...] = LANGUAGES) -> list[str]:
+    """Every line the worker may say without the brain, minus detail templates."""
+    out: list[str] = []
+    for lang in languages:
+        lang = _lang(lang)
+        out += NEUTRAL[lang]
+        for by_lang in LINES.values():
+            out += [x for x in by_lang[lang] if "{detail}" not in x]
+        out += [TROUBLE[lang], REPEAT[lang], GOODBYE[lang]]
+    return list(dict.fromkeys(out))
+
+
 _DETAIL_MAX = 60
 _CTRL = re.compile(r"[\x00-\x1f\x7f{}]+")
 
