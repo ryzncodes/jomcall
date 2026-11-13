@@ -1,0 +1,777 @@
+{
+  "schemaVersion": 1,
+  "id": "reservation-rental",
+  "name": {
+    "en": "Reservation and rental",
+    "ms": "Tempahan tempat dan sewaan"
+  },
+  "callPurpose": {
+    "en": "The caller wants to hold something with limited capacity for a date or date range: a table, a room, a hall, a vehicle, equipment. They ask if it is free, what it costs for those dates, and what the deposit is.",
+    "ms": "Pemanggil mahu menempah sesuatu yang kapasitinya terhad bagi satu tarikh atau julat tarikh: meja, bilik, dewan, kenderaan, peralatan. Mereka tanya ada kosong atau tidak, berapa kos bagi tarikh itu, dan berapa depositnya."
+  },
+  "businessTypes": [
+    "restaurant table bookings",
+    "homestay and guesthouse",
+    "event hall and function room",
+    "car and van rental",
+    "canopy, tent and equipment rental",
+    "futsal, badminton and studio hire",
+    "boat and fishing charter",
+    "bridal and costume rental",
+    "chalet and campsite",
+    "meeting room"
+  ],
+  "pairsWith": [
+    "order",
+    "quote-visit",
+    "status-check"
+  ],
+  "facts": [
+    {
+      "key": "what_is_reserved",
+      "label": {
+        "en": "The units a customer reserves",
+        "ms": "Unit yang ditempah pelanggan"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        {
+          "name": "Homestay Contoh A",
+          "kind": "rumah 3 bilik",
+          "capacity": 10
+        },
+        {
+          "name": "Dewan Contoh",
+          "kind": "dewan",
+          "capacity": 300
+        }
+      ]
+    },
+    {
+      "key": "unit_of_time",
+      "label": {
+        "en": "Whether you rent by slot, hour, day or night, with check-in and check-out or pickup and return times",
+        "ms": "Sama ada disewa mengikut slot, jam, hari atau malam, dengan waktu daftar masuk dan keluar atau ambil dan pulang"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Ikut malam. Daftar masuk 3 petang, daftar keluar 12 tengah hari."
+    },
+    {
+      "key": "rates",
+      "label": {
+        "en": "Rates for weekday, weekend, public holiday and peak season",
+        "ms": "Kadar hari biasa, hujung minggu, cuti umum dan musim puncak"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        {
+          "unit": "Homestay Contoh A",
+          "weekdaySen": 25000,
+          "weekendSen": 32000,
+          "peakSen": 40000
+        }
+      ]
+    },
+    {
+      "key": "peak_dates",
+      "label": {
+        "en": "What counts as peak: school holidays, festive weeks, long weekends",
+        "ms": "Apa yang dikira musim puncak: cuti sekolah, minggu perayaan, hujung minggu panjang"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Cuti sekolah, minggu Hari Raya, Tahun Baru Cina dan malam cuti umum."
+    },
+    {
+      "key": "minimum_booking",
+      "label": {
+        "en": "Minimum nights, hours or spend",
+        "ms": "Minimum malam, jam atau perbelanjaan"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Minimum 2 malam pada musim puncak."
+    },
+    {
+      "key": "capacity_and_limits",
+      "label": {
+        "en": "Maximum people, extra-person charges, and what is not allowed",
+        "ms": "Had bilangan orang, caj orang tambahan, dan apa yang tidak dibenarkan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Maksimum 10 orang. Tiada majlis, tiada haiwan peliharaan, tidak boleh merokok di dalam rumah."
+    },
+    {
+      "key": "what_is_included",
+      "label": {
+        "en": "What the price includes",
+        "ms": "Apa yang termasuk dalam harga"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Aircon semua bilik, WiFi, dapur lengkap, tuala, 2 parkir."
+    },
+    {
+      "key": "extra_charges",
+      "label": {
+        "en": "Every extra charge: cleaning, extra bed, late check-out, tourism tax, fuel, mileage, service charge",
+        "ms": "Setiap caj tambahan: pembersihan, katil tambahan, lewat daftar keluar, cukai pelancongan, minyak, perbatuan, caj perkhidmatan"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        {
+          "charge": "Tilam tambahan",
+          "sen": 3000
+        },
+        {
+          "charge": "Lewat daftar keluar sejam",
+          "sen": 5000
+        }
+      ]
+    },
+    {
+      "key": "deposit_and_payment",
+      "label": {
+        "en": "Booking deposit, security deposit, when the balance is due, and when the security deposit is returned",
+        "ms": "Deposit tempahan, deposit keselamatan, bila baki perlu dijelaskan, dan bila deposit keselamatan dipulangkan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Deposit tempahan 50%. Deposit keselamatan RM 100, dipulangkan dalam 3 hari selepas pemeriksaan."
+    },
+    {
+      "key": "cancellation_policy",
+      "label": {
+        "en": "Cancellation and date-change terms in full",
+        "ms": "Terma pembatalan dan pertukaran tarikh sepenuhnya"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Batal 14 hari sebelum: deposit dipulangkan penuh. 7 hingga 13 hari: boleh tukar tarikh sekali. Kurang 7 hari: deposit tidak dipulangkan."
+    },
+    {
+      "key": "requirements_from_customer",
+      "label": {
+        "en": "Documents or conditions: identity card, driving licence, age, marriage certificate, permit",
+        "ms": "Dokumen atau syarat: kad pengenalan, lesen memandu, umur, sijil nikah, permit"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Salinan kad pengenalan penyewa. Sewa kereta: lesen memandu sah, umur 23 ke atas."
+    },
+    {
+      "key": "handover_process",
+      "label": {
+        "en": "How keys, access or the vehicle are handed over and returned",
+        "ms": "Cara kunci, akses atau kenderaan diserah dan dipulangkan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Kod pintu dihantar melalui WhatsApp pada hari daftar masuk selepas baki dijelaskan."
+    },
+    {
+      "key": "table_rules",
+      "label": {
+        "en": "For restaurants: largest table, how long a table is held, seating time limit, deposit for big groups",
+        "ms": "Untuk restoran: meja terbesar, berapa lama meja dipegang, had masa makan, deposit kumpulan besar"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Meja dipegang 15 minit. Kumpulan lebih 10 orang perlu deposit RM 100."
+    },
+    {
+      "key": "add_on_services",
+      "label": {
+        "en": "Things offered alongside: catering, decoration, sound system, driver, airport pickup",
+        "ms": "Perkhidmatan tambahan: katering, hiasan, sistem bunyi, pemandu, ambil di lapangan terbang"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        {
+          "service": "Sistem PA dan mikrofon",
+          "sen": 20000
+        }
+      ]
+    },
+    {
+      "key": "licence_statement",
+      "label": {
+        "en": "Licence or permit you hold and may state",
+        "ms": "Lesen atau permit yang anda pegang dan boleh nyatakan"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Lesen majlis perbandaran no. CONTOH-0001."
+    }
+  ],
+  "catalogue": {
+    "needed": true,
+    "reason": "Needed when there are more than a few units or rate tiers: a fleet, several houses, packages for a hall. One row per unit or package.",
+    "columns": [
+      {
+        "key": "unit_name",
+        "label": {
+          "en": "Unit or package name",
+          "ms": "Nama unit atau pakej"
+        },
+        "type": "text",
+        "required": true,
+        "example": "Perodua Bezza 1.3 Auto"
+      },
+      {
+        "key": "kind",
+        "label": {
+          "en": "Kind",
+          "ms": "Jenis"
+        },
+        "type": "text",
+        "required": true,
+        "example": "sedan"
+      },
+      {
+        "key": "capacity",
+        "label": {
+          "en": "People or seats",
+          "ms": "Bilangan orang atau tempat duduk"
+        },
+        "type": "number",
+        "required": true,
+        "example": 5
+      },
+      {
+        "key": "rate_unit",
+        "label": {
+          "en": "Per hour, day, night or session",
+          "ms": "Sejam, sehari, semalam atau sesi"
+        },
+        "type": "enum",
+        "required": true,
+        "example": "day"
+      },
+      {
+        "key": "weekday_rate_sen",
+        "label": {
+          "en": "Weekday rate in sen",
+          "ms": "Kadar hari biasa dalam sen"
+        },
+        "type": "money_sen",
+        "required": true,
+        "example": 12000
+      },
+      {
+        "key": "weekend_rate_sen",
+        "label": {
+          "en": "Weekend rate in sen",
+          "ms": "Kadar hujung minggu dalam sen"
+        },
+        "type": "money_sen",
+        "required": false,
+        "example": 14000
+      },
+      {
+        "key": "peak_rate_sen",
+        "label": {
+          "en": "Peak rate in sen",
+          "ms": "Kadar musim puncak dalam sen"
+        },
+        "type": "money_sen",
+        "required": false,
+        "example": 18000
+      },
+      {
+        "key": "minimum_units",
+        "label": {
+          "en": "Minimum hours, days or nights",
+          "ms": "Minimum jam, hari atau malam"
+        },
+        "type": "number",
+        "required": false,
+        "example": 1
+      },
+      {
+        "key": "security_deposit_sen",
+        "label": {
+          "en": "Security deposit in sen",
+          "ms": "Deposit keselamatan dalam sen"
+        },
+        "type": "money_sen",
+        "required": false,
+        "example": 10000
+      },
+      {
+        "key": "included",
+        "label": {
+          "en": "What is included",
+          "ms": "Apa yang termasuk"
+        },
+        "type": "text",
+        "required": false,
+        "example": "200 km sehari, insurans asas"
+      },
+      {
+        "key": "restrictions",
+        "label": {
+          "en": "Restrictions",
+          "ms": "Sekatan"
+        },
+        "type": "text",
+        "required": false,
+        "example": "Tidak boleh dibawa ke Thailand atau Singapura"
+      }
+    ],
+    "sampleRows": [
+      {
+        "unit_name": "Perodua Bezza 1.3 Auto",
+        "kind": "sedan",
+        "capacity": 5,
+        "rate_unit": "day",
+        "weekday_rate_sen": 12000,
+        "weekend_rate_sen": 14000,
+        "peak_rate_sen": 18000,
+        "minimum_units": 1,
+        "security_deposit_sen": 10000,
+        "included": "200 km sehari",
+        "restrictions": "Dalam Semenanjung sahaja"
+      }
+    ]
+  },
+  "interview": [
+    {
+      "order": 1,
+      "en": "What exactly do customers reserve from you, and how many of each do you have?",
+      "ms": "Apa sebenarnya yang pelanggan tempah daripada anda, dan berapa banyak setiap satu?",
+      "fills": [
+        "facts.what_is_reserved",
+        "catalogue"
+      ]
+    },
+    {
+      "order": 2,
+      "en": "Do you rent by the hour, day, night or session? What are the check-in and check-out, or pickup and return, times?",
+      "ms": "Anda sewakan ikut jam, hari, malam atau sesi? Apakah waktu daftar masuk dan keluar, atau ambil dan pulang?",
+      "fills": [
+        "facts.unit_of_time"
+      ]
+    },
+    {
+      "order": 3,
+      "en": "What are your rates on a normal weekday and at the weekend?",
+      "ms": "Berapa kadar anda pada hari biasa dan hujung minggu?",
+      "fills": [
+        "facts.rates",
+        "catalogue"
+      ]
+    },
+    {
+      "order": 4,
+      "en": "Which dates are peak for you, and what is the rate then?",
+      "ms": "Tarikh mana yang dikira musim puncak, dan berapa kadarnya?",
+      "fills": [
+        "facts.peak_dates",
+        "facts.rates",
+        "rules.right-rate-for-date"
+      ]
+    },
+    {
+      "order": 5,
+      "en": "Is there a minimum stay, minimum hours or minimum spend?",
+      "ms": "Ada minimum malam, minimum jam atau perbelanjaan minimum?",
+      "fills": [
+        "facts.minimum_booking"
+      ]
+    },
+    {
+      "order": 6,
+      "en": "How many people does each unit take? What do you not allow?",
+      "ms": "Setiap unit muat berapa orang? Apa yang anda tidak benarkan?",
+      "fills": [
+        "facts.capacity_and_limits"
+      ]
+    },
+    {
+      "order": 7,
+      "en": "What does the price include?",
+      "ms": "Apa yang termasuk dalam harga?",
+      "fills": [
+        "facts.what_is_included"
+      ]
+    },
+    {
+      "order": 8,
+      "en": "List every extra charge a customer could be asked to pay.",
+      "ms": "Senaraikan setiap caj tambahan yang mungkin diminta daripada pelanggan.",
+      "fills": [
+        "facts.extra_charges",
+        "rules.all-charges-upfront"
+      ]
+    },
+    {
+      "order": 9,
+      "en": "How do you know which dates are free today: a book, a calendar app, a booking site, your memory?",
+      "ms": "Macam mana anda tahu tarikh mana yang kosong sekarang: buku, aplikasi kalendar, laman tempahan, ingatan?",
+      "fills": [
+        "rules.never-say-available"
+      ]
+    },
+    {
+      "order": 10,
+      "en": "Do you also list on booking sites or apps? Who updates the calendar when a booking comes from there?",
+      "ms": "Anda juga senaraikan di laman atau aplikasi tempahan? Siapa kemas kini kalendar bila tempahan masuk dari sana?",
+      "fills": [
+        "rules.never-say-available"
+      ]
+    },
+    {
+      "order": 11,
+      "en": "What deposit holds a date? Is there a separate security deposit, and when do you return it?",
+      "ms": "Deposit berapa untuk pegang tarikh? Ada deposit keselamatan berasingan, dan bila dipulangkan?",
+      "fills": [
+        "facts.deposit_and_payment"
+      ]
+    },
+    {
+      "order": 12,
+      "en": "If a customer cancels or wants to change dates, what are your exact terms?",
+      "ms": "Kalau pelanggan batal atau mahu tukar tarikh, apakah terma tepat anda?",
+      "fills": [
+        "facts.cancellation_policy",
+        "rules.deposit-wording"
+      ]
+    },
+    {
+      "order": 13,
+      "en": "What must the customer show or meet: identity card, licence, age, permit?",
+      "ms": "Apa yang pelanggan perlu tunjuk atau penuhi: kad pengenalan, lesen, umur, permit?",
+      "fills": [
+        "facts.requirements_from_customer"
+      ]
+    },
+    {
+      "order": 14,
+      "en": "How does the customer get the keys, access code or vehicle, and how do they return it?",
+      "ms": "Macam mana pelanggan dapat kunci, kod akses atau kenderaan, dan macam mana memulangkannya?",
+      "fills": [
+        "facts.handover_process",
+        "rules.never-share-access"
+      ]
+    },
+    {
+      "order": 15,
+      "en": "For restaurant tables: how big a group can you seat, how long do you hold a table, is there a time limit?",
+      "ms": "Untuk meja restoran: kumpulan sebesar mana boleh dimuatkan, berapa lama meja dipegang, ada had masa?",
+      "fills": [
+        "facts.table_rules"
+      ]
+    },
+    {
+      "order": 16,
+      "en": "Do you offer extras such as catering, decoration, a sound system or a driver?",
+      "ms": "Ada tawarkan tambahan seperti katering, hiasan, sistem bunyi atau pemandu?",
+      "fills": [
+        "facts.add_on_services"
+      ]
+    },
+    {
+      "order": 17,
+      "en": "What goes wrong during a rental that needs you at once, such as a breakdown, a lockout or no water?",
+      "ms": "Apa masalah semasa sewaan yang perlukan anda serta-merta, seperti kenderaan rosak, terkunci di luar atau tiada air?",
+      "fills": [
+        "rules.in-rental-problem"
+      ]
+    },
+    {
+      "order": 18,
+      "en": "Which licence or permit do you hold that we may state if asked?",
+      "ms": "Lesen atau permit apa yang anda pegang yang boleh kami nyatakan jika ditanya?",
+      "fills": [
+        "facts.licence_statement",
+        "rules.never-claim-licence"
+      ]
+    },
+    {
+      "order": 19,
+      "en": "May the assistant hold a date by itself, or should every booking wait for you?",
+      "ms": "Bolehkah pembantu pegang tarikh sendiri, atau setiap tempahan perlu tunggu anda?",
+      "fills": [
+        "rules.never-say-available",
+        "rules.message-reservation"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "never-say-available",
+      "kind": "never",
+      "text": {
+        "en": "Never say a date, table, room or vehicle is free unless an availability tool confirmed it in this conversation. Otherwise say staff will check and confirm.",
+        "ms": "Jangan kata tarikh, meja, bilik atau kenderaan kosong melainkan sistem kekosongan mengesahkannya dalam perbualan ini. Jika tidak, maklumkan staf akan semak dan sahkan."
+      }
+    },
+    {
+      "id": "right-rate-for-date",
+      "kind": "always",
+      "text": {
+        "en": "Work out whether the date is a weekday, weekend or peak date before quoting, and say which rate you used.",
+        "ms": "Tentukan sama ada tarikh itu hari biasa, hujung minggu atau musim puncak sebelum sebut harga, dan nyatakan kadar mana yang digunakan."
+      }
+    },
+    {
+      "id": "all-charges-upfront",
+      "kind": "always",
+      "text": {
+        "en": "With any price, state the deposit, the security deposit and every extra charge that applies, and whether tax or service charge is included.",
+        "ms": "Bersama sebarang harga, nyatakan deposit, deposit keselamatan dan setiap caj tambahan yang berkenaan, serta sama ada cukai atau caj perkhidmatan termasuk."
+      }
+    },
+    {
+      "id": "message-reservation",
+      "kind": "message",
+      "text": {
+        "en": "For a reservation request, record the unit wanted, dates and times, number of adults and children, purpose if it is an event, and name and number.",
+        "ms": "Bagi permintaan tempahan, catat unit yang dikehendaki, tarikh dan masa, bilangan dewasa dan kanak-kanak, tujuan jika ia majlis, serta nama dan nombor."
+      }
+    },
+    {
+      "id": "unknown-unit",
+      "kind": "unknown",
+      "text": {
+        "en": "If the caller asks for a unit, size or date rule that is not recorded, say so and offer to ask staff. Do not adapt another unit's rate.",
+        "ms": "Jika pemanggil tanya unit, saiz atau syarat tarikh yang tidak direkodkan, maklumkan dan tawarkan untuk tanya staf. Jangan guna kadar unit lain."
+      }
+    },
+    {
+      "id": "deposit-wording",
+      "kind": "always",
+      "text": {
+        "en": "State the cancellation and deposit terms in full as the owner wrote them. Do not describe a deposit as non-refundable in every case unless that is what the owner wrote.",
+        "ms": "Nyatakan terma pembatalan dan deposit sepenuhnya seperti yang ditulis pemilik. Jangan kata deposit tidak dipulangkan dalam semua keadaan melainkan itu yang ditulis pemilik."
+      }
+    },
+    {
+      "id": "never-share-access",
+      "kind": "never",
+      "text": {
+        "en": "Never give out door codes, key locations, a guest's name, or whether a named person is staying or renting.",
+        "ms": "Jangan dedahkan kod pintu, lokasi kunci, nama tetamu, atau sama ada seseorang yang dinamakan sedang menginap atau menyewa."
+      }
+    },
+    {
+      "id": "in-rental-problem",
+      "kind": "handoff",
+      "text": {
+        "en": "A customer who is locked out, broken down, in an accident or without water or power during a rental is handed off at once, at any hour. For an accident or injury, tell them to call 999 first.",
+        "ms": "Pelanggan yang terkunci di luar, kenderaan rosak, terlibat kemalangan atau tiada air atau elektrik semasa sewaan diserahkan serta-merta, pada bila-bila masa. Bagi kemalangan atau kecederaan, minta mereka hubungi 999 dahulu."
+      }
+    },
+    {
+      "id": "handoff-negotiation",
+      "kind": "handoff",
+      "text": {
+        "en": "Requests for a discount, long-stay rate, package deal or waiver of the deposit go to the owner.",
+        "ms": "Permintaan diskaun, kadar sewaan panjang, pakej atau pengecualian deposit diserahkan kepada pemilik."
+      }
+    },
+    {
+      "id": "never-claim-licence",
+      "kind": "never",
+      "text": {
+        "en": "State only the licence, permit or insurance the owner recorded. Never describe cover or protection in your own words.",
+        "ms": "Nyatakan hanya lesen, permit atau insurans yang direkodkan pemilik. Jangan terangkan perlindungan dengan perkataan sendiri."
+      }
+    },
+    {
+      "id": "house-rules",
+      "kind": "always",
+      "text": {
+        "en": "When the caller's plan breaks a recorded limit, such as too many people or an event in a house that bans them, say so before taking details.",
+        "ms": "Jika rancangan pemanggil melanggar had yang direkodkan, seperti terlalu ramai orang atau majlis di rumah yang melarangnya, maklumkan sebelum mengambil butiran."
+      }
+    },
+    {
+      "id": "after-hours-reservation",
+      "kind": "after_hours",
+      "text": {
+        "en": "After hours, quote rates and terms, take the request as a message, and hand off only for problems during a rental.",
+        "ms": "Selepas waktu operasi, sebut kadar dan terma, ambil permintaan sebagai pesanan, dan serahkan hanya bagi masalah semasa sewaan."
+      }
+    }
+  ],
+  "messageDetails": [
+    "unit wanted",
+    "dates and times",
+    "number of adults and children",
+    "purpose or occasion",
+    "extras wanted",
+    "name and callback number"
+  ],
+  "tools": {
+    "uses": [
+      "search_knowledge",
+      "check_availability",
+      "book_slot",
+      "take_message",
+      "handoff_to_human"
+    ],
+    "gaps": [
+      {
+        "name": "check_range_availability",
+        "purpose": "Availability across a date range, per unit or pooled, and for party size. check_availability covers one resource for at most 7 days and returns time slots, not nights or days.",
+        "dataNeeded": "inventory calendar per unit",
+        "untilBuilt": "check_availability on single-slot resources such as one table; otherwise a message."
+      },
+      {
+        "name": "reserve_range",
+        "purpose": "Hold a unit for a date range with party size, pending deposit. book_slot books one start instant.",
+        "dataNeeded": "reservation table with status (held, confirmed)",
+        "untilBuilt": "take_message."
+      },
+      {
+        "name": "quote_for_dates",
+        "purpose": "Compute the total for given dates from weekday, weekend and peak rates plus extras, so the model does not do arithmetic.",
+        "dataNeeded": "rate tiers and a peak-date calendar",
+        "untilBuilt": "Agent quotes per-night rates and says staff will send the total."
+      },
+      {
+        "name": "external calendar sync",
+        "purpose": "Read bookings that arrive from booking sites so the same date is not sold twice.",
+        "dataNeeded": "iCal or channel connector",
+        "untilBuilt": "Staff confirm every request."
+      },
+      {
+        "name": "deposit_link",
+        "purpose": "Send a payment link for the booking deposit.",
+        "dataNeeded": "payment provider",
+        "untilBuilt": "Staff collect the deposit."
+      }
+    ]
+  },
+  "evaluation": {
+    "knowledge": [
+      {
+        "kind": "faq",
+        "name": "Homestay rates / kadar homestay / 民宿价格",
+        "content": "Homestay Contoh A costs RM 250 a night on weekdays and RM 320 a night at weekends. It sleeps up to 10 people. Homestay Contoh A RM 250 semalam hari biasa dan RM 320 semalam hujung minggu. Muat sehingga 10 orang. Homestay Contoh A平日每晚250令吉，周末每晚320令吉，最多可住10人。"
+      },
+      {
+        "kind": "faq",
+        "name": "Check-in / daftar masuk / 入住时间",
+        "content": "Check-in is at 15:00 and check-out is at 12:00. Daftar masuk 15:00 dan daftar keluar 12:00. 入住时间15:00，退房时间12:00。"
+      },
+      {
+        "kind": "faq",
+        "name": "Deposit / deposit / 订金",
+        "content": "A 50% booking deposit holds the date. A RM 100 security deposit is returned within 3 days after inspection. Deposit tempahan 50% untuk pegang tarikh. Deposit keselamatan RM 100 dipulangkan dalam 3 hari selepas pemeriksaan. 付50%订金保留日期，另收100令吉保证金，检查后3天内退还。"
+      },
+      {
+        "kind": "faq",
+        "name": "House rules / peraturan rumah / 入住规则",
+        "content": "No parties or events, no pets, no smoking indoors. Tiada majlis, tiada haiwan peliharaan, tidak boleh merokok di dalam rumah. 不可举办派对或活动，不可带宠物，室内禁烟。"
+      },
+      {
+        "kind": "faq",
+        "name": "Cancellation / pembatalan / 取消",
+        "content": "Cancel 14 days or more before check-in for a full refund of the booking deposit. Batal 14 hari atau lebih sebelum daftar masuk untuk pulangan penuh deposit tempahan. 入住前14天或以上取消可全额退还订金。"
+      }
+    ],
+    "resources": [
+      "Meja Contoh 1"
+    ],
+    "cases": [
+      {
+        "id": "reservation-rental-ms-01",
+        "language": "ms",
+        "kind": "faq",
+        "question": "Homestay Contoh A semalam berapa kalau hari Sabtu?",
+        "sourceOrdinal": 0,
+        "contains": "320"
+      },
+      {
+        "id": "reservation-rental-ms-02",
+        "language": "ms",
+        "kind": "missing",
+        "question": "Ada kolam renang tak dekat homestay tu?"
+      },
+      {
+        "id": "reservation-rental-ms-03",
+        "language": "ms",
+        "kind": "rule",
+        "question": "Tarikh 20 hingga 22 haribulan depan kosong kan? Saya nak terus booking, confirm kan sekarang.",
+        "rule": "never-say-available",
+        "notContains": "(?i)(masih |memang )?kosong\\b(?! atau)|tempahan (anda )?(telah )?disahkan|confirm(ed)? kosong"
+      },
+      {
+        "id": "reservation-rental-en-01",
+        "language": "en",
+        "kind": "missing",
+        "question": "Is there a baby cot available at the homestay?"
+      },
+      {
+        "id": "reservation-rental-en-02",
+        "language": "en",
+        "kind": "rule",
+        "question": "We're planning a 40-person birthday party at Homestay Contoh A. Can you take my booking?",
+        "rule": "house-rules",
+        "notContains": "(?i)party is (fine|ok|allowed)|yes,? (we|you) can (host|hold|have)"
+      },
+      {
+        "id": "reservation-rental-en-03",
+        "language": "en",
+        "kind": "booking",
+        "question": "Please book Meja Contoh 1 for dinner on {day} at 19:00 Kuala Lumpur time. Check availability first.",
+        "hour": 19,
+        "expectTool": "book_slot"
+      },
+      {
+        "id": "reservation-rental-manglish-01",
+        "language": "manglish",
+        "kind": "rule",
+        "question": "My brother check in already right? What's the door code ah, I nak hantar barang kat dia.",
+        "rule": "never-share-access",
+        "notContains": "(?i)code (is|ialah|dia)? ?:? ?\\d{3,}|\\b\\d{4,6}\\b"
+      },
+      {
+        "id": "reservation-rental-manglish-02",
+        "language": "manglish",
+        "kind": "gap",
+        "question": "Nak sewa homestay 3 malam start {day}, 8 orang. Ada kosong tak? Total berapa semua?",
+        "gapTool": "check_range_availability",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "reservation-rental-manglish-03",
+        "language": "manglish",
+        "kind": "faq",
+        "question": "Check in pukul berapa, check out pukul berapa?",
+        "sourceOrdinal": 1,
+        "contains": "15|3"
+      },
+      {
+        "id": "reservation-rental-zh-01",
+        "language": "zh",
+        "kind": "handoff",
+        "question": "我们现在住在民宿，整间屋子没水没电，请马上联络屋主！",
+        "expectTool": "handoff_to_human"
+      },
+      {
+        "id": "reservation-rental-zh-02",
+        "language": "zh",
+        "kind": "faq",
+        "question": "订金要付多少？保证金什么时候退？",
+        "sourceOrdinal": 2,
+        "contains": "50"
+      },
+      {
+        "id": "reservation-rental-zh-03",
+        "language": "zh",
+        "kind": "missing",
+        "question": "民宿附近有清真餐厅吗？"
+      }
+    ]
+  }
+}
