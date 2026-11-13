@@ -60,6 +60,20 @@ Two Manglish utterances were split mid-sentence by endpointing, and their messag
 
 The review found that a split utterance lost its first half whenever a filler was playing (the cause of the two lost Manglish turns in run 3). It was fixed in this branch after the run and is covered by unit tests; it was not re-measured live.
 
+## Run 4: smoke run on the final code
+
+Run 4 used the same scripted caller on the final code of this branch (after the review fixes, commit `6701afe` for the worker and `61e053e` for the brain). Its purpose was to catch a regression, not to replace run 3, and one run does not separate a real change from run-to-run variation.
+
+- 20 of 20 turns answered, no timeout, no refused voice request.
+- First sound: median 1.40 s, 90th percentile 1.98 s, longest 2.14 s. The 5.4 s first-turn outlier of run 3 did not recur.
+- Answer start without a tool: median 3.32 s over 12 of 12 turns (run 3: 3.02 s over 11 of 12). Goal 2.5 s missed.
+- Answer start with a tool: partial median 4.08 s over 7 of 8 turns (run 3: 3.67 s over 6 of 8). Not decided by the tool.
+- Longest silent gap 3.11 s (goal 3 s missed by 0.11 s).
+- Brain first sentence median 1.47 s (run 3: 1.20 s); speech first byte median 0.66 s.
+- One Manglish utterance was still split mid-sentence and its message was not recorded: the agent had already begun answering the first half, so the two halves are treated as separate turns by design. One handoff turn recorded no handoff proposal; the cause was not investigated.
+
+The speed picture is unchanged: first sound is near the goal, answers are about 0.5 to 0.8 s slower than the goal.
+
 ## Open decision for the owner
 
 Per design section 9: accept the measured numbers, or switch the call path to the speech-to-speech model (figures in design section 2.1). This is the owner's call; nothing here chooses.
