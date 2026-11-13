@@ -111,6 +111,8 @@ export async function runVoiceTurn(
     const key = fastLaneKey(input);
     // A question that leans on earlier turns is never answered from the cache,
     // and its answer is never stored.
+    // (The fast lane stays off after the first turn: a follow-up question can
+    // depend on what was said earlier.)
     const standalone = history.length === 0 && key !== null;
     const timings = (firstSentenceAt: number | null) => {
       const end = deps.now();
@@ -123,14 +125,10 @@ export async function runVoiceTurn(
     };
 
     if (standalone) {
-      const hit = await repo.voiceCacheGet(
-        request.sessionId,
-        request.tokenHash,
-        {
-          language,
-          key,
-        },
-      );
+      // The cache only saves time: a failed read falls through to the model.
+      const hit = await repo
+        .voiceCacheGet(request.sessionId, request.tokenHash, { language, key })
+        .catch(() => null);
       checkAbort();
       if (hit) {
         emit({ type: "fast", text: hit.answer });
@@ -149,6 +147,7 @@ export async function runVoiceTurn(
           },
         );
         if (!saved) throw Error("TURN_CANCELLED");
+        if (aborted()) return;
         emit({ type: "done", turnId, timings: t });
         return;
       }
@@ -194,6 +193,7 @@ export async function runVoiceTurn(
         } else if (event.type === "tool") {
           if (tools >= MAX_TOOL_CALLS) throw Error("TOOL_LIMIT");
           emit({ type: "tool", name: event.name });
+          checkAbort();
           const result = await executeTestTool(access, tools++, {
             name: event.name,
             args: event.input,
@@ -255,6 +255,7 @@ export async function runVoiceTurn(
           evidence,
         }),
       );
+    if (aborted()) return;
     emit({ type: "done", turnId, timings: t });
   } catch (error) {
     if (aborted()) {

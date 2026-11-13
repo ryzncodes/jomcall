@@ -74,10 +74,11 @@ async function fixture() {
     model: any,
     controller = new AbortController(),
     onEvent: (e: VoiceTurnEvent) => void = () => {},
+    repo: AgentRepository = repository,
   ) => {
     const events: VoiceTurnEvent[] = [];
     await runVoiceTurn(
-      { repository, model, now: () => (clock += 50) },
+      { repository: repo, model, now: () => (clock += 50) },
       {
         sessionId: session.id,
         tokenHash: session.hash,
@@ -93,6 +94,14 @@ async function fixture() {
     );
     return events;
   };
+  // The real repository with some methods wrapped, to inject faults.
+  const wrapped = (over: Record<string, (...a: any[]) => any>) =>
+    new Proxy(repository, {
+      get: (target, prop: string) =>
+        over[prop]
+          ? (...a: any[]) => over[prop](target, ...a)
+          : (target as any)[prop].bind(target),
+    });
   const turns = async (session: string) =>
     (
       await f.h.cleanup.query(
@@ -106,6 +115,7 @@ async function fixture() {
     scripted,
     run,
     turns,
+    wrapped,
     async close() {
       await repository.close();
       await f.close();
@@ -325,6 +335,113 @@ test("an expired session reports VOICE_EXPIRED", async () => {
     const { model } = f.scripted();
     const events = await f.run(s, "What time are you open on weekdays?", model);
     assert.deepEqual(events, [{ type: "error", code: "VOICE_EXPIRED" }]);
+  } finally {
+    await f.close();
+  }
+});
+
+test("aborting before a tool starts means the tool never runs", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model } = f.scripted([
+      toolEvent("take_message", { text: "Hello from Contoh." }),
+      end(),
+    ]);
+    const controller = new AbortController();
+    // Every tool goes through access().read() first; count those calls.
+    let toolReads = 0;
+    const repo = f.wrapped({
+      access: (target: any, envelope: any) => {
+        const access = target.access(envelope);
+        return {
+          ...access,
+          read: () => {
+            toolReads++;
+            return access.read();
+          },
+        };
+      },
+    });
+    await f.run(
+      s,
+      "Please leave a message",
+      model,
+      controller,
+      (e) => {
+        if (e.type === "tool") controller.abort();
+      },
+      repo as any,
+    );
+    const [turn] = await f.turns(s.id);
+    assert.equal(turn.state, "cancelled");
+    assert.equal(toolReads, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a failing cache read falls through to the model", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    const { model, seen } = f.scripted([
+      sentence("We open at nine."),
+      end("We open at nine."),
+    ]);
+    const repo = f.wrapped({
+      voiceCacheGet: () => Promise.reject(Error("CACHE_DOWN")),
+    });
+    const events = await f.run(
+      s,
+      "What time are you open on weekdays?",
+      model,
+      new AbortController(),
+      () => {},
+      repo as any,
+    );
+    assert.deepEqual(
+      events.map((e) => e.type),
+      ["started", "sentence", "done"],
+    );
+    assert.equal(seen.length, 1);
+  } finally {
+    await f.close();
+  }
+});
+
+test("abort landing during the completion write emits no done", async () => {
+  const f = await fixture();
+  try {
+    const question = "What time are you open on weekdays?";
+    const answer = [sentence("We open at nine."), end("We open at nine.")];
+    for (const fast of [false, true]) {
+      const s = await f.makeSession();
+      if (fast) {
+        const warm = await f.makeSession();
+        await f.run(warm, question, f.scripted(answer).model);
+      }
+      const controller = new AbortController();
+      const repo = f.wrapped({
+        voiceComplete: async (target: any, ...a: any[]) => {
+          const result = await target.voiceComplete(...a);
+          controller.abort();
+          return result;
+        },
+      });
+      const { model } = f.scripted(answer);
+      const events = await f.run(
+        s,
+        question,
+        model,
+        controller,
+        () => {},
+        repo as any,
+      );
+      assert.ok(!events.some((e) => e.type === "done"), `fast=${fast}`);
+      assert.ok(!events.some((e) => e.type === "error"), `fast=${fast}`);
+      if (fast) assert.ok(events.some((e) => e.type === "fast"));
+    }
   } finally {
     await f.close();
   }
