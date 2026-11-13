@@ -73,6 +73,20 @@ To stop: press Ctrl+C in each terminal, then run `npm run local:stop`. Database 
 
 More detail: [local operations guide](infra/local/README.md).
 
+### AI model for the agent text test
+
+The model provider is off by default. Choose one with `JOMCALL_MODEL_PROVIDER` in both ignored local env files (`.env.local` and `web/.env.local`).
+
+**Hosted (recommended).** `anthropic/claude-haiku-5.5` through [OpenRouter](https://openrouter.ai) meets the 48-case quality gate thresholds; see the [evaluation record](docs/qa/2026-11-13-agent-tool-calling.md).
+
+1. Set `JOMCALL_MODEL_PROVIDER=openrouter` in both env files.
+2. Create the ignored file `.env.hosted` in the repository root with `OPENROUTER_API_KEY=...`. Do not put the key in `.env.local`: `npm run local:start` rewrites that file. Only the agent worker reads the key; the web app never does.
+3. Run `npm run dev:agent`.
+
+To try another model, set `JOMCALL_HOSTED_MODEL` to an OpenRouter model ID in both env files. A test session stays pinned to the model that answered its first turn.
+
+> A hosted model receives the question, the matching knowledge and the conversation so far. That text leaves your machine and Malaysia. Use fictional data until you have settled your PDPA cross-border position.
+
 ### Optional: local AI model
 
 The agent text test can use a pinned model that runs on your machine. It is experimental and below the quality gate: 28 of 48 evaluation cases in October 2026. See the [tool-calling follow-up](docs/qa/2026-11-13-agent-tool-calling.md) for the cause and for hosted-model results. Follow [model preparation](infra/local/README.md#optional-local-text-model), set `JOMCALL_MODEL_PROVIDER=ollama` in both ignored local env files, then:

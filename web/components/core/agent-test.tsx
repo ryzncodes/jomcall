@@ -56,6 +56,9 @@ function AgentTestManager() {
     () => client.execute("testReadiness", {}),
     "test-readiness",
   );
+  // A hosted model identifies itself as provider:model, never a weight digest.
+  const hosted =
+    readiness.data?.modelDigest?.startsWith("openrouter:") ?? false;
   const draft = useResource(
     () => client.execute("draft", { id: workspace.agent.id }),
     "test-draft",
@@ -169,11 +172,16 @@ function AgentTestManager() {
         </small>
         <span className="core-model-state">
           {readiness.data?.available
-            ? w(
-                "Local model connected · experimental",
-                "Model setempat disambung · eksperimen",
-              )
-            : w("Local model unavailable", "Model setempat tiada")}
+            ? hosted
+              ? w(
+                  "Hosted model selected · text leaves this computer",
+                  "Model dihos dipilih · teks keluar dari komputer ini",
+                )
+              : w(
+                  "Local model connected · experimental",
+                  "Model setempat disambung · eksperimen",
+                )
+            : w("Model unavailable", "Model tiada")}
         </span>
       </div>
       <Notice error={a.error ?? error ?? readiness.error ?? draft.error} />
@@ -250,9 +258,11 @@ function AgentTestManager() {
                     : w("Published version", "Versi diterbitkan")}{" "}
                   · {detail.snapshot_hash.slice(0, 12)}
                 </dd>
-                <dt>{w("Model digest", "Digest model")}</dt>
+                <dt>{w("Model", "Model")}</dt>
                 <dd>
-                  {detail.model_digest?.slice(0, 12) ??
+                  {(detail.model_digest?.startsWith("openrouter:")
+                    ? detail.model_digest.slice(11)
+                    : detail.model_digest?.slice(0, 12)) ??
                     w(
                       "Pinned on first turn",
                       "Ditetapkan pada giliran pertama",
@@ -430,10 +440,18 @@ function AgentTestManager() {
                 <div className="core-actions">
                   <small>
                     {readiness.data?.available
-                      ? w("Runs on this computer", "Berjalan pada komputer ini")
+                      ? hosted
+                        ? w(
+                            "Your question and matching knowledge are sent to a hosted model through OpenRouter, outside Malaysia. Do not enter real customer data.",
+                            "Soalan anda dan pengetahuan yang sepadan dihantar kepada model dihos melalui OpenRouter, di luar Malaysia. Jangan masukkan data pelanggan sebenar.",
+                          )
+                        : w(
+                            "Runs on this computer",
+                            "Berjalan pada komputer ini",
+                          )
                       : w(
-                          "Start the local model to send a question. Knowledge inspection still works.",
-                          "Mulakan model setempat untuk menghantar soalan. Semakan pengetahuan masih tersedia.",
+                          "Set up a model to send a question. Knowledge inspection still works.",
+                          "Sediakan model untuk menghantar soalan. Semakan pengetahuan masih tersedia.",
                         )}
                   </small>
                   <button

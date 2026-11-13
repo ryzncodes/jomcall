@@ -2,11 +2,13 @@ import { PgBoss } from "pg-boss";
 import { z } from "zod";
 import { AgentRepository } from "./repository.ts";
 import {
-  configuredModel,
-  createOllamaClient,
   type ModelClient,
   type ModelInput,
 } from "../../../packages/inference/src/index.ts";
+import {
+  configuredProvider,
+  createModelClient,
+} from "../../../packages/inference/src/provider.ts";
 import { packConversationInput } from "../../../packages/inference/src/budget.ts";
 import {
   executeTestTool,
@@ -17,7 +19,10 @@ import {
   searchKnowledge,
   validateCitations,
 } from "../../../packages/domain/src/agent-test/knowledge.ts";
-import { agentRules } from "../../../packages/domain/src/agent-test/prompt.ts";
+import {
+  agentRules,
+  businessConfiguration,
+} from "../../../packages/domain/src/agent-test/prompt.ts";
 import {
   modelDecisionSchema,
   type KnowledgeHit,
@@ -118,10 +123,12 @@ export class AgentRunner {
     }
   }
   private async run(e: any, failBefore = false) {
-    const config = this.model ? null : await configuredModel();
-    if (!this.model && (!config || config.digest !== e.session.model_digest))
+    // A session pins the model identity on its first turn. A different
+    // provider or model must not silently answer later turns.
+    const config = this.model ? null : await configuredProvider();
+    if (!this.model && (!config || config.identity !== e.session.model_digest))
       throw Error("MODEL_CHANGED");
-    const model = this.model ?? (await createOllamaClient(config!));
+    const model = this.model ?? (await createModelClient(config!));
     const controller = new AbortController();
     const signal = AbortSignal.any([
       controller.signal,
@@ -155,7 +162,7 @@ export class AgentRunner {
           content:
             agentRules +
             "\nBusiness configuration: " +
-            JSON.stringify(e.session.snapshot.settings ?? {}) +
+            businessConfiguration(e.session.snapshot.settings) +
             "\nCurrent date/time: " +
             new Date().toISOString() +
             "; timezone Asia/Kuala_Lumpur.",

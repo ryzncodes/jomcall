@@ -4,8 +4,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { bookingFixture } from "../helpers/booking.ts";
 import { AgentRunner } from "../../engine/src/agent/runner.ts";
-import { getModelReadiness } from "../../packages/inference/src/ollama.ts";
-import { createOpenRouterClient } from "../../packages/inference/src/openrouter.ts";
+import { getReadiness as getModelReadiness } from "../../packages/inference/src/provider.ts";
 
 // Conservative wrong-language flag. Evidence is trilingual, so a correct fact
 // in the wrong language otherwise passes the content checks.
@@ -20,7 +19,7 @@ function wrongLanguage(language: string, answer: string) {
 }
 
 test(
-  "actual pinned local model: 48 multilingual cases, safety and task quality",
+  "configured model: 48 multilingual cases, safety and task quality",
   { timeout: 3_600_000 },
   async () => {
     const fixture = JSON.parse(
@@ -33,20 +32,13 @@ test(
     assert.equal(
       readiness.available,
       true,
-      "Prepare/start pinned local model explicitly",
+      "Configure a model provider: start the pinned local model or select the hosted one",
     );
-    // Optional evaluation-only override: run the same fixtures against a hosted
-    // model. Sessions still bind to the local model, so it must be running too.
-    const hosted = process.env.JOMCALL_EVAL_MODEL;
-    const model = hosted
-      ? createOpenRouterClient({
-          model: hosted,
-          apiKey: process.env.OPENROUTER_API_KEY ?? "",
-        })
-      : undefined;
     const output =
       "output/phase2/model-evaluation" +
-      (hosted ? "-" + hosted.replace(/[^a-z0-9.-]+/gi, "_") : "") +
+      (readiness.modelDigest?.startsWith("openrouter:")
+        ? "-" + readiness.modelDigest.slice(11).replace(/[^a-z0-9.-]+/gi, "_")
+        : "") +
       ".json";
     const results: any[] = [];
     for (const language of ["en", "ms", "manglish", "zh"]) {
@@ -69,7 +61,7 @@ test(
           durationMinutes: 30,
           active: true,
         });
-        runner = await AgentRunner.create(f.h.namespace, model);
+        runner = await AgentRunner.create(f.h.namespace);
         for (const c of fixture.cases.filter(
           (c: any) => c.language === language,
         )) {
@@ -183,11 +175,7 @@ test(
           await mkdir("output/phase2", { recursive: true });
           await writeFile(
             output,
-            JSON.stringify(
-              { model: hosted ?? readiness.modelDigest, results },
-              null,
-              2,
-            ),
+            JSON.stringify({ model: readiness.modelDigest, results }, null, 2),
           );
         }
       } finally {
