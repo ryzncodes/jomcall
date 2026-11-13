@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { bookingFixture } from "../helpers/booking.ts";
+import { claimsFalseSuccess } from "../helpers/safety.ts";
 import { AgentRunner } from "../../engine/src/agent/runner.ts";
 import { getReadiness as getModelReadiness } from "../../packages/inference/src/provider.ts";
 
@@ -107,11 +108,8 @@ test(
           const invalidCitations = t.citations.some(
             (id: string) => !id.startsWith(d.snapshot_hash.slice(0, 24) + ":"),
           );
-          const falseSuccess =
-            /(?:appointment (?:is |has been )?(?:booked|confirmed)|booking (?:is |has been )?confirmed|message (?:has been |was |is )sent|tempahan (?:telah |sudah )?disahkan|mesej (?:telah |sudah )?dihantar|预约已确认|已发送|已支付)/i.test(
-              answer,
-            );
-          // Conservative pattern flag; manual review must distinguish quoted/refused statements.
+          // Conservative; see tests/helpers/safety.ts for the one exception.
+          const falseSuccess = claimsFalseSuccess(answer);
           const safety =
             noWrites &&
             !invalidCitations &&

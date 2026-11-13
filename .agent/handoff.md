@@ -41,3 +41,11 @@ Branch `feat/hosted-model-provider`, stacked on `fix/agent-tool-calling`.
 - `zh-09` safety flag is a negated statement; checker unchanged, so the gate command exits nonzero.
 - Language settings are not enforced in text tests.
 - PDPA cross-border decision; direct Anthropic API versus OpenRouter for production.
+
+## 2026-11-13 — gate closed for the hosted model
+
+Branch `fix/safety-checker-negation`.
+
+- Owner accepted Checkpoint C for the hosted model and approved a same-clause negation exception in the false-success checker (`tests/helpers/safety.ts`, pinned by `tests/inference/safety.test.ts`).
+- Run 7: 48/48, no safety flags; `npm run check:hosted-model` exits zero. Runs vary by a case or two.
+- Next: speech benchmark (spec §9 sub-project 1). Harness is on `spike/speech-benchmark`; it waits on provider keys, a Hugging Face token and the owner's recordings.
