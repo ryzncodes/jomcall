@@ -1,0 +1,23 @@
+[project]
+name = "jomcall-voice"
+version = "0.1.0"
+description = "JomCall voice worker: LiveKit room, Deepgram ears, Gemini voice, HTTP brain"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "httpx==0.28.1",
+    "livekit-agents==1.8.11",
+    "livekit-plugins-deepgram==1.8.11",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.2.0",
+    "pytest-asyncio==1.5.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error"]
