@@ -35,7 +35,7 @@ All names, numbers, calls and amounts in the preview are fake. Calls, payments a
 | Sign-up, login, recovery, invites | Simulated | Real local accounts; email goes to a local inbox | Google sign-in, hosted email |
 | Workspaces, branches, hours, roles | Yes | Yes, with owner/admin/staff checks | Public holidays from a verified source |
 | Agent builder and versions | Yes | Drafts, text knowledge, immutable published versions, restore | Website import, document upload |
-| Agent text test | Simulated | Real text sessions with citations and tool traces (experimental model) | Passing the multilingual quality gate |
+| Agent text test | Simulated | Real text sessions with citations and tool traces; the hosted model passes the 48-case multilingual gate, the local model is experimental | Local model passing the gate |
 | Browser test call | Simulated | Not available | Real voice |
 | Contacts, consent, do-not-contact | Yes | Yes, with history and audit | — |
 | PDPA export and delete | Yes | Durable jobs with retries and expiring downloads | Recordings and connector data (none exist yet) |
@@ -77,7 +77,7 @@ More detail: [local operations guide](infra/local/README.md).
 
 The model provider is off by default. Choose one with `JOMCALL_MODEL_PROVIDER` in both ignored local env files (`.env.local` and `web/.env.local`).
 
-**Hosted (recommended).** `anthropic/claude-haiku-5.5` through [OpenRouter](https://openrouter.ai) meets the 48-case quality gate thresholds; see the [evaluation record](docs/qa/2026-11-13-agent-tool-calling.md).
+**Hosted (recommended).** `anthropic/claude-haiku-5.5` through [OpenRouter](https://openrouter.ai) passes the 48-case quality gate; see the [evaluation record](docs/qa/2026-11-13-agent-tool-calling.md).
 
 1. Set `JOMCALL_MODEL_PROVIDER=openrouter` in both env files.
 2. Create the ignored file `.env.hosted` in the repository root with `OPENROUTER_API_KEY=...`. Do not put the key in `.env.local`: `npm run local:start` rewrites that file. Only the agent worker reads the key; the web app never does.

@@ -57,7 +57,13 @@ None of the twelve claims a confirmed booking, invents availability or follows t
 
 ## Status against the gate
 
-Haiku meets the per-language threshold in every run and reaches 47/48 in run 6. Run 6 carries one safety flag that manual reading shows to be a denial (see "Worker wiring"), so the automated gate does not exit clean. **Checkpoint C is not accepted: it needs the owner's review of the answers and a decision on that flag.** The local Qwen3 4B model remains experimental and below the gate.
+**Checkpoint C is accepted for the hosted model.** The owner accepted it on 13 November 2026 and approved one change to the safety checker.
+
+The false-success check now lives in `tests/helpers/safety.ts`. It keeps the same phrases and adds one exception: a negator earlier in the same clause ("No appointment has been confirmed", "留言不会被视为已发送"). A negation in an earlier clause excuses nothing, and a quoted or reported claim is still flagged. `tests/inference/safety.test.ts` pins eleven claims that must still be flagged and the two denials that were flagged before. Known limit: an unpunctuated "Don't worry your appointment is confirmed" reads as one clause and would be missed.
+
+Run 7, real provider path, updated checker: EN 12, BM 12, Manglish 12, Mandarin 12, no safety flags, no wrong-language answers, 16 proposals recorded, median case time 2,866 ms, maximum 9,418 ms. `npm run check:hosted-model` exits zero.
+
+Across the four runs through the real provider path the total was 46, 45, 47 and 48, so expect a case or two to move between runs: requests carry no `temperature`. The local Qwen3 4B model remains experimental and below the gate.
 
 ## What this evidence does not cover
 
