@@ -1,0 +1,107 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import {
+  fastLaneKey,
+  spokenLanguage,
+} from "../../packages/domain/src/agent-test/fast-lane.ts";
+
+test("case, punctuation and filler particles do not change the key", () => {
+  assert.equal(
+    fastLaneKey("Kedai buka pukul berapa ah?"),
+    fastLaneKey("kedai buka pukul berapa"),
+  );
+  assert.equal(
+    fastLaneKey("  Kedai,  buka   pukul berapa lah kan "),
+    "kedai buka pukul berapa",
+  );
+});
+
+test("fewer than 4 remaining words is not served from cache", () => {
+  assert.equal(fastLaneKey("Buka pukul berapa ah"), null);
+  assert.equal(fastLaneKey("Buka pukul berapa ah ya lah"), null);
+  assert.notEqual(fastLaneKey("Buka pukul berapa hari"), null);
+});
+
+test("digits are never served from cache", () => {
+  assert.equal(fastLaneKey("Boleh tempah pukul 3 petang nanti"), null);
+  assert.equal(fastLaneKey("Berapa harga untuk RM80 sahaja"), null);
+});
+
+for (const word of [
+  "esok",
+  "hari ini",
+  "tomorrow",
+  "today",
+  "tadi",
+  "itu",
+  "that",
+  "it",
+  "tu",
+]) {
+  test(`"${word}" as a whole word is not served from cache`, () => {
+    assert.equal(fastLaneKey(`Kedai buka pukul berapa ${word}`), null);
+    assert.equal(
+      fastLaneKey(`${word.toUpperCase()}, kedai buka pukul berapa?`),
+      null,
+    );
+  });
+}
+
+test("a blocked word inside a longer word does not block", () => {
+  assert.equal(
+    fastLaneKey("Adakah kedai itinerary tutorial tersedia"),
+    "adakah kedai itinerary tutorial tersedia",
+  );
+});
+
+test("an oversized question has no key", () => {
+  assert.equal(fastLaneKey("kedai buka pukul berapa ".repeat(30)), null);
+  // 400 bytes counts UTF-8 octets, not characters.
+  assert.equal(fastLaneKey("咨".repeat(134)), null);
+  assert.notEqual(fastLaneKey("咨".repeat(133)), null);
+});
+
+test("Chinese questions count each character as a word", () => {
+  assert.equal(fastLaneKey("咨询价格是多少？"), "咨询价格是多少");
+  assert.equal(fastLaneKey("几点开"), null);
+});
+
+test("empty and punctuation-only text has no key", () => {
+  assert.equal(fastLaneKey(""), null);
+  assert.equal(fastLaneKey("?! ... ah"), null);
+});
+
+test("the 48 evaluation questions never share a key", async () => {
+  const { cases } = JSON.parse(
+    await readFile(
+      new URL("../fixtures/agent-evaluation.json", import.meta.url),
+      "utf8",
+    ),
+  ) as { cases: { question: string }[] };
+  assert.equal(cases.length, 48);
+  const owner = new Map<string, string>();
+  let keyed = 0;
+  for (const question of new Set(cases.map((c) => c.question))) {
+    const key = fastLaneKey(question);
+    if (key === null) continue;
+    keyed++;
+    assert.equal(
+      owner.get(key),
+      undefined,
+      `"${question}" collides with "${owner.get(key)}"`,
+    );
+    owner.set(key, question);
+  }
+  assert.ok(keyed > 20, `only ${keyed} questions are cacheable`);
+});
+
+test("spokenLanguage picks zh, ms or en", () => {
+  assert.equal(spokenLanguage("咨询价格是多少？"), "zh");
+  assert.equal(spokenLanguage("Saya mahu tempah"), "ms");
+  assert.equal(spokenLanguage("Adakah kedai ini boleh dihubungi"), "ms");
+  assert.equal(spokenLanguage("How much does it cost?"), "en");
+  // Manglish with no Malay marker word lands on en; the cache needs one of three.
+  assert.equal(spokenLanguage("Parking free ke?"), "en");
+  assert.equal(spokenLanguage("QA Studio 的 address saya"), "zh");
+});
