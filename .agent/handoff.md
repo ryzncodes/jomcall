@@ -6,7 +6,7 @@ Branch `feat/knowledge-core`; pull request against `main`, not merged.
 
 **Changed**: design `docs/superpowers/specs/2026-11-14-knowledge-core-design.md`; migration `20261114200000_knowledge_core.sql`; packs in `packages/domain/src/packs/`; `packages/domain/src/knowledge/` (text, snapshot, prompt, tools, routes); `packages/contracts/src/knowledge.ts`; `packages/inference/src/embedding.ts` and budget; `engine/src/agent/brain.ts` (core option), `runner.ts`, `voice-turn.ts`, `repository.ts`; privacy export; web tab `web/components/core/knowledge-core.tsx`.
 
-**Verified**: see the pull request body for counts (typecheck, test:guards, db:verify-migrations, check:core, builds). Migration was applied to the shared local database by hand, without a `schema_migrations` row.
+**Verified** (2026-11-14, after merging WhatsApp, phone line and knowledge spike): `typecheck` clean; `test:guards` 23/23; `test:offline` 199 tests, 198 pass, 1 skipped; `check:core` 331 tests, 329 pass, 0 fail, 2 skipped (port 54633 busy); `db:verify-migrations` passed (RLS tables: 43); `build:local` and `build:mock` pass. Migration was applied to the shared local database by hand, without a `schema_migrations` row.
 
 **Not verified / next**: typed and spoken 48-case gates not re-run (cost); web tab not opened in a browser; WhatsApp and phone get rules and facts but not the catalogue tool, gap log or hours; document import, the interview and setup screens are the next piece.
 

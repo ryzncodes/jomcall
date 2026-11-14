@@ -8,6 +8,7 @@ import {
   validNamespace,
 } from "../../../packages/contracts/src/hosting.ts";
 import type { ModelClient } from "../../../packages/inference/src/index.ts";
+import { inputBudget } from "../../../packages/inference/src/budget.ts";
 import {
   configuredProvider,
   createModelClient,
@@ -224,6 +225,8 @@ export class WhatsAppWorker {
       history: claim.history ?? [],
       resources: claim.resources ?? [],
       access,
+      // Knowledge-core rules and facts fit the pinned model's input budget.
+      budget: inputBudget(config?.identity ?? null),
     });
     // A real customer must never be told something was done when it was not.
     if (claimsFalseSuccess(answer.text)) throw Error("UNSAFE_ANSWER");

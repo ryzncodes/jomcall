@@ -780,3 +780,59 @@
   max-width: 100%;
   overflow: hidden;
 }
+
+/* Knowledge core editor */
+.core-hint {
+  color: var(--secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px 0 16px;
+}
+.core-check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-height: 44px;
+  padding: 10px 0;
+}
+.core-check input {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.core-check span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.core-check small {
+  color: var(--secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.core-list {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+}
+.core-list li {
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 44px;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.core-list li > button {
+  flex-shrink: 0;
+  min-height: 44px;
+  text-decoration: underline;
+}
+.knowledge-core section + section {
+  border-top: 1px solid var(--line);
+  margin-top: 28px;
+  padding-top: 24px;
+}
