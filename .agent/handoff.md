@@ -1,5 +1,29 @@
 # Handoff
 
+## 2026-11-14 — billing: prepaid MYR wallet (sub-project 5, partial)
+
+Branch `feat/billing-wallet`, pull request open against `main`, not merged.
+
+**Changed**
+- Migrations `20261114150000_billing_wallet.sql` and `20261114150100_billing_wallet_fixes.sql`: append-only ledger, usage events, versioned prices, top-ups, provider events, receipts. Writes only through `app_private` functions owned by `nologin` role `jomcall_billing`; triggers refuse update, delete and truncate.
+- `packages/billing`: `recordUsage` and `walletState` for other services; provider interface; Billplz client (never run against Billplz); local-only fake that signs Billplz-format callbacks.
+- Routes `/api/v1/billing/*`, webhook `POST /api/billing/webhook/<provider>`, local wallet screen, `npm run billing:simulate | billing:reconcile | billing:admin`.
+- Docs: `docs/research/payment-providers-malaysia.md`, `docs/superpowers/specs/2026-11-14-billing-design.md`.
+
+**Verified**
+- `npm run check:billing`: 15 tests (8 unit, 7 against the local database through the API) pass. See the pull request for the full command list and results.
+- Both Billplz documentation signature examples reproduce exactly.
+
+**Not verified**
+- No real provider call, no merchant account, no browser check of the wallet screen (port 4182 was in use by another session).
+- Callback delivery from the internet (needs the hosted deployment).
+
+**Next**
+1. Owner: approve a payment provider as an outbound service, then follow the checklist in the research note, section 6.
+2. Phone line and WhatsApp sessions: call `recordUsage` after the provider confirms a call or conversation, and `walletState` before starting a new one.
+3. Owner: final prices (new `billing_price` version).
+4. On a database where the billing migration is not yet applied: run `npm run db:migrate:local` before `npm run db:verify-migrations`, or drop the stray `jomcall_billing` role first.
+
 ## 2026-11-14 — browser voice call, milestone A
 
 Branch `feat/voice-milestone-a` (builds on PR #6; not merged, not pushed).
