@@ -50,10 +50,17 @@ export type CoreToolResult =
 
 export const BAD_LOOKUP_NEXT =
   "The lookup needs an item, a code or a model (item up to 200 characters, code up to 80, model up to 200). Ask the caller which item they mean, or say you will ask staff and take a message.";
+// take_message only records a note for staff to review, so the reply must not
+// say it was sent or passed on: claimsFalseSuccess blocks that wording on
+// WhatsApp and on the spoken path.
+const NOTED_WORDING =
+  " Afterwards tell the customer their question is noted for staff to answer. Never say it was sent, passed on, forwarded or delivered.";
 const NOT_FOUND_NEXT =
-  "Not in the catalogue. Do not suggest a price. Say you will ask staff, then call take_message with unanswered true.";
+  "Not in the catalogue. Do not suggest a price. Say you will ask staff, then call take_message with unanswered true." +
+  NOTED_WORDING;
 const NO_EVIDENCE_NEXT =
-  "Nothing relevant found. Do not guess. Say you will ask staff, then call take_message with unanswered true.";
+  "Nothing relevant found. Do not guess. Say you will ask staff, then call take_message with unanswered true." +
+  NOTED_WORDING;
 
 export const coreToolRules =
   " lookup_catalogue {\"item\",\"code\",\"fits\"} for prices, stock and items in the catalogue (use \"\" for an unknown argument; code is a part number or code the customer said, fits is a model or size); take_message {\"text\",\"unanswered\"}: unanswered is true when you are taking the message because the business's knowledge did not answer the question.";
