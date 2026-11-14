@@ -105,38 +105,53 @@ These are summaries of official guidance, not tax advice. The owner should confi
   - The receipt screen says it is a receipt, not a tax invoice.
   - Adding SST or MyInvois submission later is a column change and one job, not a redesign.
 
-## 5. Pricing check against measured cost
+## 5. Pricing check against measured cost (price table version 2)
+
+Version 2 adds monthly plans (billing design section 12). Every figure is an owner placeholder:
+- **Starter:** RM49 a month, one number, 100 minutes included, then RM0.32 a minute.
+- **Growth:** RM129 a month, one number, 400 minutes included, then RM0.32 a minute. The WhatsApp agent is included; Meta bills its message fees to the business directly.
+- **Pay as you go:** no fee, no number, RM0.32 a minute.
+
+Version 1 (usage only) stays in the price table's history.
 
 Assumptions (labelled because they are not measured here):
 - USD 1 = RM4.25. This is the rate implied by `docs/research/phone-line-options.md`.
 - Server, database and support costs are excluded.
 - Speech and model fees are about USD 0.013 per spoken minute (`docs/qa/2026-11-14-voice-milestone-a.md`), which is about RM0.055.
-- Inbound telephony per minute comes from `docs/research/phone-line-options.md`:
-  - Plivo: USD 0.015, about RM0.064.
-  - Twilio: USD 0.0278, about RM0.118.
-  - Local SIP providers (SIPPALS, INVITE): inbound not published; BeONE states inbound free.
+- Telephony comes from `docs/research/phone-line-options.md`:
+  - Local SIP: SIPPALS charges RM10 to RM49 a month for a number; INVITE charges RM50 a month. Inbound per-minute is not published; it is taken as free, as BeONE states for its own service. **This assumption is unconfirmed.**
+  - Plivo: number USD 4.00 a month (about RM17); inbound USD 0.015 a minute (about RM0.064).
+  - Twilio: number USD 4.00 a month (about RM17); inbound USD 0.0278 a minute (about RM0.118).
+- Curlec fee on the money that pays for the month:
+  - The business tops up exactly the month's bill in one FPX payment.
+  - The fee is 1.5% with a RM1 minimum, plus 8% SST on the fee. Curlec's page prints "18% GST", so the tax rate is unconfirmed.
+  - Several smaller top-ups cost more, because each one pays at least RM1.
 
-The only public price today is the pricing page: RM0.32 per voice minute and 5 sen per message (`web/components/public-pages.tsx`). There are no plans, only usage. This branch's price table version 1 keeps RM0.32 per minute. It meters WhatsApp per conversation at 15 sen and typed turns at 2 sen. Those two figures are placeholders for the owner, because Meta's current Malaysian conversation price and the per-turn model cost were not measured here.
+Monthly margin per business, one number, plan fee plus any overage. Each cell shows margin, then margin as a share of revenue.
 
-Margin per voice minute at RM0.32:
+| Plan | Use of included minutes | Revenue | Curlec fee | Local SIP, RM10 number | Local SIP, RM50 number | Plivo | Twilio |
+|---|---|---|---|---|---|---|---|
+| Starter | 50% (50 min) | RM49.00 | RM1.08 | RM35.17 (72%) | −RM4.83 (−10%) | RM24.98 (51%) | RM22.26 (45%) |
+| Starter | 100% (100 min) | RM49.00 | RM1.08 | RM32.42 (66%) | −RM7.58 (−15%) | RM19.05 (39%) | RM13.61 (28%) |
+| Starter | 150% (150 min) | RM65.00 | RM1.08 | RM45.67 (70%) | RM5.67 (9%) | RM29.11 (45%) | RM20.95 (32%) |
+| Growth | 50% (200 min) | RM129.00 | RM2.09 | RM105.91 (82%) | RM65.91 (51%) | RM86.16 (67%) | RM75.28 (58%) |
+| Growth | 100% (400 min) | RM129.00 | RM2.09 | RM94.91 (74%) | RM54.91 (43%) | RM62.41 (48%) | RM40.65 (32%) |
+| Growth | 150% (600 min) | RM193.00 | RM3.13 | RM146.87 (76%) | RM106.87 (55%) | RM101.62 (53%) | RM68.98 (36%) |
 
-| Line | Cost per minute | Margin per minute | Margin |
-|---|---|---|---|
-| Local SIP, free inbound | RM0.055 | RM0.265 | 83% |
-| Plivo | RM0.119 | RM0.201 | 63% |
-| Twilio | RM0.173 | RM0.147 | 46% |
+Pay as you go has no number, so there is no telephony cost; browser and typed tests run through the local LiveKit server. At RM0.32 a minute against RM0.055 cost, after one Curlec top-up for the month:
 
-Payment fees reduce this further, per top-up (Billplz FPX RM1.25 + 8% SST = RM1.35):
+| Minutes | Revenue | Margin |
+|---|---|---|
+| 50 | RM16.00 | RM12.17 (76%) |
+| 100 | RM32.00 | RM25.42 (79%) |
+| 300 | RM96.00 | RM77.94 (81%) |
 
-| Top-up | Fee | Share of top-up | Margin left on Plivo minutes |
-|---|---|---|---|
-| RM20 | RM1.35 | 6.8% | about 56% |
-| RM50 | RM1.35 | 2.7% | about 60% |
-| RM100 | RM1.35 | 1.4% | about 62% |
-
-- **The number itself is not covered by per-minute pricing.** A Malaysian number costs RM10 to RM49 a month locally, or about RM17 on Plivo or Twilio. A business taking 300 minutes a month pays RM96 in usage, so a RM17 number takes 18% of that revenue. A business taking 30 minutes pays RM9.60 and loses money on the number.
-- **Recommendation:** add a monthly number fee (or a monthly minimum) when numbers go live. Set the minimum top-up at RM20 (the code's limit is RM10 to RM5,000; the screen offers RM20, RM50, RM100 and RM200).
-- **What the cost figures leave out.** The voice cost comes from one measured run. Long calls with tool use cost more model tokens. Re-check after the first real calls.
+Findings:
+- **Starter does not cover a RM50-a-month local number.** It loses money up to its included minutes. Starter works on a number of about RM10 to RM20, or on Plivo or Twilio. If the only local provider that delivers costs RM50, raise the Starter fee or include fewer minutes.
+- **The number dominates Starter's cost.** On Plivo, the number is RM17 of RM30 total cost at 100 minutes.
+- **Overage protects margin.** Every plan earns more at 150% than at 100%, because RM0.32 a minute is well above every per-minute cost.
+- **Excluded costs.** Server, database, support, forwarding legs paid by the business, and WhatsApp agent model cost on Growth are not in the table. The WhatsApp agent fee per conversation is a 15-sen placeholder that offsets the model cost; Meta's own fees are not JomCall's.
+- **Single measurement.** The voice cost comes from one measured run. Long calls with tool use cost more model tokens. Re-check after the first real calls.
 
 ## 6. Owner checklist, in order
 
