@@ -6,11 +6,14 @@ import {
   appOrigin,
   databaseConnection,
   isLoopbackHost,
+  cloudflareMailSettings,
   liveKitUrlProblem,
+  mailProvider,
   mailSettings,
   queueNamespace,
   serviceSecret,
   supabaseUrl,
+  turnstileSettings,
   voiceListen,
   type Env,
 } from "./hosting.ts";
@@ -23,6 +26,7 @@ export const SERVICES = [
   "livekit",
   "caddy",
   "release",
+  "backup",
 ] as const;
 export type Service = (typeof SERVICES)[number];
 
@@ -36,6 +40,9 @@ export type Setting = {
 };
 
 const voiceOn = (env: Env) => env.JOMCALL_VOICE_PROVIDER === "hosted";
+const cloudflareMail = (env: Env) =>
+  env.JOMCALL_MAIL_PROVIDER?.trim() === "cloudflare";
+const smtpMail = (env: Env) => !cloudflareMail(env);
 
 export const SETTINGS: Setting[] = [
   // --- Shared -------------------------------------------------------------
@@ -146,6 +153,22 @@ export const SETTINGS: Setting[] = [
     required: (env) => voiceOn(env) || env.JOMCALL_MODE === "hosted",
     description: "LiveKit API secret (matches LIVEKIT_KEYS)",
   },
+  {
+    name: "TURNSTILE_SITE_KEY",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional Cloudflare Turnstile site key for sign-up and login; set both Turnstile keys or neither",
+  },
+  {
+    name: "TURNSTILE_SECRET_KEY",
+    services: ["web"],
+    secret: true,
+    required: false,
+    description:
+      "Optional Turnstile secret key, verified server-side; set both Turnstile keys or neither",
+  },
   // --- Engine -------------------------------------------------------------
   {
     name: "WORKER_DATABASE_URL",
@@ -161,33 +184,70 @@ export const SETTINGS: Setting[] = [
       "jomcall_queue login, session connection (never the transaction pooler)",
   },
   {
+    name: "JOMCALL_MAIL_PROVIDER",
+    services: ["engine"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: smtp (default) or cloudflare (Cloudflare Email Service REST API)",
+  },
+  {
+    name: "CLOUDFLARE_ACCOUNT_ID",
+    services: ["engine", "backup"],
+    secret: false,
+    required: (env) => cloudflareMail(env) || env.BACKUP_ENABLED === "1",
+    description:
+      "32-hex Cloudflare account ID (email sending and the R2 endpoint)",
+  },
+  {
+    name: "CLOUDFLARE_EMAIL_API_TOKEN",
+    services: ["engine"],
+    secret: true,
+    required: cloudflareMail,
+    description:
+      'API token with only "Email Sending: Edit" (when JOMCALL_MAIL_PROVIDER=cloudflare)',
+  },
+  {
+    name: "CLOUDFLARE_EMAIL_FROM",
+    services: ["engine"],
+    secret: false,
+    required: cloudflareMail,
+    description:
+      "Sender address on the onboarded domain, e.g. hello@example.com (when cloudflare)",
+  },
+  {
     name: "SMTP_HOST",
     services: ["engine"],
     secret: false,
-    description: "Email provider SMTP host",
+    required: smtpMail,
+    description: "Email provider SMTP host (when JOMCALL_MAIL_PROVIDER=smtp)",
   },
   {
     name: "SMTP_PORT",
     services: ["engine"],
     secret: false,
+    required: smtpMail,
     description: "465 (TLS) or 587 (STARTTLS)",
   },
   {
     name: "SMTP_USER",
     services: ["engine"],
     secret: false,
+    required: smtpMail,
     description: "SMTP login name",
   },
   {
     name: "SMTP_PASSWORD",
     services: ["engine"],
     secret: true,
+    required: smtpMail,
     description: "SMTP password or API key",
   },
   {
     name: "SMTP_FROM",
     services: ["engine"],
     secret: false,
+    required: smtpMail,
     description: "Sender, e.g. JomCall <hello@example.com> (SPF/DKIM set up)",
   },
   // --- Agent --------------------------------------------------------------
@@ -283,10 +343,10 @@ export const SETTINGS: Setting[] = [
   // --- Release job (migration runner, owner only) -------------------------
   {
     name: "HOSTED_TARGET",
-    services: ["release"],
+    services: ["release", "backup"],
     secret: false,
     description:
-      "staging or prod; must equal the --target given to the migration runner",
+      "staging or prod; must equal the --target given to the migration runner or backup job",
   },
   {
     name: "HOSTED_ADMIN_DATABASE_URL",
@@ -318,6 +378,46 @@ export const SETTINGS: Setting[] = [
     services: ["release"],
     secret: true,
     description: "64 hex characters for jomcall_agent",
+  },
+  // --- Backup job (nightly encrypted dump to R2, owner's host) ------------
+  {
+    name: "BACKUP_ENABLED",
+    services: ["backup"],
+    secret: false,
+    description: "1 to allow the backup job to run (anything else refuses)",
+  },
+  {
+    name: "BACKUP_DATABASE_URL",
+    services: ["backup"],
+    secret: true,
+    description:
+      "Login that may read every table (session connection, TLS); never given to a service",
+  },
+  {
+    name: "BACKUP_ENCRYPTION_KEY",
+    services: ["backup"],
+    secret: true,
+    description:
+      "64 hex characters; AES-256-GCM key, kept offline too: without it no dump can be restored",
+  },
+  {
+    name: "R2_BUCKET",
+    services: ["backup"],
+    secret: false,
+    description: "R2 bucket name for dumps, e.g. jomcall-backups-staging",
+  },
+  {
+    name: "R2_ACCESS_KEY_ID",
+    services: ["backup"],
+    secret: false,
+    description:
+      "R2 API token Access Key ID (Object Read & Write, this bucket only)",
+  },
+  {
+    name: "R2_SECRET_ACCESS_KEY",
+    services: ["backup"],
+    secret: true,
+    description: "R2 API token Secret Access Key",
   },
 ];
 
@@ -390,6 +490,7 @@ export function readiness(service: Service, env: Env): Finding[] {
   if (["web", "engine", "agent"].includes(service))
     check("JOMCALL_QUEUE_NAMESPACE", () => queueNamespace(hostedEnv));
   if (service === "web") {
+    check("TURNSTILE_SITE_KEY", () => turnstileSettings(hostedEnv));
     check("APP_ORIGIN", () => appOrigin(hostedEnv));
     check("SUPABASE_URL", () => supabaseUrl(hostedEnv));
     database("APP_DATABASE_URL");
@@ -406,8 +507,18 @@ export function readiness(service: Service, env: Env): Finding[] {
     database("WORKER_DATABASE_URL");
     database("QUEUE_DATABASE_URL");
     hex64("INVITATION_KEY");
-    attempt(findings, "SMTP_HOST", () => {
-      if (
+    attempt(findings, "JOMCALL_MAIL_PROVIDER", () => {
+      if (mailProvider(hostedEnv) === "cloudflare") {
+        if (
+          ![
+            "CLOUDFLARE_ACCOUNT_ID",
+            "CLOUDFLARE_EMAIL_API_TOKEN",
+            "CLOUDFLARE_EMAIL_FROM",
+            "APP_ORIGIN",
+          ].some((n) => missing.has(n))
+        )
+          cloudflareMailSettings(hostedEnv);
+      } else if (
         ![
           "SMTP_HOST",
           "SMTP_PORT",
@@ -466,6 +577,26 @@ export function readiness(service: Service, env: Env): Finding[] {
       "HOSTED_AGENT_PASSWORD",
     ])
       hex64(name);
+  }
+  if (service === "backup") {
+    check("BACKUP_ENABLED", () => {
+      if (env.BACKUP_ENABLED !== "1") throw Error("BACKUP_DISABLED");
+    });
+    check("HOSTED_TARGET", () => {
+      if (!["staging", "prod"].includes(env.HOSTED_TARGET ?? ""))
+        throw Error("INVALID_TARGET");
+    });
+    database("BACKUP_DATABASE_URL");
+    hex64("BACKUP_ENCRYPTION_KEY");
+    check("CLOUDFLARE_ACCOUNT_ID", () => {
+      if (!/^[a-f0-9]{32}$/.test(env.CLOUDFLARE_ACCOUNT_ID ?? ""))
+        throw Error("INVALID_ACCOUNT_ID");
+    });
+    check("R2_BUCKET", () => {
+      // R2 bucket names: lowercase letters, digits and hyphens, 3-63 long.
+      if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(env.R2_BUCKET ?? ""))
+        throw Error("INVALID_BUCKET");
+    });
   }
   return findings;
 }

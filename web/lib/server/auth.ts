@@ -9,6 +9,8 @@ import {
   AppError,
   type Identity,
 } from "../../../packages/contracts/src/index.ts";
+import { turnstileSettings } from "../../../packages/contracts/src/hosting.ts";
+import { verifyTurnstile } from "../../../packages/contracts/src/turnstile.ts";
 import { appConfig } from "./config.ts";
 import { database } from "./services.ts";
 import { cookie, setCookie, respond, failure, readBody } from "./http.ts";
@@ -104,7 +106,7 @@ export async function handleAuth(request: Request) {
     if (request.method !== "POST")
       throw new AppError("METHOD_NOT_ALLOWED", 405);
     requireMutation(request);
-    const body = await readBody(request, 16384);
+    let body = await readBody(request, 16384);
     if (["login", "signup", "forgot-password"].includes(action)) {
       const now = Date.now();
       // Local mode keeps one bucket per action. On the internet that would let
@@ -120,6 +122,26 @@ export async function handleAuth(request: Request) {
         rates.set(bucket, rate);
       }
       if (++rate.count > 10) throw new AppError("RATE_LIMITED", 429);
+    }
+    if (action === "signup" || action === "login") {
+      // Hosted mode with both Turnstile keys set: the token must verify before
+      // anything reaches the auth service. Otherwise the field is ignored.
+      const { turnstileToken, ...rest } = (body ?? {}) as Record<
+        string,
+        unknown
+      >;
+      body = rest;
+      const turnstile = turnstileSettings();
+      if (turnstile)
+        try {
+          await verifyTurnstile(turnstile, {
+            token: turnstileToken,
+            action,
+            remoteip: clientAddress(request),
+          });
+        } catch {
+          throw new AppError("VERIFICATION_FAILED", 403);
+        }
     }
     if (action === "signup") {
       const value = credentials.parse(body);

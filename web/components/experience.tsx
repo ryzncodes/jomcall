@@ -19,6 +19,8 @@ const Context = createContext<{
   theme: Theme;
   href: (path: string) => string;
   setTheme: (theme: Theme) => void;
+  // Hosted mode with Turnstile configured; absent everywhere else.
+  turnstileSiteKey?: string;
 }>({
   mode: "mock",
   t: en,
@@ -72,8 +74,10 @@ export function Experience({
   initialTheme,
   screen,
   mode = "mock",
+  turnstileSiteKey,
 }: {
   mode?: "mock" | "local" | "hosted";
+  turnstileSiteKey?: string;
   locale: Locale;
   initialTheme: Theme;
   screen:
@@ -134,7 +138,15 @@ export function Experience({
   };
   return (
     <Context.Provider
-      value={{ mode, t, locale, theme, href, setTheme: updateTheme }}
+      value={{
+        mode,
+        t,
+        locale,
+        theme,
+        href,
+        setTheme: updateTheme,
+        turnstileSiteKey,
+      }}
     >
       <MotionConfig reducedMotion="user">
         <div

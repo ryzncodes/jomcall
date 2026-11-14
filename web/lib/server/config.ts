@@ -7,9 +7,19 @@ import {
   cookieNames,
   isHosted,
   supabaseUrl,
+  turnstileSettings,
 } from "../../../packages/contracts/src/hosting.ts";
 export function mode() {
   return parseMode(process.env.JOMCALL_MODE);
+}
+// Public site key for the sign-up and login widget, hosted mode only. A broken
+// Turnstile setting still renders the page; the server then refuses sign-in.
+export function turnstileSiteKey(): string | undefined {
+  try {
+    return turnstileSettings()?.siteKey;
+  } catch {
+    return undefined;
+  }
 }
 // The real application runs in `local` and `hosted` mode. Mock mode has no
 // server-side records, and nothing here ever falls back to it.
