@@ -237,6 +237,17 @@
   align-items: center;
   font-size: 13px;
 }
+/* Links and the current step share one box, so they sit on one line. */
+.core-steps > a,
+.core-steps > span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  font-size: 13px;
+}
+.core-steps > span {
+  font-weight: 600;
+}
 .core-agent-aside {
   position: sticky;
   top: 24px;

@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Room, RoomEvent, Track } from "livekit-client";
 import { Microphone, Stop } from "@phosphor-icons/react";
@@ -253,8 +254,12 @@ export default function VoiceTest({
     ? w("Checking voice readiness…", "Menyemak kesediaan suara…")
     : !voice.configured
       ? w(
-          "Voice testing is not set up on this computer.",
-          "Ujian suara belum disediakan pada komputer ini.",
+          HOSTED
+            ? "Voice testing is not set up yet."
+            : "Voice testing is not set up on this computer.",
+          HOSTED
+            ? "Ujian suara belum disediakan."
+            : "Ujian suara belum disediakan pada komputer ini.",
         ) + (voice.reason ? " (" + voice.reason + ")" : "")
       : closed
         ? w(
@@ -364,8 +369,12 @@ export default function VoiceTest({
       {problem === "disabled" && (
         <p className="storage-warning" role="alert">
           {w(
-            "Voice testing is turned off on this computer.",
-            "Ujian suara dimatikan pada komputer ini.",
+            HOSTED
+              ? "Voice testing is turned off."
+              : "Voice testing is turned off on this computer.",
+            HOSTED
+              ? "Ujian suara dimatikan."
+              : "Ujian suara dimatikan pada komputer ini.",
           )}
         </p>
       )}

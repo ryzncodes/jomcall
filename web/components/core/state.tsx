@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { ZodError } from "zod";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
@@ -103,12 +104,20 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Tersedia dalam fasa akan datang.",
     ],
     AUTH_UNAVAILABLE: [
-      "Local sign-in service unavailable. Start local services and retry.",
-      "Perkhidmatan log masuk setempat tiada. Mulakan perkhidmatan dan cuba lagi.",
+      HOSTED
+        ? "Sign-in is unavailable right now. Try again shortly."
+        : "Local sign-in service unavailable. Start local services and retry.",
+      HOSTED
+        ? "Log masuk tidak tersedia sekarang. Cuba lagi sebentar."
+        : "Perkhidmatan log masuk setempat tiada. Mulakan perkhidmatan dan cuba lagi.",
     ],
     DATABASE_UNAVAILABLE: [
-      "Local database unavailable. Start local services and retry.",
-      "Pangkalan data setempat tiada. Mulakan perkhidmatan dan cuba lagi.",
+      HOSTED
+        ? "The service is unavailable right now. Try again shortly."
+        : "Local database unavailable. Start local services and retry.",
+      HOSTED
+        ? "Perkhidmatan tidak tersedia sekarang. Cuba lagi sebentar."
+        : "Pangkalan data setempat tiada. Mulakan perkhidmatan dan cuba lagi.",
     ],
     OFFLINE: [
       "Connection interrupted. Your input is preserved.",
@@ -265,7 +274,10 @@ export function Notice({
     </div>
   ) : saved ? (
     <p className="core-success" role="status">
-      {w("Saved to local workspace.", "Disimpan dalam ruang kerja setempat.")}
+      {w(
+        HOSTED ? "Saved." : "Saved to local workspace.",
+        HOSTED ? "Disimpan." : "Disimpan dalam ruang kerja setempat.",
+      )}
     </p>
   ) : null;
 }

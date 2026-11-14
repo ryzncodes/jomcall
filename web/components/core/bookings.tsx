@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CalendarBlank, Plus, ArrowLeft } from "@phosphor-icons/react";
@@ -63,8 +64,12 @@ export function LocalBookings() {
           "Ruang untuk setiap pelanggan.",
         )}
         description={w(
-          "Requests, confirmed appointments and your team’s availability. Together in one local calendar.",
-          "Permohonan, janji temu disahkan dan ketersediaan pasukan dalam satu kalendar setempat.",
+          HOSTED
+            ? "Requests, confirmed appointments and your team’s availability. Together in one calendar."
+            : "Requests, confirmed appointments and your team’s availability. Together in one local calendar.",
+          HOSTED
+            ? "Permohonan, janji temu disahkan dan ketersediaan pasukan dalam satu kalendar."
+            : "Permohonan, janji temu disahkan dan ketersediaan pasukan dalam satu kalendar setempat.",
         )}
       >
         <button
@@ -252,8 +257,12 @@ export function LocalBookings() {
                 </p>
                 <small>
                   {w(
-                    "Local calendar · no external messages sent",
-                    "Kalendar setempat · tiada mesej luar dihantar",
+                    HOSTED
+                      ? "JomCall calendar · no external messages sent"
+                      : "Local calendar · no external messages sent",
+                    HOSTED
+                      ? "Kalendar JomCall · tiada mesej luar dihantar"
+                      : "Kalendar setempat · tiada mesej luar dihantar",
                   )}
                 </small>
               </div>
@@ -498,8 +507,12 @@ function BookingDetail({
                 {bookingTime(review.booking.start_at, locale, true)}
                 <br />
                 {w(
-                  "This updates your local calendar. No external notification is sent.",
-                  "Ini mengemas kini kalendar setempat. Tiada pemberitahuan luar dihantar.",
+                  HOSTED
+                    ? "This updates your JomCall calendar. No external notification is sent."
+                    : "This updates your local calendar. No external notification is sent.",
+                  HOSTED
+                    ? "Ini mengemas kini kalendar JomCall anda. Tiada pemberitahuan luar dihantar."
+                    : "Ini mengemas kini kalendar setempat. Tiada pemberitahuan luar dihantar.",
                 )}
               </p>
               <div className="core-actions">

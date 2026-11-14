@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { HttpCoreClient } from "@/lib/core/client";
@@ -67,14 +68,21 @@ export function LocalAuth({
           </div>
           <small>
             {w(
-              "Local development · email stays on this computer",
-              "Pembangunan setempat · e-mel kekal di komputer ini",
+              HOSTED
+                ? "Closed beta"
+                : "Local development · email stays on this computer",
+              HOSTED
+                ? "Beta tertutup"
+                : "Pembangunan setempat · e-mel kekal di komputer ini",
             )}
           </small>
         </section>
         <section className="access-form">
           <span className="remaining-chip">
-            {w("Local workspace", "Ruang kerja setempat")}
+            {w(
+              HOSTED ? "Workspace" : "Local workspace",
+              HOSTED ? "Ruang kerja" : "Ruang kerja setempat",
+            )}
           </span>
           <h2>{title}</h2>
           <Notice error={error} />
