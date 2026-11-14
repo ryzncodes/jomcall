@@ -23,6 +23,52 @@ const locationFields = {
     }
   }),
 };
+// The one schedule write: lock the location, check the revision when one is
+// given, refuse if future bookings would be affected, upsert, audit. Closures
+// default to the saved ones, so a caller that only sets hours keeps them.
+export async function writeSchedule(
+  tx: PoolClient,
+  ctx: TenantContext,
+  locationId: string,
+  v: {
+    timezone: string;
+    weekdays: unknown[];
+    closures?: unknown[];
+  },
+  expectedRevision: number | null,
+) {
+  const locked = await tx.query(
+    "select id from app.location where org_id=$1 and id=$2 and archived_at is null for update",
+    [ctx.orgId, locationId],
+  );
+  if (!locked.rowCount) throw new AppError("NOT_FOUND", 404);
+  const prior = (
+    await tx.query(
+      "select revision,closures from app.location_schedule where org_id=$1 and location_id=$2",
+      [ctx.orgId, locationId],
+    )
+  ).rows[0] ?? { revision: 0, closures: [] };
+  if (expectedRevision !== null && prior.revision !== expectedRevision)
+    throw new AppError("CONFLICT", 409);
+  const closures = v.closures ?? prior.closures;
+  await guardFutureBookings(tx, ctx, locationId, undefined, {
+    timezone: v.timezone,
+    weekdays: v.weekdays,
+    closures,
+  } as Parameters<typeof guardFutureBookings>[4]);
+  await tx.query(
+    "insert into app.location_schedule(org_id,location_id,timezone,weekdays,closures)values($1,$2,$3,$4,$5)on conflict(org_id,location_id)do update set timezone=excluded.timezone,weekdays=excluded.weekdays,closures=excluded.closures,revision=app.location_schedule.revision+1",
+    [
+      ctx.orgId,
+      locationId,
+      v.timezone,
+      JSON.stringify(v.weekdays),
+      JSON.stringify(closures),
+    ],
+  );
+  await audit(tx, ctx, "schedule.updated", "location", locationId);
+}
+
 export async function workspaceRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -80,25 +126,7 @@ export async function workspaceRoute(
       "saveSchedule",
       { id, ...v },
       async () => {
-        await tx.query(
-          "select id from app.location where org_id=$1 and id=$2 for update",
-          [ctx.orgId, id],
-        );
-        const prior = await schedule();
-        if (prior.revision !== v.expectedRevision)
-          throw new AppError("CONFLICT", 409);
-        await guardFutureBookings(tx, ctx, id!, undefined, v);
-        await tx.query(
-          "insert into app.location_schedule(org_id,location_id,timezone,weekdays,closures)values($1,$2,$3,$4,$5)on conflict(org_id,location_id)do update set timezone=excluded.timezone,weekdays=excluded.weekdays,closures=excluded.closures,revision=app.location_schedule.revision+1",
-          [
-            ctx.orgId,
-            id,
-            v.timezone,
-            JSON.stringify(v.weekdays),
-            JSON.stringify(v.closures),
-          ],
-        );
-        await audit(tx, ctx, "schedule.updated", "location", id!);
+        await writeSchedule(tx, ctx, id!, v, v.expectedRevision);
         return { ref: { id }, data: await schedule() };
       },
       schedule,

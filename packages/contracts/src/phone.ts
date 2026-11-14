@@ -40,6 +40,11 @@ export type PhoneNumber = {
   revision: number;
   created_at: string;
 };
+export type Channels = {
+  phone: boolean;
+  whatsapp: boolean;
+  integrations: boolean;
+};
 export type PhoneNumbers = {
   items: PhoneNumber[];
   // Whether a telephony provider is configured on the agent side; never a value.

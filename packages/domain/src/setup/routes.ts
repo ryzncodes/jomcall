@@ -1,0 +1,848 @@
+// Guided setup commands: staged answers in app.setup_session / app.setup_item.
+// Every command but applySetup leaves facts, schedules and settings alone;
+// applySetup writes the confirmed items in one transaction and never
+// publishes. Owners and admins only.
+import type { PoolClient } from "pg";
+import {
+  AppError,
+  uuid,
+  type TenantContext,
+} from "../../../contracts/src/index.ts";
+import {
+  setupAnswerInput,
+  setupApplyInput,
+  setupFactPayload,
+  setupItemInput,
+  setupSchedulePayload,
+  setupSettingsPayload,
+  setupStart,
+  type Setup,
+  type SetupApplyResult,
+} from "../../../contracts/src/setup.ts";
+import { LIMITS, factInput } from "../../../contracts/src/knowledge.ts";
+import { audit, command } from "../../../db/src/receipts.ts";
+import { manager } from "../authorization.ts";
+import { savePackFact } from "../knowledge/routes.ts";
+import { enforceCoreLimits } from "../knowledge/snapshot.ts";
+import { writeSchedule } from "../workspace.ts";
+import { basePack, packById, packIds } from "../packs/index.ts";
+import {
+  factKeyOf,
+  missingFacts,
+  questionById,
+  setupQuestions,
+  type SetupQuestion,
+} from "./questions.ts";
+
+const itemColumns = "id,kind,key,payload,source,needs_check,check_reason,state";
+// The staging slot a question fills: a fact key, "schedule" or "settings".
+const questionSlot = (q: SetupQuestion) =>
+  q.kind === "hours"
+    ? "schedule"
+    : q.kind === "first_words"
+      ? "settings"
+      : factKeyOf(q)!;
+// An item belongs to a question when it fills the same slot and, for a fact,
+// under the same pack. A removed item of a dropped pack does not hide a new
+// pack's question on the same key.
+type ItemLike = { kind: string; key: string; payload: unknown };
+const owns = (q: SetupQuestion, i: ItemLike) =>
+  q.kind === "hours"
+    ? i.kind === "schedule"
+    : q.kind === "first_words"
+      ? i.kind === "settings"
+      : i.kind === "fact" &&
+        i.key === factKeyOf(q) &&
+        (i.payload as { packId?: unknown } | null)?.packId ===
+          q.id.split(":")[0];
+const bytes = (v: unknown) =>
+  new TextEncoder().encode(JSON.stringify(v)).length;
+// Whether applySetup could write this item: the same parse apply runs.
+// Catalogue rows are never written by apply, so they are not checked.
+function complete(kind: string, payload: unknown): boolean {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  if (kind === "fact")
+    return (
+      typeof p.packId === "string" &&
+      typeof p.fieldKey === "string" &&
+      (typeof p.value === "string" ? !!p.value.trim() : p.value != null) &&
+      factInput.safeParse({
+        expectedAgentRevision: 1,
+        packId: p.packId,
+        fieldKey: p.fieldKey,
+        title: p.title,
+        value: p.value,
+        language: p.language,
+      }).success
+    );
+  if (kind === "schedule") return setupSchedulePayload.safeParse(p).success;
+  if (kind === "settings") return setupSettingsPayload.safeParse(p).success;
+  return true;
+}
+
+export async function setupRoute(
+  tx: PoolClient,
+  ctx: TenantContext,
+  method: string,
+  path: string,
+  body: unknown,
+  key: string,
+) {
+  const m = path.match(
+    /^\/agents\/([^/]+)\/setup(?:\/(answers|items)\/([^/]+)|\/(apply))?$/,
+  );
+  if (!m) return;
+  const isApply = !!m[4];
+  const isRoot = !m[2] && !isApply;
+  const ok =
+    (isRoot && ["GET", "POST"].includes(method)) ||
+    (isApply && method === "POST") ||
+    (!isRoot && !isApply && method === "PUT");
+  if (!ok) return;
+  manager(ctx);
+  const agentId = uuid.parse(m[1]);
+  const child =
+    m[2] === "items"
+      ? uuid.parse(m[3])
+      : m[3]
+        ? decodeURIComponent(m[3])
+        : null;
+
+  const agent = async () => {
+    const row = (
+      await tx.query(
+        "select id,draft,revision,location_id,packs from app.agent where org_id=$1 and id=$2 for update",
+        [ctx.orgId, agentId],
+      )
+    ).rows[0];
+    if (!row) throw new AppError("NOT_FOUND", 404);
+    return row;
+  };
+  const openSession = async (lock = false) =>
+    (
+      await tx.query(
+        `select * from app.setup_session where org_id=$1 and agent_id=$2 and state='open'${lock ? " for update" : ""}`,
+        [ctx.orgId, agentId],
+      )
+    ).rows[0] as
+      | {
+          id: string;
+          main_pack: string;
+          extra_packs: string[];
+          question_ids: string[];
+          state: "open" | "applied";
+          revision: number;
+        }
+      | undefined;
+
+  // What an item would replace: the confirmed value already on the agent, or
+  // undefined when the target is empty. The review page's conflicts and
+  // applySetup's "kept unless named in replace" both read this.
+  const currentFor = async (i: {
+    kind: string;
+    key: string;
+    payload: unknown;
+  }): Promise<unknown> => {
+    if (i.kind === "fact") {
+      const packId = (i.payload as { packId?: unknown } | null)?.packId;
+      const hit = (
+        await tx.query(
+          "select value from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key=$3 and ($4::text is null or pack_id=$4) limit 1",
+          [ctx.orgId, agentId, i.key, typeof packId === "string" ? packId : null],
+        )
+      ).rows[0];
+      return hit ? hit.value : undefined;
+    }
+    if (i.kind === "schedule") {
+      // The agent's own location, as saved by the schedule screen. A fresh
+      // workspace has no row, or seven empty days: no conflict.
+      const hit = (
+        await tx.query(
+          `select s.timezone,s.weekdays from app.agent a join app.location_schedule s on s.org_id=a.org_id and s.location_id=a.location_id
+           where a.org_id=$1 and a.id=$2`,
+          [ctx.orgId, agentId],
+        )
+      ).rows[0];
+      return hit && (hit.weekdays as unknown[][]).some((d) => d.length)
+        ? { timezone: hit.timezone, weekdays: hit.weekdays }
+        : undefined;
+    }
+    if (i.kind === "settings") {
+      const draft = (
+        await tx.query("select draft from app.agent where org_id=$1 and id=$2", [
+          ctx.orgId,
+          agentId,
+        ])
+      ).rows[0]?.draft as { greeting?: string; aiDisclosure?: string } | undefined;
+      return draft?.greeting?.trim() || draft?.aiDisclosure?.trim()
+        ? { greeting: draft.greeting ?? "", aiDisclosure: draft.aiDisclosure ?? "" }
+        : undefined;
+    }
+    return undefined;
+  };
+
+  // What the agent already holds, so the interview does not ask it again:
+  // confirmed fact keys, "schedule" when the location has saved hours (as
+  // currentFor reads them) and "settings" when the draft has both a greeting
+  // and an AI introduction. Freezing the list and a pack change both use it.
+  const savedSlots = async () => {
+    const out = new Set<string>(
+      (
+        await tx.query(
+          "select field_key from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key is not null",
+          [ctx.orgId, agentId],
+        )
+      ).rows.map((r) => r.field_key as string),
+    );
+    if (
+      (await currentFor({ kind: "schedule", key: "schedule", payload: null })) !==
+      undefined
+    )
+      out.add("schedule");
+    const draft = (
+      await tx.query("select draft from app.agent where org_id=$1 and id=$2", [
+        ctx.orgId,
+        agentId,
+      ])
+    ).rows[0]?.draft as { greeting?: unknown; aiDisclosure?: unknown } | undefined;
+    const said = (v: unknown) => typeof v === "string" && !!v.trim();
+    if (said(draft?.greeting) && said(draft?.aiDisclosure)) out.add("settings");
+    return out;
+  };
+
+  // The one state the whole interview reads: items, the questions still to
+  // ask, required facts still missing, and staged values that would replace
+  // something already confirmed on the agent.
+  // Finish: no open session, the most recent session was applied, and it
+  // was applied after the published version (or nothing is published).
+  const finished = async () =>
+    !!(
+      await tx.query(
+        `select 1 from (select state,updated_at from app.setup_session where org_id=$1 and agent_id=$2 order by created_at desc,id desc limit 1) s
+         join app.agent a on a.org_id=$1 and a.id=$2
+         left join app.agent_version v on v.org_id=a.org_id and v.agent_id=a.id and v.id=a.published_version_id
+         where s.state='applied' and (a.published_version_id is null or s.updated_at>v.created_at)`,
+        [ctx.orgId, agentId],
+      )
+    ).rowCount;
+  const view = async (): Promise<Setup> => {
+    const session = await openSession();
+    if (!session)
+      return {
+        session: null,
+        items: [],
+        questions: [],
+        missing: [],
+        conflicts: [],
+        finish: await finished(),
+      };
+    const rows = (
+      await tx.query(
+        `select ${itemColumns} from app.setup_item where org_id=$1 and session_id=$2 order by created_at,id`,
+        [ctx.orgId, session.id],
+      )
+    ).rows;
+    const items = rows.map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      key: r.key,
+      payload: r.payload,
+      source: r.source,
+      needsCheck: r.needs_check,
+      checkReason: r.check_reason,
+      state: r.state,
+    }));
+    const live = items.filter((i) => i.state !== "removed");
+    const confirmed = (
+      await tx.query(
+        "select field_key from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key is not null",
+        [ctx.orgId, agentId],
+      )
+    ).rows.map((r) => r.field_key as string);
+    const slot = (i: { kind: string; key: string }) =>
+      i.kind === "fact" ? i.key : i.kind === "catalogue_row" ? null : i.kind;
+    // Missing: only live items count as filled.
+    const filled = new Set<string>(confirmed);
+    for (const i of live) if (slot(i)) filled.add(slot(i)!);
+    // A question can name several facts but stores one; every fact in the
+    // fills of an answered frozen question counts as covered.
+    const covered = new Set<string>(filled);
+    for (const id of session.question_ids) {
+      const q = questionById(id);
+      if (q && live.some((i) => owns(q, i)))
+        for (const f of q.fills)
+          if (f.startsWith("facts.")) covered.add(f.slice("facts.".length));
+    }
+    // Hours live in the schedule, not in the opening_hours fact.
+    if (
+      live.some((i) => i.kind === "schedule") ||
+      (await currentFor({ kind: "schedule", key: "schedule", payload: null })) !==
+        undefined
+    )
+      covered.add("opening_hours");
+    const input = {
+      mainPack: session.main_pack,
+      extraPacks: session.extra_packs,
+      filled,
+    };
+    // A fact key shared by two active packs is listed as missing once, under
+    // the pack of its staged item (any state), else of its frozen question,
+    // so "Add now" writes the same row under the same pack.
+    const active = [basePack, session.main_pack, ...session.extra_packs];
+    const prefer = new Map<string, string>();
+    for (const id of session.question_ids) {
+      const q = questionById(id);
+      const k = q?.kind === "fact" ? factKeyOf(q) : null;
+      const p = id.split(":")[0]!;
+      if (k && active.includes(p)) prefer.set(k, p);
+    }
+    for (const i of items) {
+      const p = (i.payload as { packId?: unknown } | null)?.packId;
+      if (i.kind === "fact" && typeof p === "string" && active.includes(p))
+        prefer.set(i.key, p);
+    }
+
+    const conflicts: Setup["conflicts"] = [];
+    const pending = items.filter((i) =>
+      ["pending", "confirmed"].includes(i.state),
+    );
+    for (const i of pending) {
+      const current = await currentFor(i);
+      if (current !== undefined) conflicts.push({ itemId: i.id, current });
+    }
+    return {
+      session: {
+        id: session.id,
+        mainPack: session.main_pack,
+        extraPacks: session.extra_packs,
+        state: session.state,
+        revision: session.revision,
+      },
+      items,
+      // The frozen list, minus every question that has an item in any state
+      // (answered, skipped or applied).
+      questions: session.question_ids
+        .map((id) => questionById(id))
+        .filter(
+          (q): q is SetupQuestion => !!q && !items.some((i) => owns(q, i)),
+        ),
+      missing: missingFacts({ ...input, filled: covered, prefer }),
+      conflicts,
+      finish: false,
+    };
+  };
+  const bump = async (sessionId: string) => {
+    await tx.query(
+      "update app.setup_session set revision=revision+1,updated_at=now() where id=$1",
+      [sessionId],
+    );
+  };
+  const lockedSession = async (expected: number) => {
+    const s = await openSession(true);
+    if (!s) {
+      // Applied in another tab: a conflict, so the screen reloads the view.
+      const applied = await tx.query(
+        "select 1 from app.setup_session where org_id=$1 and agent_id=$2 and state='applied' limit 1",
+        [ctx.orgId, agentId],
+      );
+      if (applied.rowCount) throw new AppError("CONFLICT", 409);
+      throw new AppError("NOT_FOUND", 404);
+    }
+    if (s.revision !== expected) throw new AppError("CONFLICT", 409);
+    return s;
+  };
+
+  if (method === "GET") {
+    const known = await tx.query(
+      "select 1 from app.agent where org_id=$1 and id=$2",
+      [ctx.orgId, agentId],
+    );
+    if (!known.rowCount) throw new AppError("NOT_FOUND", 404);
+    return view();
+  }
+
+  if (isRoot) {
+    const v = setupStart.parse(body);
+    for (const p of [v.mainPack, ...v.extraPacks])
+      if (!packIds.includes(p)) throw new AppError("UNKNOWN_PACK", 422);
+    if (
+      new Set(v.extraPacks).size !== v.extraPacks.length ||
+      v.extraPacks.includes(v.mainPack)
+    )
+      throw new AppError("DUPLICATE_PACK", 422);
+    return command(
+      tx,
+      ctx,
+      key,
+      "setup.start",
+      { agentId, ...v },
+      async () => {
+        await agent();
+        const open = await openSession(true);
+        const saved = await savedSlots();
+        const freeze = () =>
+          setupQuestions({
+            mainPack: v.mainPack,
+            extraPacks: v.extraPacks,
+            filled: new Set(saved),
+          }).map((q) => q.id);
+        if (!open) {
+          // Freeze the interview once, in order.
+          const ids = freeze();
+          await tx.query(
+            "insert into app.setup_session(org_id,agent_id,main_pack,extra_packs,question_ids,created_by) values($1,$2,$3,$4,$5,$6)",
+            [
+              ctx.orgId,
+              agentId,
+              v.mainPack,
+              v.extraPacks,
+              ids,
+              ctx.identity.userId,
+            ],
+          );
+        } else if (
+          open.main_pack !== v.mainPack ||
+          [...open.extra_packs].sort().join() !==
+            [...v.extraPacks].sort().join()
+        ) {
+          const items = (
+            await tx.query(
+              "select id,kind,key,payload,state from app.setup_item where org_id=$1 and session_id=$2",
+              [ctx.orgId, open.id],
+            )
+          ).rows;
+          const active = [basePack, v.mainPack, ...v.extraPacks];
+          // Facts of a pack that is no longer active are dropped.
+          const dropped = new Set<string>();
+          for (const i of items)
+            if (
+              i.kind === "fact" &&
+              i.state !== "applied" &&
+              !active.includes(i.payload?.packId)
+            ) {
+              dropped.add(i.id);
+              await tx.query(
+                "update app.setup_item set state='removed',updated_at=now() where id=$1",
+                [i.id],
+              );
+            }
+          const filled = new Set<string>(saved);
+          for (const i of items) {
+            if (dropped.has(i.id) || i.kind === "catalogue_row") continue;
+            filled.add(i.kind === "fact" ? i.key : i.kind);
+          }
+          // Keep every id that already has an item, then fill the rest of
+          // the 8 slots for the new packs.
+          const kept = open.question_ids.filter((id) => {
+            const q = questionById(id);
+            return q && items.some((i) => owns(q, i));
+          });
+          const fresh = setupQuestions({
+            mainPack: v.mainPack,
+            extraPacks: v.extraPacks,
+            filled,
+          }).filter((q) => !kept.includes(q.id));
+          while (kept.length + fresh.length > 8) {
+            const at = fresh.map((q) => q.kind).lastIndexOf("fact");
+            fresh.splice(at >= 0 ? at : fresh.length - 1, 1);
+          }
+          await tx.query(
+            "update app.setup_session set main_pack=$1,extra_packs=$2,question_ids=$3,revision=revision+1,updated_at=now() where id=$4",
+            [
+              v.mainPack,
+              v.extraPacks,
+              [...kept, ...fresh.map((q) => q.id)],
+              open.id,
+            ],
+          );
+        } else if (open.question_ids.length === 0) {
+          // A session from before the list was stored: freeze it now if
+          // nothing has been answered yet.
+          const any = await tx.query(
+            "select 1 from app.setup_item where org_id=$1 and session_id=$2 limit 1",
+            [ctx.orgId, open.id],
+          );
+          if (!any.rowCount)
+            await tx.query(
+              "update app.setup_session set question_ids=$1,updated_at=now() where id=$2",
+              [freeze(), open.id],
+            );
+        }
+        // Trial credit, once. A savepoint keeps the transaction usable when
+        // it was already claimed; any other failure propagates.
+        await tx.query("savepoint setup_trial");
+        try {
+          await tx.query("select app_private.claim_trial($1)", [ctx.orgId]);
+          await tx.query("release savepoint setup_trial");
+        } catch (e) {
+          await tx.query("rollback to savepoint setup_trial");
+          if ((e as Error).message !== "TRIAL_USED") throw e;
+        }
+        await audit(tx, ctx, "setup.start", "agent", agentId);
+        return { ref: { id: agentId }, data: await view() };
+      },
+      async () => view(),
+    );
+  }
+
+  if (isApply) {
+    const v = setupApplyInput.parse(body);
+    const out = (r: SetupApplyResult) => ({
+      ref: { id: agentId, ...r },
+      data: r,
+    });
+    return command(
+      tx,
+      ctx,
+      key,
+      "setup.apply",
+      { agentId, ...v },
+      async () => {
+        // The agent row lock comes first, as in every other setup command, so
+        // two applies queue and the second finds the session already applied.
+        const a = await agent();
+        // Then the agent's location, before any schedule is read: a schedule
+        // save in progress finishes first, so the keep-or-replace decision
+        // sees its hours. Agent before location, as no path locks them the
+        // other way round; writeSchedule takes the same location lock again.
+        await tx.query(
+          "select id from app.location where org_id=$1 and id=$2 for update",
+          [ctx.orgId, a.location_id],
+        );
+        const session = await openSession(true);
+        if (!session) {
+          const done = await tx.query(
+            "select 1 from app.setup_session where org_id=$1 and agent_id=$2 and state='applied' limit 1",
+            [ctx.orgId, agentId],
+          );
+          if (!done.rowCount) throw new AppError("NOT_FOUND", 404);
+          return out({ agentRevision: a.revision, applied: 0, skipped: [] });
+        }
+        if (session.revision !== v.expectedRevision)
+          throw new AppError("CONFLICT", 409);
+        const replace = new Set(v.replace);
+        const skipped: SetupApplyResult["skipped"] = [];
+        const written: string[] = [];
+        const kept: string[] = [];
+        const items = (
+          await tx.query(
+            `select ${itemColumns} from app.setup_item where org_id=$1 and session_id=$2 and state<>'applied' order by created_at,id for update`,
+            [ctx.orgId, session.id],
+          )
+        ).rows;
+
+        // Decide every item before writing anything.
+        const plan: typeof items = [];
+        for (const i of items) {
+          if (i.state === "removed") {
+            skipped.push({ itemId: i.id, reason: "removed" });
+          } else if (
+            i.kind === "catalogue_row" ||
+            (i.needs_check && i.state === "pending")
+          ) {
+            skipped.push({ itemId: i.id, reason: "unconfirmed" });
+          } else if (
+            (await currentFor(i)) !== undefined &&
+            !replace.has(i.id)
+          ) {
+            // Not named in replace: the owner kept the current value.
+            skipped.push({ itemId: i.id, reason: "conflict" });
+            kept.push(i.id);
+          } else plan.push(i);
+        }
+
+        // Packs merge: what the agent already has first, then the session's
+        // main and extra packs that are new. The base pack stays active on
+        // its own, so "Something else" (main pack = base pack) adds nothing.
+        const wanted = [session.main_pack, ...session.extra_packs].filter(
+          (p) => p !== basePack,
+        );
+        if (wanted.some((p) => !packIds.includes(p)))
+          throw new AppError("UNKNOWN_PACK", 422);
+        const have = a.packs as string[];
+        const packs = [...have, ...wanted.filter((p) => !have.includes(p))];
+        if (packs.length > LIMITS.packs) throw new AppError("KNOWLEDGE_LIMIT", 422);
+        const packsChanged = packs.length !== have.length;
+        if (packsChanged)
+          await tx.query("update app.agent set packs=$1 where id=$2", [
+            packs,
+            agentId,
+          ]);
+
+        let draft = a.draft as Record<string, unknown>;
+        for (const i of plan) {
+          if (i.kind === "fact") {
+            const p = i.payload as Record<string, unknown>;
+            const f = factInput.parse({
+              expectedAgentRevision: 1,
+              packId: p.packId,
+              fieldKey: p.fieldKey,
+              title: p.title,
+              value: p.value,
+              language: p.language,
+            });
+            if (
+              !f.packId ||
+              !f.fieldKey ||
+              !packById(f.packId)?.facts.some((x) => x.key === f.fieldKey)
+            )
+              throw new AppError("UNKNOWN_FIELD", 422);
+            await savePackFact(
+              tx,
+              ctx.orgId,
+              agentId,
+              { ...f, packId: f.packId, fieldKey: f.fieldKey },
+              "interview",
+            );
+          } else if (i.kind === "schedule") {
+            const h = setupSchedulePayload.parse(i.payload);
+            await writeSchedule(tx, ctx, a.location_id, h, null);
+          } else if (i.kind === "settings") {
+            const w = setupSettingsPayload.parse(i.payload);
+            draft = {
+              ...draft,
+              greeting: w.greeting,
+              aiDisclosure: w.aiDisclosure,
+            };
+            await tx.query("update app.agent set draft=$1 where id=$2", [
+              draft,
+              agentId,
+            ]);
+          }
+          written.push(i.id);
+        }
+        if (written.length)
+          await tx.query(
+            "update app.setup_item set state='applied',updated_at=now() where org_id=$1 and id=any($2::uuid[])",
+            [ctx.orgId, written],
+          );
+        if (kept.length)
+          await tx.query(
+            "update app.setup_item set state='removed',updated_at=now() where org_id=$1 and id=any($2::uuid[])",
+            [ctx.orgId, kept],
+          );
+        // The session always closes: the owner chose keep or replace for
+        // every conflict before applying.
+        await tx.query(
+          "update app.setup_session set state='applied',revision=revision+1,updated_at=now() where id=$1",
+          [session.id],
+        );
+
+        let agentRevision = a.revision as number;
+        if (written.length || packsChanged) {
+          await enforceCoreLimits(tx, ctx.orgId, agentId);
+          agentRevision = (
+            await tx.query(
+              "update app.agent set revision=revision+1,updated_at=now() where id=$1 returning revision",
+              [agentId],
+            )
+          ).rows[0].revision;
+        }
+        await audit(tx, ctx, "setup.apply", "agent", agentId, {
+          applied: written.length,
+          skipped: skipped.length,
+        });
+        return out({ agentRevision, applied: written.length, skipped });
+      },
+      async (ref) =>
+        ({
+          agentRevision: ref.agentRevision,
+          applied: ref.applied,
+          skipped: ref.skipped,
+        }) as SetupApplyResult,
+    );
+  }
+
+  if (m[2] === "answers") {
+    const questionId = child as string;
+    const v = setupAnswerInput.parse(body);
+    return command(
+      tx,
+      ctx,
+      key,
+      "setup.answer",
+      { agentId, questionId, ...v },
+      async () => {
+        await agent();
+        const session = await lockedSession(v.expectedRevision);
+        // The question is in the frozen list (answered or not, so an answer
+        // can be changed), or is "missing:<pack>:<field>": a required fact
+        // of an active pack the review page adds. That one is not counted.
+        let question: SetupQuestion | null = session.question_ids.includes(
+          questionId,
+        )
+          ? questionById(questionId)
+          : null;
+        // A "missing:" answer on a key that already has a row keeps that
+        // row's pack (when still active), so a frozen question that owns the
+        // row stays answered. A skip keeps the requested pack, so the skip
+        // rule below never removes another pack's live answer.
+        let keepPack: string | undefined;
+        if (!question && questionId.startsWith("missing:")) {
+          const [, packId, ...rest] = questionId.split(":");
+          const fieldKey = rest.join(":");
+          const active = [basePack, session.main_pack, ...session.extra_packs];
+          const field = active.includes(packId!)
+            ? packById(packId!)?.facts.find((f) => f.key === fieldKey)
+            : undefined;
+          const row = (
+            await tx.query(
+              "select payload->>'packId' as pack from app.setup_item where org_id=$1 and session_id=$2 and kind='fact' and key=$3",
+              [ctx.orgId, session.id, fieldKey],
+            )
+          ).rows[0] as { pack: string | null } | undefined;
+          if (row?.pack && active.includes(row.pack)) keepPack = row.pack;
+          const listed =
+            field?.required &&
+            (!!row ||
+              (await view()).missing.some((x) => x.key === fieldKey));
+          if (listed)
+            question = {
+              id: questionId,
+              kind: "fact",
+              en: field!.label.en,
+              ms: field!.label.ms,
+              fills: ["facts." + fieldKey],
+            };
+        }
+        if (!question) throw new AppError("NOT_FOUND", 404);
+
+        let answer = v.answer;
+        if (answer.kind === "fact" && !answer.text) answer = { kind: "skip" };
+        if (answer.kind !== "skip" && answer.kind !== question.kind)
+          throw new AppError("ANSWER_KIND_MISMATCH", 422);
+
+        const itemKind =
+          question.kind === "hours"
+            ? "schedule"
+            : question.kind === "first_words"
+              ? "settings"
+              : "fact";
+        const itemKey = itemKind === "fact" ? factKeyOf(question)! : itemKind;
+        let payload: Record<string, unknown> = {};
+        if (
+          answer.kind === "fact" ||
+          (answer.kind === "skip" && itemKind === "fact")
+        ) {
+          const packId = question.id.startsWith("missing:")
+            ? ((answer.kind === "skip" ? undefined : keepPack) ??
+              question.id.split(":")[1]!)
+            : question.id.split(":")[0]!;
+          const field = packById(packId)?.facts.find((f) => f.key === itemKey);
+          payload = {
+            packId,
+            fieldKey: itemKey,
+            title: field?.label.en ?? itemKey,
+            ...(answer.kind === "fact"
+              ? { value: answer.text, language: "mixed" }
+              : {}),
+          };
+        } else if (answer.kind === "hours")
+          payload = { timezone: answer.timezone, weekdays: answer.weekdays };
+        else if (answer.kind === "first_words")
+          payload = {
+            greeting: answer.greeting,
+            aiDisclosure: answer.aiDisclosure,
+          };
+        // One row per (session, kind, key): a repeat answer, or an answer
+        // after a skip, updates that row.
+        // A skip never discards a live answer. It marks the row removed only
+        // when the row is the question's own (same pack, its text kept so an
+        // answer or the review can bring it back) or holds no live answer. A
+        // live answer filed under another pack (from "Add now" or the review)
+        // is left as it is.
+        if (answer.kind === "skip")
+          await tx.query(
+            `insert into app.setup_item(org_id,session_id,kind,key,payload,source,state) values($1,$2,$3,$4,$5,'interview','removed')
+             on conflict(session_id,kind,key) do update set
+               payload=case when app.setup_item.payload->>'packId' is not distinct from excluded.payload->>'packId'
+                 or (app.setup_item.state in ('pending','confirmed') and btrim(coalesce(app.setup_item.payload->>'value',''))<>'')
+                 then app.setup_item.payload else excluded.payload end,
+               state=case when app.setup_item.payload->>'packId' is distinct from excluded.payload->>'packId'
+                 and app.setup_item.state in ('pending','confirmed') and btrim(coalesce(app.setup_item.payload->>'value',''))<>''
+                 then app.setup_item.state else 'removed' end,
+               updated_at=now()`,
+            [ctx.orgId, session.id, itemKind, itemKey, JSON.stringify(payload)],
+          );
+        else
+          await tx.query(
+            `insert into app.setup_item(org_id,session_id,kind,key,payload,source) values($1,$2,$3,$4,$5,'interview')
+             on conflict(session_id,kind,key) do update set payload=excluded.payload,source='interview',needs_check=false,check_reason=null,state='pending',updated_at=now()`,
+            [ctx.orgId, session.id, itemKind, itemKey, JSON.stringify(payload)],
+          );
+        await bump(session.id);
+        await audit(tx, ctx, "setup.answer", "agent", agentId, {
+          kind: answer.kind,
+        });
+        return { ref: { id: agentId }, data: await view() };
+      },
+      async () => view(),
+    );
+  }
+
+  // items
+  const v = setupItemInput.parse(body);
+  return command(
+    tx,
+    ctx,
+    key,
+    "setup.item",
+    { agentId, itemId: child, ...v },
+    async () => {
+      await agent();
+      const session = await lockedSession(v.expectedRevision);
+      const item = (
+        await tx.query(
+          `select ${itemColumns} from app.setup_item where org_id=$1 and session_id=$2 and id=$3 for update`,
+          [ctx.orgId, session.id, child],
+        )
+      ).rows[0];
+      if (!item) throw new AppError("NOT_FOUND", 404);
+      if (item.state === "applied") throw new AppError("CONFLICT", 409);
+      if (v.payload === undefined && v.state === undefined)
+        throw new AppError("EMPTY_UPDATE", 422);
+      // Validate per kind; merge into the stored payload so packId and
+      // fieldKey of a fact stay as stored.
+      let merged: unknown = undefined;
+      if (v.payload !== undefined) {
+        const stored = (item.payload ?? {}) as Record<string, unknown>;
+        if (item.kind === "fact")
+          merged = { ...stored, ...setupFactPayload.parse(v.payload) };
+        else if (item.kind === "schedule")
+          merged = { ...stored, ...setupSchedulePayload.parse(v.payload) };
+        else if (item.kind === "settings")
+          merged = { ...stored, ...setupSettingsPayload.parse(v.payload) };
+        else {
+          if (
+            !v.payload ||
+            typeof v.payload !== "object" ||
+            Array.isArray(v.payload)
+          )
+            throw new AppError("INVALID_PAYLOAD", 422);
+          merged = { ...stored, ...(v.payload as object) };
+        }
+        if (bytes(merged) > 8000) throw new AppError("VALUE_TOO_LARGE", 422);
+      }
+      // A pending or confirmed item must be complete for its kind, so apply
+      // never fails on it later (a skipped fact has no value, for example).
+      const state = v.state ?? item.state;
+      if (
+        (state === "pending" || state === "confirmed") &&
+        !complete(item.kind, merged ?? item.payload)
+      )
+        throw new AppError("ITEM_INCOMPLETE", 422);
+      await tx.query(
+        "update app.setup_item set payload=coalesce($1::jsonb,payload),state=coalesce($2,state),updated_at=now() where id=$3",
+        [
+          merged === undefined ? null : JSON.stringify(merged),
+          v.state ?? null,
+          item.id,
+        ],
+      );
+      await bump(session.id);
+      await audit(tx, ctx, "setup.item", "agent", agentId, { itemId: item.id });
+      return { ref: { id: agentId }, data: await view() };
+    },
+    async () => view(),
+  );
+}

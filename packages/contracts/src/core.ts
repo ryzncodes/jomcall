@@ -32,6 +32,7 @@ import {
   phoneNumberUpdate,
   callList,
   type PhoneNumber,
+  type Channels,
   type PhoneNumbers,
   type CallSummary,
   type CallDetail,
@@ -61,6 +62,14 @@ import {
 } from "./whatsapp.ts";
 import { uuid, name, organizationInput, type Role } from "./index.ts";
 import { agentSettings, knowledgeInput, scheduleInput } from "./agent.ts";
+import {
+  setupAnswerInput,
+  setupApplyInput,
+  setupItemInput,
+  setupStart,
+  type Setup,
+  type SetupApplyResult,
+} from "./setup.ts";
 import {
   catalogueInput,
   confirmInput,
@@ -506,6 +515,34 @@ export const commands = {
     confirmInput.extend({ agentId: uuid }),
     out<KnowledgeCore>(),
   ),
+  setup: route("GET", "/agents/:id/setup", id, out<Setup>()),
+  startSetup: route(
+    "POST",
+    "/agents/:id/setup",
+    setupStart.extend({ id: uuid }),
+    out<Setup>(),
+  ),
+  answerSetup: route(
+    "PUT",
+    "/agents/:id/setup/answers/:questionId",
+    setupAnswerInput.extend({
+      id: uuid,
+      questionId: z.string().regex(/^[a-z][a-z0-9_:-]{0,80}$/),
+    }),
+    out<Setup>(),
+  ),
+  saveSetupItem: route(
+    "PUT",
+    "/agents/:id/setup/items/:itemId",
+    setupItemInput.extend({ id: uuid, itemId: uuid }),
+    out<Setup>(),
+  ),
+  applySetup: route(
+    "POST",
+    "/agents/:id/setup/apply",
+    setupApplyInput.extend({ id: uuid }),
+    out<SetupApplyResult>(),
+  ),
   knowledgeGaps: route("GET", "/agents/:id/gaps", id, out<KnowledgeGap[]>()),
   resolveGap: route(
     "POST",
@@ -602,6 +639,7 @@ export const commands = {
     id,
     out<Topup>(),
   ),
+  channels: route("GET", "/channels", empty, out<Channels>()),
   phoneNumbers: route("GET", "/phone-numbers", empty, out<PhoneNumbers>()),
   createPhoneNumber: route(
     "POST",

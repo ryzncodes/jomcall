@@ -2,6 +2,7 @@
 import { HOSTED } from "@/lib/hosted";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { HttpCoreClient, CoreError } from "@/lib/core/client";
 import type { Session, Bootstrap } from "../../../packages/contracts/src/core";
 import { useExperience } from "../experience";
@@ -18,6 +19,17 @@ import { LocalSettings, LocalHours } from "./settings";
 import { LocalBilling } from "./billing";
 import { LocalPhoneNumbers, LocalCalls } from "./phone";
 import { LocalWhatsApp } from "./whatsapp";
+import {
+  businessTypeText,
+  businessTypes,
+} from "../../../packages/domain/src/setup/business-types";
+// The guided setup flow exists only in the local and hosted builds. The mode
+// is a build-time constant, so the mock bundle drops this import.
+const SetupFlow =
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "local" ||
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
+    ? dynamic(() => import("./setup/flow").then((m) => m.SetupFlow))
+    : null;
 export function LocalApp({ screen }: { screen: string }) {
   return ["login", "signup", "forgot", "invite"].includes(screen) ? (
     <LocalAuth mode={screen as "login" | "signup" | "forgot" | "invite"} />
@@ -35,7 +47,8 @@ function LocalWorkspace({ screen }: { screen: string }) {
     [error, setError] = useState<unknown>(),
     [epoch, setEpoch] = useState(0),
     [creating, setCreating] = useState(false),
-    [creationError, setCreationError] = useState<unknown>();
+    [creationError, setCreationError] = useState<unknown>(),
+    [typeId, setTypeId] = useState("");
   const client = useMemo(() => new HttpCoreClient({ orgId }), [orgId]);
   useEffect(() => {
     let alive = true;
@@ -133,6 +146,7 @@ function LocalWorkspace({ screen }: { screen: string }) {
   return (
     <WorkspaceChrome
       mode="local"
+      orgId={orgId}
       active={active}
       workspace={{
         name: workspace?.workspace.name,
@@ -185,7 +199,10 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 try {
                   const result = await client.execute("createOrganization", {
                     name: String(f.get("name")),
-                    businessType: String(f.get("businessType")),
+                    businessType: businessTypeText(
+                      String(f.get("businessType")),
+                      String(f.get("businessTypeOther") ?? ""),
+                    ),
                     primaryLocationName: String(f.get("branch")),
                   });
                   switchWorkspace(result.orgId);
@@ -203,12 +220,40 @@ function LocalWorkspace({ screen }: { screen: string }) {
               <Field
                 label={w("Business type", "Jenis perniagaan")}
                 hint={w(
-                  "Describe your business in your own words.",
-                  "Terangkan jenis perniagaan anda.",
+                  "Pick the closest match. Setup asks questions for this type.",
+                  "Pilih yang paling hampir. Persediaan akan bertanya soalan untuk jenis ini.",
                 )}
               >
-                <input name="businessType" required maxLength={80} />
+                {/* The English label is stored (or, for "Something else", the
+                    owner's own words), so setup can preselect the type. */}
+                <select
+                  name="businessType"
+                  required
+                  value={typeId}
+                  onChange={(e) => setTypeId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    {w("Choose one", "Pilih satu")}
+                  </option>
+                  {businessTypes.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {w(t.en, t.ms)}
+                    </option>
+                  ))}
+                </select>
               </Field>
+              {typeId === "other" && (
+                <Field
+                  label={w("What kind of business?", "Perniagaan jenis apa?")}
+                >
+                  <input
+                    name="businessTypeOther"
+                    required
+                    maxLength={80}
+                    pattern=".*\S.*"
+                  />
+                </Field>
+              )}
               <Field label={w("Primary branch", "Cawangan utama")}>
                 <input name="branch" required maxLength={120} />
               </Field>
@@ -315,8 +360,10 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 <LocalAgentTest />
               ) : screen === "contacts" ? (
                 <LocalContacts />
-              ) : ["builder", "setup"].includes(screen) ? (
-                <LocalAgent setup={screen === "setup"} />
+              ) : screen === "setup" ? (
+                SetupFlow ? <SetupFlow /> : null
+              ) : screen === "builder" ? (
+                <LocalAgent setup={false} />
               ) : screen === "settings" ? (
                 <LocalSettings />
               ) : screen === "hours" ? (

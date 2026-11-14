@@ -35,6 +35,17 @@ The dev/start scripts bind to localhost. No environment variables or backend acc
 - `messages/`: BM and English copy.
 - `public/`: local licensed fonts and original generated artwork.
 
+## Guided setup (local and hosted builds only)
+
+`/app/setup` is one guided flow with four stages. It is not part of this mock preview, which keeps its own nine-stage setup above.
+
+1. Business type: pick one of twelve types. Packs that go with it can be ticked.
+2. Interview: up to 8 questions, one per screen, with Back and Skip. Answers are kept as the owner moves on; there is no Save button.
+3. Review: what was gathered, what is still missing (3 shown, "Show all" for the rest), and any value that would replace a current one. Apply writes it to the agent. It never publishes.
+4. Finish: a test turn on the fresh draft, then Publish. After Publish the page shows the live state.
+
+The sidebar hides Phone numbers, WhatsApp and Integrations until each is connected. Guided setup leaves the sidebar once the agent is published, except while the owner is on it.
+
 ## Preview boundaries
 
 Setup persists in this browser under `jomcall-preview-setup-v1`. Malformed drafts recover to defaults; unavailable storage shows a warning. Clear that key to reset the preview. Use fictional information only. Contacts, inbox, call log, consent and bookings share persistent browser-local records. Export downloads sample JSON.

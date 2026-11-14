@@ -1,5 +1,33 @@
 # Handoff
 
+## 2026-11-15 — guided setup flow (interview door)
+
+Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/specs/2026-11-14-setup-flow-design.md`, dated note at the end.
+
+**Changed**
+- Migrations `20261115090000_setup_store.sql` and `20261115090100_setup_questions.sql`: staging tables for setup answers.
+- Commands `setup`, `startSetup`, `answerSetup`, `saveSetupItem`, `applySetup` and `channels`.
+- `/app/setup` in the local and hosted apps: business type, interview (at most 8 questions), review, finish (test turn, then Publish).
+- Sidebar hides Phone numbers, WhatsApp and Integrations until connected, and hides Setup once published.
+- Answers are stored as text with no model call; apply merges and never publishes.
+
+**Verified (2026-11-15)**
+- `npm run typecheck`: pass. `npm run test:guards`: 32 of 32. `npm run check:core`: 462 of 462.
+- `npm run db:verify-migrations`: pass, 54 tables with row-level security. `npm run build:mock` and `npm run build:hosted`: pass.
+- After the final fix wave (commits `6a8debd` and `fb222f9`, no SQL changed): `npm run typecheck` pass; `npm run test:guards` 34 of 34; `npm run check:core` 474 of 474; `npm run build:local`, `build:mock` and `build:hosted` pass. Report: `.superpowers/sdd/2026-11-14-setup-flow-interview/final-fix-report.md`.
+
+**Not verified**
+- No real owner has used it. The flow was clicked through once in the local app at 375 px and desktop width, in English and Bahasa Melayu, at commit `548560d`, with a fake workspace.
+- A second, shorter check at `fb222f9` (375 px, English; finish page in BM at desktop): setup re-run with saved hours, review, apply, Publish locked until a new draft test answered, sidebar without the three channel pages. Not checked: the "Something else" free-text field, the reload when another tab applies, BM interview and review pages after the wording changes, publishing itself.
+- Known, left for a follow-up: after a business-type change mid-interview a shared-fact question can come back and cannot be skipped (way out: Back and pick again); the always-on pack's text question about opening hours is still asked when hours are saved.
+- Dark theme, accessibility and a real owner: not checked.
+- Nothing ran on hosted staging; the two migrations are not applied there.
+- Paid gates not re-run (`check:hosted-model`, `check:voice-model`): no prompt, pack or tool list changed.
+
+**Next**
+- Owner step: `npm run hosted:migrate` for the two new migrations on staging. Never run by us.
+- Next plan: the document import door (reader in the agent process, uploads, catalogue rows, contact export and delete for setup rows).
+
 ## 2026-11-14 — catalogue lookup on phone and WhatsApp
 
 Branch `feat/core-tools-on-channels` (not pushed; no pull request yet).

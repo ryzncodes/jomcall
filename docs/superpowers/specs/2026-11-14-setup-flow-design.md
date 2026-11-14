@@ -1,6 +1,6 @@
 # Setup flow redesign: import first, interview as the fallback
 
-Status: approved by the owner on 2026-11-14, with the answers recorded in section 9. Nothing here is built.
+Status: approved by the owner on 2026-11-14, with the answers recorded in section 9. The interview door is built on branch `feat/setup-flow` (not merged); the import door is not built.
 
 ## 1. Why
 
@@ -133,3 +133,41 @@ New:
 ## 10. Left to the builder
 
 Screen layout within the approved direction, component structure, the exact question wording per pack, table and card design on the review page, error and empty states, and the order in which the pieces ship.
+
+## 11. Build note (2026-11-15)
+
+Written after the interview door was built on branch `feat/setup-flow`.
+
+**Deviation from this design.** Section 3 says a model turns a free-text interview answer into fact fields. The web app holds no model key, so in this build an answer is stored as the text of the fact its question fills, with no model call. Model help arrives with the import plan, which adds the reader to the agent process. Questions with no fact to fill (rules only, catalogue only) are left out until then.
+
+**Decisions made during the build that change what this design describes.**
+
+- The question list is frozen when setup starts, at most 8 questions. It is stored on the session. A later change of pack keeps answered questions and drops answers of packs no longer chosen.
+- Packs carry 17 to 20 interview entries each. The pick is round-robin: main pack first, then the base pack, then extras. Questions that fill a fact already asked are skipped.
+- The review page's "still missing" list leaves out facts an answered question fills, and shows 3 entries with a "Show all" button. An "Add now" answer is stored through `answerSetup` with an id of the form `missing:<pack>:<field>`; it does not count against the 8.
+- The business-name question is prefilled with the organization name. A question that fills more than one fact is never prefilled.
+- Apply merges: the agent's packs become the old packs plus the session's packs. A conflicting item the owner does not name in `replace` is marked removed, so the current value stays. Apply always closes the session. The existing check for bookings outside new opening hours stays and fails the whole apply.
+- Publish unlocks only after a test turn on a fresh draft. A test from an older draft does not count. Only the setup screen enforces this; the server does not.
+- After publishing, the owner stays on a "live" page with links to the Agent page and to a test call, instead of landing on Home (section 4).
+- Running setup again shows the business-type picker first, with the type chosen at workspace creation preselected; the optional extra ticks start empty (sections 4 and 7).
+- "Something else" keeps a free-text field. At workspace creation the owner types what kind of business it is (required, up to 80 characters) and those words are stored as the business type; the other types store their label. The pack always comes from the picked type, never from the words.
+- Hours and first words are not asked again when they are already saved: hours when the location has saved opening hours, first words when the draft has both a greeting and an AI introduction. Starting setup and changing packs follow the same rule.
+- A fact that two chosen packs share (for example deposit and payment) is listed as missing once, under the pack of the earlier answer or question. "Add now" keeps that pack, so a skipped question does not come back and the answer is kept. A skip never throws away an answer given another way.
+- Apply locks the branch before reading its opening hours. A schedule save in progress finishes first, and its hours then count as the current value the owner chose to keep or replace.
+- The sidebar rule (section 9, answer 2) is the `channels` command: Phone numbers shows when the phone provider is set and the workspace has a number; WhatsApp shows when its provider is not `disabled`; Integrations stays hidden.
+
+**Contact export and delete.** Setup rows are not linked to a contact, so contact export and delete do not list them. They hold the business's own answers and are removed with the agent or the organization. The import plan must revisit this when uploaded files can contain customer details.
+
+**What the import plan must add.**
+
+- The reader in the agent process, through the existing job queue, with its model call and the Anthropic notice on the upload screen.
+- Private storage for uploads, the 30-day deletion of originals, upload limits and rate limits.
+- Catalogue rows as setup items (today they are only reported as unconfirmed), and a place in the interview for the rules and catalogue questions left out here.
+- Model help to turn a free-text interview answer into fact fields, if the owner still wants it.
+- Contact export and delete coverage for setup rows that may hold customer details.
+- Smaller items left over from review: a hidden tab keeps polling on the finish stage; the Agent page still says "Penerbitan menyimpan versi tetap..." outside setup; the sidebar's setup entry flashes while the workspace loads and channels refresh only on window focus. (A skipped name question coming back empty, a duplicate save on Continue and an "Add now" answer leaving another pack's question open were fixed in the final fix wave.)
+
+**Known and left for a follow-up (found in the last review and browser check, 2026-11-15).** (1) After changing the main business type mid-interview, a question from the dropped type that shares a fact with the new type can come back and cannot be skipped away; the way out is Back and picking again. Narrow: it needs a type change after answering a late question. (2) When hours are already saved, the hours grid is not asked again, but the always-on pack's text question about opening hours still is.
+
+**What no person has checked.** The flow was clicked through once in the local app at 375 px and at desktop width, in English and Bahasa Melayu, at commit `548560d`, with a fake workspace. A second, shorter check was made at commit `fb222f9` (local app, fake workspace): at 375 px in English, setup was run again on a workspace with saved hours, through the questions, the review page and apply; the Publish button stayed locked until a new test on the draft was answered, then unlocked; the sidebar showed no Phone numbers, WhatsApp or Integrations. The finish page was also opened in Bahasa Melayu at desktop width. Not checked by a person: the free-text field for "Something else", the reload when another tab applies, the Bahasa Melayu interview and review pages after the wording changes, and publishing itself. The dark theme, accessibility and a real owner have not been checked. Nothing ran on hosted staging and the migrations are not applied there. The paid 48-case gates were not re-run: this branch changes no prompt, pack or tool list (it only moves two existing writers into shared functions and adds new commands).
+
