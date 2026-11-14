@@ -203,6 +203,55 @@ export const SETTINGS: Setting[] = [
     description:
       "Optional Turnstile secret key, verified server-side; set both Turnstile keys or neither",
   },
+  // --- Payments (Curlec chosen 2026-11-14; leave JOMCALL_PAYMENT_PROVIDER empty until approved) ---
+  {
+    name: "JOMCALL_PAYMENT_PROVIDER",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional payment provider: empty or disabled (default) or curlec; fake is refused outside local mode",
+  },
+  {
+    name: "CURLEC_ENVIRONMENT",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional Curlec mode matching the keys: test (default) or live",
+  },
+  {
+    name: "CURLEC_KEY_ID",
+    services: ["web"],
+    secret: false,
+    required: (env) => env.JOMCALL_PAYMENT_PROVIDER === "curlec",
+    description:
+      "Curlec API Key Id, public, sent to the browser checkout (only when JOMCALL_PAYMENT_PROVIDER=curlec)",
+  },
+  {
+    name: "CURLEC_KEY_SECRET",
+    services: ["web"],
+    secret: true,
+    required: (env) => env.JOMCALL_PAYMENT_PROVIDER === "curlec",
+    description:
+      "Curlec API Key Secret; also verifies the checkout return (only when JOMCALL_PAYMENT_PROVIDER=curlec)",
+  },
+  {
+    name: "CURLEC_WEBHOOK_SECRET",
+    services: ["web"],
+    secret: true,
+    required: (env) => env.JOMCALL_PAYMENT_PROVIDER === "curlec",
+    description:
+      "Secret chosen when creating the Curlec webhook (only when JOMCALL_PAYMENT_PROVIDER=curlec)",
+  },
+  {
+    name: "JOMCALL_PUBLIC_ORIGIN",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional https origin for Curlec's return and webhook; defaults to APP_ORIGIN in hosted mode",
+  },
   // --- Engine -------------------------------------------------------------
   {
     name: "WORKER_DATABASE_URL",
@@ -383,7 +432,8 @@ export const SETTINGS: Setting[] = [
     services: ["agent"],
     secret: false,
     required: false,
-    description: "Optional: longest phone call in seconds, 60 to 3600; default 600",
+    description:
+      "Optional: longest phone call in seconds, 60 to 3600; default 600",
   },
   {
     name: "JOMCALL_PHONE_URL",

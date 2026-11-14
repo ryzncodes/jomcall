@@ -38,6 +38,15 @@ import {
 } from "./phone.ts";
 import { z } from "zod";
 import {
+  topupInput,
+  billingPages,
+  type Wallet,
+  type LedgerEntry,
+  type UsageEvent,
+  type Topup,
+  type Receipt,
+} from "./billing.ts";
+import {
   channelRevision,
   channelSave,
   conversationList,
@@ -565,6 +574,34 @@ export const commands = {
     out<Member>(),
   ),
   audit: route("GET", "/audit", pages, out<Page<Audit>>()),
+  wallet: route("GET", "/billing/wallet", empty, out<Wallet>()),
+  walletLedger: route(
+    "GET",
+    "/billing/ledger",
+    billingPages,
+    out<Page<LedgerEntry>>(),
+  ),
+  usageEvents: route(
+    "GET",
+    "/billing/usage",
+    billingPages,
+    out<Page<UsageEvent>>(),
+  ),
+  topups: route("GET", "/billing/topups", billingPages, out<Page<Topup>>()),
+  receipts: route(
+    "GET",
+    "/billing/receipts",
+    billingPages,
+    out<Page<Receipt>>(),
+  ),
+  claimTrial: route("POST", "/billing/trial", empty, out<Wallet>()),
+  startTopup: route("POST", "/billing/topups", topupInput, out<Topup>()),
+  reconcileTopup: route(
+    "POST",
+    "/billing/topups/:id/reconcile",
+    id,
+    out<Topup>(),
+  ),
   phoneNumbers: route("GET", "/phone-numbers", empty, out<PhoneNumbers>()),
   createPhoneNumber: route(
     "POST",

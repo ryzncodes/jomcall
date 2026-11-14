@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { createHarness } from "./local.ts";
 import { handleAuth } from "../../web/lib/server/auth.ts";
 import { createDispatch, type CoreDeps } from "../../web/lib/server/api.ts";
+import { handleBillingReturn, handleBillingWebhook } from "../../web/lib/server/billing-webhook.ts";
 export async function createApiHarness(
   h: Awaited<ReturnType<typeof createHarness>>,
   deps: CoreDeps = {},
@@ -22,9 +23,15 @@ export async function createApiHarness(
         headers: req.headers as Record<string, string>,
         body: ["GET", "HEAD"].includes(req.method!) ? undefined : body,
       });
+      const webhook = req.url!.match(/^\/api\/billing\/webhook\/([a-z]+)$/);
+      const back = req.url!.match(/^\/api\/billing\/return\/([a-z]+)(?:\?.*)?$/);
       const response = await (req.url!.startsWith("/api/auth/")
         ? handleAuth(request)
-        : dispatchCore(request));
+        : webhook
+          ? handleBillingWebhook(request, webhook[1])
+          : back
+            ? handleBillingReturn(request, back[1])
+            : dispatchCore(request));
       res.statusCode = response.status;
       response.headers.forEach((v, k) => {
         if (k !== "set-cookie") res.setHeader(k, v);
@@ -79,8 +86,30 @@ export async function createApiHarness(
       body: text ? JSON.parse(text) : null,
     };
   }
+  async function post(
+    path: string,
+    body: string,
+    contentType: string,
+    headers: Record<string, string> = {},
+  ) {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: "POST",
+      headers: { "content-type": contentType, ...headers },
+      body,
+      redirect: "manual",
+    });
+    const text = await response.text();
+    let parsed = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = text;
+    }
+    return { status: response.status, body: parsed, location: response.headers.get("location") };
+  }
   return {
     request,
+    post,
     close: async () => {
       await closeServices();
       server.closeAllConnections();
