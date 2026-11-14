@@ -19,7 +19,7 @@ import {
   type Setup,
   type SetupApplyResult,
 } from "../../../contracts/src/setup.ts";
-import { factInput } from "../../../contracts/src/knowledge.ts";
+import { LIMITS, factInput } from "../../../contracts/src/knowledge.ts";
 import { audit, command } from "../../../db/src/receipts.ts";
 import { manager } from "../authorization.ts";
 import { savePackFact } from "../knowledge/routes.ts";
@@ -415,6 +415,7 @@ export async function setupRoute(
         const replace = new Set(v.replace);
         const skipped: SetupApplyResult["skipped"] = [];
         const written: string[] = [];
+        const kept: string[] = [];
         const items = (
           await tx.query(
             `select ${itemColumns} from app.setup_item where org_id=$1 and session_id=$2 and state<>'applied' order by created_at,id for update`,
@@ -424,7 +425,6 @@ export async function setupRoute(
 
         // Decide every item before writing anything.
         const plan: typeof items = [];
-        let blocked = false;
         for (const i of items) {
           if (i.state === "removed") {
             skipped.push({ itemId: i.id, reason: "removed" });
@@ -433,22 +433,26 @@ export async function setupRoute(
             (i.needs_check && i.state === "pending")
           ) {
             skipped.push({ itemId: i.id, reason: "unconfirmed" });
-            if (i.kind !== "catalogue_row") blocked = true;
           } else if (
             (await currentFor(i)) !== undefined &&
             !replace.has(i.id)
           ) {
+            // Not named in replace: the owner kept the current value.
             skipped.push({ itemId: i.id, reason: "conflict" });
-            blocked = true;
+            kept.push(i.id);
           } else plan.push(i);
         }
 
-        // Packs: the session's main and extra packs; the base pack stays
-        // active on its own.
-        const packs = [session.main_pack, ...session.extra_packs];
-        if (packs.some((p) => !packIds.includes(p)))
+        // Packs merge: what the agent already has first, then the session's
+        // main and extra packs that are new. The base pack stays active on
+        // its own.
+        const wanted = [session.main_pack, ...session.extra_packs];
+        if (wanted.some((p) => !packIds.includes(p)))
           throw new AppError("UNKNOWN_PACK", 422);
-        const packsChanged = packs.join() !== (a.packs as string[]).join();
+        const have = a.packs as string[];
+        const packs = [...have, ...wanted.filter((p) => !have.includes(p))];
+        if (packs.length > LIMITS.packs) throw new AppError("KNOWLEDGE_LIMIT", 422);
+        const packsChanged = packs.length !== have.length;
         if (packsChanged)
           await tx.query("update app.agent set packs=$1 where id=$2", [
             packs,
@@ -502,13 +506,17 @@ export async function setupRoute(
             "update app.setup_item set state='applied',updated_at=now() where org_id=$1 and id=any($2::uuid[])",
             [ctx.orgId, written],
           );
-        // The session closes unless an owner decision is still open.
-        if (!blocked)
+        if (kept.length)
           await tx.query(
-            "update app.setup_session set state='applied',revision=revision+1,updated_at=now() where id=$1",
-            [session.id],
+            "update app.setup_item set state='removed',updated_at=now() where org_id=$1 and id=any($2::uuid[])",
+            [ctx.orgId, kept],
           );
-        else if (written.length) await bump(session.id);
+        // The session always closes: the owner chose keep or replace for
+        // every conflict before applying.
+        await tx.query(
+          "update app.setup_session set state='applied',revision=revision+1,updated_at=now() where id=$1",
+          [session.id],
+        );
 
         let agentRevision = a.revision as number;
         if (written.length || packsChanged) {

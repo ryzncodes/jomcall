@@ -232,32 +232,36 @@ test("two applies at the same time write once", async () => {
   }
 });
 
-test("an existing confirmed fact is kept unless named in replace", async () => {
+// An agent that already has a confirmed value for the staged fact, with a
+// published version in place.
+async function conflicted() {
   const x = await fixture();
+  await x.stage({ hours: false, words: false });
+  const st = await x.state();
+  const fact = st.items.find((i: any) => i.kind === "fact");
+  await x.q(
+    "insert into app.knowledge_fact(org_id,agent_id,pack_id,field_key,title,value,source) values($1,$2,$3,$4,'Old',$5,'owner')",
+    [
+      x.f.h.orgA.id,
+      x.agentId,
+      fact.payload.packId,
+      fact.payload.fieldKey,
+      JSON.stringify("Nilai lama"),
+    ],
+  );
+  const v1 = await publish(x, true);
+  const publishedBefore = await versionText(x);
+  const now = await x.state();
+  assert.deepEqual(
+    now.conflicts.map((c: any) => c.itemId),
+    [fact.id],
+  );
+  return { x, fact, v1, publishedBefore };
+}
+
+test("an existing confirmed fact is kept unless named in replace", async () => {
+  const { x, fact, v1, publishedBefore } = await conflicted();
   try {
-    const { fq } = await x.stage({ hours: false, words: false });
-    const field = fq.id.split(":")[1] ?? "";
-    let st = await x.state();
-    const fact = st.items.find((i: any) => i.kind === "fact");
-    // The owner already confirmed this field.
-    await x.q(
-      "insert into app.knowledge_fact(org_id,agent_id,pack_id,field_key,title,value,source) values($1,$2,$3,$4,'Old',$5,'owner')",
-      [
-        x.f.h.orgA.id,
-        x.agentId,
-        fact.payload.packId,
-        fact.payload.fieldKey,
-        JSON.stringify("Nilai lama"),
-      ],
-    );
-    void field;
-    const v1 = await publish(x, true);
-    const publishedBefore = await versionText(x);
-    st = await x.state();
-    assert.deepEqual(
-      st.conflicts.map((c: any) => c.itemId),
-      [fact.id],
-    );
     const r = await x.apply([]);
     assert.equal(r.status, 200, JSON.stringify(r.body));
     assert.equal(r.body.data.applied, 0);
@@ -265,22 +269,43 @@ test("an existing confirmed fact is kept unless named in replace", async () => {
       { itemId: fact.id, reason: "conflict" },
     ]);
     assert.equal((await x.facts())[0].value, "Nilai lama");
-    // The session stays open so the owner can resolve the conflict.
-    assert.equal((await x.state()).session.state, "open");
-    // Naming it replaces it.
-    const r2 = await x.apply([fact.id]);
-    assert.equal(r2.status, 200, JSON.stringify(r2.body));
-    assert.equal(r2.body.data.applied, 1);
+    // Not named in replace means "keep current": the item is removed and the
+    // session is closed.
+    const rows = (
+      await x.q("select state from app.setup_session where agent_id=$1", [
+        x.agentId,
+      ])
+    ).rows;
+    assert.deepEqual(rows, [{ state: "applied" }]);
+    assert.equal(
+      (await x.q("select state from app.setup_item where id=$1", [fact.id]))
+        .rows[0].state,
+      "removed",
+    );
+    const again = await x.apply([fact.id], 1);
+    assert.equal(again.status, 200, JSON.stringify(again.body));
+    assert.equal(again.body.data.applied, 0);
+    assert.equal((await x.facts())[0].value, "Nilai lama");
+    assert.deepEqual(await versionText(x), publishedBefore);
+    assert.equal((await x.agentRow()).published_version_id, v1.id);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("a conflict named in replace is written and the published version is untouched", async () => {
+  const { x, fact, v1, publishedBefore } = await conflicted();
+  try {
+    const r = await x.apply([fact.id]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 1);
+    assert.deepEqual(r.body.data.skipped, []);
     const fs = await x.facts();
     assert.equal(fs.length, 1);
     assert.equal(fs[0].value, "Cuci gigi RM80");
     assert.equal(fs[0].source, "interview");
-    // The published version never changes.
     assert.deepEqual(await versionText(x), publishedBefore);
-    assert.equal(
-      (await x.agentRow()).published_version_id,
-      v1.id,
-    );
+    assert.equal((await x.agentRow()).published_version_id, v1.id);
   } finally {
     await x.f.close();
   }
@@ -303,16 +328,95 @@ test("a flagged pending item is not written", async () => {
       { itemId: fact.id, reason: "unconfirmed" },
     ]);
     assert.deepEqual(await x.facts(), []);
-    // Once the owner confirms it, it is written.
-    const rev = (await x.state()).session.revision;
-    const c = await x.f.req("PUT", `${x.path}/items/${fact.id}`, {
-      expectedRevision: rev,
-      state: "confirmed",
+    // Left as it is; the session still closes.
+    assert.equal(
+      (await x.q("select state from app.setup_item where id=$1", [fact.id]))
+        .rows[0].state,
+      "pending",
+    );
+    assert.equal((await x.state()).session, null);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("packs merge with the ones the agent already has", async () => {
+  const x = await fixture();
+  try {
+    await x.q("update app.agent set packs=$2 where id=$1", [x.agentId, ["order"]]);
+    await x.stage();
+    const st = await x.state();
+    const r = await x.apply([x.itemId(st, "schedule")]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual((await x.agentRow()).packs, ["order", "appointment"]);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("packs over the limit of 9 fail and write nothing", async () => {
+  const x = await fixture();
+  try {
+    await x.q("update app.agent set packs=$2 where id=$1", [
+      x.agentId,
+      ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"],
+    ]);
+    await x.stage();
+    const before = await x.agentRow();
+    const st = await x.state();
+    const r = await x.apply([x.itemId(st, "schedule")]);
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.equal(r.body.error.code, "KNOWLEDGE_LIMIT");
+    assert.deepEqual(await x.agentRow(), before);
+    assert.deepEqual(await x.facts(), []);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("a future booking outside the new hours refuses apply with BOOKINGS_AFFECTED and writes nothing", async () => {
+  const x = await fixture();
+  try {
+    await x.stage();
+    const org = x.f.h.orgA.id;
+    const contact = await x.f.req("POST", "/contacts", {
+      name: "Pelanggan Contoh",
+      phone: "+60123456789",
+      preferredLanguage: "ms",
     });
-    assert.equal(c.status, 200);
-    const again = await x.apply([]);
-    assert.equal(again.body.data.applied, 1);
-    assert.equal((await x.facts()).length, 1);
+    assert.equal(contact.status, 200, JSON.stringify(contact.body));
+    const res = (
+      await x.q(
+        "insert into app.booking_resource(org_id,location_id,name,duration_minutes) values($1,$2,'Kerusi 1',30) returning id",
+        [org, x.f.h.orgA.locationId],
+      )
+    ).rows[0];
+    // 20:00 tomorrow in Kuala Lumpur: outside the staged 10:00-17:00.
+    await x.q(
+      "insert into app.booking(org_id,contact_id,resource_id,location_id,title,start_at,end_at,timezone,status,source,creator_id) values($1,$2,$3,$4,'Janji temu',$5,$6,'Asia/Kuala_Lumpur','confirmed','staff',$7)",
+      [
+        org,
+        contact.body.data.id,
+        res.id,
+        x.f.h.orgA.locationId,
+        x.f.day + "T20:00:00+08:00",
+        x.f.day + "T20:30:00+08:00",
+        x.f.h.alice.userId,
+      ],
+    );
+    const before = {
+      agent: await x.agentRow(),
+      schedule: await x.schedule(),
+      facts: await x.facts(),
+    };
+    const st = await x.state();
+    const r = await x.apply([x.itemId(st, "schedule")]);
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.equal(r.body.error.code, "BOOKINGS_AFFECTED");
+    assert.deepEqual(await x.agentRow(), before.agent);
+    assert.deepEqual(await x.schedule(), before.schedule);
+    assert.deepEqual(await x.facts(), before.facts);
+    assert.equal((await x.state()).session.state, "open");
   } finally {
     await x.f.close();
   }
@@ -377,7 +481,8 @@ test("a failure in one write rolls back all of them", async () => {
   try {
     await x.stage({ fact: "Pertama" });
     // A second fact field, then force its value over 4,000 bytes. The
-    // staged-item command refuses that size, so the row is changed directly.
+    // staged-item command refuses that size (checked below), so the only way
+    // to make the write fail is to change the staged row directly.
     const st0 = await x.state();
     const second = st0.questions.find((q: any) => q.kind === "fact");
     assert.ok(second, "needs a second fact question");
