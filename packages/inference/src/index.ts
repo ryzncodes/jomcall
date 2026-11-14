@@ -2,7 +2,7 @@ import type { ModelDecision } from "../../contracts/src/agent-test.ts";
 import type { BadLookupDecision, CoreDecision } from "../../contracts/src/knowledge.ts";
 export type ModelInput = {
   messages: { role: "system" | "user" | "assistant"; content: string }[];
-  // "core": the knowledge-core tool set (browser tests). Omitted: the shared
+  // "core": the knowledge-core tool set (browser tests and WhatsApp). Omitted: the shared
   // tool set, exactly as before.
   decision?: "core";
 };

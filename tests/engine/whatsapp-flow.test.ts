@@ -553,8 +553,8 @@ test("a WhatsApp turn with packs can look up the catalogue", async () => {
     const out = await lastOutbound(f);
     assert.equal(out.status, "sent");
     assert.match(out.body, /RM 80\.00/);
-    const steps = await f.h.cleanup.query("select tool from app.agent_turn_tool_step where org_id=$1", [f.h.orgA.id]).catch(() => null);
-    assert.ok(steps === null || steps.rows.some((r) => r.tool === "lookup_catalogue"));
+    const steps = await f.h.cleanup.query("select tool from app.conversation_tool_step where org_id=$1", [f.h.orgA.id]);
+    assert.ok(steps.rows.some((r) => r.tool === "lookup_catalogue"), JSON.stringify(steps.rows));
   } finally {
     await f.close();
   }
@@ -621,6 +621,25 @@ test("STOP still opts the contact out when core tools are on", async () => {
     assert.equal(c.attention_reason, "OPTED_OUT");
     assert.ok(!(await f.messages()).some((m) => m.body.includes("MODEL SHOULD NOT ANSWER")));
     assert.equal(f.seen.length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a bad lookup already parsed by the model client does not fail the turn", async () => {
+  const f = await setup({ core: true });
+  try {
+    // The real clients return this marker, not the raw tool decision.
+    f.answer([
+      { kind: "bad_lookup" },
+      { kind: "answer", text: "Item apa yang anda maksudkan?", citations: [] },
+    ]);
+    await f.say("Berapa harga?");
+    await f.worker.tick();
+    assert.match(JSON.stringify(f.seen[1].messages.at(-1)), /found.{1,5}false/);
+    const out = await lastOutbound(f);
+    assert.equal(out.status, "sent");
+    assert.match(out.body, /Item apa/);
   } finally {
     await f.close();
   }

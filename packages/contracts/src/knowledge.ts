@@ -176,6 +176,9 @@ export const coreDecisionSchema = z.discriminatedUnion("kind", [
 // decision still throws.
 export type BadLookupDecision = { kind: "bad_lookup" };
 export function parseCoreDecision(raw: unknown): CoreDecision | BadLookupDecision {
+  // Idempotent: the model client parses first and the brain parses again.
+  if ((raw as { kind?: unknown } | null)?.kind === "bad_lookup")
+    return { kind: "bad_lookup" };
   const parsed = coreDecisionSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
   const call = (raw as { kind?: unknown; call?: { name?: unknown } } | null);

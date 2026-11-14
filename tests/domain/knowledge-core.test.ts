@@ -239,3 +239,11 @@ test("channels without core tools get rules and facts with a not-found rule they
   assert.ok(spoken.stable.startsWith(voiceRules + "\n\nRULES ("));
   assert.doesNotMatch(spoken.stable, /lookup_catalogue|unanswered/);
 });
+
+test("parsing an already-parsed bad lookup does not throw", async () => {
+  const { parseCoreDecision } = await import("../../packages/contracts/src/knowledge.ts");
+  const bad = parseCoreDecision({ kind: "tool", call: { name: "lookup_catalogue", args: { item: "x".repeat(500) } } });
+  assert.deepEqual(bad, { kind: "bad_lookup" });
+  assert.deepEqual(parseCoreDecision(bad), { kind: "bad_lookup" });
+  assert.throws(() => parseCoreDecision({ kind: "tool", call: { name: "nope", args: {} } }));
+});
