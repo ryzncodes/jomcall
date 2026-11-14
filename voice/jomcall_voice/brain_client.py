@@ -90,10 +90,12 @@ async def stream_turn(
     base_url: str | None = None,
     client: httpx.AsyncClient | None = None,
 ) -> AsyncIterator[dict]:
-    url = (base_url or config.turn_url()).rstrip("/") + "/voice/turns"
+    base = config.check_turn_url(base_url) if base_url else config.turn_url()
+    url = base.rstrip("/") + "/voice/turns"
     headers = {
         "authorization": f"Bearer {token}",
         "content-type": "application/json",
+        **config.service_headers(),
     }
     body = _body(session_id, transcript, client_turn_id, heard_at_ms)
     own = client is None
