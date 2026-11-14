@@ -1,5 +1,5 @@
 import { modelDecisionSchema } from "../../contracts/src/agent-test.ts";
-import { coreDecisionSchema } from "../../contracts/src/knowledge.ts";
+import { parseCoreDecision } from "../../contracts/src/knowledge.ts";
 import { coreDecisionFormat, decisionFormat } from "./budget.ts";
 import type { ModelClient } from "./index.ts";
 
@@ -106,7 +106,7 @@ export function createOpenRouterClient(
       try {
         const decision = JSON.parse(choice.message.content).decision;
         return input.decision === "core"
-          ? coreDecisionSchema.parse(decision)
+          ? parseCoreDecision(decision)
           : modelDecisionSchema.parse(decision);
       } catch {
         throw Error("MODEL_OUTPUT_INVALID");

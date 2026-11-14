@@ -6,6 +6,7 @@ import type {
 } from "../../../packages/domain/src/agent-test/tools.ts";
 import type { ToolCall } from "../../../packages/contracts/src/agent-test.ts";
 import { calculateAvailability } from "../../../packages/domain/src/booking/availability.ts";
+import type { KnowledgeAccess } from "../../../packages/domain/src/knowledge/tools.ts";
 import { isAffirmative } from "../../../packages/domain/src/phone/readback.ts";
 
 // Real phone calls, through app_private.agent_call. The method names match
@@ -22,6 +23,11 @@ export type CallStart = {
   capSeconds: number;
   at?: string;
 };
+
+function orCancelled<T>(value: T | null): T {
+  if (value === null) throw Error("TURN_CANCELLED");
+  return value;
+}
 
 export class CallRepository {
   private pool: pg.Pool;
@@ -131,6 +137,20 @@ export class CallRepository {
         if (!value) throw Error("TURN_CANCELLED");
         return value as ToolResult;
       },
+    };
+  }
+  // Catalogue, units and gap log for one running turn of this call, through
+  // the same agent_call function and the call's own token and lease.
+  knowledge(envelope: any): KnowledgeAccess {
+    const { call, tokenHash } = envelope.auth as { call: string; tokenHash: string };
+    const { turn } = envelope;
+    const run = (action: string, data: unknown) =>
+      this.run(action, call, tokenHash, turn.id, turn.lease_token, data);
+    return {
+      // A null answer means the lease was lost: the turn was taken over.
+      catalogue: async (args) => orCancelled(await run("catalogue", args)),
+      units: async (args) => orCancelled(await run("units", args)),
+      gap: async (data) => orCancelled(await run("gap", data)),
     };
   }
   // Records the outcome of a transfer as the tool step of handoff_to_human.

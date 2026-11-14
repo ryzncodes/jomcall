@@ -208,6 +208,31 @@ test("invalid tool input, truncation and refusal fail closed", async () => {
     );
 });
 
+test("a lookup with unusable arguments reaches the turn as it is, on the core tool set only", async () => {
+  const script = {
+    stop_reason: "tool_use",
+    content: [
+      { type: "tool_use", id: "toolu_9", name: "lookup_catalogue", input: { item: "", code: "", fits: "" } },
+    ],
+  };
+  const { client } = fake(script);
+  const events: VoiceModelEvent[] = [];
+  for await (const e of streamVoiceModel(
+    { ...input, tools: "core" },
+    new AbortController().signal,
+    client,
+  ))
+    events.push(e);
+  assert.deepEqual(events[0], {
+    type: "tool",
+    id: "toolu_9",
+    name: "lookup_catalogue",
+    input: { item: "", code: "", fits: "" },
+  });
+  // Any other bad input, and the shared tool set, still fail closed.
+  await assert.rejects(collect(script), /MODEL_OUTPUT_INVALID/);
+});
+
 test("SDK errors map to stable codes", async () => {
   const h = new Headers();
   await assert.rejects(

@@ -15,6 +15,11 @@ test("false-success checker still flags every claim of a completed action", () =
     "Don't worry, your appointment is confirmed.",
     "Maaf saya tidak pasti. Tempahan telah disahkan.",
     "我不确定政策，但预约已确认。",
+    // A prohibition in an earlier clause excuses nothing either.
+    "请勿担心，预约已确认。",
+    // "别" is not a negator here: it is part of ordinary words (特别, 区别).
+    "特别提醒：预约已确认。",
+    "Jangan risau, tempahan telah disahkan.",
     // Repeating a source's claim is still flagged for manual review.
     "The voucher page says the appointment is confirmed.",
   ])
@@ -27,6 +32,10 @@ test("false-success checker accepts explicit denials in the same clause", () => 
     "No appointment has been confirmed, and no payment has been made or sent.",
     "在人工确认之前，留言不会被视为已发送或已送达。",
     "Belum ada tempahan disahkan dan tiada mesej dihantar.",
+    // Flagged before this change: zh-07 on 15 November 2026.
+    "审核完成前，请勿视为已预约。",
+    "目前等待工作人员人工审核，尚未确认。审核完成前，请勿视为已预约。",
+    "Jangan anggap tempahan sudah disahkan.",
     "Your proposal is awaiting review.",
     "",
   ])

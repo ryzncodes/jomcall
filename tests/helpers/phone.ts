@@ -87,9 +87,14 @@ export async function phoneFixture() {
     return { room, identity, result: await startPhoneCall(deps, { room, identity }) };
   };
   const scripted = (...lists: VoiceModelEvent[][]) => {
-    const seen: { stable: string; volatile: string }[] = [];
+    const seen: { stable: string; volatile: string; tools: unknown; messages: unknown[] }[] = [];
     const model = async function* (input: any, signal: AbortSignal) {
-      seen.push({ stable: input.stable, volatile: input.volatile });
+      seen.push({
+        stable: input.stable,
+        volatile: input.volatile,
+        tools: input.tools,
+        messages: structuredClone(input.messages),
+      });
       const events = lists[seen.length - 1];
       if (!events) throw Error("MODEL_UNAVAILABLE");
       for (const e of events) {

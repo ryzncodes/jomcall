@@ -128,9 +128,9 @@ export const gapResolve = z.discriminatedUnion("as", [
 export const gapIgnore = z
   .object({ expectedRevision: z.number().int().positive() })
   .strict();
-// Browser test paths only (typed and spoken). The shared toolCallSchema,
-// modelDecisionSchema and voiceTools are unchanged, because the WhatsApp and
-// phone-call paths use them and their SQL allow-lists do not know these tools.
+// Core tools for sessions whose snapshot has packs (browser tests, phone calls
+// and WhatsApp). The shared toolCallSchema, modelDecisionSchema and voiceTools
+// are unchanged for snapshots without packs.
 // Every argument is required in the JSON schema the model sees (hosted strict
 // modes need that; defaults count as required in zod's output schema), but a
 // missing one parses to its default, so older tool calls stay valid.
@@ -170,6 +170,22 @@ export const coreDecisionSchema = z.discriminatedUnion("kind", [
   modelDecisionSchema.options[0],
   z.object({ kind: z.literal("tool"), call: coreToolCallSchema }).strict(),
 ]);
+// A lookup_catalogue the model got wrong (nothing to look for, or arguments over
+// the limits) is not a failed turn: the model client returns this marker and
+// the brain answers it with a result marked invalid. Every other invalid
+// decision still throws.
+export type BadLookupDecision = { kind: "bad_lookup" };
+export function parseCoreDecision(raw: unknown): CoreDecision | BadLookupDecision {
+  // Idempotent: the model client parses first and the brain parses again.
+  if ((raw as { kind?: unknown } | null)?.kind === "bad_lookup")
+    return { kind: "bad_lookup" };
+  const parsed = coreDecisionSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const call = (raw as { kind?: unknown; call?: { name?: unknown } } | null);
+  if (call?.kind === "tool" && call.call?.name === "lookup_catalogue")
+    return { kind: "bad_lookup" };
+  throw parsed.error;
+}
 export type CoreToolCall = z.infer<typeof coreToolCallSchema>;
 export type CoreDecision = z.infer<typeof coreDecisionSchema>;
 
@@ -224,7 +240,7 @@ export type KnowledgeGap = {
   revision: number;
   question: string;
   language: string;
-  channel: "text" | "voice";
+  channel: "text" | "voice" | "phone" | "whatsapp";
   answer: string;
 };
 export type CatalogueHit = {

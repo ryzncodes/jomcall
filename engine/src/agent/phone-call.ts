@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { executeCoreTool } from "../../../packages/domain/src/knowledge/tools.ts";
 import { executeTestTool } from "../../../packages/domain/src/agent-test/tools.ts";
 import { toolCallSchema } from "../../../packages/contracts/src/agent-test.ts";
 import { VOICE_PRESETS } from "../../../packages/domain/src/agent-test/voice-session.ts";
@@ -115,7 +116,7 @@ export function phonePolicy(deps: PhoneDeps): VoiceTurnPolicy {
         );
       return { stable: phoneRules, volatile: notes.join(" ") };
     },
-    async runTool(access, step, call, envelope) {
+    async runTool(access, step, call, envelope, core) {
       const info = envelope.call ?? {};
       if (call.name === "handoff_to_human" && info.transferTo && !info.afterHours) {
         const parsed = toolCallSchema.parse(call);
@@ -123,6 +124,16 @@ export function phonePolicy(deps: PhoneDeps): VoiceTurnPolicy {
         await deps.calls.recordTransfer(envelope, step, parsed.args, outcome);
         return { kind: "transfer", ok: outcome.ok, reason: outcome.reason };
       }
+      // Knowledge-core turns: lookups, searches and messages (which may carry
+      // `unanswered`) go through the core executor. Booking read-back and the
+      // availability check keep the call-backed executor below.
+      if (
+        core &&
+        (call.name === "lookup_catalogue" ||
+          call.name === "search_knowledge" ||
+          call.name === "take_message")
+      )
+        return executeCoreTool(access, core.knowledge, step, call, core.options);
       // After hours, no staff number, or any other tool: the test-path executor
       // with call-backed storage (bookings pass the read-back check in SQL).
       return executeTestTool(access, step, call);

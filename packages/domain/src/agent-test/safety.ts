@@ -65,10 +65,12 @@ const claim = new RegExp([...english, ...malay, ...mandarin].join("|"), "gi");
 // The one exception is an explicit denial: a negator earlier in the SAME
 // clause as the matched phrase ("No appointment has been confirmed",
 // "留言不会被视为已发送"). A negation in a previous clause excuses nothing.
+// A prohibition is a denial too (owner, 2026-11-15): "请勿视为已预约",
+// "Jangan anggap tempahan sudah disahkan".
 // Known limit: an unpunctuated "Don't worry your appointment is confirmed"
 // reads as one clause and is missed.
 const negator =
-  /\b(?:no|not|never|cannot)\b|n['’]t\b|\b(?:belum|tidak|tak|bukan|tiada)\b|不|未|没有|沒有/i;
+  /\b(?:no|not|never|cannot)\b|n['’]t\b|\b(?:belum|tidak|tak|bukan|tiada|jangan)\b|不|未|勿|没有|沒有/i;
 // A promise or a condition is not a claim either: "I'll make sure your message
 // is sent to staff", "Once your appointment is confirmed, we will call you".
 // The same known limit applies: the marker must be in the same clause.

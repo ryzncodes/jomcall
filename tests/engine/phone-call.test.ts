@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { phoneFixture, fakeNumber, klAt } from "../helpers/phone.ts";
+import { readFileSync } from "node:fs";
+import { phoneFixture, phoneSettings, fakeNumber, klAt } from "../helpers/phone.ts";
 import { end, sentence, toolEvent } from "../helpers/voice-turn.ts";
 
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
@@ -363,6 +364,154 @@ test("a withheld caller ID still gets answered, with no contact", async () => {
     const row = await f.row(call.callId);
     assert.equal(row.caller_e164, null);
     assert.equal(row.contact_id, null);
+  } finally {
+    await f.close();
+  }
+});
+
+// ---- core tools on real calls -------------------------------------------------
+type PhoneFixture = Awaited<ReturnType<typeof phoneFixture>>;
+const rows = [
+  { item: "Servis biasa 1.0HP", aliases: ["servis aircond"], priceSen: 8000, stockNote: "ada", attributes: {} },
+];
+
+// A published version with a pack and a confirmed catalogue, then a live call.
+async function coreCall(f: PhoneFixture) {
+  const path = `/agents/${f.h.orgA.agentId}`;
+  const draft = (await f.req("GET", `${path}/draft`)).body.data;
+  const put = await f.req("PUT", `${path}/draft`, { expectedRevision: draft.revision, settings: phoneSettings() });
+  assert.equal(put.status, 200);
+  const packs = await f.req("PUT", `${path}/packs`, { expectedAgentRevision: put.body.data.revision, packs: ["stock-price"] });
+  assert.equal(packs.status, 200, JSON.stringify(packs.body));
+  const rev = () => f.req("GET", `${path}/draft`).then((r) => r.body.data.revision);
+  const cat = await f.req("POST", `${path}/catalogue`, { expectedAgentRevision: await rev(), status: "confirmed", rows });
+  assert.equal(cat.status, 200, JSON.stringify(cat.body));
+  const pub = await f.req("POST", `${path}/publish`, { expectedRevision: await rev() });
+  assert.equal(pub.status, 200, JSON.stringify(pub.body));
+  const call = (await f.ring(await f.addNumber())).result as { callId: string; token: string };
+  assert.deepEqual(Object.keys((await f.row(call.callId)).snapshot).includes("packs"), true);
+  return call;
+}
+const gapAsks = (f: PhoneFixture, callId: string) =>
+  f.h.cleanup
+    .query("select channel,question from app.knowledge_gap_ask where call_id=$1", [callId])
+    .then((r) => r.rows);
+const lookup = (args: unknown) => toolEvent("lookup_catalogue", args);
+const hello = [sentence("Baik."), end("Baik.")];
+
+test("a phone turn with packs offers lookup_catalogue", async () => {
+  const f = await phoneFixture();
+  try {
+    const call = await coreCall(f);
+    const m = f.scripted(hello);
+    await f.turn(call, "Hello", m.model);
+    assert.equal(m.seen[0].tools, "core");
+    assert.match(m.seen[0].stable, /lookup_catalogue/);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a phone turn without packs is unchanged", async () => {
+  const f = await phoneFixture();
+  try {
+    await f.publish();
+    const call = (await f.ring(await f.addNumber())).result as { callId: string; token: string };
+    // A snapshot from before the knowledge core.
+    await f.h.cleanup.query("update app.call set snapshot=snapshot-'packs'-'context' where id=$1", [call.callId]);
+    const m = f.scripted(hello);
+    await f.turn(call, "Hello", m.model);
+    const expected = JSON.parse(readFileSync(new URL("../fixtures/phone-prompt-without-packs.json", import.meta.url), "utf8"));
+    assert.equal(m.seen[0].stable.replace(f.resource.id, "<RESOURCE_ID>"), expected.stable);
+    assert.equal(m.seen[0].volatile.replace(/Current date and time in Kuala Lumpur: [^\n]*/, "Current date and time in Kuala Lumpur: <NOW>"), expected.volatile);
+    assert.equal(m.seen[0].tools, undefined);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a phone lookup returns the frozen row and the answer carries its price", async () => {
+  const f = await phoneFixture();
+  try {
+    const call = await coreCall(f);
+    const m = f.scripted(
+      [lookup({ item: "servis biasa", code: "", fits: "" }), end("")],
+      [sentence("Servis biasa RM80."), end("Servis biasa RM80.")],
+    );
+    const events = await f.turn(call, "Berapa harga servis biasa?", m.model);
+    assert.equal(events.at(-1)?.type, "done");
+    const steps = (await f.h.cleanup.query("select tool,result from app.call_tool_step where call_id=$1", [call.callId])).rows;
+    assert.equal(steps.length, 1);
+    assert.equal(steps[0].tool, "lookup_catalogue");
+    assert.equal(steps[0].result.found, true);
+    // The row reached the model as tool result data.
+    const shown = JSON.stringify(m.seen[1].messages.at(-1));
+    assert.match(shown, /Servis biasa 1\.0HP/);
+    assert.match(shown, /RM 80\.00/);
+  } finally {
+    await f.close();
+  }
+});
+
+test("blank lookup arguments do not end the call", async () => {
+  const f = await phoneFixture();
+  try {
+    const call = await coreCall(f);
+    for (const args of [
+      { item: "", code: "", fits: "" },
+      { item: "x".repeat(5000), code: "", fits: "" },
+      { item: "", code: "-", fits: "" },
+    ]) {
+      const m = f.scripted([lookup(args), end("")], [sentence("Maaf, item apa?"), end("Maaf, item apa?")]);
+      const events = await f.turn(call, "Berapa harga?", m.model);
+      assert.equal(events.at(-1)?.type, "done", JSON.stringify(events.at(-1)));
+      assert.ok(events.some((e) => e.type === "sentence"));
+      assert.match(JSON.stringify(m.seen[1].messages.at(-1)), /found.{1,5}false/);
+    }
+    // The call is still live: another turn begins.
+    const again = f.scripted(hello);
+    assert.equal((await f.turn(call, "Hello", again.model)).at(-1)?.type, "done");
+  } finally {
+    await f.close();
+  }
+});
+
+test("an unanswered phone question records a gap on channel phone", async () => {
+  const f = await phoneFixture();
+  try {
+    const call = await coreCall(f);
+    const text = "Customer asks about a part we do not list";
+    const m = f.scripted(
+      [lookup({ item: "bateri xyz", code: "", fits: "" }), end("")],
+      [sentence("Saya tanya staff."), toolEvent("take_message", { text, unanswered: true }), end("")],
+      [sentence("Dicatat untuk staff."), end("Dicatat untuk staff.")],
+    );
+    const events = await f.turn(call, "Ada bateri xyz?", m.model);
+    assert.equal(events.at(-1)?.type, "done", JSON.stringify(events.at(-1)));
+    assert.equal((await f.proposals(call.callId))[0].kind, "message");
+    const asks = await gapAsks(f, call.callId);
+    assert.equal(asks.length, 1);
+    assert.equal(asks[0].channel, "phone");
+    assert.match(asks[0].question, /bateri xyz/);
+  } finally {
+    await f.close();
+  }
+});
+
+test("read-back is still enforced before a booking on a phone turn with core tools", async () => {
+  const f = await phoneFixture();
+  try {
+    const call = await coreCall(f);
+    const args = { resourceId: f.resource.id, startAt: f.slotStart, title: "Contoh appointment" };
+    const book = () => f.scripted([toolEvent("book_slot", args), end("")], [sentence("Noted."), end("Noted.")]);
+    const first = book();
+    assert.equal((await f.turn(call, "Book Contoh Room tomorrow at nine", first.model)).at(-1)?.type, "done");
+    assert.equal(first.seen[0].tools, "core");
+    assert.equal((await f.proposals(call.callId)).length, 0);
+    const steps = (await f.h.cleanup.query("select result from app.call_tool_step where call_id=$1", [call.callId])).rows;
+    assert.equal(steps[0].result.kind, "readback_required");
+    await f.turn(call, "Ya, betul", book().model);
+    assert.equal((await f.proposals(call.callId)).length, 1);
   } finally {
     await f.close();
   }

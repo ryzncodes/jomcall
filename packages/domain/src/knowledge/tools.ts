@@ -40,18 +40,27 @@ export interface KnowledgeAccess {
     key: string;
     question: string;
     language: string;
-    channel: "text" | "voice";
+    channel: "text" | "voice" | "phone" | "whatsapp";
     answer: string;
   }): Promise<unknown>;
 }
 export type CoreToolResult =
   | ToolResult
-  | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string };
+  | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string; invalid?: boolean };
 
+export const BAD_LOOKUP_NEXT =
+  "The lookup needs an item, a code or a model (item up to 200 characters, code up to 80, model up to 200). Ask the caller which item they mean, or say you will ask staff and take a message.";
+// take_message only records a note for staff to review, so the reply must not
+// say it was sent or passed on: claimsFalseSuccess blocks that wording on
+// WhatsApp and on the spoken path.
+const NOTED_WORDING =
+  " Afterwards tell the customer their question is noted for staff to answer. Never say it was sent, passed on, forwarded or delivered.";
 const NOT_FOUND_NEXT =
-  "Not in the catalogue. Do not suggest a price. Say you will ask staff, then call take_message with unanswered true.";
+  "Not in the catalogue. Do not suggest a price. Say you will ask staff, then call take_message with unanswered true." +
+  NOTED_WORDING;
 const NO_EVIDENCE_NEXT =
-  "Nothing relevant found. Do not guess. Say you will ask staff, then call take_message with unanswered true.";
+  "Nothing relevant found. Do not guess. Say you will ask staff, then call take_message with unanswered true." +
+  NOTED_WORDING;
 
 export const coreToolRules =
   " lookup_catalogue {\"item\",\"code\",\"fits\"} for prices, stock and items in the catalogue (use \"\" for an unknown argument; code is a part number or code the customer said, fits is a model or size); take_message {\"text\",\"unanswered\"}: unanswered is true when you are taking the message because the business's knowledge did not answer the question.";
@@ -208,7 +217,7 @@ export async function executeCoreTool(
     !context.resources.some((r) => r.id === resourceId && r.location_id === context.locationId && r.active)
   )
     throw new AppError("NOT_FOUND", 404);
-  let effect: ToolEffect | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string };
+  let effect: ToolEffect | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string; invalid?: boolean };
   switch (call.name) {
     case "search_knowledge": {
       const items = await searchUnits(context.snapshot as CoreSnapshotFull, knowledge, call.args.query, opts);
@@ -216,7 +225,19 @@ export async function executeCoreTool(
       break;
     }
     case "lookup_catalogue": {
-      const items = (await knowledge.catalogue(call.args)).map(catalogueHit);
+      let rows: CatalogueRow[];
+      try {
+        rows = await knowledge.catalogue(call.args);
+      } catch (e) {
+        // The database decides what an unusable code is (for example only
+        // punctuation); the turn goes on with an invalid not-found result.
+        if (e instanceof Error && e.message.includes("INVALID_TOOL")) {
+          effect = { kind: "catalogue", found: false, items: [], invalid: true, next: BAD_LOOKUP_NEXT };
+          break;
+        }
+        throw e;
+      }
+      const items = rows.map(catalogueHit);
       effect = items.length
         ? { kind: "catalogue", found: true, items }
         : { kind: "catalogue", found: false, items: [], next: NOT_FOUND_NEXT };
@@ -235,8 +256,8 @@ export async function executeCoreTool(
       effect = { kind: "proposal", proposal: { kind: "handoff", details: call.args } };
       break;
   }
-  // The recorded call keeps every argument; the SQL allow-list accepts
-  // lookup_catalogue for browser tests only.
+  // The recorded call keeps every argument; the SQL allow-lists of the browser
+  // tests, phone calls and WhatsApp all accept lookup_catalogue.
   return access.record(step, call as never, effect as ToolEffect) as Promise<CoreToolResult>;
 }
 
@@ -248,11 +269,11 @@ export function isGap(calls: { call: CoreToolCall; result?: CoreToolResult }[]):
   if (message.call.name === "take_message" && message.call.args.unanswered) return true;
   return calls.some(
     (c) =>
-      (c.result?.kind === "catalogue" && !c.result.found) ||
+      (c.result?.kind === "catalogue" && !c.result.found && !c.result.invalid) ||
       (c.result?.kind === "knowledge" && c.result.items.length === 0),
   );
 }
-export function gapRecord(question: string, language: string, channel: "text" | "voice", answer: string) {
+export function gapRecord(question: string, language: string, channel: "text" | "voice" | "phone" | "whatsapp", answer: string) {
   const masked = Array.from(maskContact(question)).slice(0, 600).join("");
   return {
     key: questionKey(masked),

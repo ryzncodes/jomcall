@@ -122,6 +122,16 @@ test("shared tool exports are unchanged; core tools add lookup_catalogue", () =>
   assert.ok(coreDecisionSchema.parse({ kind: "tool", call: { name: "take_message", args: { text: "Call back", unanswered: true } } }));
 });
 
+test("a blank lookup followed by a plain take_message is not a gap", () => {
+  const msg = { call: { name: "take_message" as const, args: { text: "t", unanswered: false } } };
+  const look = (invalid: boolean) => ({
+    call: { name: "lookup_catalogue" as const, args: { item: "", code: "", fits: "" } },
+    result: { kind: "catalogue" as const, found: false, items: [], ...(invalid ? { invalid: true } : {}) },
+  });
+  assert.equal(isGap([look(true), msg]), false);
+  assert.equal(isGap([look(false), msg]), true, "a real not-found lookup followed by take_message is a gap");
+});
+
 test("lookup keys, money and contact masking", () => {
   assert.deepEqual(lookupKeys("Bateri NS60", ["ns-60 l", "46B24L"]).sort(), ["46B24L", "BATERINS60", "NS60", "NS60L"].sort());
   assert.equal(formatSen(23000), "RM 230.00");
@@ -143,6 +153,15 @@ test("a gap needs a message, flagged unanswered or after an empty lookup", () =>
   const g = gapRecord("Timing belt? 012-555 0188", "en", "voice", "I will ask staff.");
   assert.match(g.question, /\[number\]/);
   assert.match(g.key, /^[0-9a-f]{64}$/);
+});
+
+test("gapRecord accepts phone and whatsapp channels", () => {
+  const channels: ("text" | "voice" | "phone" | "whatsapp")[] = ["text", "voice", "phone", "whatsapp"];
+  for (const ch of channels) {
+    const g = gapRecord("Ada tayar? 012-555 0188", "ms", ch, "Saya akan tanya staf.");
+    assert.equal(g.channel, ch);
+    assert.match(g.question, /\[number\]/);
+  }
 });
 
 test("unit search: free text keeps old ids, facts are units, embeddings only when switched on", async () => {
@@ -219,4 +238,37 @@ test("channels without core tools get rules and facts with a not-found rule they
   const spoken = coreVoicePrompt(voiceSystem(snapshot.settings, [], [], new Date()), { shared: voiceRules, core: coreVoiceRules }, snapshot, "shared");
   assert.ok(spoken.stable.startsWith(voiceRules + "\n\nRULES ("));
   assert.doesNotMatch(spoken.stable, /lookup_catalogue|unanswered/);
+});
+
+test("parsing an already-parsed bad lookup does not throw", async () => {
+  const { parseCoreDecision } = await import("../../packages/contracts/src/knowledge.ts");
+  const bad = parseCoreDecision({ kind: "tool", call: { name: "lookup_catalogue", args: { item: "x".repeat(500) } } });
+  assert.deepEqual(bad, { kind: "bad_lookup" });
+  assert.deepEqual(parseCoreDecision(bad), { kind: "bad_lookup" });
+  assert.throws(() => parseCoreDecision({ kind: "tool", call: { name: "nope", args: {} } }));
+});
+
+test("executeCoreTool turns INVALID_TOOL from the catalogue into the invalid not-found result", async () => {
+  const { executeCoreTool, BAD_LOOKUP_NEXT } = await import("../../packages/domain/src/knowledge/tools.ts");
+  let recorded: unknown = null;
+  const access = {
+    read: async () => ({ snapshot: {}, locationId: "l", resources: [] }),
+    availability: async () => [],
+    record: async (_s: number, _c: unknown, effect: unknown) => {
+      recorded = effect;
+      return effect;
+    },
+  } as never;
+  const failing = (message: string) =>
+    ({
+      catalogue: async () => {
+        throw Error(message);
+      },
+      units: async () => [],
+      gap: async () => ({ id: "g" }),
+    }) as never;
+  const call = { name: "lookup_catalogue", args: { item: "", code: "-", fits: "" } };
+  await executeCoreTool(access, failing("INVALID_TOOL"), 0, call);
+  assert.deepEqual(recorded, { kind: "catalogue", found: false, items: [], invalid: true, next: BAD_LOOKUP_NEXT });
+  await assert.rejects(executeCoreTool(access, failing("boom"), 0, call), /boom/);
 });
