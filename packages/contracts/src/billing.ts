@@ -32,7 +32,7 @@ export type Wallet = {
 };
 export type LedgerEntry = {
   id: string;
-  kind: "topup" | "trial_credit" | "usage" | "refund" | "adjustment";
+  kind: "topup" | "trial_credit" | "usage" | "refund" | "adjustment" | "plan_fee";
   amount_sen: number;
   currency: "MYR";
   reason: string | null;

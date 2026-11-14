@@ -90,6 +90,7 @@ export function LocalBilling() {
     usage: ["Usage", "Penggunaan"],
     refund: ["Refund", "Bayaran balik"],
     adjustment: ["Adjustment", "Pelarasan"],
+    plan_fee: ["Monthly plan fee", "Yuran pelan bulanan"],
   };
   const topupText: Record<Topup["state"], [string, string]> = {
     created: ["Starting", "Bermula"],

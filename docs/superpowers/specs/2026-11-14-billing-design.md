@@ -195,8 +195,73 @@ Settings are read from the gitignored `.env.payments`, which `scripts/billing/wi
 
 ## 11. Known limits
 
-- The shared local database records migration versions `20261114150000`, `20261114150100` and `20261114200000`. A checkout without these files gets "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000` and `20261114120100` sort earlier; on a database where billing was applied first, pushing them needs `--include-all`.
+- The shared local database records migration versions `20261114150000`, `20261114150100`, `20261114200000` and `20261114210000`. A checkout without these files gets "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000` and `20261114120100` sort earlier; on a database where billing was applied first, pushing them needs `--include-all`.
 
 - The webhook has no rate limit of its own. A forged callback costs one HMAC check and is refused before any database read.
 - The migration-check command creates `jomcall_billing` as a cluster-wide role. Run `npm run db:migrate:local` before `npm run db:verify-migrations` on a database where this migration is not yet applied. Otherwise the push fails with `permission denied to grant role "jomcall_billing"`; drop the stray role first.
 - Fake orders live in the web process's memory. After a restart, "Check status" on a fake top-up reports unpaid; the simulator still settles it.
+
+## 12. Monthly plans (price table version 2)
+
+Added 2026-11-14 on the parent's instruction. Migration `20261114210000_billing_plans.sql`; helpers in `packages/billing/src/plans.ts`; tests in `tests/billing/plans.test.ts`. Every figure below is an **owner placeholder, changeable**. It lives in `app.billing_plan` and `app.billing_price` with `status = 'owner_placeholder'`. A change is a new version row; version 1 stays in history.
+
+| Plan | Monthly fee | Phone numbers | Voice included | Voice after that | WhatsApp agent |
+|---|---|---|---|---|---|
+| `starter` | RM49 (4,900 sen) | 1 | 100 min (6,000 s) | RM0.32 a minute, billed per second | Not included |
+| `growth` | RM129 (12,900 sen) | 1 | 400 min (24,000 s) | RM0.32 a minute (same `voice_second` price; the brief gave no Growth rate) | Included |
+| `payg` | none | 0 | none | RM0.32 a minute | Not included |
+
+WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its message fees to the business directly. JomCall meters only its own agent fee per conversation: `whatsapp_conversation`, 15 sen in version 2 (placeholder, same as version 1). Typed turns stay at 2 sen.
+
+### Model
+
+- **No card is charged automatically.** The monthly fee is a `plan_fee` debit from the prepaid wallet.
+- **Period.** Each organization's periods are anchored to its start date in `Asia/Kuala_Lumpur` (`org_plan.anchor_date`, set from `organization.created_at` when it first chooses a plan). Period *k* runs from anchor + *k* months to anchor + *k*+1 months, at Kuala Lumpur midnight. A 31 January anchor gives 31 Jan, 28 Feb, 31 Mar and does not drift.
+- **Charging.** `app_private.charge_plan_period(org, at)` starts or retries the period containing `at`, and `charge_due_plans(at)` does it for every organization with a plan. At the first call in a period it does three things:
+  - creates one `plan_period` row per organization and period start;
+  - freezes the plan, fee, allowance and entitlements on that row, so a later price version never changes a running period;
+  - debits the fee with ledger key `plan_fee:<period id>`.
+
+  Retries return the same row. The fee is debited at most once per period.
+- **Allowance.** The included seconds are granted only once the period is `charged`. They expire at the period end: unused minutes do not roll over. `record_usage` keeps its signature and does two new things:
+  - for `voice_second`, it takes seconds from a charged period that contains the call first, and bills the rest from the wallet at the version's `voice_second` price;
+  - it records the drawn seconds on `usage_event.included_seconds` and `period_id`, and returns `includedSeconds`.
+
+  WhatsApp and typed usage always bill from the wallet.
+- **Plan change.** `choose_plan(org, code)` (owner or admin) sets `pending_plan_code`. The change takes effect when the next period is created. This includes moving from `payg` to a paid plan. Asking for the current plan cancels a pending change.
+- **Not enough balance for the fee.**
+  - The fee is never debited into a negative balance. The period starts `unpaid` with `grace_until` = period start + `grace_days`, which is 7 for both paid plans (placeholder, in data).
+  - During grace the plan's phone number and WhatsApp agent stay on, but there is no allowance. Calls bill from the wallet at the overage rate, so nothing is charged twice when the fee lands later.
+  - Any retry that finds the balance sufficient debits the fee and turns the allowance on.
+  - A retry after `grace_until` marks the period `downgraded` and moves the organization to `payg`.
+  - A live call is never cut: `record_usage` still never refuses.
+- **Entitlements.** `app_private.plan_entitlements(org, at)` returns these fields:
+  - `plan` and `periodState`;
+  - `phoneNumbers` and `whatsappAgent`, which stay on while the period is `charged` or `unpaid`;
+  - `includedVoiceSeconds`, which is on only while `charged`;
+  - `usedIncludedSeconds`.
+
+  The function is granted to the worker and agent roles; `plan_summary(org)` is for owners and admins. The phone line does not read it yet.
+- **Roles.** Owners and admins of the organization read `org_plan` and `plan_period` (forced RLS). The app role cannot write them or charge a period. `billing_plan` is readable by any signed-in session.
+
+### Tests (`tests/billing/plans.test.ts`, 7)
+
+1. Version 2 rows are in sen and marked placeholder; version 1 is kept; period bounds across February and the Kuala Lumpur date line.
+2. Allowance consumed before the wallet, including a call split across the allowance boundary and a replayed call.
+3. Expiry at period end, with no rollover into the next period.
+4. Fee debited once under six concurrent calls plus two `charge_due_plans` runs.
+5. Insufficient balance: unpaid, grace, a call billed from the wallet, payment on retry; a second organization downgraded to `payg` after grace, a call still recorded below zero, and the next period free.
+6. Plan change takes effect next period (from `payg` and between paid plans), and a pending change can be cancelled.
+7. Tenant and role isolation: another organization's allowance is untouched, rows are not visible across organizations, staff and outsiders cannot choose a plan, and the app role cannot write plan rows or charge.
+
+### Open owner decisions
+
+- **First subscription timing.** Under the next-period rule, an organization that moves from `payg` to Starter waits until its next anchor date for the number and minutes. Two alternatives: start the first paid period immediately with a full or pro-rated fee, or re-anchor on the day of the first subscription.
+- Final figures: fees, allowances, Growth overage rate, the WhatsApp agent fee, grace length.
+
+### Follow-ups (not built)
+
+- Wire `plan_entitlements` into the phone line: refuse to assign or answer on a number the plan does not cover.
+- Schedule `charge_due_plans` (daily) in the worker.
+- Retry the fee automatically when a top-up is credited during grace.
+- A plan picker and plan status on the local-app wallet screen (`choose_plan`, `plan_summary`).

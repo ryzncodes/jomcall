@@ -8,6 +8,7 @@ import type pg from "pg";
 //   with the same key returns the first result and never charges twice. The
 //   same key with a different kind or quantity fails with CONFLICT.
 // Bill only after the provider confirms the event (design spec section 6).
+// Voice seconds draw from a paid plan allowance first (plans.ts).
 // Never refuses for low credit: usage that happened is always recorded.
 // The connection must be a role granted app_private.record_usage
 // (jomcall_worker or jomcall_agent).
@@ -31,6 +32,9 @@ export type WalletState = {
 export type UsageResult = WalletState & {
   usageEventId: string;
   amountSen: number;
+  // Voice seconds drawn from a paid plan period's allowance; only the rest
+  // is billed from the wallet (amountSen).
+  includedSeconds: number;
   duplicate: boolean;
 };
 

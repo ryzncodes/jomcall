@@ -48,7 +48,8 @@ test("ledger is append-only for the app role and for the database owner", async 
       );
     await assert.rejects(h.cleanup.query("update app.wallet_ledger set amount_sen=1 where org_id=$1", [h.orgA.id]), /APPEND_ONLY/);
     await assert.rejects(h.cleanup.query("delete from app.wallet_ledger where org_id=$1", [h.orgA.id]), /APPEND_ONLY/);
-    await assert.rejects(h.cleanup.query("truncate app.wallet_ledger"), /APPEND_ONLY|permission denied/);
+    // Refused by the trigger, or earlier by plan_period's foreign key to the ledger.
+    await assert.rejects(h.cleanup.query("truncate app.wallet_ledger"), /APPEND_ONLY|permission denied|referenced in a foreign key/);
     // Database constraints: integer sen, MYR only, signs per kind.
     await assert.rejects(h.cleanup.query("insert into app.wallet_ledger(org_id,kind,amount_sen,currency,idempotency_key)values($1,'trial_credit',100,'USD','x-currency-1')", [h.orgA.id]), /check constraint/);
     await assert.rejects(h.cleanup.query("insert into app.wallet_ledger(org_id,kind,amount_sen,idempotency_key)values($1,'trial_credit',$2,'x-fraction-1')", [h.orgA.id, "1.5"]), /invalid input syntax/);
