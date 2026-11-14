@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import type { Proposal } from "../../../packages/contracts/src/agent-test";
 import { useCore, useWords, useResource, useAction, Notice } from "./state";
@@ -125,8 +126,12 @@ export function ProposalReview({
             <div className="core-form">
               <p>
                 {w(
-                  "This creates a request in your local calendar. Staff confirmation is a separate step.",
-                  "Ini mencipta permohonan dalam kalendar setempat. Pengesahan kakitangan ialah langkah berasingan.",
+                  HOSTED
+                    ? "This creates a request in your JomCall calendar. Staff confirmation is a separate step."
+                    : "This creates a request in your local calendar. Staff confirmation is a separate step.",
+                  HOSTED
+                    ? "Ini mencipta permohonan dalam kalendar JomCall. Pengesahan kakitangan ialah langkah berasingan."
+                    : "Ini mencipta permohonan dalam kalendar setempat. Pengesahan kakitangan ialah langkah berasingan.",
                 )}
               </p>
               {contactId ? (

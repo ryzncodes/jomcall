@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useCore, useWords, useResource, Notice } from "./state";
 import { useExperience } from "../experience";
 import { localDay, dayInstant, shiftDay } from "./booking-calendar";
@@ -28,7 +29,12 @@ export function BookingSummary() {
     <section className="core-panel core-booking-summary">
       <div>
         <p className="eyebrow">
-          {w("Today · local calendar", "Hari ini · kalendar setempat")}
+          {w(
+            HOSTED ? "Today · JomCall calendar" : "Today · local calendar",
+            HOSTED
+              ? "Hari ini · kalendar JomCall"
+              : "Hari ini · kalendar setempat",
+          )}
         </p>
         <h2>
           {data.data

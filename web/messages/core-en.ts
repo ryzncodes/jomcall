@@ -1,8 +1,9 @@
+import { HOSTED } from "@/lib/hosted";
 export const coreEn = {
   requested: "Awaiting confirmation",
-  confirmed: "Confirmed in local calendar",
+  confirmed: HOSTED ? "Confirmed" : "Confirmed in local calendar",
   cancelled: "Cancelled",
   proposal: "Test proposal",
-  local: "Local calendar",
+  local: HOSTED ? "JomCall calendar" : "Local calendar",
   empty: "No appointments here yet.",
 };

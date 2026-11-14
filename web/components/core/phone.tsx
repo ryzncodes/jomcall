@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import { ArrowLeft, Phone } from "@phosphor-icons/react";
 import type { PhoneNumber, CallSummary } from "../../../packages/contracts/src/phone";
@@ -65,8 +66,8 @@ export function LocalPhoneNumbers() {
             {!list.data.provider.configured && (
               <p>
                 {w(
-                  "No calls are placed or answered from this workspace yet. The owner steps in the phone-line guide connect a provider.",
-                  "Belum ada panggilan dibuat atau dijawab dari ruang kerja ini. Langkah pemilik dalam panduan talian telefon menyambungkan penyedia.",
+                  HOSTED ? "No calls are placed or answered from this workspace yet. Phone lines are not available yet." : "No calls are placed or answered from this workspace yet. The owner steps in the phone-line guide connect a provider.",
+                  HOSTED ? "Belum ada panggilan dibuat atau dijawab dari ruang kerja ini. Talian telefon belum tersedia." : "Belum ada panggilan dibuat atau dijawab dari ruang kerja ini. Langkah pemilik dalam panduan talian telefon menyambungkan penyedia.",
                 )}
               </p>
             )}

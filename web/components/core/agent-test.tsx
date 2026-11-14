@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { isResourceUnavailable } from "@/lib/core/client";
 import { Suspense, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -190,8 +191,12 @@ function AgentTestManager() {
           {readiness.data?.available
             ? hosted
               ? w(
-                  "Hosted model selected · text leaves this computer",
-                  "Model dihos dipilih · teks keluar dari komputer ini",
+                  HOSTED
+                    ? "Hosted model · text is sent outside Malaysia"
+                    : "Hosted model selected · text leaves this computer",
+                  HOSTED
+                    ? "Model dihos · teks dihantar ke luar Malaysia"
+                    : "Model dihos dipilih · teks keluar dari komputer ini",
                 )
               : w(
                   "Local model connected · experimental",

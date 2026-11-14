@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 // WhatsApp channel settings for the local app. The access token is
 // write-only: it is sent once and never shown again. Until the server's
 // switch and secrets are set, the screen says the channel is not connected
@@ -84,17 +85,25 @@ function WhatsAppBody({
           <>
             <h2>
               {w(
-                "WhatsApp is not connected on this server.",
-                "WhatsApp belum disambungkan pada pelayan ini.",
+                HOSTED
+                  ? "WhatsApp is not available yet."
+                  : "WhatsApp is not connected on this server.",
+                HOSTED
+                  ? "WhatsApp belum tersedia."
+                  : "WhatsApp belum disambungkan pada pelayan ini.",
               )}
             </h2>
             <p>
               {w(
-                "The server administrator must turn the channel on and add its secrets first. Nothing is sent to Meta until then.",
-                "Pentadbir pelayan perlu menghidupkan saluran ini dan menambah rahsianya dahulu. Tiada apa-apa dihantar kepada Meta sehingga itu.",
+                HOSTED
+                  ? "We are still setting up WhatsApp for JomCall. You will be able to connect your own number here. Nothing is sent to Meta until then."
+                  : "The server administrator must turn the channel on and add its secrets first. Nothing is sent to Meta until then.",
+                HOSTED
+                  ? "Kami masih menyediakan WhatsApp untuk JomCall. Anda akan dapat menyambungkan nombor anda sendiri di sini. Tiada apa-apa dihantar kepada Meta sehingga itu."
+                  : "Pentadbir pelayan perlu menghidupkan saluran ini dan menambah rahsianya dahulu. Tiada apa-apa dihantar kepada Meta sehingga itu.",
               )}
             </p>
-            {readiness.missing.length > 0 && (
+            {!HOSTED && readiness.missing.length > 0 && (
               <p className="editor-note">
                 {w("Missing settings: ", "Tetapan yang tiada: ")}
                 {readiness.missing.map((m) => (

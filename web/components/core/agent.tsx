@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import { readKnowledgeText } from "@/lib/core/text-file";
 import type {
@@ -64,8 +65,10 @@ export function LocalAgent({ setup }: { setup: boolean }) {
         eyebrow={
           setup
             ? w(
-                "Guided setup · local workspace",
-                "Persediaan berpandu · ruang kerja setempat",
+                HOSTED ? "Guided setup" : "Guided setup · local workspace",
+                HOSTED
+                  ? "Persediaan berpandu"
+                  : "Persediaan berpandu · ruang kerja setempat",
               )
             : w("Agent builder", "Pembina ejen")
         }
@@ -91,7 +94,10 @@ export function LocalAgent({ setup }: { setup: boolean }) {
             {w("Test agent answers", "Uji jawapan ejen")}
           </a>
           <a href={href("/app/bookings")}>
-            {w("Set up local bookings", "Sediakan tempahan setempat")}
+            {w(
+              HOSTED ? "Set up bookings" : "Set up local bookings",
+              HOSTED ? "Sediakan tempahan" : "Sediakan tempahan setempat",
+            )}
           </a>
           <a href={href("/app/settings")}>
             01 · {w("Business details", "Butiran perniagaan")}
@@ -99,7 +105,9 @@ export function LocalAgent({ setup }: { setup: boolean }) {
           <a href={href("/app/hours")}>
             02 · {w("Branches & hours", "Cawangan & waktu")}
           </a>
-          <span>03 · {w("Agent & knowledge", "Ejen & pengetahuan")}</span>
+          <span aria-current="step">
+            03 · {w("Agent & knowledge", "Ejen & pengetahuan")}
+          </span>
         </div>
       }
       <Notice error={resource.error} />
@@ -157,7 +165,9 @@ function AgentEditor({ initial }: { initial: Agent }) {
       ...initial.draft,
     }),
     [revision, setRevision] = useState(initial.revision),
-    [tab, setTab] = useState<"voice" | "knowledge" | "core" | "history">("voice"),
+    [tab, setTab] = useState<"voice" | "knowledge" | "core" | "history">(
+      "voice",
+    ),
     [dirty, setDirty] = useState(false),
     [published, setPublished] = useState(false);
   const change = (v: Partial<AgentSettings>) => {
@@ -207,7 +217,14 @@ function AgentEditor({ initial }: { initial: Agent }) {
         <section className="builder-editor">
           <header className="editor-heading">
             <span className="editor-index">
-              0{tab === "voice" ? 1 : tab === "knowledge" ? 2 : tab === "core" ? 3 : 4}
+              0
+              {tab === "voice"
+                ? 1
+                : tab === "knowledge"
+                  ? 2
+                  : tab === "core"
+                    ? 3
+                    : 4}
             </span>
             <div>
               <h2>

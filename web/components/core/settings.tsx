@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useEffect, useState } from "react";
 import type { Location, Schedule } from "../../../packages/contracts/src/core";
 import { useExperience } from "../experience";
@@ -258,8 +259,12 @@ function Team() {
           <h2>{w("Invite someone", "Jemput seseorang")}</h2>
           <p>
             {w(
-              "Invitations are delivered to local Mailpit. The recipient must confirm their own account.",
-              "Jemputan dihantar ke Mailpit setempat. Penerima perlu mengesahkan akaun sendiri.",
+              HOSTED
+                ? "Invitations are sent by email. The recipient must confirm their own account."
+                : "Invitations are delivered to local Mailpit. The recipient must confirm their own account.",
+              HOSTED
+                ? "Jemputan dihantar melalui e-mel. Penerima perlu mengesahkan akaun sendiri."
+                : "Jemputan dihantar ke Mailpit setempat. Penerima perlu mengesahkan akaun sendiri.",
             )}
           </p>
           <form
@@ -431,7 +436,10 @@ export function LocalHours() {
       />
       <div className="core-actions">
         <a href={href("/app/bookings")}>
-          {w("Open local bookings", "Buka tempahan setempat")}
+          {w(
+            HOSTED ? "Open bookings" : "Open local bookings",
+            HOSTED ? "Buka tempahan" : "Buka tempahan setempat",
+          )}
         </a>
       </div>
       <Notice {...a} />

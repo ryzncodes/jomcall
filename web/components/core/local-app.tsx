@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { HttpCoreClient, CoreError } from "@/lib/core/client";
@@ -166,8 +167,12 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 "Sediakan ruang untuk perniagaan anda.",
               )}
               description={w(
-                "Create your first workspace. Your account and records stay on this computer.",
-                "Cipta ruang kerja pertama anda. Akaun dan rekod kekal di komputer ini.",
+                HOSTED
+                  ? "Create your first workspace for your business."
+                  : "Create your first workspace. Your account and records stay on this computer.",
+                HOSTED
+                  ? "Cipta ruang kerja pertama untuk perniagaan anda."
+                  : "Cipta ruang kerja pertama anda. Akaun dan rekod kekal di komputer ini.",
               )}
             />
             <form
@@ -235,8 +240,12 @@ function LocalWorkspace({ screen }: { screen: string }) {
                       "Gambaran jelas kaunter hadapan anda.",
                     )}
                     description={w(
-                      "Your workspace is connected to local data. Configure your agent and build your customer records.",
-                      "Ruang kerja anda disambungkan ke data setempat. Sediakan ejen dan rekod pelanggan anda.",
+                      HOSTED
+                        ? "Configure your agent and build your customer records."
+                        : "Your workspace is connected to local data. Configure your agent and build your customer records.",
+                      HOSTED
+                        ? "Sediakan ejen dan rekod pelanggan anda."
+                        : "Ruang kerja anda disambungkan ke data setempat. Sediakan ejen dan rekod pelanggan anda.",
                     )}
                   />
                   <div className="core-overview">
@@ -287,8 +296,12 @@ function LocalWorkspace({ screen }: { screen: string }) {
                     </h2>
                     <p>
                       {w(
-                        "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage local bookings now. Voice, WhatsApp, external calendars and payments come later.",
-                        "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan setempat sekarang. Suara, WhatsApp, kalendar luar dan pembayaran hadir kemudian.",
+                        HOSTED
+                          ? "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage bookings now. Phone calls, WhatsApp, external calendars and payments come later."
+                          : "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage local bookings now. Voice, WhatsApp, external calendars and payments come later.",
+                        HOSTED
+                          ? "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan sekarang. Panggilan telefon, WhatsApp, kalendar luar dan pembayaran hadir kemudian."
+                          : "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan setempat sekarang. Suara, WhatsApp, kalendar luar dan pembayaran hadir kemudian.",
                       )}
                     </p>
                     <a className="button button-dark" href={href("/app/setup")}>
@@ -324,8 +337,12 @@ function LocalWorkspace({ screen }: { screen: string }) {
                       "Saluran ini menyusul nanti.",
                     )}
                     description={w(
-                      "Your local workspace includes accounts, teams, contacts, bookings and text-agent tests. This channel needs a later integration phase.",
-                      "Fasa 1 menghubungkan akaun, pasukan, konfigurasi ejen dan kenalan. Ciri ini memerlukan fasa integrasi seterusnya.",
+                      HOSTED
+                        ? "Your workspace includes accounts, teams, contacts, bookings and agent tests. This channel is not connected yet."
+                        : "Your local workspace includes accounts, teams, contacts, bookings and text-agent tests. This channel needs a later integration phase.",
+                      HOSTED
+                        ? "Ruang kerja anda merangkumi akaun, pasukan, kenalan, tempahan dan ujian ejen. Saluran ini belum disambungkan."
+                        : "Fasa 1 menghubungkan akaun, pasukan, konfigurasi ejen dan kenalan. Ciri ini memerlukan fasa integrasi seterusnya.",
                     )}
                   />
                   <section className="core-panel core-unavailable">
@@ -340,20 +357,26 @@ function LocalWorkspace({ screen }: { screen: string }) {
                     </h2>
                     <p>
                       {w(
-                        "No calls, external messages, external calendar writes or payments are sent from local mode. Use the sample preview to explore those flows.",
-                        "Tiada panggilan, mesej, perubahan kalendar atau pembayaran dihantar dalam mod setempat. Gunakan pratonton sampel untuk meneroka aliran tersebut.",
+                        HOSTED
+                          ? "This channel is not connected yet. Nothing is sent to an outside service from this page."
+                          : "No calls, external messages, external calendar writes or payments are sent from local mode. Use the sample preview to explore those flows.",
+                        HOSTED
+                          ? "Saluran ini belum disambungkan. Tiada apa-apa dihantar ke perkhidmatan luar dari halaman ini."
+                          : "Tiada panggilan, mesej, perubahan kalendar atau pembayaran dihantar dalam mod setempat. Gunakan pratonton sampel untuk meneroka aliran tersebut.",
                       )}
                     </p>
                     <div className="core-actions">
                       <a className="button button-dark" href={href("/app")}>
                         {w("Go to workspace", "Ke ruang kerja")}
                       </a>
-                      <a
-                        className="button secondary-button"
-                        href={"http://127.0.0.1:4181" + href("/app")}
-                      >
-                        {w("Open sample preview", "Buka pratonton sampel")}
-                      </a>
+                      {!HOSTED && (
+                        <a
+                          className="button secondary-button"
+                          href={"http://127.0.0.1:4181" + href("/app")}
+                        >
+                          {w("Open sample preview", "Buka pratonton sampel")}
+                        </a>
+                      )}
                     </div>
                   </section>
                 </>
