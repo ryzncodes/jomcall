@@ -1,5 +1,5 @@
 import type { ModelDecision } from "../../contracts/src/agent-test.ts";
-import type { CoreDecision } from "../../contracts/src/knowledge.ts";
+import type { BadLookupDecision, CoreDecision } from "../../contracts/src/knowledge.ts";
 export type ModelInput = {
   messages: { role: "system" | "user" | "assistant"; content: string }[];
   // "core": the knowledge-core tool set (browser tests). Omitted: the shared
@@ -11,7 +11,7 @@ export interface ModelClient {
   generate(
     input: ModelInput,
     signal: AbortSignal,
-  ): Promise<ModelDecision | CoreDecision>;
+  ): Promise<ModelDecision | CoreDecision | BadLookupDecision>;
 }
 export {
   createOllamaClient,

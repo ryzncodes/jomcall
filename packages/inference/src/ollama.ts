@@ -8,7 +8,7 @@ import {
   decisionFormat,
   packModelInput,
 } from "./budget.ts";
-import { coreDecisionSchema } from "../../contracts/src/knowledge.ts";
+import { parseCoreDecision } from "../../contracts/src/knowledge.ts";
 import type { ModelClient, ModelInput } from "./index.ts";
 export type ModelConfig = {
   url: string;
@@ -144,7 +144,7 @@ export async function createOllamaClient(
       try {
         const decision = JSON.parse(output.message.content);
         return input.decision === "core"
-          ? coreDecisionSchema.parse(decision)
+          ? parseCoreDecision(decision)
           : modelDecisionSchema.parse(decision);
       } catch {
         throw Error("MODEL_OUTPUT_INVALID");

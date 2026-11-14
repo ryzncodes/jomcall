@@ -170,6 +170,19 @@ export const coreDecisionSchema = z.discriminatedUnion("kind", [
   modelDecisionSchema.options[0],
   z.object({ kind: z.literal("tool"), call: coreToolCallSchema }).strict(),
 ]);
+// A lookup_catalogue the model got wrong (nothing to look for, or arguments over
+// the limits) is not a failed turn: the model client returns this marker and
+// the brain answers it with a result marked invalid. Every other invalid
+// decision still throws.
+export type BadLookupDecision = { kind: "bad_lookup" };
+export function parseCoreDecision(raw: unknown): CoreDecision | BadLookupDecision {
+  const parsed = coreDecisionSchema.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const call = (raw as { kind?: unknown; call?: { name?: unknown } } | null);
+  if (call?.kind === "tool" && call.call?.name === "lookup_catalogue")
+    return { kind: "bad_lookup" };
+  throw parsed.error;
+}
 export type CoreToolCall = z.infer<typeof coreToolCallSchema>;
 export type CoreDecision = z.infer<typeof coreDecisionSchema>;
 

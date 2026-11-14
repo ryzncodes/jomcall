@@ -19,6 +19,7 @@ import {
   executeCoreTool,
   gapRecord,
   isGap,
+  BAD_LOOKUP_NEXT,
   searchUnits,
   type CoreSnapshotFull,
   type CoreToolResult,
@@ -137,8 +138,6 @@ function addEvidence(
 // A lookup the model got wrong (nothing to look for, or arguments over the
 // limits) is a result it can recover from, never a failed turn: no database
 // call, and nothing is recorded for it.
-const BAD_LOOKUP_NEXT =
-  "The lookup needs an item, a code or a model (item up to 200 characters, code up to 80, model up to 200). Ask the caller which item they mean, or say you will ask staff and take a message.";
 function unusableLookup(call: { name: string; args: unknown }): CoreToolResult | null {
   if (call.name !== "lookup_catalogue" || catalogueArgs.safeParse(call.args).success)
     return null;

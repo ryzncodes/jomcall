@@ -48,6 +48,8 @@ export type CoreToolResult =
   | ToolResult
   | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string; invalid?: boolean };
 
+export const BAD_LOOKUP_NEXT =
+  "The lookup needs an item, a code or a model (item up to 200 characters, code up to 80, model up to 200). Ask the caller which item they mean, or say you will ask staff and take a message.";
 const NOT_FOUND_NEXT =
   "Not in the catalogue. Do not suggest a price. Say you will ask staff, then call take_message with unanswered true.";
 const NO_EVIDENCE_NEXT =

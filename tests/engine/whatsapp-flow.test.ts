@@ -1,6 +1,7 @@
 // End to end against the local database: webhook route, intake, agent turn
 // through the shared brain, send rules and the fake provider. No network.
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { createPhase2Harness } from "../helpers/phase2.ts";
@@ -18,7 +19,13 @@ const secret = "test-app-secret-" + randomUUID();
 const phone = String(100000000 + Math.floor(Math.random() * 899999999));
 const customer = "6011" + String(Math.floor(Math.random() * 9000000) + 1000000);
 
-async function setup() {
+const catalogueRows = [
+  { item: "Servis biasa 1.0HP", aliases: ["servis aircond"], priceSen: 8000, stockNote: "ada", attributes: {} },
+];
+
+// With `core`, a real publish with a pattern pack and a confirmed catalogue,
+// so the frozen snapshot carries `packs`; without it, the minimal version.
+async function setup(opts: { core?: boolean } = {}) {
   Object.assign(process.env, {
     JOMCALL_WHATSAPP_PROVIDER: "fake",
     WHATSAPP_APP_SECRET: secret,
@@ -27,7 +34,33 @@ async function setup() {
   const f = await createPhase2Harness();
   const { h } = f;
   // Publish a minimal agent version directly; publishing rules are tested elsewhere.
-  const version = (
+  if (opts.core) {
+    const path = `/agents/${h.orgA.agentId}`;
+    const draft = (await f.req("GET", `${path}/draft`)).body.data;
+    const put = await f.req("PUT", `${path}/draft`, {
+      expectedRevision: draft.revision,
+      settings: {
+        name: "Contoh Agent",
+        languages: ["ms", "en"],
+        manglish: true,
+        greeting: "Hello, Contoh Room.",
+        instructions: "Answer politely.",
+        aiDisclosure: "Saya pembantu AI.",
+        recordingEnabled: false,
+        recordingDisclosure: "",
+        voicePreference: "Leda",
+      },
+    });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    const rev = () => f.req("GET", `${path}/draft`).then((r) => r.body.data.revision);
+    const packs = await f.req("PUT", `${path}/packs`, { expectedAgentRevision: put.body.data.revision, packs: ["stock-price"] });
+    assert.equal(packs.status, 200, JSON.stringify(packs.body));
+    const cat = await f.req("POST", `${path}/catalogue`, { expectedAgentRevision: await rev(), status: "confirmed", rows: catalogueRows });
+    assert.equal(cat.status, 200, JSON.stringify(cat.body));
+    const pub = await f.req("POST", `${path}/publish`, { expectedRevision: await rev() });
+    assert.equal(pub.status, 200, JSON.stringify(pub.body));
+  }
+  const version = opts.core ? null : (
     await h.cleanup.query(
       "insert into app.agent_version(org_id,agent_id,sequence,snapshot,actor_id)values($1,$2,1,$3,$4)returning id",
       [
@@ -47,10 +80,11 @@ async function setup() {
       ],
     )
   ).rows[0].id;
-  await h.cleanup.query(
-    "update app.agent set published_version_id=$1 where id=$2",
-    [version, h.orgA.agentId],
-  );
+  if (version)
+    await h.cleanup.query(
+      "update app.agent set published_version_id=$1 where id=$2",
+      [version, h.orgA.agentId],
+    );
   const saved = await f.req("PUT", "/channels/whatsapp", {
     phoneNumberId: phone,
     wabaId: "200000001",
@@ -58,12 +92,15 @@ async function setup() {
   });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
   const provider = createFakeProvider();
-  let next: ModelDecision[] = [];
+  let next: any[] = [];
+  const seen: { messages: { role: string; content: string }[]; decision?: string }[] = [];
   const worker = new WhatsAppWorker(h.namespace, {
     provider,
     model: {
-      generate: async () =>
-        next.shift() ?? { kind: "answer", text: "Baik.", citations: [] },
+      generate: async (input: any) => {
+        seen.push({ messages: input.messages, decision: input.decision });
+        return next.shift() ?? { kind: "answer", text: "Baik.", citations: [] };
+      },
     },
   });
   await worker.tick(); // verifies the number: pending -> connected
@@ -107,12 +144,13 @@ async function setup() {
   return {
     ...f,
     provider,
+    seen,
     worker,
     deliver,
     say,
     conversation,
     messages,
-    answer: (d: ModelDecision[]) => (next = d),
+    answer: (d: any[]) => (next = d),
     close: async () => {
       await worker.close();
       // Events are keyed by namespace, not organization: remove them here.
@@ -469,6 +507,120 @@ test("WhatsApp flow against the local database", async (t) => {
         assert.equal(left.rows[0].n, 0);
       },
     );
+  } finally {
+    await f.close();
+  }
+});
+
+// ---- core tools on WhatsApp ------------------------------------------------
+const lookupCall = (args: unknown) => ({ kind: "tool", call: { name: "lookup_catalogue", args } });
+const gapAsks = (f: Awaited<ReturnType<typeof setup>>) =>
+  f.h.cleanup
+    .query("select channel,question from app.knowledge_gap_ask where org_id=$1", [f.h.orgA.id])
+    .then((r) => r.rows);
+const lastOutbound = async (f: Awaited<ReturnType<typeof setup>>) =>
+  (await f.messages()).filter((m) => m.direction === "outbound").at(-1);
+
+test("a WhatsApp turn without packs is unchanged", async () => {
+  const f = await setup();
+  try {
+    f.answer([{ kind: "answer", text: "Baik.", citations: [] }]);
+    await f.say("Pukul berapa buka?");
+    await f.worker.tick();
+    assert.equal(f.seen[0].decision, undefined);
+    const system = f.seen[0].messages[0].content.replace(/Current date[^\n]*/, "Current date: <NOW>");
+    const expected = JSON.parse(readFileSync(new URL("../fixtures/whatsapp-prompt-without-packs.json", import.meta.url), "utf8"));
+    assert.equal(system, expected.system);
+    assert.deepEqual(f.seen[0].messages.slice(1).map((m) => m.role), expected.rest);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a WhatsApp turn with packs can look up the catalogue", async () => {
+  const f = await setup({ core: true });
+  try {
+    f.answer([
+      lookupCall({ item: "servis biasa", code: "", fits: "" }),
+      { kind: "answer", text: "Servis biasa RM 80.00.", citations: ["cat:0"] },
+    ]);
+    await f.say("Berapa harga servis biasa?");
+    await f.worker.tick();
+    assert.equal(f.seen[0].decision, "core");
+    assert.match(f.seen[0].messages[0].content, /lookup_catalogue/);
+    assert.match(JSON.stringify(f.seen[1].messages.at(-1)), /Servis biasa 1\.0HP/);
+    assert.match(JSON.stringify(f.seen[1].messages.at(-1)), /RM 80\.00/);
+    const out = await lastOutbound(f);
+    assert.equal(out.status, "sent");
+    assert.match(out.body, /RM 80\.00/);
+    const steps = await f.h.cleanup.query("select tool from app.agent_turn_tool_step where org_id=$1", [f.h.orgA.id]).catch(() => null);
+    assert.ok(steps === null || steps.rows.some((r) => r.tool === "lookup_catalogue"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("an over-long lookup item is refused without failing the turn", async () => {
+  const f = await setup({ core: true });
+  try {
+    f.answer([
+      lookupCall({ item: "x".repeat(500), code: "", fits: "" }),
+      { kind: "answer", text: "Item apa yang anda maksudkan?", citations: [] },
+    ]);
+    await f.say("Berapa harga?");
+    await f.worker.tick();
+    assert.match(JSON.stringify(f.seen[1].messages.at(-1)), /found.{1,5}false/);
+    const out = await lastOutbound(f);
+    assert.equal(out.status, "sent");
+    assert.match(out.body, /Item apa/);
+    assert.equal((await gapAsks(f)).length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("an unanswered WhatsApp question records a gap on channel whatsapp and still sends the take-a-message reply", async () => {
+  const f = await setup({ core: true });
+  try {
+    f.answer([
+      lookupCall({ item: "bateri xyz", code: "", fits: "" }),
+      { kind: "tool", call: { name: "take_message", args: { text: "Customer asks about a part we do not list", unanswered: true } } },
+      { kind: "answer", text: "Saya telah catat untuk staf kami.", citations: [] },
+    ]);
+    await f.say("Ada bateri xyz?");
+    await f.worker.tick();
+    const out = await lastOutbound(f);
+    assert.equal(out.status, "sent");
+    assert.match(out.body, /catat untuk staf/);
+    const asks = await gapAsks(f);
+    assert.equal(asks.length, 1);
+    assert.equal(asks[0].channel, "whatsapp");
+    assert.match(asks[0].question, /bateri xyz/);
+  } finally {
+    await f.close();
+  }
+});
+
+test("STOP still opts the contact out when core tools are on", async () => {
+  const f = await setup({ core: true });
+  try {
+    f.answer([{ kind: "answer", text: "MODEL SHOULD NOT ANSWER", citations: [] }]);
+    await f.say("STOP");
+    await f.worker.tick();
+    const c = await f.conversation();
+    const consent = (
+      await f.h.cleanup.query(
+        "select purpose,granted from app.consent_record where contact_id=$1 and channel='whatsapp' order by purpose",
+        [c.contact_id],
+      )
+    ).rows;
+    assert.deepEqual(consent, [
+      { purpose: "marketing", granted: false },
+      { purpose: "service", granted: false },
+    ]);
+    assert.equal(c.attention_reason, "OPTED_OUT");
+    assert.ok(!(await f.messages()).some((m) => m.body.includes("MODEL SHOULD NOT ANSWER")));
+    assert.equal(f.seen.length, 0);
   } finally {
     await f.close();
   }

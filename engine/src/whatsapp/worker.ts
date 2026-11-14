@@ -17,6 +17,7 @@ import type {
   ToolAccess,
   ToolResult,
 } from "../../../packages/domain/src/agent-test/tools.ts";
+import { coreAgentRules } from "../../../packages/domain/src/knowledge/tools.ts";
 import { agentRules } from "../../../packages/domain/src/agent-test/prompt.ts";
 import { claimsFalseSuccess } from "../../../packages/domain/src/agent-test/safety.ts";
 import { calculateAvailability } from "../../../packages/domain/src/booking/availability.ts";
@@ -227,10 +228,28 @@ export class WhatsAppWorker {
       access,
       // Knowledge-core rules and facts fit the pinned model's input budget.
       budget: inputBudget(config?.identity ?? null),
+      // Catalogue lookup and the gap log, through this turn's own lease.
+      core: {
+        rules: coreAgentRules + whatsappChannelNote,
+        knowledge: {
+          catalogue: (args) => this.turnOp("catalogue", turn, args),
+          units: (args) => this.turnOp("units", turn, args),
+          gap: (data) => this.turnOp("gap", turn, data),
+        },
+        channel: "whatsapp",
+      },
     });
     // A real customer must never be told something was done when it was not.
     if (claimsFalseSuccess(answer.text)) throw Error("UNSAFE_ANSWER");
     return { ...answer, model: config?.identity ?? "test" };
+  }
+
+  private async turnOp(action: string, turn: { id: string; lease_token: string }, data: unknown) {
+    const v = await this.op(action, turn.id, turn.lease_token, data);
+    // A wrong or expired lease answers null: the turn was taken over. (The gap
+    // write may answer null on success, so it is not checked.)
+    if (action !== "gap" && v === null) throw Error("TURN_CANCELLED");
+    return v;
   }
 
   async sendOne() {
