@@ -15,6 +15,7 @@ import { LocalContacts } from "./contacts";
 import { LocalAgent } from "./agent";
 import { LocalSettings, LocalHours } from "./settings";
 import { LocalPhoneNumbers, LocalCalls } from "./phone";
+import { LocalWhatsApp } from "./whatsapp";
 export function LocalApp({ screen }: { screen: string }) {
   return ["login", "signup", "forgot", "invite"].includes(screen) ? (
     <LocalAuth mode={screen as "login" | "signup" | "forgot" | "invite"} />
@@ -310,6 +311,8 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 <LocalPhoneNumbers />
               ) : screen === "app" ? (
                 <LocalCalls />
+              ) : screen === "whatsapp" ? (
+                <LocalWhatsApp />
               ) : (
                 <>
                   <Heading

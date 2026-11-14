@@ -2,6 +2,8 @@ import {
   agentTestRoute,
   type AgentTestDeps,
 } from "../../../packages/domain/src/agent-test/routes.ts";
+import { whatsappReadiness } from "../../../packages/whatsapp/src/provider.ts";
+import { whatsappRoute } from "../../../packages/domain/src/whatsapp/routes.ts";
 import { bookingRoute } from "../../../packages/domain/src/booking/routes.ts";
 import { phoneRoute } from "../../../packages/domain/src/phone/routes.ts";
 import { commands } from "../../../packages/contracts/src/core.ts";
@@ -96,6 +98,16 @@ async function dispatch(request: Request, deps: CoreDeps) {
       orgId,
       async (tx, context) => {
         if (disabled) throw new AppError("CAPABILITY_UNAVAILABLE", 503);
+        const whatsappResult = await whatsappRoute(
+          tx,
+          context,
+          method,
+          path,
+          body,
+          key,
+          new URL(request.url).searchParams,
+        );
+        if (whatsappResult !== undefined) return respond(whatsappResult);
         const testResult = await agentTestRoute(
           tx,
           context,
@@ -216,7 +228,7 @@ async function dispatch(request: Request, deps: CoreDeps) {
             capabilities: {
               core: true,
               voice: false,
-              whatsapp: false,
+              whatsapp: whatsappReadiness().configured,
               calendar: false,
               payments: false,
             },
