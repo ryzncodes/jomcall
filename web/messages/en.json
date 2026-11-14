@@ -1312,7 +1312,7 @@
     "wallet": "Wallet balance",
     "usageHint": "Current workspace totals come from calls, inbox and wallet. Other tenants are labeled fixtures.",
     "selfhost": "Self-host setup",
-    "selfTitle": "Your infrastructure. Ready to answer.",
+    "selfTitle": "Self-host",
     "selfIntro": "Walk through the first-run checks before opening your workspace. No credentials are requested or tested here.",
     "database": "Database",
     "speech": "Speech provider",
@@ -1363,11 +1363,11 @@
     "terms": "Terms",
     "publicBack": "Back to home",
     "pricingTitle": "Know what each hello costs.",
-    "pricingIntro": "Explore the wallet model with a simple estimate. These are preview rates, not a commercial offer.",
+    "pricingIntro": "Monthly plans on a prepaid wallet, or pay only for what you use. Preview prices: owner placeholders that may change, not a commercial offer.",
     "voiceMinutes": "Voice minutes",
     "messages": "Delivered WhatsApp messages",
     "estimate": "Sample usage estimate",
-    "rateHint": "Illustration: RM 0.32/minute and RM 0.05/message. Excludes numbers, provider fees and taxes. No plan is purchased here.",
+    "rateHint": "Amounts in MYR, before SST. Monthly fees are taken from your prepaid wallet; no card is charged automatically. Unused minutes do not carry over to the next month.",
     "walletLink": "Explore the sample wallet",
     "paygo": "A wallet you control.",
     "paygoBody": "Top up when you need it, inspect every usage entry and set an automatic refill threshold in the preview.",
@@ -1471,6 +1471,38 @@
       "unavailable": "Staff unavailable; message taken",
       "not_requested": "Not requested"
     },
-    "callLanguage": "Call language"
+    "callLanguage": "Call language",
+    "planNames": {
+      "starter": "Starter",
+      "growth": "Growth",
+      "payg": "Pay as you go"
+    },
+    "planBodies": {
+      "starter": "One business line that answers every call.",
+      "growth": "More minutes, plus the WhatsApp agent on your own number.",
+      "payg": "No monthly fee. For trying the agent in the browser and typed tests."
+    },
+    "planMonth": "/ month",
+    "planNoFee": "No monthly fee",
+    "planNumber": "{n} phone number included",
+    "planNoNumber": "No phone number",
+    "planMinutes": "{n} voice minutes included each month",
+    "planOverage": "Then RM {rate} a minute, billed per second",
+    "planPaygRate": "RM {rate} a minute, billed per second",
+    "planWhatsapp": "WhatsApp agent included. You connect your own WhatsApp number, and Meta bills its message fees to you directly. JomCall agent fee: RM {rate} per conversation.",
+    "planNoWhatsapp": "WhatsApp agent not included",
+    "planEstimateHint": "Estimated month on each plan at this many voice minutes.",
+    "selfPrice": "Free licence",
+    "selfBody": "JomCall is source-available and self-hostable under FSL-1.1-ALv2. Each release becomes available under Apache-2.0 two years after it is published. Until then, you may not use it to offer a competing service.",
+    "selfCostsTitle": "Self-hosting is not zero cost. You bring and pay for:",
+    "selfCosts": [
+      "A server and a Postgres database",
+      "Speech-to-text and text-to-speech keys",
+      "A language model key",
+      "A phone number and a SIP carrier",
+      "WhatsApp Business approval and Meta's message fees"
+    ],
+    "selfSupport": "Community support only, with no promise of replies or fixes. You build and run it yourself; no prebuilt image is promised.",
+    "selfLink": "Source on GitHub"
   }
 }

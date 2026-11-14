@@ -5,6 +5,7 @@ import pg from "pg";
 import { createHarness } from "../helpers/local.ts";
 import { recordUsage } from "../../packages/billing/src/usage.ts";
 import { chargePlanPeriod, planEntitlements } from "../../packages/billing/src/plans.ts";
+import { priceVersion, publicPlans, publicPrices } from "../../web/lib/pricing.ts";
 
 // Monthly plans on the wallet (design section 13). Dates are in the future
 // so price and plan version 2 apply; an anchor on the 31st checks February.
@@ -42,6 +43,15 @@ test("plan rows: version 2 figures are data, in sen, marked owner placeholder", 
       { code: "starter", monthly_fee_sen: 4900, included_voice_seconds: 6000, phone_numbers: 1, whatsapp_agent: false, status: "owner_placeholder" },
       { code: "growth", monthly_fee_sen: 12900, included_voice_seconds: 24000, phone_numbers: 1, whatsapp_agent: true, status: "owner_placeholder" },
     ]);
+    // The public pricing page's copy matches the database.
+    assert.equal(priceVersion, 2);
+    for (const p of publicPlans) {
+      type Row = { code: string; monthly_fee_sen: number; included_voice_seconds: number; phone_numbers: number; whatsapp_agent: boolean };
+      const row: Row = (plans as Row[]).find((r) => r.code === p.code)!;
+      assert.deepEqual([p.monthlyFeeSen, p.includedVoiceSeconds, p.phoneNumbers, p.whatsappAgent], [row.monthly_fee_sen, row.included_voice_seconds, row.phone_numbers, row.whatsapp_agent]);
+    }
+    const prices = Object.fromEntries((await h.cleanup.query("select kind,unit_sen,per_quantity from app.billing_price where version=2")).rows.map((r) => [r.kind, r.unit_sen * (r.kind === "voice_second" ? 60 / r.per_quantity : 1 / r.per_quantity)]));
+    assert.deepEqual(prices, { voice_second: publicPrices.voiceSenPerMinute, whatsapp_conversation: publicPrices.whatsappAgentSenPerConversation, typed_turn: publicPrices.typedTurnSen });
     const v1 = Number((await h.cleanup.query("select count(*) from app.billing_price where version=1")).rows[0].count);
     assert.equal(v1, 3, "version 1 stays in history");
     const voice2 = (await h.cleanup.query("select unit_sen,per_quantity,status from app.billing_price where version=2 and kind='voice_second'")).rows[0];
