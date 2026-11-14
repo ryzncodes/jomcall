@@ -26,6 +26,8 @@ export type CoreSnapshot = {
   rules?: CoreRule[];
   catalogue?: { setId: string; hash: string; rows: number } | null;
   context?: SessionContext;
+  // Snapshots also hold settings and free-text knowledge.
+  [key: string]: unknown;
 };
 export type SessionContext = {
   business: { name: string; type: string };
