@@ -30,6 +30,10 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
         ? "VALIDATION_ERROR"
         : "OFFLINE";
   const messages: Record<string, [string, string]> = {
+    VERIFICATION_FAILED: [
+      "We could not confirm you are human. Complete the check and try again.",
+      "Kami tidak dapat mengesahkan anda manusia. Lengkapkan semakan dan cuba lagi.",
+    ],
     SLOT_UNAVAILABLE: [
       "Someone booked this time. Choose another slot.",
       "Waktu ini telah ditempah. Pilih waktu lain.",

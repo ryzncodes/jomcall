@@ -149,7 +149,7 @@ Payment fees reduce this further, per top-up (Billplz FPX RM1.25 + 8% SST = RM1.
 
 1. **Approve the outbound exception.** A payment provider is not yet an approved outbound service (`AGENTS.md`). Approve Billplz (or another provider) in writing, as was done for the speech providers.
 2. **Decide the selling entity.** Use a Sdn Bhd or an Enterprise. Card and e-wallet activation needs more documents; the list per entity type is in section 2 and at <https://support.billplz.com/guide/activate-payments>.
-3. **Get a public HTTPS address for the web app.** Billplz cannot call localhost, so real top-ups wait for the hosted deployment (`docs/superpowers/specs/2026-11-14-production-hosting-design.md`). The webhook route currently runs only in local mode (`requireLocal`); the hosted-mode work must allow it there. Exposing a local server through a tunnel instead would be another outbound service needing approval.
+3. **Get a public HTTPS address for the web app.** Billplz cannot call localhost, so real top-ups wait for the hosted deployment (`docs/superpowers/specs/2026-11-14-production-hosting-design.md`). The webhook route runs in `local` and `hosted` mode (`requireApp`) and is unavailable in `mock`; in hosted mode the callback address defaults to `APP_ORIGIN`. Hosted steps are in `infra/hosted/RUNBOOK.md` section D. Exposing a local server through a tunnel instead would be another outbound service needing approval.
 4. **Open a Billplz sandbox account** at <https://www.billplz-sandbox.com> (dummy data is accepted). In Settings > Keys & Integration:
    - copy the API Secret Key;
    - tick "Enable X Signature Payment Completion" and copy the X Signature key.

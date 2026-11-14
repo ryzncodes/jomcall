@@ -1,6 +1,8 @@
 import "server-only";
 import { ZodError } from "zod";
 import { AppError } from "../../../packages/contracts/src/index.ts";
+import { isHosted } from "../../../packages/contracts/src/hosting.ts";
+
 // Safe codes raised by the billing functions in the database.
 const billingErrors: Record<string, number> = {
   TRIAL_USED: 409,
@@ -124,6 +126,7 @@ export function setCookie(
 ) {
   response.headers.append(
     "set-cookie",
-    `${key}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`,
+    `${key}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}` +
+      (isHosted() ? "; Secure" : ""),
   );
 }

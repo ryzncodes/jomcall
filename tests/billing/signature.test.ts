@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { sign, signatureSource, verify } from "../../packages/billing/src/signature.ts";
 import { parseBillplzCallback, parseBillplzTime } from "../../packages/billing/src/callback.ts";
 import { fakeCallback, fakeSignatureKey, createFakeProvider } from "../../packages/billing/src/fake.ts";
-import { paymentReadiness, createProvider } from "../../packages/billing/src/provider.ts";
+import { paymentReadiness, createProvider, publicOrigin } from "../../packages/billing/src/provider.ts";
 import { createBillplzProvider } from "../../packages/billing/src/billplz.ts";
 import { formatSen } from "../../packages/billing/src/money.ts";
 
@@ -76,6 +76,14 @@ test("payments are off unless configured; fake is local only", () => {
   assert.equal(paymentReadiness({ ...full, JOMCALL_PUBLIC_ORIGIN: "http://app.example.invalid" }).reason, "PUBLIC_ORIGIN_INVALID");
   assert.equal(paymentReadiness({ ...full, BILLPLZ_ENVIRONMENT: "production" }).sandbox, false);
   assert.throws(() => createProvider({}), /PAYMENTS_DISABLED/);
+  // Hosted mode: fake refused; the callback origin defaults to APP_ORIGIN.
+  assert.equal(paymentReadiness({ JOMCALL_PAYMENT_PROVIDER: "fake", JOMCALL_MODE: "hosted" }).reason, "FAKE_PROVIDER_LOCAL_ONLY");
+  const { JOMCALL_PUBLIC_ORIGIN: _, ...keys } = full;
+  assert.equal(paymentReadiness(keys).reason, "PUBLIC_ORIGIN_INVALID");
+  const hosted = { ...keys, JOMCALL_MODE: "hosted", APP_ORIGIN: "https://app.example.invalid" };
+  assert.equal(paymentReadiness(hosted).configured, true);
+  assert.equal(publicOrigin(hosted), "https://app.example.invalid");
+  assert.equal(paymentReadiness({ ...keys, APP_ORIGIN: "https://app.example.invalid" }).reason, "PUBLIC_ORIGIN_INVALID");
 });
 test("Billplz client sends the documented request and never calls out when off", async () => {
   const calls: { url: string; init: RequestInit }[] = [];

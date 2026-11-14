@@ -46,8 +46,15 @@ const billplzNames = [
   "BILLPLZ_API_KEY",
   "BILLPLZ_X_SIGNATURE_KEY",
   "BILLPLZ_COLLECTION_ID",
-  "JOMCALL_PUBLIC_ORIGIN",
 ] as const;
+
+// The public address Billplz calls back. Hosted mode uses its APP_ORIGIN
+// unless JOMCALL_PUBLIC_ORIGIN overrides it.
+function publicOriginSetting(env: Env): string | undefined {
+  const own = env.JOMCALL_PUBLIC_ORIGIN?.trim();
+  if (own) return own;
+  return env.JOMCALL_MODE === "hosted" ? env.APP_ORIGIN?.trim() || undefined : undefined;
+}
 
 // Off unless JOMCALL_PAYMENT_PROVIDER says otherwise. No network call and
 // no key value leaves this function.
@@ -67,8 +74,11 @@ export function paymentReadiness(env: Env = process.env): PaymentReadiness {
     return { provider, configured: false, sandbox, reason: "BILLPLZ_ENVIRONMENT_INVALID" };
   if (billplzNames.some((n) => !env[n]?.trim()))
     return { provider, configured: false, sandbox, reason: "PAYMENT_CREDENTIALS_MISSING" };
+  const originSetting = publicOriginSetting(env);
+  if (!originSetting)
+    return { provider, configured: false, sandbox, reason: "PUBLIC_ORIGIN_INVALID" };
   try {
-    const origin = new URL(env.JOMCALL_PUBLIC_ORIGIN!);
+    const origin = new URL(originSetting);
     if (origin.protocol !== "https:" || origin.pathname !== "/")
       return { provider, configured: false, sandbox, reason: "PUBLIC_ORIGIN_INVALID" };
   } catch {
@@ -82,7 +92,7 @@ export function paymentReadiness(env: Env = process.env): PaymentReadiness {
 // The address the provider calls back and the browser returns to.
 export function publicOrigin(env: Env = process.env) {
   return env.JOMCALL_PAYMENT_PROVIDER === "billplz"
-    ? env.JOMCALL_PUBLIC_ORIGIN!.replace(/\/$/, "")
+    ? publicOriginSetting(env)!.replace(/\/$/, "")
     : (env.LOCAL_ORIGIN ?? "http://127.0.0.1:4182");
 }
 

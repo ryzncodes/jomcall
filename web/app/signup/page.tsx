@@ -1,4 +1,4 @@
-import { mode } from "@/lib/server/config";
+import { mode, turnstileSiteKey } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
 export default async function Page({
   searchParams,
@@ -9,6 +9,7 @@ export default async function Page({
   return (
     <Experience
       mode={mode()}
+      turnstileSiteKey={turnstileSiteKey()}
       locale={p.lang === "ms" ? "ms" : "en"}
       initialTheme={p.theme === "dark" ? "dark" : "light"}
       screen="signup"

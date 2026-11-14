@@ -847,3 +847,10 @@
     flex-wrap: wrap;
   }
 }
+
+/* Turnstile widget (hosted sign-up and sign-in): reserve its height. */
+.turnstile-box {
+  min-height: 65px;
+  max-width: 100%;
+  overflow: hidden;
+}

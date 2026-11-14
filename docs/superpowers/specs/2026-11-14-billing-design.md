@@ -190,7 +190,7 @@ Settings are read from the gitignored `.env.payments`, which `scripts/billing/wi
 ## 10. Stubbed until a merchant account exists
 
 - Every real payment. The Billplz client has never sent a request.
-- Callback delivery from the internet: this needs the hosted deployment and a public HTTPS address, and the hosted mode must allow the webhook route, which currently calls `requireLocal()`.
+- Callback delivery from the internet: this needs the hosted deployment and a public HTTPS address. The webhook route runs in `local` and `hosted` mode (`requireApp()`); hosted mode uses `APP_ORIGIN` as the callback address unless `JOMCALL_PUBLIC_ORIGIN` is set.
 - Refund money movement (Billplz Payment Order) and its callback.
 - Card saving and automatic top-up.
 - SST and e-invoice submission.

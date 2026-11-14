@@ -1,4 +1,8 @@
 import { PgBoss } from "pg-boss";
+import {
+  databaseConnection,
+  validNamespace,
+} from "../../../packages/contracts/src/hosting.ts";
 import { z } from "zod";
 import { AgentRepository } from "./repository.ts";
 import {
@@ -40,22 +44,16 @@ export class AgentRunner {
     readonly namespace: string,
     model?: ModelClient,
   ) {
-    if (
-      namespace !== "local" &&
-      !(
-        process.env.NODE_ENV === "test" &&
-        /^test_[a-f0-9-]{36}$/.test(namespace)
-      )
-    )
-      throw Error("INVALID_QUEUE_NAMESPACE");
+    validNamespace(namespace);
     if (model && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
     this.model = model;
-    const url = new URL(process.env.QUEUE_DATABASE_URL ?? "");
-    if (url.hostname !== "127.0.0.1" || url.port !== "54622")
-      throw Error("LOCAL_DATABASE_REQUIRED");
+    const queue = databaseConnection(
+      process.env.QUEUE_DATABASE_URL,
+      "QUEUE_DATABASE_URL",
+    );
     this.repository = new AgentRepository(namespace);
     this.boss = new PgBoss({
-      connectionString: url.toString(),
+      ...queue,
       schema: "pgboss",
       createSchema: false,
     });

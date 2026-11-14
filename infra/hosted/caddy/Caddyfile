@@ -1,0 +1,8 @@
+# TLS for the LiveKit WebSocket. Caddy obtains and renews the certificate.
+{
+	email {$ACME_EMAIL}
+}
+
+{$LIVEKIT_DOMAIN} {
+	reverse_proxy livekit:7880
+}

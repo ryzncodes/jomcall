@@ -1,4 +1,5 @@
 import pg from "pg";
+import { databaseConnection } from "../../../packages/contracts/src/hosting.ts";
 import type {
   ToolAccess,
   ToolEffect,
@@ -9,11 +10,19 @@ import { calculateAvailability } from "../../../packages/domain/src/booking/avai
 export class AgentRepository {
   private pool: pg.Pool;
   constructor(readonly namespace: string) {
-    const url = new URL(process.env.AGENT_DATABASE_URL ?? "");
-    if (url.hostname !== "127.0.0.1" || url.port !== "54622")
-      throw Error("LOCAL_DATABASE_REQUIRED");
-    this.pool = new pg.Pool({ connectionString: url.toString(), max: 3 });
+    this.pool = new pg.Pool({
+      ...databaseConnection(
+        process.env.AGENT_DATABASE_URL,
+        "AGENT_DATABASE_URL",
+      ),
+      max: 3,
+    });
     this.pool.on("error", () => console.error("AGENT_DATABASE_POOL_ERROR"));
+  }
+  // One round trip; the health check uses it.
+  async ping() {
+    await this.pool.query("select 1");
+    return true;
   }
   async op(
     action: string,

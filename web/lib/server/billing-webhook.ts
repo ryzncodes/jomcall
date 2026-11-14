@@ -2,7 +2,7 @@ import "server-only";
 import { AppError } from "../../../packages/contracts/src/index.ts";
 import { paymentReadiness } from "../../../packages/billing/src/provider.ts";
 import { paymentProvider } from "../../../packages/domain/src/billing.ts";
-import { requireLocal } from "./config.ts";
+import { requireApp } from "./config.ts";
 import { database } from "./services.ts";
 import { respond, failure } from "./http.ts";
 
@@ -36,7 +36,8 @@ async function readLimited(request: Request) {
 
 export async function handleBillingWebhook(request: Request, name: string) {
   try {
-    requireLocal();
+    // Local and hosted mode only; mock mode has no records to settle.
+    requireApp();
     if (request.method !== "POST") throw new AppError("METHOD_NOT_ALLOWED", 405);
     const ready = paymentReadiness();
     // An unconfigured or different provider gets the same answer as an unknown path.
