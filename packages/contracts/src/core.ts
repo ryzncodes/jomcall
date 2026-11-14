@@ -27,6 +27,15 @@ import {
   type Resource,
   type Slot,
 } from "./booking.ts";
+import {
+  phoneNumberCreate,
+  phoneNumberUpdate,
+  callList,
+  type PhoneNumber,
+  type PhoneNumbers,
+  type CallSummary,
+  type CallDetail,
+} from "./phone.ts";
 import { z } from "zod";
 import {
   topupInput,
@@ -509,6 +518,21 @@ export const commands = {
     id,
     out<Topup>(),
   ),
+  phoneNumbers: route("GET", "/phone-numbers", empty, out<PhoneNumbers>()),
+  createPhoneNumber: route(
+    "POST",
+    "/phone-numbers",
+    phoneNumberCreate,
+    out<PhoneNumber>(),
+  ),
+  updatePhoneNumber: route(
+    "PATCH",
+    "/phone-numbers/:id",
+    phoneNumberUpdate.extend({ id: uuid }),
+    out<PhoneNumber>(),
+  ),
+  calls: route("GET", "/calls", callList, out<Page<CallSummary>>()),
+  call: route("GET", "/calls/:id", id, out<CallDetail>()),
   whatsappOverview: route(
     "GET",
     "/channels/whatsapp",

@@ -13,6 +13,12 @@ import {
   startHealthServer,
 } from "../health.ts";
 import { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
+import { CallRepository } from "./call-repository.ts";
+import { startPhoneServer, PHONE_PORT } from "./phone-server.ts";
+import {
+  liveKitTelephony,
+  telephonyConfig,
+} from "../../../packages/domain/src/phone/telephony.ts";
 import { WhatsAppWorker } from "../whatsapp/worker.ts";
 import { whatsappMode } from "../../../packages/whatsapp/src/provider.ts";
 import { createCloudProvider } from "../../../packages/whatsapp/src/cloud.ts";
@@ -42,6 +48,11 @@ async function startWhatsApp() {
 // Spoken turns are served only when the owner opted into the hosted model.
 let voiceRepository: AgentRepository | undefined;
 let voice: Awaited<ReturnType<typeof startVoiceServer>> | undefined;
+// Real phone calls: only when the owner set JOMCALL_TELEPHONY_PROVIDER=livekit_sip
+// (and hosted voice). Off by default; the local app then shows "not connected".
+const phoneSettings = telephonyConfig().config;
+let callRepository: CallRepository | undefined;
+let phone: Awaited<ReturnType<typeof startPhoneServer>> | undefined;
 if (provider === "hosted") {
   try {
     const repository = (voiceRepository = new AgentRepository(ns));
@@ -52,7 +63,24 @@ if (provider === "hosted") {
         health: mode === "hosted" ? () => repository.ping() : undefined,
       },
     );
+    if (phoneSettings) {
+      callRepository = new CallRepository(ns);
+      phone = await startPhoneServer(
+        {
+          calls: callRepository,
+          telephony: liveKitTelephony(phoneSettings),
+          maxConcurrent: phoneSettings.maxConcurrent,
+          capSeconds: phoneSettings.capSeconds,
+          now: Date.now,
+          model: streamVoiceModel,
+        },
+        // Same bind, mode and service secret as the browser voice endpoint.
+        { ...listen!, port: PHONE_PORT },
+      );
+    }
   } catch (error) {
+    await phone?.close();
+    await callRepository?.close();
     await voiceRepository?.close();
     await runner.close();
     throw error;
@@ -71,6 +99,8 @@ let stopping = false;
 async function stop() {
   stopping = true;
   await health?.close();
+  await phone?.close();
+  await callRepository?.close();
   await voice?.close();
   await voiceRepository?.close();
   await whatsapp?.close();

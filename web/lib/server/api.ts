@@ -5,6 +5,7 @@ import {
 import { whatsappReadiness } from "../../../packages/whatsapp/src/provider.ts";
 import { whatsappRoute } from "../../../packages/domain/src/whatsapp/routes.ts";
 import { bookingRoute } from "../../../packages/domain/src/booking/routes.ts";
+import { phoneRoute } from "../../../packages/domain/src/phone/routes.ts";
 import { commands } from "../../../packages/contracts/src/core.ts";
 import { privacyRoute } from "../../../packages/domain/src/privacy.ts";
 import "server-only";
@@ -44,7 +45,7 @@ async function dispatch(request: Request, deps: CoreDeps) {
     const identity = await verifyIdentity(request);
     const db = database();
     const disabled =
-      /^\/(calls|inbox|whatsapp|integrations|phone-numbers|payments|outbound|admin|self-host|test-call)(?:\/|$)/.test(
+      /^\/(inbox|whatsapp|integrations|payments|outbound|admin|self-host|test-call)(?:\/|$)/.test(
         path,
       );
     const matching = Object.values(commands).filter((c) =>
@@ -134,6 +135,16 @@ async function dispatch(request: Request, deps: CoreDeps) {
           new URL(request.url).searchParams,
         );
         if (bookingResult !== undefined) return respond(bookingResult);
+        const phoneResult = await phoneRoute(
+          tx,
+          context,
+          method,
+          path,
+          body,
+          key,
+          new URL(request.url).searchParams,
+        );
+        if (phoneResult !== undefined) return respond(phoneResult);
         const billingResult = await billingRoute(
           tx,
           context,

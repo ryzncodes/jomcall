@@ -80,3 +80,6 @@ voice/.cache/
 
 # Voice speed replay output
 output/voice/
+
+# Generated LiveKit SIP trunk and dispatch files (operator applies them)
+output/telephony/

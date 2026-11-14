@@ -1,6 +1,10 @@
 import type { AgentRepository } from "./repository.ts";
 import type { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
-import { executeTestTool } from "../../../packages/domain/src/agent-test/tools.ts";
+import {
+  executeTestTool,
+  type ToolAccess,
+  type ToolResult,
+} from "../../../packages/domain/src/agent-test/tools.ts";
 import {
   buildKnowledgeIndex,
   searchKnowledge,
@@ -30,10 +34,38 @@ export type VoiceTurnEvent =
     }
   | { type: "error"; code: string };
 
+// What a spoken turn needs from storage. AgentRepository (test sessions) and
+// CallRepository (real phone calls) both provide it.
+export type VoiceStore = Pick<
+  AgentRepository,
+  | "voiceBegin"
+  | "voiceComplete"
+  | "voiceFail"
+  | "voiceCancel"
+  | "voiceCacheGet"
+  | "voiceCachePut"
+  | "access"
+>;
+// How a real phone call differs from a browser voice test. Absent for the
+// test path, which then behaves exactly as before.
+export type VoiceTurnPolicy = {
+  // The answer cache; on by default (test path), off on phone calls.
+  fastLane: boolean;
+  // Extra prompt text after the shared spoken rules.
+  rules(envelope: any): { stable: string; volatile: string };
+  // Runs one validated tool call in place of executeTestTool.
+  runTool(
+    access: ToolAccess,
+    step: number,
+    call: { name: string; args: unknown },
+    envelope: any,
+  ): Promise<ToolResult | { kind: string; [key: string]: unknown }>;
+};
 export type VoiceTurnDeps = {
-  repository: AgentRepository;
+  repository: VoiceStore;
   model: typeof streamVoiceModel;
   now(): number;
+  policy?: VoiceTurnPolicy;
 };
 export type VoiceTurnRequest = {
   sessionId: string;
@@ -124,7 +156,8 @@ export async function runVoiceTurn(
     // and its answer is never stored.
     // (The fast lane stays off after the first turn: a follow-up question can
     // depend on what was said earlier.)
-    const standalone = history.length === 0 && key !== null;
+    const standalone =
+      (deps.policy?.fastLane ?? true) && history.length === 0 && key !== null;
     const timings = (firstSentenceAt: number | null) => {
       const end = deps.now();
       return {
@@ -183,13 +216,20 @@ export async function runVoiceTurn(
         const hit = index.find((h) => h.sourceId === id);
         if (hit && !addEvidence(shown, [hit], 500)) break inherited;
       }
-    const system = voiceSystem(
+    const base = voiceSystem(
       envelope.session.snapshot.settings,
       envelope.resources ?? [],
       shown,
       new Date(),
       envelope.recorded ?? [],
     );
+    const extra = deps.policy?.rules(envelope);
+    const system = extra
+      ? {
+          stable: base.stable + "\n\n" + extra.stable,
+          volatile: [base.volatile, extra.volatile].filter(Boolean).join("\n\n"),
+        }
+      : base;
     const messages: unknown[] = [
       ...history.flatMap((h) => [
         { role: "user", content: h.input },
@@ -229,10 +269,10 @@ export async function runVoiceTurn(
             emit({ type: "tool", name: event.name });
           }
           checkAbort();
-          const result = await executeTestTool(access, tools++, {
-            name: event.name,
-            args: event.input,
-          });
+          const call = { name: event.name, args: event.input };
+          const result = (deps.policy
+            ? await deps.policy.runTool(access, tools++, call, envelope)
+            : await executeTestTool(access, tools++, call)) as ToolResult;
           checkAbort();
           let shown: unknown = result;
           if (result.kind === "knowledge") {

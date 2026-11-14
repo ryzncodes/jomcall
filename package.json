@@ -52,7 +52,9 @@
     "billing:reconcile": "node --env-file=.env.local --env-file-if-exists=.env.payments --import tsx scripts/billing/reconcile.ts",
     "billing:admin": "node --env-file=.env.local --import tsx scripts/billing/admin.ts",
     "db:apply-migration:local": "node --env-file=.env.local scripts/billing/apply-migration.mjs",
-    "dev:local:fake-payments": "JOMCALL_PAYMENT_PROVIDER=fake npm run dev:local"
+    "dev:local:fake-payments": "JOMCALL_PAYMENT_PROVIDER=fake npm run dev:local",
+    "telephony:sip-config": "node --env-file=.env.local --import tsx scripts/telephony/sip-config.ts",
+    "phone:simulate": "cd voice && uv run --env-file ../.env.local python -m tools.phone_sim"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",

@@ -31,6 +31,7 @@ Monthly costs are the design's figures, checked on vendor pages on 2026-11-14, i
 | 6 | **[OWNER]** Cloudflare (one account for staging and production) | DNS, Turnstile, R2 and Email Service. **Workers Paid** is required to send email to arbitrary recipients | 5 (Workers Paid). Email: 3,000 a month included, then 0.35 per 1,000. R2: 10 GB-month included, then 0.015 per GB-month. DNS and Turnstile: 0 (Turnstile free-plan limits not checked) | Decided 2026-11-14 (design amendment). Email Sending is in **beta**. Replaces a separate email provider. Section C |
 | 7 | **[OWNER]** Speech and model vendors | Separate **staging** and **production** keys at Deepgram, Anthropic, Google Cloud (Gemini TTS), and OpenRouter if the typed path stays on it | usage only | Set a spending cap and usage alert on each |
 | 8 | **[OWNER]** Optional monitoring | One uptime service (Better Stack or UptimeRobot free) and one error tracker (Sentry free) | 0 | Each is a new outbound service needing approval |
+| 9 | **[OWNER]** Optional, later: phone line | A SIP trunk provider with a +60 number and SIP REFER, and a decision on where LiveKit's SIP service runs (step 11) | provider pricing, not checked | Not needed for the closed beta. Each is a new outbound service needing approval |
 
 Expected hosting total before any customer: **about USD 75 to 87 a month** (design §1 plus USD 5 for Cloudflare Workers Paid; see the 2026-11-14 amendment at the end of the design).
 
@@ -314,6 +315,21 @@ Set the Vercel **Production** variables (`JOMCALL_MODE=hosted`, production value
 Typed and browser voice tests only. Real callers wait for the phone line, the Google limit and the PDPA sign-off. Weekly: error rate, speed medians, vendor spend, backup success.
 
 [ROLLBACK] pause sign-ups; disable voice; maintenance page.
+
+## Step 11. Phone line (optional, after the beta) — [OWNER], new outbound services
+
+Full steps: `docs/research/phone-line-owner-steps.md`. Nothing here has been run against a carrier or a live SIP service.
+
+1. **[OWNER] Decide where LiveKit's SIP service runs.** The Compose file does not include it, because the design recommends LiveKit Cloud for the first test call (no SIP or RTP ports opened on this server). Self-hosting means adding `livekit/sip` (Apache-2.0) and Redis, and opening 5060 UDP/TCP and an RTP range to the provider's addresses only. Either choice needs written approval in `AGENTS.md`.
+2. **[OWNER]** Buy a +60 number from a SIP trunk provider with REFER, point its origination at the SIP service, use PCMU/PCMA and an IP allow-list.
+3. Publish the agent; add the number on the Phone numbers screen of this environment.
+4. Generate the trunk and dispatch rule (`npm run telephony:sip-config -- --allowed <provider IPs>`, against this environment's database) and apply them with `lk sip inbound create` and `lk sip dispatch create`.
+5. Set `JOMCALL_TELEPHONY_PROVIDER=livekit_sip` in Vercel and `agent.env`, and add `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` to `agent.env` (the agent checks the SIP caller and starts transfers). Optional: `JOMCALL_SIP_TRANSFER_URI`, `JOMCALL_MAX_CONCURRENT_CALLS`, `JOMCALL_CALL_CAP_SECONDS`. Compose already sets `JOMCALL_PHONE_URL` for the voice worker. The phone endpoint uses the same private bind and `JOMCALL_VOICE_SERVICE_SECRET` as the browser voice endpoint, on port 54635 (never published).
+6. `docker compose up -d agent voice`; the Phone numbers screen should say "Phone line connected". Prewarm the `Kore` voice and the agent's voice.
+
+[CHECK] the first test call checklist in the owner-steps document: disclosure first, read-back before a booking, transfer and ring-out, the call log, a second caller hearing the busy line.
+
+[ROLLBACK] set `JOMCALL_TELEPHONY_PROVIDER=disabled` in Vercel and `agent.env`, `docker compose up -d agent`; point the provider's number back at the owner's phone.
 
 ---
 
