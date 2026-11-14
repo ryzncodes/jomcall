@@ -7,6 +7,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { phoneFixture, phoneSettings } from "../helpers/phone.ts";
 import { webhookPost } from "../../web/lib/server/whatsapp-webhook.ts";
 import { buildInboundText, signBody } from "../../packages/whatsapp/src/index.ts";
+import { gapRecord } from "../../packages/domain/src/knowledge/tools.ts";
+import { Engine } from "../../engine/src/engine.ts";
 
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
 const secret = "test-app-secret-" + randomUUID();
@@ -64,11 +66,24 @@ const callWork = (f: Fixture, action: string, c: { callId: string; tokenHash: st
 
 // A WhatsApp turn claimed through the same SQL the worker uses; no worker, no model.
 async function liveTurn(f: Fixture) {
-  Object.assign(process.env, {
+  const env = {
     JOMCALL_WHATSAPP_PROVIDER: "fake",
     WHATSAPP_APP_SECRET: secret,
     WHATSAPP_VERIFY_TOKEN: "verify-token-" + randomUUID(),
-  });
+  };
+  const before = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, env);
+  try {
+    return await liveTurnInner(f);
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+async function liveTurnInner(f: Fixture) {
   await published(f);
   const saved = await f.req("PUT", "/channels/whatsapp", { phoneNumberId: waPhone, wabaId: "200000001", agentEnabled: true });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
@@ -141,7 +156,7 @@ test("a lookup reads the published set, not later edits", async () => {
   }
 });
 
-test("another organization's call or turn is refused and returns no rows", async () => {
+test("another organization's call is refused, and an unknown WhatsApp turn id or lease returns nothing", async () => {
   const f = await phoneFixture();
   try {
     const a = await liveCall(f);
@@ -177,7 +192,8 @@ test("another organization's call or turn is refused and returns no rows", async
       }),
     ]);
     assert.deepEqual(await callWork(f, "catalogue", b, query), []);
-    // WhatsApp: a turn is reached only with its own id and lease.
+    // WhatsApp: a turn is reached only with its own id and lease (an unknown
+    // turn id or an unknown lease finds nothing).
     assert.equal(await t.work("catalogue", t.turn, randomUUID(), query), null);
     assert.equal(await t.work("catalogue", randomUUID(), t.lease, query), null);
   } finally {
@@ -237,6 +253,182 @@ test("agent_knowledge results are unchanged", async () => {
     assert.deepEqual(await run({ item: "timing belt", code: "", fits: "Honda City" }), []);
     await assert.rejects(run({ item: "", code: "", fits: "" }), /INVALID_TOOL/);
   } finally {
+    await f.close();
+  }
+});
+
+const embedQuery = { model: "no-such-model", vector: "[" + Array(768).fill(0).join(",") + "]", hashes: [] as string[] };
+
+test("a unit lookup with a model that has no embeddings returns nothing on every path", async () => {
+  const f = await phoneFixture();
+  try {
+    const c = await liveCall(f);
+    const t = await liveTurn(f);
+    assert.deepEqual(await callWork(f, "units", c, embedQuery), []);
+    assert.deepEqual(await t.work("units", t.turn, t.lease, embedQuery), []);
+    // agent_knowledge (browser path)
+    const path = `/agents/${f.h.orgA.agentId}`;
+    const rev = (await f.req("GET", `${path}/draft`)).body.data.revision;
+    const session = (
+      await f.req("POST", "/agent-tests", { agentId: f.h.orgA.agentId, locationId: f.h.orgA.locationId, source: { kind: "draft", expectedRevision: rev } })
+    ).body.data;
+    const lease = randomUUID();
+    const turn = (
+      await f.h.cleanup.query(
+        "insert into app.test_turn(org_id,session_id,client_turn_id,request_hash,input,state,lease_token,lease_until)values($1,$2,$3,'fixture','Test','running',$4,now()+interval '60 seconds')returning id",
+        [f.h.orgA.id, session.id, randomUUID(), lease],
+      )
+    ).rows[0].id;
+    const r = (await f.h.cleanup.query("select app_private.agent_knowledge('units',$1,$2,$3,$4) as v", [f.h.namespace, turn, lease, JSON.stringify(embedQuery)])).rows[0].v;
+    assert.deepEqual(r, []);
+  } finally {
+    await cleanWhatsApp(f);
+    await f.close();
+  }
+});
+
+test("a call whose snapshot has no catalogue set gets an empty result", async () => {
+  const f = await phoneFixture();
+  try {
+    // Published with no catalogue, so the frozen snapshot has setId null.
+    await f.publish();
+    const dialled = await f.addNumber();
+    const { result } = await f.ring(dialled);
+    if (result.refusal !== null) throw Error("refused");
+    const tokenHash = sha(result.token);
+    const snap = (await f.h.cleanup.query("select snapshot->'catalogue'->>'setId' as s from app.call where id=$1", [result.callId])).rows[0].s;
+    assert.equal(snap, null);
+    const env = (
+      await f.h.cleanup.query("select app_private.agent_call('turn_begin',$1,$2,$3,null,null,$4) as v", [
+        f.h.namespace,
+        result.callId,
+        tokenHash,
+        JSON.stringify({ input: "Berapa harga servis?", clientTurnId: randomUUID() }),
+      ])
+    ).rows[0].v;
+    const c = { callId: result.callId, tokenHash, turn: env.turn.id as string, lease: env.turn.lease_token as string };
+    assert.deepEqual(await callWork(f, "catalogue", c, query), []);
+  } finally {
+    await f.close();
+  }
+});
+
+// Gap log on phone and WhatsApp.
+const gapData = (over: Record<string, unknown> = {}) => ({
+  ...gapRecord("Ada jual tayar?", "ms", "phone", "Saya akan tanya staf."),
+  ...over,
+});
+const asks = async (f: Fixture) =>
+  (await f.h.cleanup.query("select question,contact_id,session_id,call_id,conversation_id,channel from app.knowledge_gap_ask where org_id=$1 order by asked_at,id", [f.h.orgA.id])).rows;
+
+test("a phone gap is stored against the call", async () => {
+  const f = await phoneFixture();
+  try {
+    const c = await liveCall(f);
+    const r = await callWork(f, "gap", c, gapData());
+    assert.ok(r.id);
+    const rows = await asks(f);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].call_id, c.callId);
+    assert.equal(rows[0].session_id, null);
+    assert.equal(rows[0].conversation_id, null);
+    assert.equal(rows[0].channel, "phone");
+    await assert.rejects(callWork(f, "gap", c, gapData({ channel: "whatsapp" })), /INVALID_GAP/);
+    await assert.rejects(callWork(f, "gap", c, gapData({ key: "nope" })), /INVALID_GAP/);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a WhatsApp gap masks contact details exactly as the browser path does", async () => {
+  const f = await phoneFixture();
+  try {
+    const t = await liveTurn(f);
+    const text = "boleh call saya 0123456789 nama Ali";
+    const wa = gapRecord(text, "ms", "whatsapp", "Saya akan tanya staf.");
+    assert.doesNotMatch(wa.question, /0123456789/);
+    const r = await t.work("gap", t.turn, t.lease, wa);
+    assert.ok(r.id);
+    // The same string through the browser path, via the same gapRecord.
+    const path = `/agents/${f.h.orgA.agentId}`;
+    const rev = (await f.req("GET", `${path}/draft`)).body.data.revision;
+    const session = (
+      await f.req("POST", "/agent-tests", { agentId: f.h.orgA.agentId, locationId: f.h.orgA.locationId, source: { kind: "draft", expectedRevision: rev } })
+    ).body.data;
+    const lease = randomUUID();
+    const turn = (
+      await f.h.cleanup.query(
+        "insert into app.test_turn(org_id,session_id,client_turn_id,request_hash,input,state,lease_token,lease_until)values($1,$2,$3,'fixture','Test','running',$4,now()+interval '60 seconds')returning id",
+        [f.h.orgA.id, session.id, randomUUID(), lease],
+      )
+    ).rows[0].id;
+    await f.h.cleanup.query("select app_private.agent_knowledge('gap',$1,$2,$3,$4)", [
+      f.h.namespace, turn, lease, JSON.stringify(gapRecord(text, "ms", "text", "x")),
+    ]);
+    const rows = await asks(f);
+    const wRow = rows.find((x) => x.channel === "whatsapp");
+    const bRow = rows.find((x) => x.channel === "text");
+    assert.ok(wRow && bRow);
+    assert.equal(wRow.question, bRow.question);
+    assert.doesNotMatch(wRow.question, /0123456789/);
+    assert.ok(wRow.conversation_id);
+    assert.ok(wRow.contact_id);
+    await assert.rejects(t.work("gap", t.turn, t.lease, { ...wa, channel: "phone" }), /INVALID_GAP/);
+    assert.equal(await t.work("gap", t.turn, randomUUID(), wa), null);
+  } finally {
+    await cleanWhatsApp(f);
+    await f.close();
+  }
+});
+
+test("contact export and delete cover channel gaps", async () => {
+  const f = await phoneFixture();
+  let engine: Engine | undefined;
+  try {
+    const t = await liveTurn(f);
+    await t.work("gap", t.turn, t.lease, gapRecord("Ada jual tayar?", "ms", "whatsapp", "Saya akan tanya staf."));
+    const row = (await asks(f))[0];
+    assert.ok(row.contact_id);
+    const rev = (await f.h.cleanup.query("select revision from app.contact where id=$1", [row.contact_id])).rows[0].revision;
+    const ex = (await f.req("POST", `/contacts/${row.contact_id}/export`, { expectedRevision: rev })).body.data;
+    engine = await Engine.create(f.h.namespace);
+    await engine.tick();
+    const download = await f.req("GET", `/jobs/${ex.id}/download`);
+    assert.equal(download.status, 200);
+    assert.equal(download.body.knowledgeGaps.length, 1);
+    assert.equal(download.body.knowledgeGaps[0].channel, "whatsapp");
+    const del = await f.req("POST", `/contacts/${row.contact_id}/deletion`, { expectedRevision: rev });
+    assert.equal(del.status, 200);
+    await engine.tick();
+    assert.equal((await asks(f)).length, 0);
+    assert.equal(Number((await f.h.cleanup.query("select count(*) from app.knowledge_gap where org_id=$1", [f.h.orgA.id])).rows[0].count), 0);
+  } finally {
+    await engine?.close();
+    await cleanWhatsApp(f);
+    await f.close();
+  }
+});
+
+test("an ask needs at most one parent, and a phone or WhatsApp ask needs its own", async () => {
+  const f = await phoneFixture();
+  try {
+    const c = await liveCall(f);
+    const t = await liveTurn(f);
+    await callWork(f, "gap", c, gapData());
+    await t.work("gap", t.turn, t.lease, gapRecord("Soalan lain", "ms", "whatsapp", ""));
+    const [a, w] = await asks(f);
+    const gapId = (await f.h.cleanup.query("select gap_id from app.knowledge_gap_ask where call_id=$1", [a.call_id])).rows[0].gap_id;
+    const ins = (cols: string, vals: unknown[]) =>
+      f.h.cleanup.query(`insert into app.knowledge_gap_ask(org_id,gap_id,question,language,channel,${cols})values($1,$2,'q','ms',$3,${vals.slice(3).map((_, i) => "$" + (i + 4)).join(",")})`, vals as never);
+    // Two parents.
+    await assert.rejects(ins("call_id,conversation_id", [f.h.orgA.id, gapId, "phone", a.call_id, w.conversation_id]), /knowledge_gap_ask_one_parent/);
+    // A phone ask with no call, and a WhatsApp ask with no conversation.
+    await assert.rejects(ins("contact_id", [f.h.orgA.id, gapId, "phone", null]), /knowledge_gap_ask_one_parent/);
+    await assert.rejects(ins("contact_id", [f.h.orgA.id, gapId, "whatsapp", null]), /knowledge_gap_ask_one_parent/);
+    // A browser channel may not carry a call.
+    await assert.rejects(ins("call_id", [f.h.orgA.id, gapId, "text", a.call_id]), /knowledge_gap_ask_one_parent/);
+  } finally {
+    await cleanWhatsApp(f);
     await f.close();
   }
 });

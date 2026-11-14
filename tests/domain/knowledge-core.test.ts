@@ -145,6 +145,15 @@ test("a gap needs a message, flagged unanswered or after an empty lookup", () =>
   assert.match(g.key, /^[0-9a-f]{64}$/);
 });
 
+test("gapRecord accepts phone and whatsapp channels", () => {
+  const channels: ("text" | "voice" | "phone" | "whatsapp")[] = ["text", "voice", "phone", "whatsapp"];
+  for (const ch of channels) {
+    const g = gapRecord("Ada tayar? 012-555 0188", "ms", ch, "Saya akan tanya staf.");
+    assert.equal(g.channel, ch);
+    assert.match(g.question, /\[number\]/);
+  }
+});
+
 test("unit search: free text keeps old ids, facts are units, embeddings only when switched on", async () => {
   const index = buildUnitIndex(snapshot);
   assert.ok(index.some((h) => h.title === "Parking" && /:0:0$/.test(h.sourceId)));

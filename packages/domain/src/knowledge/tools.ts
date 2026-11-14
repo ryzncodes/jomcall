@@ -40,7 +40,7 @@ export interface KnowledgeAccess {
     key: string;
     question: string;
     language: string;
-    channel: "text" | "voice";
+    channel: "text" | "voice" | "phone" | "whatsapp";
     answer: string;
   }): Promise<unknown>;
 }
@@ -252,7 +252,7 @@ export function isGap(calls: { call: CoreToolCall; result?: CoreToolResult }[]):
       (c.result?.kind === "knowledge" && c.result.items.length === 0),
   );
 }
-export function gapRecord(question: string, language: string, channel: "text" | "voice", answer: string) {
+export function gapRecord(question: string, language: string, channel: "text" | "voice" | "phone" | "whatsapp", answer: string) {
   const masked = Array.from(maskContact(question)).slice(0, 600).join("");
   return {
     key: questionKey(masked),
