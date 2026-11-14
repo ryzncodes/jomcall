@@ -123,6 +123,8 @@ services:
     environment:
       JOMCALL_MODE: hosted
       JOMCALL_VOICE_TURN_URL: http://172.30.0.10:54633
+      # Phone calls (only used when the agent runs with JOMCALL_TELEPHONY_PROVIDER=livekit_sip).
+      JOMCALL_PHONE_URL: http://172.30.0.10:54635
       # The worker reaches LiveKit over the private network, not the public URL.
       LIVEKIT_URL: ws://livekit:7880
     volumes:

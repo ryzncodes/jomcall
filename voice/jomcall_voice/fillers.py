@@ -162,6 +162,15 @@ GOODBYE: dict[str, str] = {
     "zh": "谢谢您来电，再见。",
 }
 
+# A phone caller refused by the line limit hears this before the call ends.
+# The worker plays the Malay line, then the English one, from the cache only.
+BUSY: dict[str, str] = {
+    "ms": "Maaf, semua talian kami sibuk sekarang. Sila hubungi kami semula sebentar lagi.",
+    "en": "Sorry, all our lines are busy right now. Please call again in a few minutes.",
+    "manglish": "Sorry ah, all our lines busy now. Please call again in a few minutes.",
+    "zh": "不好意思，我们的线路现在都在忙。请过几分钟再打来。",
+}
+
 def fixed_lines(languages: tuple[str, ...] = LANGUAGES) -> list[str]:
     """Every line the worker may say without the brain, minus detail templates."""
     out: list[str] = []
@@ -170,7 +179,7 @@ def fixed_lines(languages: tuple[str, ...] = LANGUAGES) -> list[str]:
         out += NEUTRAL[lang]
         for by_lang in LINES.values():
             out += [x for x in by_lang[lang] if "{detail}" not in x]
-        out += [TROUBLE[lang], REPEAT[lang], GOODBYE[lang]]
+        out += [TROUBLE[lang], REPEAT[lang], GOODBYE[lang], BUSY[lang]]
     return list(dict.fromkeys(out))
 
 

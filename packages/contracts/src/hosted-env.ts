@@ -354,6 +354,45 @@ export const SETTINGS: Setting[] = [
     required: false,
     description: "Stage timing directory (set by Compose to a volume)",
   },
+  // --- Phone line (opt-in; off unless JOMCALL_TELEPHONY_PROVIDER=livekit_sip) --
+  {
+    name: "JOMCALL_TELEPHONY_PROVIDER",
+    services: ["web", "agent"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: disabled (default) or livekit_sip; needs hosted voice, and LIVEKIT_URL, LIVEKIT_API_KEY and LIVEKIT_API_SECRET in agent.env too",
+  },
+  {
+    name: "JOMCALL_SIP_TRANSFER_URI",
+    services: ["agent"],
+    secret: false,
+    required: false,
+    description:
+      "Optional transfer target template with {e164}; default tel:{e164}",
+  },
+  {
+    name: "JOMCALL_MAX_CONCURRENT_CALLS",
+    services: ["agent"],
+    secret: false,
+    required: false,
+    description: "Optional: live phone calls at once, 1 to 20; default 1",
+  },
+  {
+    name: "JOMCALL_CALL_CAP_SECONDS",
+    services: ["agent"],
+    secret: false,
+    required: false,
+    description: "Optional: longest phone call in seconds, 60 to 3600; default 600",
+  },
+  {
+    name: "JOMCALL_PHONE_URL",
+    services: ["voice"],
+    secret: false,
+    required: false,
+    description:
+      "Agent phone endpoint on the private network (set by Compose to http://172.30.0.10:54635)",
+  },
   // --- LiveKit and proxy --------------------------------------------------
   {
     name: "LIVEKIT_KEYS",
@@ -464,6 +503,7 @@ export const COMPOSE_ENVIRONMENT: Partial<Record<Service, Env>> = {
   voice: {
     JOMCALL_MODE: "hosted",
     JOMCALL_VOICE_TURN_URL: "http://172.30.0.10:54633",
+    JOMCALL_PHONE_URL: "http://172.30.0.10:54635",
     LIVEKIT_URL: "ws://livekit:7880",
   },
 };

@@ -83,6 +83,8 @@ class Call(TurnMixin):
         new_id: Callable[[], str] = lambda: str(uuid.uuid4()),
         wall_ms: Callable[[], float] = lambda: time.time() * 1000,
         stage_log: Callable[[dict], None] | None = None,
+        cap_s: float = config.CALL_CAP_S,
+        on_opened: Callable[[], Awaitable[None]] | None = None,
     ):
         self._session_id, self._token = session_id, token
         self._greeting, self._disclosure = greeting.strip(), disclosure.strip()
@@ -90,6 +92,8 @@ class Call(TurnMixin):
         self._clock, self._sink = clock, sink
         self._new_id, self._wall_ms = new_id, wall_ms
         self._stage_log = stage_log
+        self._cap_s = cap_s  # 300 s for a browser test; the phone path passes its own
+        self._on_opened = on_opened  # e.g. tell the server the disclosure was played
         self.turns: list[dict] = []
         self.end_reason: str | None = None
         self._ended = asyncio.Event()
@@ -116,6 +120,11 @@ class Call(TurnMixin):
         language, confident = fillers.guess(text)
         if confident and language:
             self._lang = language
+
+    @property
+    def language(self) -> str:
+        """The sticky conversation language (a code such as "ms", never text)."""
+        return self._lang
 
     def hangup(self) -> None:
         self._end("hangup")
@@ -153,7 +162,7 @@ class Call(TurnMixin):
         return CallResult(self.end_reason or "hangup", self.turns, self.fixed_lines_skipped)
 
     async def _cap_timer(self) -> None:
-        await self._clock.sleep(config.CALL_CAP_S)
+        await self._clock.sleep(self._cap_s)
         self._end("cap")
 
     async def _main(self) -> None:
@@ -166,6 +175,11 @@ class Call(TurnMixin):
         except Exception as error:  # a voice, sink or key failure all mean no call
             log.warning("opening failed: %s", type(error).__name__)
             return self._end("opening_failed")
+        if self._on_opened is not None:
+            try:
+                await self._on_opened()
+            except Exception as error:  # never ends the call; the class name only
+                log.warning("opened hook failed: %s", type(error).__name__)
         try:
             async for event in self._ears.events():
                 self._on_ear(event)

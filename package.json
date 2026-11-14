@@ -46,7 +46,9 @@
     "check:voice-speed": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m tools.replay",
     "whatsapp:simulate": "node --env-file-if-exists=.env.local --import tsx scripts/local/whatsapp-simulate.ts",
     "voice:prewarm": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice.prewarm",
-    "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts"
+    "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts",
+    "telephony:sip-config": "node --env-file=.env.local --import tsx scripts/telephony/sip-config.ts",
+    "phone:simulate": "cd voice && uv run --env-file ../.env.local python -m tools.phone_sim"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",

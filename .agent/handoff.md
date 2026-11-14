@@ -1,5 +1,26 @@
 # Handoff
 
+## 2026-11-14 — phone line, milestone B (code side)
+
+Branch `feat/phone-line`, pull request #12 against `main`; not merged.
+
+**Changed**
+- Design: `docs/superpowers/specs/2026-11-14-phone-line-design.md` (ten open decisions, each built to its recommendation). Owner steps: `docs/research/phone-line-owner-steps.md`.
+- Migration `20261114190000_phone_calls.sql`: `phone_number`, `call`, `call_turn`, `call_tool_step`, `call_proposal`, `organization.calls_suspended_at`, function `app_private.agent_call`.
+- Engine: `engine/src/agent/phone-call.ts`, `phone-server.ts` (loopback 54635), `call-repository.ts`; `voice-turn.ts` takes an optional policy (browser path unchanged).
+- Worker: `voice/jomcall_voice/phone.py`, phone branch in `worker.py`, `cap_s`/`on_opened` on `Call`, `path`/`id_field` on the brain client, busy line in `fillers.py`. Simulator `voice/tools/phone_sim.py`.
+- Web (local app only): commands `phoneNumbers`, `createPhoneNumber`, `updatePhoneNumber`, `calls`, `call`; screens in `web/components/core/phone.tsx`. `/calls` and `/phone-numbers` are no longer in the disabled list.
+
+**Verified** (2026-11-14, after merging hosted mode and WhatsApp): `typecheck` clean; `test:guards` 23/23; `test:offline` 181 tests, 180 pass, 1 skipped; `check:core` 310 tests, 308 pass, 0 fail, 2 skipped (port 54633 busy); `uv run pytest` 284 passed (`tests/test_call.py` unchanged); `db:verify-migrations` passed; GitHub CI green on b0a0ad3.
+
+**Merged with hosted mode (#16)**: migration renamed to `20261114190000_phone_calls.sql` (version clash with `20261114180000_hosted_namespaces.sql`) and its namespace check accepts `staging` and `prod`; the phone listener takes the voice endpoint's bind, mode and service secret; `CallRepository` uses `queueNamespace()`; the worker's phone client sends the service key and validates `JOMCALL_PHONE_URL` like the turn URL; telephony settings added to `hosted-env.ts`, the example, Compose (`JOMCALL_PHONE_URL` for voice) and RUNBOOK step 11. The SIP service is not in Compose (LiveKit Cloud recommended first).
+
+**Not verified / open**
+- No carrier, number, trunk or live LiveKit SIP service was used; the LiveKit telephony code is checked against types and documentation only.
+- The simulator was never run. The screens were not opened in a browser.
+- Phone rules not gated on the 48 cases. PDPA export does not include calls yet.
+- The shared local database has the phone migration applied directly with psql (no `schema_migrations` row) because the WhatsApp and billing branches' versions are in it; see the shared notes file `phone-line-notes.md`.
+
 ## 2026-11-14 — WhatsApp channel against a fake (no Meta account)
 
 Branch `feat/whatsapp-channel` from `main` (merged with `origin/main` again after PR #16, hosted mode). Works in `local` and `hosted` modes through the hosting helpers (`validNamespace`, `databaseConnection`, `queueNamespace`); the webhook stays closed in `mock`. The two WhatsApp functions accept `staging` and `prod` namespaces directly, because their migrations sort before `20261114180000_hosted_namespaces.sql`. Pushed, pull request against `main`; not merged.
