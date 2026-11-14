@@ -26,8 +26,8 @@ Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 1. Owner: approve a payment provider as an outbound service, then follow the checklist in the research note, section 6.
 2. Phone line and WhatsApp sessions: call `recordUsage` after the provider confirms a call or conversation, and `walletState` before starting a new one.
 3. Owner: final prices (new `billing_price` version).
-5. Follow-up (not wired): meter WhatsApp conversations by calling `recordUsage(..., kind: "whatsapp_conversation")` from the WhatsApp worker once the provider confirms a conversation.
 4. On a database where the billing migration is not yet applied: run `npm run db:migrate:local` before `npm run db:verify-migrations`, or drop the stray `jomcall_billing` role first.
+5. Follow-up (not wired): meter WhatsApp conversations by calling `recordUsage(..., kind: "whatsapp_conversation")` from the WhatsApp worker once the provider confirms a conversation.
 
 ## 2026-11-14 — WhatsApp channel against a fake (no Meta account)
 
