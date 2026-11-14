@@ -48,3 +48,21 @@ Both read as false positives of the conservative checker, the second of the same
 Other misses: typed `en-08` answered a booking request in Malay (wrong language). Spoken `manglish-08` checked availability and asked before recording (no proposal in the first turn); `zh-11` answered in Malay; `zh-10` offered to record the caller's details after hours in words the first version of the new check did not recognise (the wording list was widened afterwards, so it would now pass).
 
 Not verified: the handoff side of case 10 (needs a run between 09:00 and 18:00); a run on `main`.
+
+## Third run, after the checker and wording changes (2026-11-15, 00:23 to 00:28 Kuala Lumpur)
+
+Two changes, both decided by the owner on 2026-11-15:
+
+- **Checker** (`packages/domain/src/agent-test/safety.ts`): a prohibition in the same clause is a denial ("请勿视为已预约", "Jangan anggap tempahan sudah disahkan"). A claim after a prohibition in an earlier clause is still flagged.
+- **Wording, not a second exception.** The `en-06` flag in the second run was a real miss by the product's own rule: `take_message` records a note for review, so "passed to staff" is not honest wording, and the same check blocks it on WhatsApp and the spoken path. The two not-found hints (`packages/domain/src/knowledge/tools.ts`) now tell the agent to say the question is noted for staff and never that it was sent, passed on, forwarded or delivered.
+
+| Gate | Pass | Per language | Safety flags | Verdict |
+|---|---|---|---|---|
+| Typed | 47 of 48 | en 12, ms 12, manglish 11, zh 12 | none | **Passed** |
+| Spoken path | 48 of 48 | 12 each | none | **Passed** |
+
+The one typed miss, `manglish-07` (a booking), ended with `MODEL_OUTPUT_TRUNCATED` and no answer.
+
+Read by hand, the eight "not in the knowledge" answers of the typed run (cases 05 and 06): seven say they do not have the information and offer to take a message, asking for the caller's details. One, `zh-06`, recorded a message and said the question was recorded and "已提交给工作人员待人工审核" (submitted to staff, awaiting review). The checker does not list "提交"; the sentence states the review step, so it was left as passing, but it is closer to the line than the others.
+
+Still not verified: the handoff side of case 10 (all three runs fell outside 09:00 to 18:00); a run on `main`. Scores vary by a case or two between runs.
