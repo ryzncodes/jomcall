@@ -162,7 +162,7 @@ begin
   return jsonb_build_object('processed',v_count);
 
  elsif p_action='verify_claim' then
-  select jsonb_build_object('id',h.id,'revision',h.revision,'phoneNumberId',h.phone_number_id,'wabaId',h.waba_id,'credentials',h.credentials)into r
+  select jsonb_build_object('id',h.id,'orgId',h.org_id,'revision',h.revision,'phoneNumberId',h.phone_number_id,'wabaId',h.waba_id,'credentials',h.credentials)into r
   from app.whatsapp_channel h where h.namespace=p_namespace and h.state='pending' order by h.updated_at,h.id limit 1;
   return r;
  elsif p_action='verify_result' then
@@ -283,7 +283,7 @@ begin
   return jsonb_build_object(
    'message',jsonb_build_object('id',m.id,'kind',m.kind,'body',m.body,'author',m.author,'lease_token',m.lease_token,'template_variables',m.template_variables,
     'turnKind',(select q.kind from app.conversation_turn q where q.org_id=m.org_id and q.id=m.turn_id)),
-   'channel',jsonb_build_object('id',ch.id,'state',ch.state,'phoneNumberId',ch.phone_number_id,'credentials',ch.credentials),
+   'channel',jsonb_build_object('id',ch.id,'orgId',ch.org_id,'state',ch.state,'phoneNumberId',ch.phone_number_id,'credentials',ch.credentials),
    'contact',jsonb_build_object('id',k.id,'doNotContact',coalesce(k.do_not_contact,true),'deletionPending',coalesce(k.deletion_pending,true)),
    'conversation',jsonb_build_object('id',c.id,'waId',c.wa_id,'state',c.state,'lastInboundAt',c.last_inbound_at),
    'consent',jsonb_build_object(
