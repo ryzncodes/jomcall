@@ -18,6 +18,7 @@ import {
   SaveMark,
   SetupNotice,
 } from "./flow";
+import { namePrefill } from "./rules";
 
 type Words = (en: string, ms: string) => string;
 export type Day = { open: boolean; start: string; end: string };
@@ -201,7 +202,9 @@ export function WordsEditor({
   return (
     <div className="setup-words">
       <div className="product-field">
-        <label htmlFor={`${id}-greeting`}>{w("Greeting", "Salam")}</label>
+        <label htmlFor={`${id}-greeting`}>
+          {w("Greeting", "Ucapan alu-aluan")}
+        </label>
         <textarea
           id={`${id}-greeting`}
           rows={2}
@@ -237,7 +240,7 @@ export function WordsEditor({
         <p className="setup-error" role="alert">
           {w(
             "Fill in both the greeting and the AI introduction.",
-            "Isi kedua-dua salam dan pengenalan AI.",
+            "Isi kedua-dua ucapan alu-aluan dan pengenalan AI.",
           )}
         </p>
       )}
@@ -336,10 +339,10 @@ function initialValue(
     };
   const v = (live as { value?: unknown } | null)?.value;
   if (typeof v === "string") return { kind: "fact", text: v };
-  // The name was typed at workspace creation; offer it, editable. It is kept
-  // only if the owner continues, like any answer on screen.
-  const asksName = q.fills.includes("facts.business_name");
-  return { kind: "fact", text: asksName && !live ? name : "" };
+  // The name was typed at workspace creation; offer it, editable, only for a
+  // question that asks for the name alone. It is kept only if the owner
+  // continues, like any answer on screen.
+  return { kind: "fact", text: namePrefill(q.fills, !!item, name) };
 }
 
 function QuestionScreen({
@@ -417,13 +420,14 @@ function QuestionScreen({
     if (!valid) return;
     setMoving(true);
     const item = itemFor(store.view.items, q);
+    const typed = auto.dirty();
+    // Every pending and in-flight save first; on failure stay here with the
+    // error shown.
+    let ok = await store.flushAll();
     // Nothing kept yet (or skipped before): keep what is on screen, so a
     // prefilled answer counts. Empty fact text is kept as a skip.
-    const ok = auto.dirty()
-      ? await auto.flush()
-      : !item || item.state === "removed"
-        ? await send(value)
-        : true;
+    if (ok && !typed && (!item || item.state === "removed"))
+      ok = await send(value);
     setMoving(false);
     if (ok) onNext();
   };
@@ -447,9 +451,8 @@ function QuestionScreen({
     if (ok) onNext(true);
   };
   const back = async () => {
-    if (valid) await auto.flush();
-    else auto.cancel();
-    onBack();
+    if (!valid) auto.cancel();
+    if (await store.flushAll()) onBack();
   };
 
   return (

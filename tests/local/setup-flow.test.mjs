@@ -105,3 +105,18 @@ test("staff see the one setup message before anything loads", () => {
     flow.includes("Persediaan untuk pemilik dan pentadbir. Minta mereka melengkapkannya."),
   );
 });
+
+test("the finish stage unlocks Publish only through the tested rule, on a fresh draft test", () => {
+  const finish = readFileSync(join(dir, "finish.tsx"), "utf8");
+  assert.match(finish, /unlocksPublish\(baseline\.current, d\)/);
+  assert.match(finish, /searchParams\.delete\("testSession"\)/);
+  assert.match(finish, /<LocalAgentTest[^>]*resume=\{false\}/);
+  assert.match(finish, /<LocalAgentTest[^>]*startOn="draft"/);
+  assert.doesNotMatch(finish, /setTested\(true\)[^]*setTested\(true\)/);
+});
+
+test("the interview prefills the name only through the tested rule", () => {
+  const interview = readFileSync(join(dir, "interview.tsx"), "utf8");
+  assert.match(interview, /namePrefill\(q\.fills,/);
+  assert.doesNotMatch(interview, /fills\.includes\("facts\.business_name"\)/);
+});

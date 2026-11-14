@@ -114,7 +114,17 @@ export function useAutosave<T>(save: (value: T) => Promise<boolean>) {
   const { flushers } = store;
   useEffect(() => {
     flushers.add(flush);
+    // Text typed inside the debounce window is sent when the tab is hidden
+    // (switching apps, closing the tab), while the page can still send.
+    const hide = () => {
+      if (document.visibilityState === "hidden") void flush();
+    };
+    const leave = () => void flush();
+    document.addEventListener("visibilitychange", hide);
+    window.addEventListener("pagehide", leave);
     return () => {
+      document.removeEventListener("visibilitychange", hide);
+      window.removeEventListener("pagehide", leave);
       flushers.delete(flush);
       void flush();
     };
@@ -264,7 +274,7 @@ function SetupStages({
   const { client, workspace } = useCore();
   const [view, setViewState] = useState(initial.view);
   const revision = useRef(initial.view.session?.revision ?? 0);
-  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const chain = useRef<Promise<boolean>>(Promise.resolve(true));
   const [flushers] = useState(() => new Set<() => Promise<boolean>>());
   const landed = useRef<string | null>(null);
   const [inFlight, setInFlight] = useState(0);
@@ -319,12 +329,15 @@ function SetupStages({
           setInFlight((n) => n - 1);
         }
       });
-      chain.current = next.catch(() => undefined);
+      chain.current = next.catch(() => false);
       return next;
     },
     [reload, setView],
   );
+  // Waits for writes in flight first: a failed field value goes back to its
+  // field and is sent again by its flusher, so nothing typed is lost.
   const flushAll = useCallback(async () => {
+    await chain.current;
     const results = await Promise.all([...flushers].map((f) => f()));
     await chain.current;
     return results.every(Boolean);

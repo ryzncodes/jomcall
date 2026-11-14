@@ -20,6 +20,7 @@ import {
   SetupNotice,
   type PackInfo,
 } from "./flow";
+import { replaceIds } from "./rules";
 import {
   HoursEditor,
   WordsEditor,
@@ -102,9 +103,7 @@ export function Review({
         id: store.agentId,
         expectedRevision: store.revision(),
         // Only "Use new" replaces; anything left as it is stays current.
-        replace: view.conflicts
-          .filter((c) => choices[c.itemId] === "new")
-          .map((c) => c.itemId),
+        replace: replaceIds(view.conflicts, view.items, choices),
       });
       refresh();
       onApplied();
@@ -280,7 +279,7 @@ export function Review({
               >
                 {w(
                   `Show all ${missing.length}`,
-                  `Tunjuk semua ${missing.length}`,
+                  `Lihat semua ${missing.length}`,
                 )}
               </button>
             )}
@@ -308,7 +307,10 @@ export function Review({
           >
             {busy
               ? w("Updating your draft…", "Mengemas kini draf…")
-              : w("Looks right, try a call", "Nampak betul, cuba panggilan")}
+              : w(
+                  "Looks right, try a call",
+                  "Semua betul, cuba buat panggilan",
+                )}
           </button>
         </div>
         <p className="setup-hint">
@@ -317,8 +319,8 @@ export function Review({
               ? "This updates your draft agent. It does not publish."
               : "This updates your draft agent in this workspace. It does not publish.",
             HOSTED
-              ? "Ini mengemas kini draf ejen anda. Ia tidak menerbitkan."
-              : "Ini mengemas kini draf ejen dalam ruang kerja ini. Ia tidak menerbitkan.",
+              ? "Ini mengemas kini draf ejen anda. Ejen belum diterbitkan."
+              : "Ini mengemas kini draf ejen dalam ruang kerja ini. Ejen belum diterbitkan.",
           )}
         </p>
       </div>

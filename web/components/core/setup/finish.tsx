@@ -8,63 +8,73 @@ import { useCore, useWords, Notice } from "../state";
 import { useExperience } from "../../experience";
 import { LocalAgentTest } from "../agent-test";
 import { useLanding } from "./flow";
+import { pollDelay, unlocksPublish } from "./rules";
 
-const completed = (d: SessionDetail) =>
-  d.turns.filter((t) => t.state === "completed").map((t) => t.id);
-
-// True once the draft answers a test question after this page opened. The
-// test panel keeps its open test in the URL (?testSession=); answers that
-// existed before this page opened do not count.
+// True once a draft test session created after this stage opened has a
+// completed answer. Sessions listed at mount form the baseline; the panel
+// keeps its open test in the URL (?testSession=), which is cleared on entry
+// so an older test never reopens here. Without a baseline nothing unlocks.
 function useTestedHere() {
   const { client } = useCore();
   const [tested, setTested] = useState(false);
-  const before = useRef<Set<string> | null>(null);
+  const [baselineError, setBaselineError] = useState<unknown>();
+  const baseline = useRef<Set<string> | null>(null);
   useEffect(() => {
+    const url = new URL(location.href);
+    if (url.searchParams.has("testSession")) {
+      url.searchParams.delete("testSession");
+      history.replaceState(null, "", url);
+    }
     let alive = true;
-    let timer: ReturnType<typeof setTimeout>;
-    const start = async () => {
-      const seen = new Set<string>();
-      try {
-        const list = await client.execute("agentTests", {});
-        for (const s of list.filter((x) => x.source === "draft").slice(0, 20))
-          try {
-            completed(await client.execute("agentTest", { id: s.id })).forEach(
-              (id) => seen.add(id),
-            );
-          } catch {
-            // An expired or removed test has nothing to count.
-          }
-      } catch {
-        // Unavailable list: count every answer from now on.
-      }
-      before.current = seen;
-    };
-    const poll = async () => {
-      if (!before.current) await start();
-      const id = new URL(location.href).searchParams.get("testSession");
-      if (id)
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const opened = Date.now();
+    let running = false;
+    let unlocked = false;
+    const check = async () => {
+      if (!baseline.current)
         try {
-          const d = await client.execute("agentTest", { id });
-          if (
-            alive &&
-            d.source === "draft" &&
-            completed(d).some((t) => !before.current!.has(t))
-          ) {
-            setTested(true);
-            return;
-          }
+          const list = await client.execute("agentTests", {});
+          baseline.current = new Set(list.map((t) => t.id));
+          if (alive) setBaselineError(undefined);
+        } catch (e) {
+          if (alive) setBaselineError(e);
+        }
+      const id = new URL(location.href).searchParams.get("testSession");
+      if (baseline.current && id && !baseline.current.has(id))
+        try {
+          const d: SessionDetail = await client.execute("agentTest", { id });
+          if (unlocksPublish(baseline.current, d)) unlocked = true;
         } catch {
           // The panel shows its own errors.
         }
-      if (alive) timer = setTimeout(() => void poll(), 3000);
     };
+    const poll = async () => {
+      clearTimeout(timer);
+      timer = undefined;
+      // The baseline loads at once; checking for a new test runs only while
+      // the page is visible, and visibilitychange restarts it.
+      if (!alive || running || unlocked) return;
+      if (document.visibilityState !== "visible" && baseline.current) return;
+      running = true;
+      await check();
+      running = false;
+      if (!alive) return;
+      if (unlocked) setTested(true);
+      else
+        timer = setTimeout(() => void poll(), pollDelay(Date.now() - opened));
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") void poll();
+    };
+    document.addEventListener("visibilitychange", visible);
     void poll();
     return () => {
       alive = false;
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, [client]);
-  return tested;
+  return { tested, baselineError };
 }
 
 export function FinishStage({
@@ -77,7 +87,7 @@ export function FinishStage({
   const { client, workspace, refresh } = useCore(),
     w = useWords(),
     { href } = useExperience();
-  const tested = useTestedHere();
+  const { tested, baselineError } = useTestedHere();
   const heading = useLanding<HTMLHeadingElement>("finish");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
@@ -106,7 +116,7 @@ export function FinishStage({
           "Jawapan anda sudah ada dalam draf. Cuba satu panggilan sebelum menerbitkan.",
         )}
       </h1>
-      <LocalAgentTest heading={false} />
+      <LocalAgentTest heading={false} startOn="draft" resume={false} />
       <section
         className="core-panel setup-publish"
         aria-labelledby="setup-publish"
@@ -118,14 +128,14 @@ export function FinishStage({
           {tested
             ? w(
                 "Your draft answered a test question. Publishing freezes this version; channels stay disconnected.",
-                "Draf anda telah menjawab soalan ujian. Penerbitan menyimpan versi tetap ini; saluran kekal tidak disambungkan.",
+                "Draf anda telah menjawab soalan ujian. Menerbitkan akan membekukan versi ini; saluran kekal tidak disambungkan.",
               )
             : w(
                 "Start a test on the current draft and ask one question. Publish opens after the agent answers.",
                 "Mulakan ujian pada draf semasa dan tanya satu soalan. Butang Terbitkan boleh ditekan selepas ejen menjawab.",
               )}
         </p>
-        <Notice error={error} />
+        <Notice error={error ?? baselineError} />
         {error instanceof CoreError && error.code === "DISCLOSURE_REQUIRED" && (
           <p>
             <a href={href("/app/agent")}>
@@ -182,7 +192,7 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
             {w("Go to the Agent page", "Ke halaman Ejen")}
           </a>
           <a className="button secondary-button" href={href("/app/test")}>
-            {w("Try a call", "Cuba panggilan")}
+            {w("Try a call", "Cuba buat panggilan")}
           </a>
         </div>
         <button type="button" className="setup-link" onClick={onRestart}>

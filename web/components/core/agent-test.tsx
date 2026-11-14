@@ -26,9 +26,21 @@ const VoiceTest =
   process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
     ? dynamic(() => import("./voice-test"))
     : null;
-// `heading={false}` leaves out the page heading, for a page that has its
-// own (the guided setup's finish stage).
-export function LocalAgentTest({ heading = true }: { heading?: boolean }) {
+// Options for a page that embeds the panel (the guided setup's finish
+// stage); the defaults are the test page's own behaviour.
+type PanelOptions = {
+  // false leaves out the page heading.
+  heading?: boolean;
+  // "draft" opens on the current draft even when a version is published.
+  startOn?: "draft";
+  // false ignores a test named in the URL (?testSession=) when opening.
+  resume?: boolean;
+};
+export function LocalAgentTest({
+  heading = true,
+  startOn,
+  resume = true,
+}: PanelOptions) {
   const { workspace } = useCore(),
     w = useWords();
   if (workspace.role === "staff")
@@ -44,17 +56,25 @@ export function LocalAgentTest({ heading = true }: { heading?: boolean }) {
         )}
       />
     );
-  return <AgentTestManager heading={heading} />;
+  return (
+    <AgentTestManager heading={heading} startOn={startOn} resume={resume} />
+  );
 }
-function AgentTestManager({ heading }: { heading: boolean }) {
+function AgentTestManager({
+  heading,
+  startOn,
+  resume,
+}: Required<Omit<PanelOptions, "startOn">> & Pick<PanelOptions, "startOn">) {
   const { client, workspace, epoch } = useCore(),
     w = useWords(),
     { href } = useExperience(),
     query = useSearchParams(),
     a = useAction();
-  const [sessionId, setSession] = useState(query.get("testSession") ?? ""),
+  const [sessionId, setSession] = useState(
+      resume ? (query.get("testSession") ?? "") : "",
+    ),
     [source, setSource] = useState<"draft" | "published">(
-      workspace.agent.published_version_id ? "published" : "draft",
+      startOn ?? (workspace.agent.published_version_id ? "published" : "draft"),
     ),
     [text, setText] = useState(""),
     [detail, setDetail] = useState<SessionDetail>(),
