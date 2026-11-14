@@ -198,3 +198,10 @@ test("the small local model keeps owner rules first and the not-found rule withi
   assert.match(text, /take_message with unanswered set to true\.$/);
   assert.ok(rulesSection(snapshot).length > text.length);
 });
+
+test("snapshots are put in jsonb key order before hashing", async () => {
+  const { jsonbOrder } = await import("../../packages/domain/src/knowledge/snapshot.ts");
+  const ordered = jsonbOrder({ settings: { b: 1, aa: 2 }, knowledge: [], packs: [], context: { z: 1 } });
+  assert.deepEqual(Object.keys(ordered), ["packs", "context", "settings", "knowledge"]);
+  assert.deepEqual(Object.keys(ordered.settings), ["b", "aa"]);
+});

@@ -288,3 +288,19 @@ export async function enforceCoreLimits(
   )
     throw new AppError("KNOWLEDGE_LIMIT", 422);
 }
+
+// Postgres jsonb stores object keys shorter-first, then bytewise. Free-text
+// source ids derive from a hash of the snapshot as read back from jsonb, so a
+// snapshot is put in that order before it is hashed and stored; otherwise the
+// stored snapshot_hash and the ids the agent computes would disagree.
+export function jsonbOrder<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(jsonbOrder) as T;
+  if (!value || typeof value !== "object") return value;
+  const bytes = (k: string) => Buffer.from(k);
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined)
+      .sort(([a], [b]) => bytes(a).length - bytes(b).length || Buffer.compare(bytes(a), bytes(b)))
+      .map(([k, v]) => [k, jsonbOrder(v)]),
+  ) as T;
+}

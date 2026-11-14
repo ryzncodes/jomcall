@@ -131,13 +131,14 @@ export const gapIgnore = z
 // Browser test paths only (typed and spoken). The shared toolCallSchema,
 // modelDecisionSchema and voiceTools are unchanged, because the WhatsApp and
 // phone-call paths use them and their SQL allow-lists do not know these tools.
-// Every argument is required (hosted strict JSON modes need that); an unknown
-// catalogue argument is an empty string.
+// Every argument is required in the JSON schema the model sees (hosted strict
+// modes need that; defaults count as required in zod's output schema), but a
+// missing one parses to its default, so older tool calls stay valid.
 export const catalogueArgs = z
   .object({
-    item: z.string().max(200),
-    code: z.string().max(80),
-    fits: z.string().max(200),
+    item: z.string().max(200).default(""),
+    code: z.string().max(80).default(""),
+    fits: z.string().max(200).default(""),
   })
   .strict()
   .refine((x) => [x.item, x.code, x.fits].some((v) => v.trim()), {
@@ -156,7 +157,10 @@ export const coreToolCallSchema = z.discriminatedUnion("name", [
     .object({
       name: z.literal("take_message"),
       args: z
-        .object({ text: boundedText(4000), unanswered: z.boolean() })
+        .object({
+          text: boundedText(4000),
+          unanswered: z.boolean().default(false),
+        })
         .strict(),
     })
     .strict(),

@@ -13,7 +13,11 @@ import {
   type Snapshot,
 } from "./knowledge.ts";
 import { lockBookingContact } from "../booking/commands.ts";
-import { freezeCore, sessionContext } from "../knowledge/snapshot.ts";
+import {
+  freezeCore,
+  jsonbOrder,
+  sessionContext,
+} from "../knowledge/snapshot.ts";
 export type StoredSession = TestSession & {
   snapshot: Snapshot;
   creator_id: string;
@@ -116,10 +120,10 @@ export async function startSession(
       }
       // Hours and closures as of the session start (design D8): the hash then
       // covers them, so cached spoken answers never outlive a schedule change.
-      snapshot = {
+      snapshot = jsonbOrder({
         ...snapshot,
         context: await sessionContext(tx, ctx.orgId, v.locationId),
-      } as Snapshot;
+      }) as Snapshot;
       const row = (
         await tx.query(
           "insert into app.test_session(org_id,agent_id,location_id,contact_id,creator_id,auth_session_id,snapshot,snapshot_hash,source,agent_version_id,namespace)values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)returning *",
