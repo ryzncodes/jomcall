@@ -281,6 +281,13 @@ export const SETTINGS: Setting[] = [
   },
   // --- Release job (migration runner, owner only) -------------------------
   {
+    name: "HOSTED_TARGET",
+    services: ["release"],
+    secret: false,
+    description:
+      "staging or prod; must equal the --target given to the migration runner",
+  },
+  {
     name: "HOSTED_ADMIN_DATABASE_URL",
     services: ["release"],
     secret: true,
@@ -433,6 +440,10 @@ export function readiness(service: Service, env: Env): Finding[] {
         throw Error("INVALID_KEYS_FORMAT");
     });
   if (service === "release") {
+    check("HOSTED_TARGET", () => {
+      if (!["staging", "prod"].includes(env.HOSTED_TARGET ?? ""))
+        throw Error("INVALID_TARGET");
+    });
     database("HOSTED_ADMIN_DATABASE_URL");
     for (const name of [
       "HOSTED_APP_PASSWORD",
