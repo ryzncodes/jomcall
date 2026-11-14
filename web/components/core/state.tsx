@@ -126,6 +126,38 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Export expired. Request a new export.",
       "Eksport tamat tempoh. Mohon eksport baharu.",
     ],
+    PAYMENTS_NOT_CONNECTED: [
+      "Payments are not connected yet. No money was taken.",
+      "Pembayaran belum disambungkan. Tiada wang diambil.",
+    ],
+    PAYMENT_PROVIDER_UNAVAILABLE: [
+      "The payment provider did not answer. No money was taken; try again.",
+      "Penyedia pembayaran tidak menjawab. Tiada wang diambil; cuba lagi.",
+    ],
+    PAYMENT_PROVIDER_ERROR: [
+      "The payment provider refused the request. No money was taken.",
+      "Penyedia pembayaran menolak permintaan. Tiada wang diambil.",
+    ],
+    PAYMENT_PROVIDER_BUSY: [
+      "The payment provider is busy. Wait a minute and try again.",
+      "Penyedia pembayaran sibuk. Tunggu seminit dan cuba lagi.",
+    ],
+    PAYMENT_CREDENTIALS_REJECTED: [
+      "The payment provider rejected JomCall's keys. Ask the operator to check them.",
+      "Penyedia pembayaran menolak kunci JomCall. Minta pengendali menyemaknya.",
+    ],
+    TRIAL_USED: [
+      "Trial credit has already been claimed.",
+      "Kredit percubaan telah dituntut.",
+    ],
+    INVALID_TOPUP: [
+      "Choose an amount between RM 10 and RM 5,000.",
+      "Pilih jumlah antara RM 10 dan RM 5,000.",
+    ],
+    TOO_MANY_PENDING: [
+      "Several top-ups are still waiting for payment. Finish or wait for them first.",
+      "Beberapa tambah nilai masih menunggu bayaran. Selesaikan atau tunggu dahulu.",
+    ],
     LOCATION_IN_USE: [
       "Primary or assigned branch cannot be archived.",
       "Cawangan utama atau yang digunakan tidak boleh diarkibkan.",

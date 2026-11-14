@@ -23,6 +23,10 @@ const tables = {
   consents: "consent_record",
   audit: "audit_log",
   versions: "agent_version",
+  ledger: "wallet_ledger",
+  usage: "usage_event",
+  topups: "billing_topup",
+  receipts: "billing_receipt",
 } as const;
 export async function page(
   tx: PoolClient,

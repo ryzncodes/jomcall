@@ -67,6 +67,7 @@ One file per service on the server, in `/etc/jomcall/` (`agent.env`, `engine.env
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Only if `JOMCALL_MAIL_PROVIDER=smtp` (the fallback): the SMTP provider's values. Cloudflare's own SMTP endpoint also works here (`smtp.mx.cloudflare.net`, 465, `api_token`, a token) | `engine.env` |
 | `ANTHROPIC_API_KEY` (and `OPENROUTER_API_KEY` if used) | Vendor consoles | `agent.env` |
 | `DEEPGRAM_API_KEY`, `GOOGLE_CLOUD_API_KEY` | Vendor consoles | `voice.env` |
+| `JOMCALL_PAYMENT_PROVIDER`, `CURLEC_ENVIRONMENT`, `CURLEC_KEY_ID`, `CURLEC_KEY_SECRET`, `CURLEC_WEBHOOK_SECRET` | Only after the owner approves Curlec (section D): Curlec dashboard, Account & Settings → API Keys and → Webhooks | Vercel, per environment. `JOMCALL_PUBLIC_ORIGIN` is optional; Curlec's return and webhook use `APP_ORIGIN` |
 
 Plain settings per environment: `JOMCALL_MODE=hosted`, `JOMCALL_QUEUE_NAMESPACE=staging` (or `prod`), `JOMCALL_MODEL_PROVIDER`, `JOMCALL_VOICE_PROVIDER=hosted`, `HOSTED_TARGET=staging` (or `prod`), `BACKUP_ENABLED=1` in `backup.env`.
 
@@ -93,6 +94,31 @@ C3. **Email Service sender verification (SPF, DKIM, DMARC).** Cloudflare dashboa
 C4. **Turnstile keys.** Cloudflare, Turnstile, Add widget, once per environment: hostname the environment's web host (`app.<domain>`, `staging.<domain>`), widget mode Managed. Copy the site key to `TURNSTILE_SITE_KEY` and the secret key to `TURNSTILE_SECRET_KEY`, both in Vercel for that environment only. Set both or neither: one alone makes every sign-in fail on purpose. The server also checks the hostname and the action (`login` or `signup`) that Cloudflare reports. Leave Supabase's own captcha setting (Authentication, Bot and Abuse Protection) **off**: the app already redeems the single-use token, so a second check in Supabase would fail every sign-in.
 
 C5. **R2 bucket and token.** Cloudflare, R2: create `jomcall-backups-staging` and `jomcall-backups-prod` (location hint Asia-Pacific). On each bucket add a lifecycle rule that deletes objects after 30 days, and leave public access off. Under R2, Manage API tokens, create one token per bucket: **Object Read & Write**, applied to that bucket only. Copy the Access Key ID to `R2_ACCESS_KEY_ID` and the Secret Access Key to `R2_SECRET_ACCESS_KEY` (shown once) in that environment's `backup.env`. Recordings will later get their own bucket and token.
+
+### D. Payments (Curlec) — [OWNER], not approved yet
+
+The owner chose Razorpay Curlec on 2026-11-14. Facts and sources: `docs/research/payment-providers-malaysia.md` sections 1, 3 and 6. Until D2 is done, leave `JOMCALL_PAYMENT_PROVIDER` unset: the wallet screen shows "Not connected" and no payment call is made.
+
+D1. **Ask Curlec in writing** whether a prepaid usage wallet for an AI phone-answering SaaS is acceptable. Its Terms prohibit credits convertible to digital services, name intangible services, and give "web-based telephony" as a legally unclear example (<https://curlec.com/s/terms-of-use/>).
+
+D2. **Approve Curlec** as an outbound service (it is not approved in `AGENTS.md`).
+
+D3. **Website pages Curlec verifies** before issuing live keys (up to 3 working days): About us, Contact us, Pricing, Terms and conditions, Privacy policy, Refund policy, a sample receipt, and a test login if paying needs one.
+
+D4. **Sign up** at <https://curlec.com> as **Digitalize Plus Enterprise**: business name exactly as on SSM, business type **Proprietorship**, the SSM registration number (Curlec fetches the SSM profile from CTOS; upload the SSM certificate only if asked), category and sub-category, business and operating address, and a bank account in the business's name with the **first page of its latest bank statement** (a personal account needs Curlec's authorisation letter). Turn on two-factor sign-in. Before full activation the account is capped at RM30,000.
+
+D5. **Test mode on staging.**
+- Account & Settings → API Keys → Generate Key (test mode). Key Id → `CURLEC_KEY_ID`; Key Secret (shown once) → `CURLEC_KEY_SECRET`.
+- Account & Settings → Webhooks → Add: URL `https://<staging host>/api/billing/webhook/curlec`; a secret you generate (`openssl rand -hex 32`) → `CURLEC_WEBHOOK_SECRET`; alert email; events `payment.captured`, `order.paid`, `payment.failed`, `refund.created`, `refund.processed`, `refund.failed`.
+- Allow-list the staging domain for the checkout callback (`https://<staging host>/api/billing/return/curlec`).
+- Account & Settings → Payments Capture: keep **automatic** capture.
+- In Vercel (staging only): `JOMCALL_PAYMENT_PROVIDER=curlec`, `CURLEC_ENVIRONMENT=test`, the three `CURLEC_*` values. `JOMCALL_PUBLIC_ORIGIN` is not needed: hosted mode uses `APP_ORIGIN`.
+
+D6. [CHECK] One test top-up with a mock FPX bank (choose Success on Curlec's mock page): the wallet is credited once, a receipt appears, and `npm run billing:reconcile` (run with the staging database settings) reports it. Then `npm run billing:admin -- refund <org> <top-up> 100 "test" "<your name>"` and check one refund row. DuitNow QR has no test mode.
+
+D7. **Live.** After activation and website verification, generate live keys and a live webhook (same URL path on the production host, a new secret) and set them in Vercel (production only) with `CURLEC_ENVIRONMENT=live`. Keep the Curlec balance above zero: refunds are paid from it (RM0.50 each). Make one small real top-up and refund it.
+
+D8. Set final prices as a new `billing_price` version (versions 1 and 2 are owner placeholders), and ask an accountant to confirm the e-invoice exemption (below RM3m) and the SST position (below RM500k).
 
 ---
 

@@ -1311,7 +1311,7 @@
     "wallet": "Baki dompet",
     "usageHint": "Jumlah ruang kerja semasa daripada panggilan, peti masuk dan dompet. Penyewa lain ialah contoh berlabel.",
     "selfhost": "Persediaan hos sendiri",
-    "selfTitle": "Infrastruktur anda. Sedia menjawab.",
+    "selfTitle": "Hos sendiri",
     "selfIntro": "Cuba semakan permulaan sebelum membuka ruang kerja. Tiada kelayakan diminta atau diuji di sini.",
     "database": "Pangkalan data",
     "speech": "Pembekal suara",
@@ -1362,11 +1362,11 @@
     "terms": "Terma",
     "publicBack": "Kembali ke utama",
     "pricingTitle": "Ketahui kos setiap sapaan.",
-    "pricingIntro": "Terokai model dompet dengan anggaran mudah. Ini kadar pratonton, bukan tawaran komersial.",
+    "pricingIntro": "Pelan bulanan atas dompet prabayar, atau bayar hanya apa yang digunakan. Harga pratonton: nilai sementara pemilik yang boleh berubah, bukan tawaran komersial.",
     "voiceMinutes": "Minit suara",
     "messages": "Mesej WhatsApp dihantar",
     "estimate": "Anggaran penggunaan contoh",
-    "rateHint": "Ilustrasi: RM 0.32/minit dan RM 0.05/mesej. Tidak termasuk nombor, fi pembekal dan cukai. Tiada pelan dibeli di sini.",
+    "rateHint": "Amaun dalam MYR, sebelum SST. Yuran bulanan diambil daripada dompet prabayar anda; tiada kad dicaj secara automatik. Minit yang tidak digunakan tidak dibawa ke bulan berikutnya.",
     "walletLink": "Terokai dompet contoh",
     "paygo": "Dompet dalam kawalan anda.",
     "paygoBody": "Tambah nilai bila perlu, semak setiap rekod penggunaan dan tetapkan ambang tambah nilai automatik dalam pratonton.",
@@ -1444,6 +1444,38 @@
       "unavailable": "Staf tiada; pesanan diambil",
       "not_requested": "Tidak diminta"
     },
-    "callLanguage": "Bahasa panggilan"
+    "callLanguage": "Bahasa panggilan",
+    "planNames": {
+      "starter": "Starter",
+      "growth": "Growth",
+      "payg": "Bayar ikut guna"
+    },
+    "planBodies": {
+      "starter": "Satu talian perniagaan yang menjawab setiap panggilan.",
+      "growth": "Lebih banyak minit, serta ejen WhatsApp pada nombor anda sendiri.",
+      "payg": "Tiada yuran bulanan. Untuk mencuba ejen dalam pelayar dan ujian bertaip."
+    },
+    "planMonth": "/ bulan",
+    "planNoFee": "Tiada yuran bulanan",
+    "planNumber": "{n} nombor telefon termasuk",
+    "planNoNumber": "Tiada nombor telefon",
+    "planMinutes": "{n} minit suara termasuk setiap bulan",
+    "planOverage": "Selepas itu RM {rate} seminit, dikira sesaat",
+    "planPaygRate": "RM {rate} seminit, dikira sesaat",
+    "planWhatsapp": "Ejen WhatsApp termasuk. Anda sambungkan nombor WhatsApp anda sendiri, dan Meta mengebil yuran mesejnya terus kepada anda. Yuran ejen JomCall: RM {rate} setiap perbualan.",
+    "planNoWhatsapp": "Ejen WhatsApp tidak termasuk",
+    "planEstimateHint": "Anggaran sebulan bagi setiap pelan pada jumlah minit suara ini.",
+    "selfPrice": "Lesen percuma",
+    "selfBody": "JomCall ialah perisian sumber tersedia (source-available) yang boleh dihos sendiri di bawah FSL-1.1-ALv2. Setiap keluaran menjadi Apache-2.0 dua tahun selepas diterbitkan. Sebelum itu, anda tidak boleh menggunakannya untuk menawarkan perkhidmatan yang bersaing.",
+    "selfCostsTitle": "Hos sendiri bukan tanpa kos. Anda sediakan dan bayar sendiri:",
+    "selfCosts": [
+      "Pelayan dan pangkalan data Postgres",
+      "Kunci pertuturan-ke-teks dan teks-ke-pertuturan",
+      "Kunci model bahasa",
+      "Nombor telefon dan pembawa SIP",
+      "Kelulusan WhatsApp Business dan yuran mesej Meta"
+    ],
+    "selfSupport": "Sokongan komuniti sahaja, tanpa janji balasan atau pembaikan. Anda bina dan jalankan sendiri; tiada imej siap dibina dijanjikan.",
+    "selfLink": "Kod sumber di GitHub"
   }
 }

@@ -13,7 +13,6 @@ test("disabled provider families fail closed; unknown paths and wrong methods ar
       "/inbox/send",
       "/whatsapp/send",
       "/integrations/google",
-      "/billing/top-up",
       "/payments",
       "/outbound",
       "/admin",
@@ -30,6 +29,15 @@ test("disabled provider families fail closed; unknown paths and wrong methods ar
       assert.equal(r.status, 503, path);
       assert.equal(r.body.error.code, "CAPABILITY_UNAVAILABLE");
     }
+    // Billing exists; with no payment provider configured, a top-up fails closed.
+    delete process.env.JOMCALL_PAYMENT_PROVIDER;
+    const topup = await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 2000 });
+    assert.equal(topup.status, 503);
+    assert.equal(topup.body.error.code, "PAYMENTS_NOT_CONNECTED");
+    assert.equal(
+      (await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/top-up", {})).status,
+      404,
+    );
     assert.equal(
       (await api.request(h.alice, h.orgA.id, "GET", "/api/v1/nothing-here"))
         .status,

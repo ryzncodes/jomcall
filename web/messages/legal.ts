@@ -89,7 +89,7 @@ const en: LegalCopy = {
         list: [
           "account details: name, email address, role and sign-in records;",
           "business settings and knowledge: business name, branches, opening hours, services, prices, answers and rules entered for the agent;",
-          "usage and billing records: minutes, messages, wallet balance, top-ups and receipts;",
+          "usage and billing records: plan, minutes, messages, wallet balance, top-ups and receipts;",
           "technical logs: dates and times, IP addresses, browser type and error records needed to run and secure the service.",
         ],
       },
@@ -127,7 +127,7 @@ const en: LegalCopy = {
           "Vercel: hosting of this website and the web app.",
           "A server provider in Singapore: runs the call-handling and agent services.",
           "Cloudflare: domain name and DNS, bot checks on sign-up and login, sending account emails, and storing encrypted database backups.",
-          "Curlec (Malaysia), once payments are switched on: payment details for wallet top-ups. We do not store card numbers.",
+          "Curlec (Malaysia), our planned payment processor, once payments are switched on: payment details for wallet top-ups and plan fees. Payments are not live yet. We do not store card numbers.",
         ],
         after: [
           "We may also disclose personal data when the law requires it, or to the business that a caller contacted.",
@@ -227,7 +227,7 @@ const en: LegalCopy = {
       {
         heading: "Fees",
         paragraphs: [
-          "Fees are as shown on our pricing page when you use the service. Usage, such as call minutes and messages, is charged in Malaysian ringgit (MYR) from a prepaid wallet. We will give notice in the app before changing prices.",
+          "Fees are the plans and rates shown on our pricing page at the time you use the service: a monthly plan fee, or no monthly fee on pay-as-you-go, plus usage such as voice minutes beyond a plan's allowance and WhatsApp conversations. Amounts are in Malaysian ringgit (MYR), before SST, and are taken from a prepaid wallet; no card is charged automatically. Message fees that Meta charges for your WhatsApp number are billed to you by Meta, not by us. Prices during the preview may change; we will give notice in the app before a change applies to you.",
         ],
       },
       {
@@ -321,7 +321,7 @@ const ms: LegalCopy = {
         list: [
           "butiran akaun: nama, alamat e-mel, peranan dan rekod log masuk;",
           "tetapan dan pengetahuan perniagaan: nama perniagaan, cawangan, waktu operasi, perkhidmatan, harga, jawapan dan peraturan yang dimasukkan untuk ejen;",
-          "rekod penggunaan dan bil: minit, mesej, baki dompet, tambah nilai dan resit;",
+          "rekod penggunaan dan bil: pelan, minit, mesej, baki dompet, tambah nilai dan resit;",
           "log teknikal: tarikh dan masa, alamat IP, jenis pelayar dan rekod ralat yang diperlukan untuk menjalankan dan melindungi perkhidmatan.",
         ],
       },
@@ -359,7 +359,7 @@ const ms: LegalCopy = {
           "Vercel: pengehosan laman web ini dan aplikasi web.",
           "Pembekal pelayan di Singapura: menjalankan perkhidmatan pengendalian panggilan dan ejen.",
           "Cloudflare: nama domain dan DNS, semakan bot semasa pendaftaran dan log masuk, penghantaran e-mel akaun, dan penyimpanan sandaran pangkalan data yang disulitkan.",
-          "Curlec (Malaysia), apabila pembayaran dihidupkan: butiran pembayaran untuk tambah nilai dompet. Kami tidak menyimpan nombor kad.",
+          "Curlec (Malaysia), pemproses pembayaran yang dirancang, apabila pembayaran dihidupkan: butiran pembayaran untuk tambah nilai dompet dan yuran pelan. Pembayaran belum dihidupkan. Kami tidak menyimpan nombor kad.",
         ],
         after: [
           "Kami juga mungkin mendedahkan data peribadi apabila dikehendaki oleh undang-undang, atau kepada perniagaan yang dihubungi oleh pemanggil.",
@@ -461,7 +461,7 @@ const ms: LegalCopy = {
       {
         heading: "Bayaran",
         paragraphs: [
-          "Bayaran adalah seperti yang ditunjukkan di halaman harga kami semasa anda menggunakan perkhidmatan. Penggunaan, seperti minit panggilan dan mesej, dicaj dalam ringgit Malaysia (MYR) daripada dompet prabayar. Kami akan memberi notis dalam aplikasi sebelum mengubah harga.",
+          "Bayaran ialah pelan dan kadar yang ditunjukkan di halaman harga kami semasa anda menggunakan perkhidmatan: yuran pelan bulanan, atau tiada yuran bulanan bagi bayar ikut guna, serta penggunaan seperti minit suara melebihi peruntukan pelan dan perbualan WhatsApp. Amaun dalam ringgit Malaysia (MYR), sebelum SST, dan diambil daripada dompet prabayar; tiada kad dicaj secara automatik. Caj mesej yang dikenakan oleh Meta bagi nombor WhatsApp anda dibilkan terus kepada anda oleh Meta, bukan oleh kami. Harga semasa pratonton boleh berubah; kami akan memberi notis dalam aplikasi sebelum sesuatu perubahan terpakai kepada anda.",
         ],
       },
       {

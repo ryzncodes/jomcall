@@ -9,6 +9,38 @@ Branch `feat/legal-pages`; pull request against `main`, not merged (merging depl
 - Verified: typecheck, `build:mock`, `build:local`; served pages in both languages contain no "fictional", "not final" or "before launch"; no horizontal scroll at 375 px.
 - Open: owner list in `docs/legal/README.md`; lawyer review before real customer data.
 
+## 2026-11-14 — billing: prepaid MYR wallet (sub-project 5, partial)
+
+Branch `feat/billing-wallet`, pull request open against `main`, not merged.
+
+**Changed**
+- Migrations `20261114150000_billing_wallet.sql`, `20261114150100_billing_wallet_fixes.sql` and `20261114200100_billing_curlec.sql` (crediting payment id, `settle_refund`): append-only ledger, usage events, versioned prices, top-ups, provider events, receipts. Writes only through `app_private` functions owned by `nologin` role `jomcall_billing`; triggers refuse update, delete and truncate.
+- `packages/billing`: `recordUsage` and `walletState` for other services; provider interface; Curlec client (owner's choice 2026-11-14; never run against Curlec; Billplz client removed); local-only fake that speaks Curlec's webhook and return shapes.
+- Routes `/api/v1/billing/*`, webhook `POST /api/billing/webhook/<provider>`, checkout return `/api/billing/return/<provider>`, local wallet screen, `npm run billing:simulate | billing:reconcile | billing:admin`.
+- Docs: `docs/research/payment-providers-malaysia.md`, `docs/superpowers/specs/2026-11-14-billing-design.md`.
+- Monthly plans, price table v2 (`20261114210000_billing_plans.sql`, `packages/billing/src/plans.ts`, design section 12): starter/growth/payg as owner placeholders; fee debited from the wallet once per Kuala Lumpur-anchored period; allowance first; 7-day grace then payg; changes apply next period; `plan_entitlements` for other services.
+- Public pricing page: plans plus a self-host column, from `web/lib/pricing.ts` (kept equal to the database by a test). Margin table in research doc section 5.
+
+**Verified**
+- After merging main (knowledge core): `check:billing` 26 pass (10 Curlec unit, 9 wallet, 7 plans); `check:core` 357 tests, 355 pass, 0 fail, 2 skipped; `test:offline` 209, 208 pass, 1 skipped; `test:guards` 23/23; typecheck clean; `db:verify-migrations` passed (RLS tables 52); `build:local` and `build:mock` pass.
+- Curlec webhook, return-signature, order, payment-list and refund shapes tested against recorded fake payloads shaped as Curlec's docs describe.
+
+**Not verified**
+- No real provider call, no merchant account, no browser check of the wallet screen (port 4182 was in use by another session).
+- Callback delivery from the internet (needs the hosted deployment; the webhook now runs in `local` and `hosted` mode through `requireApp()`, and hosted mode uses `APP_ORIGIN` for the callback). Hosted payment settings: `infra/hosted/.env.hosted.example`, owner steps: `infra/hosted/RUNBOOK.md` section D.
+- Payment settings live in the gitignored `.env.payments`; `npm run dev:local:fake-payments` runs the fake provider for `npm run billing:simulate`.
+
+**Shared database**
+- The local database records versions `20261114150000`, `20261114150100`, `20261114200100` and `20261114210000` (applied with `npm run db:apply-migration:local`). The Curlec migration was renumbered from `20261114200000` because main's knowledge core uses that version; the local row was updated to match. Knowledge core itself was applied by hand without a row. Other checkouts without these files get "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000`/`120100` sort earlier and may need `--include-all`.
+
+**Next**
+1. Owner: ask Curlec in writing whether a prepaid usage wallet is acceptable (prohibited-credits clause), approve Curlec as an outbound service, then follow `infra/hosted/RUNBOOK.md` section D.
+2. Phone line and WhatsApp sessions: call `recordUsage` after the provider confirms a call or conversation, and `walletState` before starting a new one.
+3. Owner: final prices (new `billing_price` version).
+4. On a database where the billing migration is not yet applied: run `npm run db:migrate:local` before `npm run db:verify-migrations`, or drop the stray `jomcall_billing` role first.
+5. Plans follow-ups: phone line reads `plan_entitlements`; schedule `charge_due_plans`; retry the fee after a top-up in grace; plan picker on the wallet screen. Owner: first-subscription timing and final plan figures.
+6. Follow-up (not wired): meter WhatsApp conversations by calling `recordUsage(..., kind: "whatsapp_conversation")` from the WhatsApp worker once the provider confirms a conversation.
+
 ## 2026-11-14 — knowledge core
 
 Branch `feat/knowledge-core`; pull request against `main`, not merged.

@@ -14,6 +14,7 @@ import { BookingSummary } from "./booking-summary";
 import { LocalContacts } from "./contacts";
 import { LocalAgent } from "./agent";
 import { LocalSettings, LocalHours } from "./settings";
+import { LocalBilling } from "./billing";
 import { LocalPhoneNumbers, LocalCalls } from "./phone";
 import { LocalWhatsApp } from "./whatsapp";
 export function LocalApp({ screen }: { screen: string }) {
@@ -307,6 +308,8 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 <LocalSettings />
               ) : screen === "hours" ? (
                 <LocalHours />
+              ) : screen === "billing" ? (
+                <LocalBilling />
               ) : screen === "phones" ? (
                 <LocalPhoneNumbers />
               ) : screen === "app" ? (

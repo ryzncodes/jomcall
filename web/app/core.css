@@ -760,6 +760,93 @@
   color: var(--secondary);
   overflow-wrap: anywhere;
 }
+/* Billing (local app) */
+.core-billing-overview > div {
+  padding: 30px 24px;
+  display: grid;
+  gap: 15px;
+  border-right: 1px solid var(--line);
+}
+.core-billing-overview > div:first-child {
+  padding-left: 0;
+}
+.core-billing-overview > div:last-child {
+  border: 0;
+}
+.core-billing-overview strong[data-state="grace"],
+.core-billing-overview strong[data-state="exhausted"] {
+  color: var(--danger, #a3322a);
+}
+.core-billing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.core-billing-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.core-billing-list li > span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.core-billing-list li > span:first-child {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.core-billing-list small {
+  color: var(--secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.core-billing-list [data-sign="credit"] {
+  color: var(--forest, inherit);
+}
+.core-amounts {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.core-amounts legend {
+  margin-bottom: 8px;
+}
+.core-amounts label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.core-amounts label:has(input:checked) {
+  border-color: currentColor;
+}
+@media (max-width: 760px) {
+  .core-billing-overview {
+    grid-template-columns: 1fr;
+  }
+  .core-billing-overview > div {
+    padding: 18px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .core-billing-list li {
+    flex-wrap: wrap;
+  }
+}
 
 /* Local call log: one caller line and one agent line per turn. */
 .core-call-turns {
