@@ -9,7 +9,7 @@ import logging
 from livekit import rtc
 from livekit.agents import AutoSubscribe, JobContext, WorkerOptions
 
-from . import brain_client, config
+from . import brain_client, config, fillers, phone
 from .call import Call
 from .ears import DeepgramEars
 from .stages import StageWriter
@@ -98,7 +98,99 @@ async def _caller_audio(ctx: JobContext, participant: rtc.RemoteParticipant):
     return await asyncio.wait_for(future, 30)
 
 
+async def _publish_voice(ctx: JobContext) -> rtc.AudioSource:
+    await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+    source = rtc.AudioSource(config.TTS_SAMPLE_RATE, 1)
+    await ctx.room.local_participant.publish_track(
+        rtc.LocalAudioTrack.create_audio_track("jomcall-voice", source),
+        rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE),
+    )
+    return source
+
+
+async def _hang_up(ctx: JobContext, reason: str) -> None:
+    # Deleting the room ends the SIP leg; a failure still shuts the job down.
+    try:
+        await ctx.delete_room()
+    except Exception as error:  # class name only
+        log.warning("room delete failed: %s", type(error).__name__)
+    ctx.shutdown(reason)
+
+
+async def phone_entrypoint(ctx: JobContext) -> None:
+    """A real phone call. LiveKit answers the SIP leg once we publish audio;
+    the agent process decides whether this call may proceed (refusals, caps)."""
+    missing = config.missing_keys()
+    if missing:
+        log.error("phone job refused: missing %s", ", ".join(missing))
+        ctx.shutdown("voice_keys_missing")
+        return
+    source = await _publish_voice(ctx)
+    sink = RoomSink(source)
+    client = phone.PhoneClient()
+    try:
+        try:
+            participant = await asyncio.wait_for(
+                ctx.wait_for_participant(kind=rtc.ParticipantKind.PARTICIPANT_KIND_SIP), 30
+            )
+        except asyncio.TimeoutError:
+            return await _hang_up(ctx, "no_caller")
+        try:
+            start = await client.start(ctx.room.name, participant.identity)
+        except Exception as error:  # class name only
+            log.error("phone call start failed: %s", type(error).__name__)
+            start = None
+        if start is None:
+            return await _hang_up(ctx, "call_start_failed")
+        voice = Voice(start.get("voice") or PRESETS[0])
+        if start["refused"]:
+            if start["busyLine"]:
+                # Cache only: a refused caller never costs a speech request.
+                # Malay then English: the caller's language is not known yet.
+                audio = b"".join(voice.lookup(fillers.BUSY[lang]) or b"" for lang in ("ms", "en"))
+                if audio:
+                    await sink.play(_chunks(audio))
+            return await _hang_up(ctx, "refused")
+        track = await _caller_audio(ctx, participant)
+        call = Call(
+            session_id=start["callId"],
+            token=start["token"],
+            greeting="",
+            disclosure=start["opening"],
+            ears=DeepgramEars(track),
+            brain=brain_client.BrainClient(
+                phone.phone_url(), path="/phone/turns", id_field="callId"
+            ),
+            voice=voice,
+            clock=RealClock(),
+            sink=sink,
+            stage_log=StageWriter(ctx.room.name),
+            cap_s=start["capSeconds"],
+            on_opened=lambda: client.answered(start["callId"], start["token"]),
+        )
+        ctx.room.on(
+            "participant_disconnected",
+            lambda who: call.hangup() if who.identity == participant.identity else None,
+        )
+        ctx.room.on("disconnected", lambda *_: call.hangup())
+        result = await call.run()
+        try:
+            await client.end(start["callId"], start["token"], result.end_reason, call.language)
+        except Exception as error:  # the server's maintain pass closes it later
+            log.warning("phone call end failed: %s", type(error).__name__)
+        await _hang_up(ctx, result.end_reason)
+    finally:
+        await client.aclose()
+
+
+async def _chunks(audio: bytes):
+    yield audio
+
+
 async def entrypoint(ctx: JobContext) -> None:
+    if phone.is_phone_job(ctx.job.metadata):
+        await phone_entrypoint(ctx)
+        return
     meta = parse_metadata(ctx.job.metadata)
     if meta is None:
         log.error("voice job refused: bad dispatch metadata")

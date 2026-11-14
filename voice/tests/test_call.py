@@ -182,7 +182,7 @@ DONE = {"type": "done", "turnId": "t1", "timings": {}}
 
 
 class Rig:
-    def __init__(self, *scripts):
+    def __init__(self, *scripts, **extra):
         self.clock = FakeClock()
         self.ears = FakeEars()
         self.voice = FakeVoice()
@@ -202,6 +202,7 @@ class Rig:
             sink=self.sink,
             wall_ms=lambda: BASE_MS + self.clock.now() * 1000,
             stage_log=self.stages.append,
+            **extra,
         )
         self.task: asyncio.Task | None = None
 
