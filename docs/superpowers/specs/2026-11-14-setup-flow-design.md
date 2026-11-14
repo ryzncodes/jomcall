@@ -126,7 +126,7 @@ New:
 
 ## 9. Needs the owner's answer
 
-1. **May setup send an owner's real photos, PDFs and spreadsheets to a hosted Claude model (Anthropic)?** Without a yes, the "bring what you have" door cannot be built and the flow is the interview only. The agent's own text already goes to Anthropic; documents may hold more (customer names in a spreadsheet, phone numbers in a pasted chat). This is the same PDPA cross-border question that is still open with the lawyer.
+1. **May setup send an owner's real photos, PDFs and spreadsheets to a hosted Claude model (Anthropic)?** **Answered: yes (owner, 2026-11-14).** This is an approved outbound use for setup's document reading only, through the agent process, which already holds the Anthropic key. The upload screen must say plainly that the document is sent to Anthropic, outside Malaysia, and that the owner should not upload files with customers' personal details. The PDPA cross-border question with the lawyer stays open and still gates real callers.
 2. **Hide Phone numbers, WhatsApp and Integrations from the sidebar until each is live?** Recommended yes.
 3. **Is the RM20 trial credit part of this flow** (claimed automatically so the test call works), or left on the billing page as today?
 
