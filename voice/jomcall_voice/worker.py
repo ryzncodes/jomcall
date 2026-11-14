@@ -151,34 +151,43 @@ async def phone_entrypoint(ctx: JobContext) -> None:
                 if audio:
                     await sink.play(_chunks(audio))
             return await _hang_up(ctx, "refused")
-        track = await _caller_audio(ctx, participant)
-        call = Call(
-            session_id=start["callId"],
-            token=start["token"],
-            greeting="",
-            disclosure=start["opening"],
-            ears=DeepgramEars(track),
-            brain=brain_client.BrainClient(
-                phone.phone_url(), path="/phone/turns", id_field="callId"
-            ),
-            voice=voice,
-            clock=RealClock(),
-            sink=sink,
-            stage_log=StageWriter(ctx.room.name),
-            cap_s=start["capSeconds"],
-            on_opened=lambda: client.answered(start["callId"], start["token"]),
-        )
-        ctx.room.on(
-            "participant_disconnected",
-            lambda who: call.hangup() if who.identity == participant.identity else None,
-        )
-        ctx.room.on("disconnected", lambda *_: call.hangup())
-        result = await call.run()
+        # The server now holds an active call row and the line. Whatever
+        # happens from here, tell it the call ended and hang up, so a failure
+        # never keeps the only line busy until the token expires.
+        reason, language = "worker_failed", None
         try:
-            await client.end(start["callId"], start["token"], result.end_reason, call.language)
-        except Exception as error:  # the server's maintain pass closes it later
-            log.warning("phone call end failed: %s", type(error).__name__)
-        await _hang_up(ctx, result.end_reason)
+            track = await _caller_audio(ctx, participant)
+            call = Call(
+                session_id=start["callId"],
+                token=start["token"],
+                greeting="",
+                disclosure=start["opening"],
+                ears=DeepgramEars(track),
+                brain=brain_client.BrainClient(
+                    phone.phone_url(), path="/phone/turns", id_field="callId"
+                ),
+                voice=voice,
+                clock=RealClock(),
+                sink=sink,
+                stage_log=StageWriter(ctx.room.name),
+                cap_s=start["capSeconds"],
+                on_opened=lambda: client.answered(start["callId"], start["token"]),
+            )
+            ctx.room.on(
+                "participant_disconnected",
+                lambda who: call.hangup() if who.identity == participant.identity else None,
+            )
+            ctx.room.on("disconnected", lambda *_: call.hangup())
+            result = await call.run()
+            reason, language = result.end_reason, call.language
+        except Exception as error:  # class name only
+            log.error("phone call failed: %s", type(error).__name__)
+        finally:
+            try:
+                await client.end(start["callId"], start["token"], reason, language)
+            except Exception as error:  # the server's maintain pass closes it later
+                log.warning("phone call end failed: %s", type(error).__name__)
+            await _hang_up(ctx, reason)
     finally:
         await client.aclose()
 

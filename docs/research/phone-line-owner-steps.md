@@ -60,21 +60,21 @@ For digest auth, add the password with `lk sip inbound update` or the LiveKit co
 
 ## 4. Environment values
 
-Put these in the git-ignored env files read by the agent process and the voice worker. Never commit them.
+Put these in the git-ignored env files read by the agent process, the voice worker and the local web app. Never commit them. The web app reads the switches only to show whether the line is connected; it never places or answers a call.
 
 | Name | Value | Read by |
 |---|---|---|
-| `JOMCALL_TELEPHONY_PROVIDER` | `livekit_sip` (default `disabled`) | agent process |
-| `JOMCALL_VOICE_PROVIDER` | `hosted` (phone calls use the same speech and brain services) | agent process |
-| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | The project from step 0. The agent process now holds the secret: it checks the SIP caller and starts transfers. | agent process, voice worker |
+| `JOMCALL_TELEPHONY_PROVIDER` | `livekit_sip` (default `disabled`) | agent process, web app |
+| `JOMCALL_VOICE_PROVIDER` | `hosted` (phone calls use the same speech and brain services) | agent process, web app |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | The project from step 0. The agent process now holds the secret: it checks the SIP caller and starts transfers. | agent process, voice worker, web app |
 | `JOMCALL_SIP_TRANSFER_URI` | Optional. Default `tel:{e164}`. For Plivo: `sip:{e164}@<trunk-id>.zt.plivo.com`. | agent process |
 | `JOMCALL_MAX_CONCURRENT_CALLS` | Optional. Default `1` (Google speech is limited to about 11 requests a minute). | agent process |
 | `JOMCALL_CALL_CAP_SECONDS` | Optional. Default `600`. | agent process |
 | `JOMCALL_PHONE_URL` | Optional. Default `http://127.0.0.1:54635` (the agent's loopback phone listener). | voice worker |
 
-Restart the agent process and the voice worker. The phone numbers screen should now say **Phone line connected**.
+Restart the agent process, the voice worker and the web app. The phone numbers screen should now say **Phone line connected**.
 
-Before a call, run `npm run voice:prewarm` once so the busy line and fillers are cached (it sends fixed text to Google and is rate limited).
+Before a call, run `npm run voice:prewarm` once for the `Kore` preset and once for the agent's own voice, so the busy line and fillers are cached (it sends fixed text to Google and is rate limited). A refused caller hears the busy line in `Kore`, because a refusal comes before the agent's settings are read; if it is not cached, the caller hears nothing before the hang-up.
 
 ## 5. Forwarding an existing business number (optional)
 

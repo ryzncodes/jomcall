@@ -11,7 +11,7 @@ Branch `feat/phone-line`, pull request #12 against `main`; not merged.
 - Worker: `voice/jomcall_voice/phone.py`, phone branch in `worker.py`, `cap_s`/`on_opened` on `Call`, `path`/`id_field` on the brain client, busy line in `fillers.py`. Simulator `voice/tools/phone_sim.py`.
 - Web (local app only): commands `phoneNumbers`, `createPhoneNumber`, `updatePhoneNumber`, `calls`, `call`; screens in `web/components/core/phone.tsx`. `/calls` and `/phone-numbers` are no longer in the disabled list.
 
-**Verified** (2026-11-14, this machine): see the pull request body for the counts of `typecheck`, `test:guards`, `check:core`, `uv run pytest` and `db:verify-migrations`.
+**Verified** (2026-11-14, this machine): `typecheck` clean; `test:guards` 20/20; `check:core` 212 tests, 210 pass, 0 fail, 2 skipped (port 54633 busy: another agent process was running); the browser voice API and engine tests pass by name; `uv run pytest` 243 passed (`tests/test_call.py` unchanged); `db:verify-migrations` passed.
 
 **Not verified / open**
 - No carrier, number, trunk or live LiveKit SIP service was used; the LiveKit telephony code is checked against types and documentation only.

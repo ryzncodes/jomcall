@@ -4,7 +4,29 @@ import json
 
 from fake_http import FakeServer, Reply
 from jomcall_voice import brain_client, config, fillers, phone
-from test_call import OPENING, Rig, settle
+from jomcall_voice.call import Call
+from test_call import BASE_MS, DISCLOSURE, GREETING, OPENING, SESSION, Rig, settle
+
+
+class PhoneRig(Rig):
+    """The browser-test rig with the phone-only Call options (test_call.py unchanged)."""
+
+    def __init__(self, *scripts, **extra):
+        super().__init__(*scripts)
+        self.call = Call(
+            session_id=SESSION,
+            token="tok-test",
+            greeting=GREETING,
+            disclosure=DISCLOSURE,
+            ears=self.ears,
+            brain=self.brain,
+            voice=self.voice,
+            clock=self.clock,
+            sink=self.sink,
+            wall_ms=lambda: BASE_MS + self.clock.now() * 1000,
+            stage_log=self.stages.append,
+            **extra,
+        )
 
 CALL = "33333333-3333-4333-8333-333333333333"
 TURN = "22222222-2222-4222-8222-222222222222"
@@ -118,7 +140,7 @@ async def test_phone_turns_use_their_own_path_and_id_field():
 
 
 async def test_a_phone_call_uses_its_own_cap():
-    rig = Rig([], cap_s=60.0)
+    rig = PhoneRig([], cap_s=60.0)
     await rig.start()
     await rig.clock.advance(59_000)
     assert not rig.task.done()
@@ -133,7 +155,7 @@ async def test_the_opened_hook_runs_once_after_the_opening():
     async def opened():
         calls.append(True)
 
-    rig = Rig([], on_opened=opened)
+    rig = PhoneRig([], on_opened=opened)
     await rig.start()
     await settle()
     assert calls == [True]
@@ -144,7 +166,7 @@ async def test_a_failing_opened_hook_does_not_end_the_call():
     async def opened():
         raise RuntimeError("network down")
 
-    rig = Rig([], on_opened=opened)
+    rig = PhoneRig([], on_opened=opened)
     await rig.start()
     assert not rig.task.done()
     await rig.finish()
@@ -156,7 +178,7 @@ async def test_no_opened_hook_when_the_opening_fails():
     async def opened():
         calls.append(True)
 
-    rig = Rig([], on_opened=opened)
+    rig = PhoneRig([], on_opened=opened)
     rig.voice.refuse.add(OPENING)
     await rig.start()
     assert rig.task.result().end_reason == "opening_failed"
@@ -185,3 +207,64 @@ async def test_a_phone_job_without_speech_keys_never_joins_the_room(monkeypatch)
     ctx = Ctx()
     await worker.entrypoint(ctx)
     assert ctx.shutdowns == ["voice_keys_missing"]
+
+
+async def test_a_failure_after_the_start_still_ends_the_call_and_hangs_up(monkeypatch):
+    """The server holds the line once a call starts; a worker failure must free it."""
+    import asyncio
+
+    from jomcall_voice import worker
+
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "not-a-real-key")
+    monkeypatch.setenv("GOOGLE_CLOUD_API_KEY", "not-a-real-key")
+    ended: list[tuple] = []
+
+    class FakeClient:
+        def __init__(self, *_):
+            pass
+
+        async def start(self, room, identity):
+            return {"refused": False, "callId": "c1", "token": "t1", "voice": "Kore",
+                    "opening": "AI here.", "capSeconds": 600.0}
+
+        async def end(self, call_id, token, reason, language):
+            ended.append((call_id, token, reason, language))
+
+        async def aclose(self):
+            pass
+
+    class Participant:
+        identity = "sip_+60123456789"
+
+    class Room:
+        name = "call-+60312345678_ab"
+
+    class Ctx:
+        job = type("Job", (), {"metadata": '{"channel":"phone"}'})()
+        room = Room()
+        deleted = 0
+        shutdowns: list[str] = []
+
+        async def wait_for_participant(self, **_):
+            return Participant()
+
+        async def delete_room(self):
+            self.deleted += 1
+
+        def shutdown(self, reason=""):
+            self.shutdowns.append(reason)
+
+    async def no_audio(ctx, participant):
+        raise asyncio.TimeoutError
+
+    async def publish(ctx):
+        return object()
+
+    monkeypatch.setattr(worker.phone, "PhoneClient", FakeClient)
+    monkeypatch.setattr(worker, "_caller_audio", no_audio)
+    monkeypatch.setattr(worker, "_publish_voice", publish)
+    monkeypatch.setattr(worker, "RoomSink", lambda source: object())
+    ctx = Ctx()
+    await worker.entrypoint(ctx)
+    assert ended == [("c1", "t1", "worker_failed", None)]
+    assert ctx.deleted == 1 and ctx.shutdowns == ["worker_failed"]
