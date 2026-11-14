@@ -24,7 +24,7 @@
     "db:verify-migrations": "node --env-file=.env.local scripts/local/migration-check.mjs",
     "dev:engine": "JOMCALL_MODE=local node --env-file=.env.local --import tsx engine/src/index.ts",
     "contracts:generate": "node --import tsx scripts/contracts/generate.ts",
-    "check:core": "npm run test:local -- tests/api/*.test.ts tests/db/*.test.ts tests/domain/*.test.ts tests/engine/*.test.ts tests/local/*.test.mjs",
+    "check:core": "npm run test:local -- tests/api/*.test.ts tests/billing/*.test.ts tests/db/*.test.ts tests/domain/*.test.ts tests/engine/*.test.ts tests/local/*.test.mjs",
     "start:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run start -w web -- --port 4182",
     "start:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run start -w web -- --port 4181",
     "model:prepare": "node scripts/local/model-prepare.mjs",
@@ -40,7 +40,12 @@
     "dev:voice": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice dev",
     "check:voice-speed": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m tools.replay",
     "voice:prewarm": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice.prewarm",
-    "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts"
+    "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts",
+    "check:billing": "npm run test:local -- tests/billing/*.test.ts",
+    "billing:simulate": "node --env-file=.env.local --import tsx scripts/billing/simulate.ts",
+    "billing:reconcile": "node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx scripts/billing/reconcile.ts",
+    "billing:admin": "node --env-file=.env.local --import tsx scripts/billing/admin.ts",
+    "db:apply-migration:local": "node --env-file=.env.local scripts/billing/apply-migration.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",
