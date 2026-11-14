@@ -276,6 +276,10 @@ begin
     'service',(select g.granted from app.consent_record g where g.org_id=c.org_id and g.contact_id=c.contact_id and g.channel='whatsapp' and g.purpose='service' order by g.created_at desc,g.id desc limit 1),
     'marketing',(select g.granted from app.consent_record g where g.org_id=c.org_id and g.contact_id=c.contact_id and g.channel='whatsapp' and g.purpose='marketing' order by g.created_at desc,g.id desc limit 1)),
    'template',case when tpl.id is null then null else jsonb_build_object('id',tpl.id,'name',tpl.name,'language',tpl.language,'category',tpl.category,'status',tpl.status,'variables',tpl.variables)end,
+   -- Offered when a plain message can no longer be sent: the approved template that asks the customer to reply.
+   'fallback',(select jsonb_build_object('id',f.id,'name',f.name,'language',f.language,'category',f.category,'status',f.status,'variables',f.variables)from app.whatsapp_template f
+    where f.org_id=c.org_id and f.channel_id=c.channel_id and f.purpose='reengage' and f.status='approved' and f.category='utility' and f.variables=0
+    order by(f.language like coalesce(k.preferred_language,'ms')||'%')desc,f.created_at,f.id limit 1),
    'now',now());
 
  elsif p_action='send_result' then
@@ -288,7 +292,10 @@ begin
   v_status:=p_data->>'outcome';
   if v_status='sent' then
    if coalesce(p_data->>'providerMessageId','')='' then raise exception 'INVALID_SEND_RESULT';end if;
-   update app.message set status='sent',status_at=now(),provider_message_id=left(p_data->>'providerMessageId',256),lease_token=null,lease_until=null where id=m.id;
+   -- templateId is set when the approved template went out in place of the plain text.
+   update app.message set status='sent',status_at=now(),provider_message_id=left(p_data->>'providerMessageId',256),lease_token=null,lease_until=null,
+    kind=case when p_data->>'templateId' is not null then 'template' else kind end,
+    template_id=coalesce((p_data->>'templateId')::uuid,template_id)where id=m.id;
    update app.conversation set last_message_at=now() where id=c.id;
   elsif v_status in('failed','blocked','unknown')then
    update app.message set status=v_status,status_at=now(),error_code=case when p_data->>'code'~'^[A-Z0-9_]{1,60}$' then p_data->>'code' end,
