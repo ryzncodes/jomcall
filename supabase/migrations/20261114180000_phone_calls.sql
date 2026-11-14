@@ -128,6 +128,7 @@ declare c app.call;t app.call_turn;old app.call_turn;n app.phone_number;a app.ag
    or length(coalesce(p_data->>'identity',''))not between 1 and 200 or coalesce(p_data->>'tokenHash','')!~'^[0-9a-f]{64}$' then raise exception 'INVALID_CALL_START';end if;
   v_max=least(greatest(coalesce((p_data->>'maxConcurrent')::int,1),1),20);
   v_cap=least(greatest(coalesce((p_data->>'capSeconds')::int,600),60),3600);
+  -- The agent process's clock decides opening hours (tests move it); limits use the database clock.
   v_at=coalesce((p_data->>'at')::timestamptz,now());
   -- One lock for every call start: the duplicate and concurrency checks below
   -- cannot interleave between two simultaneous calls.
@@ -151,7 +152,7 @@ declare c app.call;t app.call_turn;old app.call_turn;n app.phone_number;a app.ag
   if(select calls_suspended_at from app.organization where id=n.org_id)is not null then v_refusal='CALLS_SUSPENDED';
   elsif v.id is null then v_refusal='AGENT_UNPUBLISHED';
   elsif btrim(coalesce(v_settings->>'aiDisclosure',''))='' or(coalesce((v_settings->>'recordingEnabled')::boolean,false)and btrim(coalesce(v_settings->>'recordingDisclosure',''))='')then v_refusal='DISCLOSURE_REQUIRED';
-  elsif v_caller is not null and(select count(*)from app.call x where x.org_id=n.org_id and x.caller_e164=v_caller and x.started_at>v_at-interval '1 hour')>=6 then v_refusal='CALLER_LIMIT';
+  elsif v_caller is not null and(select count(*)from app.call x where x.org_id=n.org_id and x.caller_e164=v_caller and x.started_at>now()-interval '1 hour')>=6 then v_refusal='CALLER_LIMIT';
   else
    -- Both live phone calls and browser voice tests draw on the same speech quota.
    select(select count(*)from app.call x where x.namespace=p_namespace and x.state='active' and x.token_expires_at>now())
@@ -225,7 +226,7 @@ declare c app.call;t app.call_turn;old app.call_turn;n app.phone_number;a app.ag
    values(c.org_id,c.id,(p_data->>'clientTurnId')::uuid,p_data->>'input','running',gen_random_uuid(),now()+interval '65 seconds')returning * into t;
   return jsonb_build_object(
    'session',jsonb_build_object('id',c.id,'org_id',c.org_id,'location_id',c.location_id,'snapshot',c.snapshot,'snapshot_hash',null),
-   'call',jsonb_build_object('afterHours',c.after_hours,'doNotContact',c.do_not_contact,'transfer',exists(select 1 from app.phone_number x where x.org_id=c.org_id and x.id=c.phone_number_id and x.transfer_e164 is not null),'room',c.room,'identity',c.participant_identity),
+   'call',jsonb_build_object('afterHours',c.after_hours,'doNotContact',c.do_not_contact,'transferTo',(select x.transfer_e164 from app.phone_number x where x.org_id=c.org_id and x.id=c.phone_number_id and x.active),'room',c.room,'identity',c.participant_identity),
    'turn',to_jsonb(t),
    'history',coalesce((select jsonb_agg(jsonb_build_object('input',h.input,'answer',h.answer,'evidence',h.evidence)order by h.created_at,h.id)from(select h.id,h.created_at,h.input,h.answer,h.evidence from app.call_turn h where h.org_id=c.org_id and h.call_id=c.id and h.state='completed' and h.answer is not null and(h.created_at,h.id)<(t.created_at,t.id)order by h.created_at desc,h.id desc limit 6)h),'[]'),
    'recorded',coalesce((select jsonb_agg(jsonb_build_object('kind',q.kind,'details',q.details)order by u.created_at,u.id,q.step)from app.call_proposal q join app.call_turn u on u.org_id=q.org_id and u.id=q.turn_id where q.org_id=c.org_id and q.call_id=c.id and u.state='completed'),'[]'),
