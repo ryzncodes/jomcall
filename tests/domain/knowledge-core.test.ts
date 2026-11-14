@@ -190,3 +190,11 @@ test("input budget depends on the pinned model; local guard unchanged", () => {
   assert.equal(packModelInput(long, [], 48000).messages.length, 1);
   assert.ok(coreSections(snapshot, 6000)[1].length <= 1500);
 });
+
+test("the small local model keeps owner rules first and the not-found rule within its cap", () => {
+  const text = rulesSection(snapshot, 1400);
+  assert.ok(Buffer.byteLength(text) <= 1400);
+  assert.match(text, /Never mention competitor prices/);
+  assert.match(text, /take_message with unanswered set to true\.$/);
+  assert.ok(rulesSection(snapshot).length > text.length);
+});
