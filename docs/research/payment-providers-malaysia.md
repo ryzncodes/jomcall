@@ -4,16 +4,17 @@ Read on 2026-11-14 from the providers' and regulators' own pages, unless marked 
 
 JomCall sells prepaid MYR credit (top-ups of roughly RM20 to RM500) to small businesses. The seller is a Malaysian Sdn Bhd or sole proprietorship ("Enterprise") registered with SSM.
 
-## 1. Recommendation
+## 1. Decision: the owner chose Curlec (2026-11-14)
 
-- **Start with Billplz.** FPX costs a flat RM1.25 per payment on the free plan. FPX is usable within about a day of sign-up. Callbacks are signed with HMAC-SHA256. A sandbox exists. Sole proprietors and Sdn Bhd are both accepted.
-- **Fallback: Curlec (by Razorpay).** It has a refund API that returns money to the payer's source, webhooks signed with HMAC-SHA256 over the raw body, test mode right after sign-up, and accepts SSM sole proprietors. Its FPX fee is 1.5% with a RM1 minimum, which is cheaper than Billplz below about RM83 and dearer above.
-- **Not recommended now:**
-  - Stripe Malaysia: FPX costs 3% + RM1, settles in up to 5 business days, has no DuitNow QR, Touch 'n Go or Boost, and sole-proprietor eligibility is unconfirmed.
-  - toyyibPay: callbacks use an MD5 hash, the return URL carries no hash, and there is no refund API.
-  - Fiuu and iPay88: no public price list.
-
-The code in this branch implements Billplz behind an off-by-default switch, plus a fake provider that speaks Billplz's callback format with a local key. A Curlec client would be a second implementation of the same interface (`packages/billing/src/provider.ts`).
+- **Curlec (Razorpay Curlec) is the provider the product is built for.** The owner chose it on 2026-11-14. The owner already runs a working Curlec integration in another product (Jomjual), which this branch reuses as a reference (see the design, section 5).
+- My earlier recommendation was Billplz (flat RM1.25 FPX fee, next-day settlement). The Billplz client was removed when Curlec was chosen; the comparison below is kept for the record.
+- **Why Curlec fits:** a refund API that returns money to the payer's source; webhooks signed with HMAC-SHA256 over the raw body; test mode with separate keys from sign-up; SSM sole proprietors accepted; an idempotency header on refunds.
+- **What does not fit a prepaid wallet well (raise with Curlec before applying):**
+  - Curlec's Terms list as prohibited credits that can be "converted to physical or digital goods or services". A wallet spent on JomCall call minutes arguably matches. The same list names merchants in intangible goods and services, and gives "web-based telephony" as an example of a business whose legality is "not absolutely clear". Get Curlec's written confirmation that a SaaS prepaid usage wallet for an AI phone answering service is acceptable. Source: <https://curlec.com/s/terms-of-use/> (read 2026-11-14).
+  - FPX costs 1.5% with a RM1 minimum, so a RM20 top-up pays 5% in fees.
+  - Each refund costs RM0.50, is paid from the Curlec balance, and the original fee is not returned.
+  - DuitNow QR needs Curlec's approval and has no test mode.
+- **Not recommended:** Stripe Malaysia (FPX 3% + RM1, up to T+5, no DuitNow, Touch 'n Go or Boost); toyyibPay (MD5 callbacks, no refund API); Fiuu and iPay88 (no public price list).
 
 ## 2. Comparison
 
@@ -52,41 +53,33 @@ Sources:
 - iPay88: `ipay88.com` now redirects to <https://my.nttdatapay.com/en/payment-services/adaptis-e-commerce>; no prices published.
 - Also seen, not compared: HitPay (FPX 1.8% + RM0.40, <https://hitpayapp.com/my/pricing>) and senangPay (from RM199 a year, FPX RM1 or 1.5% whichever is higher, <https://senangpay.com/pricing/>).
 
-## 3. Billplz details that shaped the code
+## 3. Curlec details that shaped the code
 
-API reference: <https://support.billplz.com/api> (`billplz.com/api` redirects there).
+All from Curlec's documentation (pages fetched as Markdown from `curlec.com/docs/...md`), read 2026-11-14. Behaviours taken from the owner's Jomjual integration are marked **(Jomjual)**.
 
-- **Hosts.** Production `https://www.billplz.com/api/`, sandbox `https://www.billplz-sandbox.com/api/`. They are separate accounts with separate keys.
-- **Authentication.** HTTP Basic, with the API Secret Key as the username and an empty password.
-- **Money.** MYR only, amounts in sen ("cents").
-- **Bills.** Bills are a v3 resource. v4 does not document bills.
-  - Create: `POST /v3/bills` with `collection_id`, `email` or `mobile`, `name`, `amount`, `callback_url`, `description` (max 200), and optional `redirect_url`, `reference_1_label`, `reference_1`.
-  - Read: `GET /v3/bills/{id}` returns `paid`, `state` (`due`, `paid`, `deleted`), `amount` and `paid_amount`.
-  - Bills expire 30 days after creation.
-  - No idempotency key is documented. So the code creates a bill only inside the top-up's own idempotent command.
-- **Callback.**
-  - `POST`, `application/x-www-form-urlencoded`, fields `id`, `collection_id`, `paid`, `state`, `amount`, `paid_amount`, `due_at`, `email`, `mobile`, `name`, `url`, `paid_at`, `x_signature`.
-  - Optional `transaction_id` and `transaction_status` arrive if "Extra Payment Completion Information" is enabled.
-  - A failed attempt can send `paid=false` while the bill stays payable.
-  - Callback and redirect arrive in no fixed order.
-  - Retries: 5 attempts in total over about 24 hours. A failed attempt lowers the account's webhook rank.
-  - Billplz expects HTTP 200 within 20 seconds.
-- **X Signature.**
-  1. Take every field except `x_signature`.
-  2. Join each key to its value with no separator. An empty value stays empty.
-  3. Sort these strings, ignoring case.
-  4. Join them with `|`.
-  5. Compute HMAC-SHA256 with the X Signature key, as lowercase hex.
-
-  The documentation's Security section says "sort keys", but both worked examples sort the joined strings. The difference matters, because `paid_amount…` and `paid_at…` sort before `paidtrue`. The code follows the worked examples, and both reproduce exactly:
-  - Callback example: email `tester@test.com` (masked on the page, recovered from the page source), key `S-s7b4yWpp9h7rrkNM1i3Z_g`, signature `0fe0a20b…a4d00e`.
-  - Redirect example: signature `4aab095f…02b47b`.
-
-  Both are test vectors in `tests/billing/signature.test.ts`.
-- **Deleted bills.** A deleted bill "reappears" if the customer completes payment, so a late paid callback must still credit.
-- **Sandbox callbacks need a public URL;** localhost does not work.
-- **Fees.** FPX fees come out of a prepaid Billplz Credit Balance, not out of the payment. Card and wallet fees are deducted from the payment. When the Credit Balance reaches zero, Billplz refills it from collections in RM100 steps.
-- **E-wallets.** From 12 November 2026 all e-wallet payments go through DuitNow QR. It must be ticked per collection in the dashboard; there is no API setting for it.
+- **Host and keys.** API base `https://api.razorpay.com/v1/` in both test and live mode; only the keys differ. HTTP Basic with `key_id:key_secret`. <https://curlec.com/docs/api/sandbox-setup.md>, <https://curlec.com/docs/api/authentication.md>
+  - Test and live keys are separate sets; only the Key Id is shown again after generation; one key pair per merchant id; only Owner or Admin can see them. <https://curlec.com/docs/payments/dashboard/account-settings/api-keys.md>
+  - Key prefixes (`rzp_test_`, `rzp_live_`) are not stated on Curlec's pages. **(Jomjual)** live keys on Curlec use `rzp_live_`. The code refuses a key whose prefix contradicts `CURLEC_ENVIRONMENT` and accepts any other format.
+  - Live keys need a verified website, which Curlec says takes up to 3 working days. Test mode needs no website.
+- **Orders.** `POST /v1/orders` with `amount` in sen, `currency` `MYR`, `receipt` (at most 40 characters, unique, "treated as an idempotency key") and `notes` (at most 15 pairs of 256 characters). Minimum RM1.00. Statuses `created`, `attempted`, `paid`; a paid order takes no further payments. `GET /v1/orders/:id/payments` lists failed and captured attempts. <https://curlec.com/docs/api/orders/create.md>, <https://curlec.com/docs/api/orders/entity.md>, <https://curlec.com/docs/api/orders/fetch-payments.md>
+  - The code sends the top-up id as `receipt` and in `notes`, and checks that the returned order amount equals the top-up. **(Jomjual)** amounts can come back as strings; the code accepts numeric strings.
+  - Order expiry is not documented.
+- **Payments.** Statuses `created`, `authorized`, `captured`, `refunded`, `failed`. Auto-capture is the default (Account & Settings → Payments Capture). An authorized payment not captured within the timeout is auto-refunded. <https://curlec.com/docs/api/payments/entity.md>, <https://curlec.com/docs/payments/payments/capture-settings.md>
+  - **Late authorisation:** a payment marked `failed` after 10 minutes can become authorized and captured up to 3 days later (fewer than 0.5% of payments). The ledger therefore credits a capture that arrives after a failure, and reconciliation re-checks failed top-ups for 7 days. <https://curlec.com/docs/payments/payments/late-authorisation.md>
+  - A duplicate payment on an order already `paid` is auto-refunded by Curlec. <https://curlec.com/docs/payments/refunds/auto-refunds.md> The code never credits a second payment on one order and audits it.
+- **Checkout.** Standard Checkout, `https://checkout.razorpay.com/v1/checkout.js`, options `key`, `amount` (sen), `currency`, `name`, `order_id`, `description`, `prefill`. **`callback_url` and `redirect: true` are mandatory for FPX**, and the callback domain must be allow-listed. Curlec posts `razorpay_payment_id`, `razorpay_order_id`, `razorpay_signature` to the callback after a successful authorisation only. <https://curlec.com/docs/payments/payment-gateway/web-integration/standard/integration-steps.md>
+  - Return signature: HMAC-SHA256 hex of `order_id|razorpay_payment_id` with the API **key secret**, with `order_id` taken from your own server. The code checks it, then fetches the order's payments with its own keys and credits only a captured payment of the exact amount. **(Jomjual)** a valid signature alone is not proof of a captured payment of the right amount.
+  - Another Curlec page says the callback is for WebView and redirect flows and to rely on webhooks for confirmation. The code treats the return as a convenience; the webhook and reconciliation are the source of truth. <https://curlec.com/docs/webhooks.md>
+- **Webhooks.** Header `X-Razorpay-Signature`: HMAC-SHA256 hex of the raw request body with the webhook secret (chosen when the webhook is created; different from the key secret). Delivery is at least once and in no fixed order; `x-razorpay-event-id` identifies an event. Answer 2xx within 5 seconds; failures are retried for 24 hours, after which the webhook is disabled. Ports 80 and 443 only; localhost is rejected. <https://curlec.com/docs/webhooks/validate-test.md>, <https://curlec.com/docs/webhooks/setup-edit-payments.md>
+  - Curlec's own Node sample re-serializes a parsed body before checking, which contradicts its raw-body rule; the code verifies the bytes as received.
+  - Events handled: `payment.captured`, `order.paid`, `payment.failed`, `refund.created`, `refund.processed`, `refund.failed`. Others answer 200 and are ignored. **(Jomjual)** the same set, with `order.paid` added here because it carries the same payment.
+  - Exactly once does not rely on the event id: the key is the payment id and state (`pay:<id>:captured`), so `payment.captured`, `order.paid` and reconciliation of the same payment collapse to one ledger row. **(Jomjual)** dedupe on server-owned ids, not on notes.
+- **Refunds.** `POST /v1/payments/:id/refund` with `amount`, `speed` (`normal`), `receipt`, `notes`; header `X-Refund-Idempotency` (at least 10 characters). Only captured payments; paid from the Curlec balance; minimum RM1.00; statuses `pending`, `processed`, `failed`; cannot be cancelled. RM0.50 per refund, original fee not returned. Time to customer: FPX and e-wallets 0 to 3 days, cards 5 to 10 days. <https://curlec.com/docs/api/refunds/create-normal.md>, <https://curlec.com/docs/api/refunds/normal-refunds-idempotent.md>, <https://curlec.com/docs/payments/refunds/normal.md>
+  - The wallet is debited when a refund is `processed`, once per Curlec refund id, whether it came from the operator command or the Curlec dashboard. **(Jomjual)** e-wallet refunds often come back `pending`; the webhook finishes them.
+- **Methods (Malaysia).** Cards (Visa, Mastercard; Amex not listed), FPX, e-wallets (Touch 'n Go, Boost, GrabPay, MCash), Apple Pay. DuitNow QR needs approval and has no test mode. <https://curlec.com/docs/payments/payment-methods.md>, <https://curlec.com/docs/payments/payment-methods/wallets.md>, <https://curlec.com/docs/payments/payment-methods/duitnow/qr.md>
+- **Fees (Basic, RM0 setup).** Cards 2.40%, foreign cards 3.30%, FPX 1.50% or RM1 whichever is greater, DuitNow Pay 1.20% or RM0.30, e-wallets 1.50%. Premium (RM999 setup): cards 2.00%, FPX 1.00% or RM1. No annual fee. The page says "18% GST", which looks copied from India; the Terms say Curlec issues an SST invoice. <https://curlec.com/pricing/>, <https://curlec.com/s/terms-of-use/>
+- **Settlement.** T+2 working days in MYR; can vary by business risk. No standing reserve stated; the Terms allow withholding after termination. <https://curlec.com/docs/payments/settlements.md>
+- **Onboarding (SSM sole proprietorship).** Business type "Proprietorship"; SSM registration number (Curlec fetches the SSM profile from CTOS); category; addresses; bank account; first page of the latest bank statement. A personal bank account needs Curlec's authorisation letter. Website pages required: About us, Contact us, Pricing, Terms and conditions, Privacy policy, Refund policy, plus a sample invoice and test login if paying needs a login. An account is capped at RM30,000 before full activation. Approval time is not stated. <https://curlec.com/docs/payments/set-up.md>, <https://curlec.com/docs/payments/business-types-kyc-documents.md>, <https://curlec.com/docs/payments/dashboard/account-settings/business-website-details.md>
 
 ## 4. Tax and invoices
 
@@ -147,30 +140,16 @@ Payment fees reduce this further, per top-up (Billplz FPX RM1.25 + 8% SST = RM1.
 
 ## 6. Owner checklist, in order
 
-1. **Approve the outbound exception.** A payment provider is not yet an approved outbound service (`AGENTS.md`). Approve Billplz (or another provider) in writing, as was done for the speech providers.
-2. **Decide the selling entity.** Use a Sdn Bhd or an Enterprise. Card and e-wallet activation needs more documents; the list per entity type is in section 2 and at <https://support.billplz.com/guide/activate-payments>.
-3. **Get a public HTTPS address for the web app.** Billplz cannot call localhost, so real top-ups wait for the hosted deployment (`docs/superpowers/specs/2026-11-14-production-hosting-design.md`). The webhook route runs in `local` and `hosted` mode (`requireApp`) and is unavailable in `mock`; in hosted mode the callback address defaults to `APP_ORIGIN`. Hosted steps are in `infra/hosted/RUNBOOK.md` section D. Exposing a local server through a tunnel instead would be another outbound service needing approval.
-4. **Open a Billplz sandbox account** at <https://www.billplz-sandbox.com> (dummy data is accepted). In Settings > Keys & Integration:
-   - copy the API Secret Key;
-   - tick "Enable X Signature Payment Completion" and copy the X Signature key.
-   Then create a Collection and copy its ID.
-5. **Paste the sandbox values** into a new gitignored file `.env.payments` at the repository root (never into git). Only the web app (`npm run dev:local` / `start:local`, through `scripts/billing/with-payment-env.mjs`) and `npm run billing:reconcile` read it, and only these names:
-   ```
-   JOMCALL_PAYMENT_PROVIDER=billplz
-   BILLPLZ_ENVIRONMENT=sandbox
-   BILLPLZ_API_KEY=...
-   BILLPLZ_X_SIGNATURE_KEY=...
-   BILLPLZ_COLLECTION_ID=...
-   JOMCALL_PUBLIC_ORIGIN=https://<your hosted web address>
-   ```
-   The callback address Billplz is told to use is `<JOMCALL_PUBLIC_ORIGIN>/api/billing/webhook/billplz`.
-6. **Run one sandbox top-up** with the test bank `BP-FKR01`. Check that:
-   - the wallet is credited once;
-   - a receipt appears;
-   - `npm run billing:reconcile` reports it paid.
-7. **Apply for the production Billplz account** with MyKad, an eKYC selfie, the SSM number, a bank account in the business's name and the TIN. FPX takes minutes to 24 business hours; card and DuitNow QR take "a few days".
-8. **Fund the Billplz Credit Balance** (FPX fees are taken from it). Tick DuitNow QR on the collection.
-9. **Optional:** load a Payment Order limit for refunds.
-10. **Switch the values** to production with `BILLPLZ_ENVIRONMENT=production`. Then make one small real top-up and refund it with `npm run billing:admin -- refund`.
-11. **Set final prices.** This is a new `billing_price` version in a new migration. Version 1 is provisional.
-12. **Ask an accountant** to confirm the e-invoice exemption and the SST registration position (section 4).
+The hosted steps, with where each key goes, are in `infra/hosted/RUNBOOK.md` section D.
+
+1. **Ask Curlec in writing** whether a prepaid usage wallet for an AI phone answering SaaS is acceptable under its prohibited list (credits, intangible services, web-based telephony; section 1).
+2. **Approve Curlec as an outbound service.** A payment provider is not yet an approved outbound service (`AGENTS.md`).
+3. **Publish the website pages Curlec checks:** About us, Contact us, Pricing, Terms and conditions, Privacy policy, Refund policy; prepare a sample receipt.
+4. **Sign up at Curlec** as Digitalize Plus Enterprise: business type Proprietorship, SSM number, category, address, a bank account in the business's name and the first page of its latest statement.
+5. **Test mode:** generate test keys (Account & Settings → API Keys) and create a test webhook (Account & Settings → Webhooks) at `https://<staging host>/api/billing/webhook/curlec` with events `payment.captured`, `order.paid`, `payment.failed`, `refund.created`, `refund.processed`, `refund.failed`, and a secret you choose. Allow-list the staging domain for the checkout callback.
+6. **Put the test values** in the staging environment (Vercel) or, for a local check, the gitignored `.env.payments`: `JOMCALL_PAYMENT_PROVIDER=curlec`, `CURLEC_ENVIRONMENT=test`, `CURLEC_KEY_ID`, `CURLEC_KEY_SECRET`, `CURLEC_WEBHOOK_SECRET`, and `JOMCALL_PUBLIC_ORIGIN` unless hosted mode's `APP_ORIGIN` applies.
+7. **One test top-up** with a mock FPX bank: the wallet is credited once, a receipt appears, `npm run billing:reconcile` reports it; then refund part of it with `npm run billing:admin -- refund` and check the wallet is debited once.
+8. **Activate live mode;** wait for website verification (up to 3 working days); generate live keys and a live webhook; set `CURLEC_ENVIRONMENT=live`.
+9. **One small real top-up,** then refund it.
+10. **Set final prices** as a new `billing_price` version (versions 1 and 2 are owner placeholders).
+11. **Ask an accountant** to confirm the e-invoice exemption and the SST position (section 4).

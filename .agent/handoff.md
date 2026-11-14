@@ -5,14 +5,14 @@
 Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 
 **Changed**
-- Migrations `20261114150000_billing_wallet.sql` and `20261114150100_billing_wallet_fixes.sql`: append-only ledger, usage events, versioned prices, top-ups, provider events, receipts. Writes only through `app_private` functions owned by `nologin` role `jomcall_billing`; triggers refuse update, delete and truncate.
-- `packages/billing`: `recordUsage` and `walletState` for other services; provider interface; Billplz client (never run against Billplz); local-only fake that signs Billplz-format callbacks.
-- Routes `/api/v1/billing/*`, webhook `POST /api/billing/webhook/<provider>`, local wallet screen, `npm run billing:simulate | billing:reconcile | billing:admin`.
+- Migrations `20261114150000_billing_wallet.sql`, `20261114150100_billing_wallet_fixes.sql` and `20261114200000_billing_curlec.sql` (crediting payment id, `settle_refund`): append-only ledger, usage events, versioned prices, top-ups, provider events, receipts. Writes only through `app_private` functions owned by `nologin` role `jomcall_billing`; triggers refuse update, delete and truncate.
+- `packages/billing`: `recordUsage` and `walletState` for other services; provider interface; Curlec client (owner's choice 2026-11-14; never run against Curlec; Billplz client removed); local-only fake that speaks Curlec's webhook and return shapes.
+- Routes `/api/v1/billing/*`, webhook `POST /api/billing/webhook/<provider>`, checkout return `/api/billing/return/<provider>`, local wallet screen, `npm run billing:simulate | billing:reconcile | billing:admin`.
 - Docs: `docs/research/payment-providers-malaysia.md`, `docs/superpowers/specs/2026-11-14-billing-design.md`.
 
 **Verified**
 - `npm run check:billing`: 16 tests (8 unit, 8 against the local database through the API) pass. `check:core` 206 pass, 0 fail, 2 skipped; typecheck, test:guards, db:verify-migrations, build:local, build:mock pass.
-- Both Billplz documentation signature examples reproduce exactly.
+- Curlec webhook, return-signature, order, payment-list and refund shapes tested against recorded fake payloads shaped as Curlec's docs describe.
 
 **Not verified**
 - No real provider call, no merchant account, no browser check of the wallet screen (port 4182 was in use by another session).
@@ -23,7 +23,7 @@ Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 - The local database records versions `20261114150000` and `20261114150100` (applied with `npm run db:apply-migration:local`). Other checkouts without these files get "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000`/`120100` sort earlier and may need `--include-all`.
 
 **Next**
-1. Owner: approve a payment provider as an outbound service, then follow the checklist in the research note, section 6.
+1. Owner: ask Curlec in writing whether a prepaid usage wallet is acceptable (prohibited-credits clause), approve Curlec as an outbound service, then follow `infra/hosted/RUNBOOK.md` section D.
 2. Phone line and WhatsApp sessions: call `recordUsage` after the provider confirms a call or conversation, and `walletState` before starting a new one.
 3. Owner: final prices (new `billing_price` version).
 4. On a database where the billing migration is not yet applied: run `npm run db:migrate:local` before `npm run db:verify-migrations`, or drop the stray `jomcall_billing` role first.
