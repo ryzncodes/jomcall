@@ -10,6 +10,7 @@ import type {
 import { useExperience } from "../experience";
 import { Field } from "./field";
 import { GreetingField } from "./agent-fields";
+import { KnowledgeCoreEditor } from "./knowledge-core";
 import {
   useCore,
   useWords,
@@ -156,7 +157,7 @@ function AgentEditor({ initial }: { initial: Agent }) {
       ...initial.draft,
     }),
     [revision, setRevision] = useState(initial.revision),
-    [tab, setTab] = useState<"voice" | "knowledge" | "history">("voice"),
+    [tab, setTab] = useState<"voice" | "knowledge" | "core" | "history">("voice"),
     [dirty, setDirty] = useState(false),
     [published, setPublished] = useState(false);
   const change = (v: Partial<AgentSettings>) => {
@@ -176,7 +177,7 @@ function AgentEditor({ initial }: { initial: Agent }) {
         role="group"
         aria-label={w("Agent sections", "Bahagian ejen")}
       >
-        {(["voice", "knowledge", "history"] as const).map((t, i) => (
+        {(["voice", "knowledge", "core", "history"] as const).map((t, i) => (
           <button
             key={t}
             aria-current={tab === t ? "page" : undefined}
@@ -186,6 +187,7 @@ function AgentEditor({ initial }: { initial: Agent }) {
               [
                 w("Personality & disclosure", "Personaliti & pendedahan"),
                 w("Business knowledge", "Pengetahuan perniagaan"),
+                w("Knowledge core", "Teras pengetahuan"),
                 w("Published versions", "Versi diterbitkan"),
               ][i]
             }
@@ -205,13 +207,13 @@ function AgentEditor({ initial }: { initial: Agent }) {
         <section className="builder-editor">
           <header className="editor-heading">
             <span className="editor-index">
-              0{tab === "voice" ? 1 : tab === "knowledge" ? 2 : 3}
+              0{tab === "voice" ? 1 : tab === "knowledge" ? 2 : tab === "core" ? 3 : 4}
             </span>
             <div>
               <h2>
                 {tab === "voice"
                   ? w("How your agent responds", "Cara ejen anda menjawab")
-                  : tab === "knowledge"
+                  : tab === "knowledge" || tab === "core"
                     ? w(
                         "Grounded in your business",
                         "Berpandukan perniagaan anda",
@@ -365,6 +367,13 @@ function AgentEditor({ initial }: { initial: Agent }) {
               agentId={initial.id}
               revision={revision}
               onSaved={accept}
+              disabled={dirty}
+            />
+          ) : tab === "core" ? (
+            <KnowledgeCoreEditor
+              agentId={initial.id}
+              revision={revision}
+              onRevision={setRevision}
               disabled={dirty}
             />
           ) : (
