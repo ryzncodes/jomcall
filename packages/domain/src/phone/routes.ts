@@ -74,7 +74,9 @@ export async function phoneRoute(
     let whatsapp = false;
     try {
       whatsapp = whatsappMode() !== "disabled";
-    } catch {}
+    } catch {
+      // An invalid value deliberately counts as not connected.
+    }
     const phone =
       telephonyReadiness().configured &&
       (

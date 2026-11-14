@@ -167,7 +167,7 @@ export function WorkspaceChrome({
           ...(channels?.phone ? [] : ["phones"]),
           ...(channels?.whatsapp ? [] : ["whatsapp"]),
           ...(channels?.integrations ? [] : ["integrations"]),
-          ...(workspace.complete ? ["setup"] : []),
+          ...(workspace.complete && active !== "setup" ? ["setup"] : []),
         ]
       : [];
   const navigation = all.filter((item) => !hidden.includes(item.key));

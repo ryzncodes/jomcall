@@ -150,3 +150,55 @@ test("the call log reads real rows; staff get no words; other businesses see not
     await p.close();
   }
 });
+
+test("channels: phone needs a configured provider and a number; whatsapp follows its switch; staff can read", async () => {
+  const names = [
+    ...ENV,
+    "LIVEKIT_URL",
+    "LIVEKIT_API_KEY",
+    "LIVEKIT_API_SECRET",
+    "JOMCALL_WHATSAPP_PROVIDER",
+  ];
+  const saved = Object.fromEntries(names.map((k) => [k, process.env[k]]));
+  const p = await phoneFixture();
+  const { h, api, req } = p;
+  const channels = async (actor = h.alice) =>
+    (await api.request(actor, h.orgA.id, "GET", "/api/v1/channels")).body.data;
+  try {
+    for (const k of names) delete process.env[k];
+    assert.deepEqual(await channels(), { phone: false, whatsapp: false, integrations: false });
+    // Configured provider, no number yet: still false.
+    Object.assign(process.env, {
+      JOMCALL_TELEPHONY_PROVIDER: "livekit_sip",
+      JOMCALL_VOICE_PROVIDER: "hosted",
+      LIVEKIT_URL: "ws://127.0.0.1:1",
+      LIVEKIT_API_KEY: "test-key",
+      LIVEKIT_API_SECRET: "test-secret",
+    });
+    assert.equal((await channels()).phone, false);
+    // A number but no provider: false.
+    const made = await req("POST", "/phone-numbers", {
+      e164: fakeNumber(),
+      locationId: h.orgA.locationId,
+      agentId: h.orgA.agentId,
+    });
+    assert.equal(made.status, 200);
+    delete process.env.JOMCALL_TELEPHONY_PROVIDER;
+    assert.equal((await channels()).phone, false);
+    process.env.JOMCALL_TELEPHONY_PROVIDER = "livekit_sip";
+    assert.equal((await channels(h.staff)).phone, true);
+    // Another organization has no number.
+    assert.equal(
+      (await api.request(h.bob, h.orgB.id, "GET", "/api/v1/channels")).body.data.phone,
+      false,
+    );
+    process.env.JOMCALL_WHATSAPP_PROVIDER = "fake";
+    assert.equal((await channels(h.staff)).whatsapp, true);
+    process.env.JOMCALL_WHATSAPP_PROVIDER = "bogus";
+    assert.equal((await channels()).whatsapp, false);
+  } finally {
+    for (const [k, v] of Object.entries(saved))
+      v === undefined ? delete process.env[k] : (process.env[k] = v);
+    await p.close();
+  }
+});

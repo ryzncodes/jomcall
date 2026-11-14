@@ -124,6 +124,15 @@ test("the interview prefills the name only through the tested rule", () => {
 test("the chrome reads the channels command and hides unconnected channels", () => {
   const text = readFileSync("web/components/core/chrome.tsx", "utf8");
   assert.match(text, /execute\(\s*["']channels["']/);
-  for (const key of ["phones", "whatsapp", "integrations"])
-    assert.match(text, new RegExp(key));
+  for (const [flag, key] of [
+    ["phone", "phones"],
+    ["whatsapp", "whatsapp"],
+    ["integrations", "integrations"],
+  ])
+    assert.match(
+      text,
+      new RegExp(`channels\\?\\.${flag}\\s*\\?\\s*\\[\\]\\s*:\\s*\\["${key}"\\]`),
+    );
+  assert.match(text, /workspace\.complete && active !== "setup"/);
+  assert.match(text, /filter\(\(item\) => !hidden\.includes\(item\.key\)\)/);
 });
