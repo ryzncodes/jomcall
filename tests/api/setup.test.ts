@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createPhase2Harness } from "../helpers/phase2.ts";
-import { MAX_QUESTIONS } from "../../packages/domain/src/setup/questions.ts";
+import {
+  MAX_QUESTIONS,
+  questionById,
+} from "../../packages/domain/src/setup/questions.ts";
 
 async function fixture() {
   const f = await createPhase2Harness();
@@ -32,7 +35,10 @@ test("startSetup opens a session, returns at most 8 questions and claims the tri
     assert.deepEqual(s.items, []);
     let rows = (await ledger(f)).rows;
     assert.deepEqual(rows, [{ amount_sen: 2000 }]);
-    const again = await start({ mainPack: "stock-price", extraPacks: ["order"] });
+    const again = await start({
+      mainPack: "stock-price",
+      extraPacks: ["order"],
+    });
     assert.equal(again.status, 200);
     assert.equal(again.body.data.session.id, s.session.id);
     assert.equal(again.body.data.session.mainPack, "stock-price");
@@ -40,11 +46,35 @@ test("startSetup opens a session, returns at most 8 questions and claims the tri
     rows = (await ledger(f)).rows;
     assert.equal(rows.length, 1);
     // Bad packs.
-    assert.equal((await start({ mainPack: "nope", extraPacks: [] })).status, 422);
-    assert.equal((await start({ mainPack: "order", extraPacks: ["order"] })).status, 422);
-    assert.equal((await start({ mainPack: "order", extraPacks: ["appointment", "appointment"] })).status, 422);
     assert.equal(
-      (await start({ mainPack: "order", extraPacks: ["appointment", "stock-price", "quote-visit", "case-intake"] })).status,
+      (await start({ mainPack: "nope", extraPacks: [] })).status,
+      422,
+    );
+    assert.equal(
+      (await start({ mainPack: "order", extraPacks: ["order"] })).status,
+      422,
+    );
+    assert.equal(
+      (
+        await start({
+          mainPack: "order",
+          extraPacks: ["appointment", "appointment"],
+        })
+      ).status,
+      422,
+    );
+    assert.equal(
+      (
+        await start({
+          mainPack: "order",
+          extraPacks: [
+            "appointment",
+            "stock-price",
+            "quote-visit",
+            "case-intake",
+          ],
+        })
+      ).status,
       422,
     );
   } finally {
@@ -57,10 +87,14 @@ test("an answer is kept and its question leaves the list", async () => {
   try {
     const s = (await start()).body.data;
     const q = s.questions.find((x: any) => x.kind === "fact");
-    const put = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
-      expectedRevision: s.session.revision,
-      answer: { kind: "fact", text: "  Cuci gigi RM80  " },
-    });
+    const put = await f.req(
+      "PUT",
+      `${path}/answers/${encodeURIComponent(q.id)}`,
+      {
+        expectedRevision: s.session.revision,
+        answer: { kind: "fact", text: "  Cuci gigi RM80  " },
+      },
+    );
     assert.equal(put.status, 200);
     const fresh = await get();
     assert.equal(fresh.items.length, 1);
@@ -72,22 +106,33 @@ test("an answer is kept and its question leaves the list", async () => {
     assert.ok(!fresh.questions.some((x: any) => x.id === q.id));
     assert.ok(fresh.questions.length >= 1);
     // Re-answering updates the same row.
-    const again = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
-      expectedRevision: fresh.session.revision,
-      answer: { kind: "fact", text: "Berubah" },
-    });
+    const again = await f.req(
+      "PUT",
+      `${path}/answers/${encodeURIComponent(q.id)}`,
+      {
+        expectedRevision: fresh.session.revision,
+        answer: { kind: "fact", text: "Berubah" },
+      },
+    );
     assert.equal(again.body.data.items.length, 1);
     assert.equal(again.body.data.items[0].payload.value, "Berubah");
     // Unknown question and wrong answer kind.
     assert.equal(
-      (await f.req("PUT", `${path}/answers/nope`, { expectedRevision: again.body.data.session.revision, answer: { kind: "skip" } })).status,
+      (
+        await f.req("PUT", `${path}/answers/nope`, {
+          expectedRevision: again.body.data.session.revision,
+          answer: { kind: "skip" },
+        })
+      ).status,
       404,
     );
     assert.equal(
-      (await f.req("PUT", `${path}/answers/hours`, {
-        expectedRevision: again.body.data.session.revision,
-        answer: { kind: "fact", text: "x" },
-      })).status,
+      (
+        await f.req("PUT", `${path}/answers/hours`, {
+          expectedRevision: again.body.data.session.revision,
+          answer: { kind: "fact", text: "x" },
+        })
+      ).status,
       422,
     );
   } finally {
@@ -105,10 +150,16 @@ test("a 2001-character answer is refused with a validation error; a spaces-only 
         expectedRevision: s.session.revision,
         answer: a,
       });
-    const long = await answer(facts[0], { kind: "fact", text: "a".repeat(2001) });
+    const long = await answer(facts[0], {
+      kind: "fact",
+      text: "a".repeat(2001),
+    });
     assert.equal(long.status, 422);
     assert.equal(long.body.error.code, "VALIDATION_ERROR");
-    assert.equal((await answer(facts[0], { kind: "fact", text: "a".repeat(2000) })).status, 200);
+    assert.equal(
+      (await answer(facts[0], { kind: "fact", text: "a".repeat(2000) })).status,
+      200,
+    );
     s = await get();
     const blank = await answer(facts[1], { kind: "fact", text: "   \n " });
     assert.equal(blank.status, 200);
@@ -118,15 +169,34 @@ test("a 2001-character answer is refused with a validation error; a spaces-only 
     const text = "营业时间 9am-6pm 😀 RM 8.50";
     const sp = await answer(facts[2], { kind: "fact", text });
     s = sp.body.data;
-    assert.equal(s.items.find((i: any) => i.payload.value === text).payload.value, text);
-    assert.equal((await get()).items.find((i: any) => i.payload.value === text).payload.value, text);
+    assert.equal(
+      s.items.find((i: any) => i.payload.value === text).payload.value,
+      text,
+    );
+    assert.equal(
+      (await get()).items.find((i: any) => i.payload.value === text).payload
+        .value,
+      text,
+    );
     // Over the 4,000-byte value limit even under 2,000 characters.
-    assert.equal((await answer(facts[3], { kind: "fact", text: "好".repeat(1400) })).status, 422);
+    assert.equal(
+      (await answer(facts[3], { kind: "fact", text: "好".repeat(1400) }))
+        .status,
+      422,
+    );
     // Re-answering a skipped question revives its row, no second row.
     const before = s.items.length;
-    const revive = await answer(facts[1], { kind: "fact", text: "Sekarang jawab" });
+    const revive = await answer(facts[1], {
+      kind: "fact",
+      text: "Sekarang jawab",
+    });
     assert.equal(revive.body.data.items.length, before);
-    assert.equal(revive.body.data.items.find((i: any) => i.payload.value === "Sekarang jawab").state, "pending");
+    assert.equal(
+      revive.body.data.items.find(
+        (i: any) => i.payload.value === "Sekarang jawab",
+      ).state,
+      "pending",
+    );
   } finally {
     await f.close();
   }
@@ -136,7 +206,9 @@ test("hours and first words are stored as schedule and settings items", async ()
   const { f, path, start, get } = await fixture();
   try {
     let s = (await start()).body.data;
-    const weekdays = Array.from({ length: 7 }, () => [{ start: "10:00", end: "20:00" }]);
+    const weekdays = Array.from({ length: 7 }, () => [
+      { start: "10:00", end: "20:00" },
+    ]);
     const h = await f.req("PUT", `${path}/answers/hours`, {
       expectedRevision: s.session.revision,
       answer: { kind: "hours", timezone: "Asia/Kuala_Lumpur", weekdays },
@@ -144,7 +216,11 @@ test("hours and first words are stored as schedule and settings items", async ()
     assert.equal(h.status, 200);
     const w = await f.req("PUT", `${path}/answers/first_words`, {
       expectedRevision: h.body.data.session.revision,
-      answer: { kind: "first_words", greeting: "Hai, Klinik Contoh.", aiDisclosure: "Saya pembantu AI." },
+      answer: {
+        kind: "first_words",
+        greeting: "Hai, Klinik Contoh.",
+        aiDisclosure: "Saya pembantu AI.",
+      },
     });
     assert.equal(w.status, 200);
     s = await get();
@@ -154,19 +230,31 @@ test("hours and first words are stored as schedule and settings items", async ()
     assert.deepEqual(sched.payload.weekdays, weekdays);
     assert.equal(sett.key, "settings");
     assert.equal(sett.payload.greeting, "Hai, Klinik Contoh.");
-    assert.ok(!s.questions.some((q: any) => q.kind === "hours" || q.kind === "first_words"));
+    assert.ok(
+      !s.questions.some(
+        (q: any) => q.kind === "hours" || q.kind === "first_words",
+      ),
+    );
     // Empty greeting is refused.
     assert.equal(
-      (await f.req("PUT", `${path}/answers/first_words`, {
-        expectedRevision: s.session.revision,
-        answer: { kind: "first_words", greeting: "  ", aiDisclosure: "x" },
-      })).status,
+      (
+        await f.req("PUT", `${path}/answers/first_words`, {
+          expectedRevision: s.session.revision,
+          answer: { kind: "first_words", greeting: "  ", aiDisclosure: "x" },
+        })
+      ).status,
       422,
     );
     // saveSetupItem: confirm, edit, remove.
     const id = sett.id;
-    const c = await f.req("PUT", `${path}/items/${id}`, { expectedRevision: s.session.revision, state: "confirmed" });
-    assert.equal(c.body.data.items.find((i: any) => i.id === id).state, "confirmed");
+    const c = await f.req("PUT", `${path}/items/${id}`, {
+      expectedRevision: s.session.revision,
+      state: "confirmed",
+    });
+    assert.equal(
+      c.body.data.items.find((i: any) => i.id === id).state,
+      "confirmed",
+    );
     const e = await f.req("PUT", `${path}/items/${id}`, {
       expectedRevision: c.body.data.session.revision,
       payload: { greeting: "Baru", aiDisclosure: "AI" },
@@ -176,9 +264,15 @@ test("hours and first words are stored as schedule and settings items", async ()
     assert.equal(item.state, "removed");
     assert.equal(item.payload.greeting, "Baru");
     // A removed item keeps its question out of the list.
-    assert.ok(!e.body.data.questions.some((q: any) => q.kind === "first_words"));
+    assert.ok(
+      !e.body.data.questions.some((q: any) => q.kind === "first_words"),
+    );
     assert.equal(
-      (await f.req("PUT", `${path}/items/${id}`, { expectedRevision: e.body.data.session.revision })).status,
+      (
+        await f.req("PUT", `${path}/items/${id}`, {
+          expectedRevision: e.body.data.session.revision,
+        })
+      ).status,
       422,
     );
   } finally {
@@ -196,8 +290,14 @@ test("staff are refused on every setup command", async () => {
     for (const r of [
       await as("GET", path),
       await as("POST", path, { mainPack: "appointment", extraPacks: [] }),
-      await as("PUT", `${path}/answers/hours`, { expectedRevision: s.session.revision, answer: { kind: "skip" } }),
-      await as("PUT", `${path}/items/${itemId}`, { expectedRevision: s.session.revision, state: "removed" }),
+      await as("PUT", `${path}/answers/hours`, {
+        expectedRevision: s.session.revision,
+        answer: { kind: "skip" },
+      }),
+      await as("PUT", `${path}/items/${itemId}`, {
+        expectedRevision: s.session.revision,
+        state: "removed",
+      }),
     ])
       assert.equal(r.status, 403);
   } finally {
@@ -209,14 +309,25 @@ test("a stale revision is refused with CONFLICT", async () => {
   const { f, path, start, get } = await fixture();
   try {
     const s = (await start()).body.data;
-    const body = { expectedRevision: s.session.revision, answer: { kind: "skip" } };
-    assert.equal((await f.req("PUT", `${path}/answers/hours`, body)).status, 200);
+    const body = {
+      expectedRevision: s.session.revision,
+      answer: { kind: "skip" },
+    };
+    assert.equal(
+      (await f.req("PUT", `${path}/answers/hours`, body)).status,
+      200,
+    );
     const stale = await f.req("PUT", `${path}/answers/first_words`, body);
     assert.equal(stale.status, 409);
     assert.equal(stale.body.error.code, "CONFLICT");
     const item = (await get()).items[0];
     assert.equal(
-      (await f.req("PUT", `${path}/items/${item.id}`, { expectedRevision: s.session.revision, state: "pending" })).status,
+      (
+        await f.req("PUT", `${path}/items/${item.id}`, {
+          expectedRevision: s.session.revision,
+          state: "pending",
+        })
+      ).status,
       409,
     );
   } finally {
@@ -232,10 +343,28 @@ test("nothing staged appears in knowledgeCore or in a draft test session's snaps
     let rev = s.session.revision;
     for (const [id, answer] of [
       [fact.id, { kind: "fact", text: "STAGED-MARKER-123" }],
-      ["first_words", { kind: "first_words", greeting: "STAGED-MARKER-123", aiDisclosure: "STAGED-MARKER-123" }],
-      ["hours", { kind: "hours", timezone: "Asia/Kuala_Lumpur", weekdays: Array.from({ length: 7 }, () => []) }],
+      [
+        "first_words",
+        {
+          kind: "first_words",
+          greeting: "STAGED-MARKER-123",
+          aiDisclosure: "STAGED-MARKER-123",
+        },
+      ],
+      [
+        "hours",
+        {
+          kind: "hours",
+          timezone: "Asia/Kuala_Lumpur",
+          weekdays: Array.from({ length: 7 }, () => []),
+        },
+      ],
     ] as const) {
-      const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(id)}`, { expectedRevision: rev, answer });
+      const r = await f.req(
+        "PUT",
+        `${path}/answers/${encodeURIComponent(id)}`,
+        { expectedRevision: rev, answer },
+      );
       assert.equal(r.status, 200);
       rev = r.body.data.session.revision;
     }
@@ -252,10 +381,17 @@ test("nothing staged appears in knowledgeCore or in a draft test session's snaps
         source: { kind: "draft", expectedRevision: draft.revision },
       })
     ).body.data;
-    const stored = (await f.h.cleanup.query("select snapshot from app.test_session where id=$1", [session.id])).rows[0].snapshot;
+    const stored = (
+      await f.h.cleanup.query(
+        "select snapshot from app.test_session where id=$1",
+        [session.id],
+      )
+    ).rows[0].snapshot;
     assert.ok(!JSON.stringify(stored).includes("STAGED-MARKER-123"));
     // The fixture's saved hours are untouched.
-    assert.deepEqual(stored.context.schedule.weekdays[0], [{ start: "09:00", end: "18:00" }]);
+    assert.deepEqual(stored.context.schedule.weekdays[0], [
+      { start: "09:00", end: "18:00" },
+    ]);
   } finally {
     await f.close();
   }
@@ -283,13 +419,19 @@ test("an existing confirmed fact shows up as a conflict when the same key is ans
     const afterSave = (await f.req("GET", path)).body.data;
     assert.ok(afterSave.questions.some((x: any) => x.id === fact.id));
     // Answering it anyway (the owner re-opens it) is allowed and flagged.
-    const put = await f.req("PUT", `${path}/answers/${encodeURIComponent(fact.id)}`, {
-      expectedRevision: afterSave.session.revision,
-      answer: { kind: "fact", text: "New value" },
-    });
+    const put = await f.req(
+      "PUT",
+      `${path}/answers/${encodeURIComponent(fact.id)}`,
+      {
+        expectedRevision: afterSave.session.revision,
+        answer: { kind: "fact", text: "New value" },
+      },
+    );
     assert.equal(put.status, 200);
     const d = put.body.data;
-    assert.deepEqual(d.conflicts, [{ itemId: d.items[0].id, current: "Already confirmed" }]);
+    assert.deepEqual(d.conflicts, [
+      { itemId: d.items[0].id, current: "Already confirmed" },
+    ]);
     // A removed item is not a conflict.
     const removed = await f.req("PUT", `${path}/items/${d.items[0].id}`, {
       expectedRevision: d.session.revision,
@@ -299,17 +441,31 @@ test("an existing confirmed fact shows up as a conflict when the same key is ans
     // Hours conflict with the saved schedule of the agent's location.
     const h = await f.req("PUT", `${path}/answers/hours`, {
       expectedRevision: removed.body.data.session.revision,
-      answer: { kind: "hours", timezone: "Asia/Kuala_Lumpur", weekdays: Array.from({ length: 7 }, () => [{ start: "08:00", end: "12:00" }]) },
+      answer: {
+        kind: "hours",
+        timezone: "Asia/Kuala_Lumpur",
+        weekdays: Array.from({ length: 7 }, () => [
+          { start: "08:00", end: "12:00" },
+        ]),
+      },
     });
     assert.equal(h.body.data.conflicts.length, 1);
-    assert.equal(h.body.data.conflicts[0].current.weekdays[0][0].start, "09:00");
+    assert.equal(
+      h.body.data.conflicts[0].current.weekdays[0][0].start,
+      "09:00",
+    );
   } finally {
     await f.close();
   }
 });
 
 test("the openapi file lists the four commands", () => {
-  const spec = JSON.parse(readFileSync(new URL("../../packages/contracts/openapi.json", import.meta.url), "utf8"));
+  const spec = JSON.parse(
+    readFileSync(
+      new URL("../../packages/contracts/openapi.json", import.meta.url),
+      "utf8",
+    ),
+  );
   const text = JSON.stringify(spec);
   for (const name of ["setup", "startSetup", "answerSetup", "saveSetupItem"])
     assert.ok(text.includes(`"${name}"`), name);
@@ -319,15 +475,25 @@ test("the openapi file lists the four commands", () => {
 });
 
 // ---- freeze and validation (review fixes) ----
-const weekdaysOf = (s: string, e: string) => Array.from({ length: 7 }, () => [{ start: s, end: e }]);
+const weekdaysOf = (s: string, e: string) =>
+  Array.from({ length: 7 }, () => [{ start: s, end: e }]);
 function answerFor(q: any, text = "Jawapan") {
-  if (q.kind === "hours") return { kind: "hours", timezone: "Asia/Kuala_Lumpur", weekdays: weekdaysOf("09:00", "17:00") };
-  if (q.kind === "first_words") return { kind: "first_words", greeting: "Hai", aiDisclosure: "AI" };
+  if (q.kind === "hours")
+    return {
+      kind: "hours",
+      timezone: "Asia/Kuala_Lumpur",
+      weekdays: weekdaysOf("09:00", "17:00"),
+    };
+  if (q.kind === "first_words")
+    return { kind: "first_words", greeting: "Hai", aiDisclosure: "AI" };
   return { kind: "fact", text };
 }
 const idsOf = (f: any, agentId: string) =>
   f.h.cleanup
-    .query("select question_ids from app.setup_session where agent_id=$1 and state='open'", [agentId])
+    .query(
+      "select question_ids from app.setup_session where agent_id=$1 and state='open'",
+      [agentId],
+    )
     .then((r: any) => r.rows[0].question_ids as string[]);
 
 test("the interview never asks more than 8 questions", async () => {
@@ -338,10 +504,14 @@ test("the interview never asks more than 8 questions", async () => {
     for (let n = 0; n < 40 && s.questions.length; n++) {
       const q = s.questions[0];
       seen.add(q.id);
-      const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
-        expectedRevision: s.session.revision,
-        answer: answerFor(q),
-      });
+      const r = await f.req(
+        "PUT",
+        `${path}/answers/${encodeURIComponent(q.id)}`,
+        {
+          expectedRevision: s.session.revision,
+          answer: answerFor(q),
+        },
+      );
       assert.equal(r.status, 200);
       s = r.body.data;
     }
@@ -360,19 +530,27 @@ test("an answered question can be answered again", async () => {
     let s = (await start()).body.data;
     const all = s.questions.map((q: any) => q);
     for (const q of all) {
-      const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
-        expectedRevision: s.session.revision,
-        answer: answerFor(q, "Satu"),
-      });
+      const r = await f.req(
+        "PUT",
+        `${path}/answers/${encodeURIComponent(q.id)}`,
+        {
+          expectedRevision: s.session.revision,
+          answer: answerFor(q, "Satu"),
+        },
+      );
       assert.equal(r.status, 200);
       s = r.body.data;
     }
     assert.equal(s.questions.length, 0);
     for (const q of [all[1], all[all.length - 1]]) {
-      const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
-        expectedRevision: s.session.revision,
-        answer: answerFor(q, "Dua"),
-      });
+      const r = await f.req(
+        "PUT",
+        `${path}/answers/${encodeURIComponent(q.id)}`,
+        {
+          expectedRevision: s.session.revision,
+          answer: answerFor(q, "Dua"),
+        },
+      );
       assert.equal(r.status, 200, q.id);
       s = r.body.data;
     }
@@ -388,13 +566,19 @@ test("changing packs keeps answered questions and drops answers of a pack that i
   try {
     let s = (await start()).body.data;
     const own = s.questions.find((q: any) => q.id.startsWith("appointment:"));
-    const base = s.questions.find((q: any) => q.id.startsWith("every-business:"));
+    const base = s.questions.find((q: any) =>
+      q.id.startsWith("every-business:"),
+    );
     assert.ok(own && base);
     for (const q of [own, base]) {
-      const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
-        expectedRevision: s.session.revision,
-        answer: answerFor(q),
-      });
+      const r = await f.req(
+        "PUT",
+        `${path}/answers/${encodeURIComponent(q.id)}`,
+        {
+          expectedRevision: s.session.revision,
+          answer: answerFor(q),
+        },
+      );
       s = r.body.data;
     }
     const same = await start();
@@ -403,7 +587,9 @@ test("changing packs keeps answered questions and drops answers of a pack that i
     assert.equal(r.status, 200);
     s = r.body.data;
     const state = (pack: string) =>
-      s.items.filter((i: any) => i.kind === "fact" && i.payload.packId === pack).map((i: any) => i.state);
+      s.items
+        .filter((i: any) => i.kind === "fact" && i.payload.packId === pack)
+        .map((i: any) => i.state);
     assert.deepEqual(state("appointment"), ["removed"]);
     assert.deepEqual(state("every-business"), ["pending"]);
     const ids = await idsOf(f, f.h.orgA.agentId);
@@ -411,8 +597,14 @@ test("changing packs keeps answered questions and drops answers of a pack that i
     assert.ok(ids.includes(base.id) && ids.includes(own.id));
     assert.equal(new Set(ids).size, ids.length);
     // Not asked again, and nothing from the dropped pack is newly asked.
-    assert.ok(!s.questions.some((q: any) => q.id === base.id || q.id === own.id));
-    assert.ok(!s.questions.some((q: any) => q.id.startsWith("appointment:") && q.id !== own.id));
+    assert.ok(
+      !s.questions.some((q: any) => q.id === base.id || q.id === own.id),
+    );
+    assert.ok(
+      !s.questions.some(
+        (q: any) => q.id.startsWith("appointment:") && q.id !== own.id,
+      ),
+    );
   } finally {
     await f.close();
   }
@@ -439,18 +631,26 @@ test("a missing required fact can be added from the review and is not counted as
     assert.deepEqual(await idsOf(f, f.h.orgA.agentId), before);
     // Again, and unknown / not-required fields are 404.
     assert.equal(
-      (await f.req("PUT", `${path}/answers/${encodeURIComponent(id)}`, {
-        expectedRevision: d.session.revision,
-        answer: { kind: "fact", text: "Lagi" },
-      })).status,
+      (
+        await f.req("PUT", `${path}/answers/${encodeURIComponent(id)}`, {
+          expectedRevision: d.session.revision,
+          answer: { kind: "fact", text: "Lagi" },
+        })
+      ).status,
       200,
     );
-    for (const bad of [`missing:${m.pack}:no_such_key`, "missing:nope:x", "missing:appointment"])
+    for (const bad of [
+      `missing:${m.pack}:no_such_key`,
+      "missing:nope:x",
+      "missing:appointment",
+    ])
       assert.equal(
-        (await f.req("PUT", `${path}/answers/${encodeURIComponent(bad)}`, {
-          expectedRevision: d.session.revision + 1,
-          answer: { kind: "skip" },
-        })).status,
+        (
+          await f.req("PUT", `${path}/answers/${encodeURIComponent(bad)}`, {
+            expectedRevision: d.session.revision + 1,
+            answer: { kind: "skip" },
+          })
+        ).status,
         404,
         bad,
       );
@@ -463,13 +663,21 @@ test("a skipped required fact still appears in missing", async () => {
   const { f, path, start } = await fixture();
   try {
     const s = (await start()).body.data;
-    const keyOf = (q: any) => q.fills.find((x: string) => x.startsWith("facts."))?.slice(6);
-    const q = s.questions.find((x: any) => x.kind === "fact" && s.missing.some((m: any) => m.key === keyOf(x)));
+    const keyOf = (q: any) =>
+      q.fills.find((x: string) => x.startsWith("facts."))?.slice(6);
+    const q = s.questions.find(
+      (x: any) =>
+        x.kind === "fact" && s.missing.some((m: any) => m.key === keyOf(x)),
+    );
     assert.ok(q, "a question for a required fact");
-    const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
-      expectedRevision: s.session.revision,
-      answer: { kind: "skip" },
-    });
+    const r = await f.req(
+      "PUT",
+      `${path}/answers/${encodeURIComponent(q.id)}`,
+      {
+        expectedRevision: s.session.revision,
+        answer: { kind: "skip" },
+      },
+    );
     assert.equal(r.status, 200);
     assert.ok(!r.body.data.questions.some((x: any) => x.id === q.id));
     assert.ok(r.body.data.missing.some((m: any) => m.key === keyOf(q)));
@@ -483,7 +691,11 @@ test("saveSetupItem validates the payload per kind and keeps pack and field", as
   try {
     let s = (await start()).body.data;
     const fq = s.questions.find((q: any) => q.kind === "fact");
-    for (const q of [fq, s.questions.find((q: any) => q.kind === "hours"), s.questions.find((q: any) => q.kind === "first_words")]) {
+    for (const q of [
+      fq,
+      s.questions.find((q: any) => q.kind === "hours"),
+      s.questions.find((q: any) => q.kind === "first_words"),
+    ]) {
       s = (
         await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
           expectedRevision: s.session.revision,
@@ -493,7 +705,10 @@ test("saveSetupItem validates the payload per kind and keeps pack and field", as
     }
     const item = (k: string) => s.items.find((i: any) => i.kind === k);
     const put = (id: string, payload: unknown) =>
-      f.req("PUT", `${path}/items/${id}`, { expectedRevision: s.session.revision, payload });
+      f.req("PUT", `${path}/items/${id}`, {
+        expectedRevision: s.session.revision,
+        payload,
+      });
     const bad: [string, unknown][] = [
       ["fact", { value: "" }],
       ["fact", { value: 5 }],
@@ -501,7 +716,10 @@ test("saveSetupItem validates the payload per kind and keeps pack and field", as
       ["fact", { value: "好".repeat(1400) }],
       ["fact", { fieldKey: "evil" }],
       ["fact", { packId: "order" }],
-      ["schedule", { timezone: "Not/AZone", weekdays: weekdaysOf("09:00", "17:00") }],
+      [
+        "schedule",
+        { timezone: "Not/AZone", weekdays: weekdaysOf("09:00", "17:00") },
+      ],
       ["schedule", { timezone: "Asia/Kuala_Lumpur", weekdays: [] }],
       ["settings", { greeting: "", aiDisclosure: "AI" }],
       ["settings", { greeting: "Hai", aiDisclosure: "a".repeat(2001) }],
@@ -518,6 +736,113 @@ test("saveSetupItem validates the payload per kind and keeps pack and field", as
     assert.equal(after.payload.packId, item("fact").payload.packId);
     assert.equal(after.payload.fieldKey, item("fact").payload.fieldKey);
     assert.equal(after.payload.title, item("fact").payload.title);
+  } finally {
+    await f.close();
+  }
+});
+
+// ---- fix round 2 ----
+const keyOfQ = (q: any) =>
+  q.fills.find((x: string) => x.startsWith("facts."))?.slice(6);
+
+test("after a pack change a new pack's question on a key answered under the dropped pack is asked again", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    // No two real packs ask the same fact key within their first questions
+    // (checked on the shipped packs), so the closest real case: a staged
+    // answer under "appointment" for the key "what_is_reserved", which
+    // "reservation-rental" asks first. Inserted as the database holds it.
+    const from = "appointment",
+      to = "reservation-rental",
+      key = "what_is_reserved";
+    let s: any = (await start({ mainPack: from, extraPacks: [] })).body.data;
+    await f.h.cleanup.query(
+      "insert into app.setup_item(org_id,session_id,kind,key,payload,source) values($1,$2,'fact',$3,$4,'interview')",
+      [
+        f.h.orgA.id,
+        s.session.id,
+        key,
+        JSON.stringify({
+          packId: from,
+          fieldKey: key,
+          title: "x",
+          value: "Lama",
+          language: "mixed",
+        }),
+      ],
+    );
+    s = await (async () => (await f.req("GET", path)).body.data)();
+    assert.equal(s.items.find((i: any) => i.key === key).payload.packId, from);
+    s = (await start({ mainPack: to, extraPacks: [] })).body.data;
+    assert.equal(s.items.find((i: any) => i.key === key).state, "removed");
+    const nq = s.questions.find((x: any) => keyOfQ(x) === key);
+    assert.ok(nq, "the new pack's question is visible");
+    assert.ok(nq.id.startsWith(to + ":"));
+    s = (
+      await f.req("PUT", `${path}/answers/${encodeURIComponent(nq.id)}`, {
+        expectedRevision: s.session.revision,
+        answer: { kind: "fact", text: "Baru" },
+      })
+    ).body.data;
+    const rows = s.items.filter((i: any) => i.key === key);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].payload.packId, to);
+    assert.equal(rows[0].payload.value, "Baru");
+    assert.equal(rows[0].state, "pending");
+    assert.ok((await idsOf(f, f.h.orgA.agentId)).length <= MAX_QUESTIONS);
+    // Every kept id without an item of its own (same pack and key) is visible.
+    for (const id of await idsOf(f, f.h.orgA.agentId)) {
+      const q = questionById(id)!;
+      const own = s.items.some((i: any) =>
+        q.kind === "hours"
+          ? i.kind === "schedule"
+          : q.kind === "first_words"
+            ? i.kind === "settings"
+            : i.kind === "fact" &&
+              i.key === keyOfQ(q) &&
+              i.payload.packId === id.split(":")[0],
+      );
+      assert.ok(own || s.questions.some((x: any) => x.id === id), id);
+    }
+  } finally {
+    await f.close();
+  }
+});
+
+test("a pack change leaves applied items alone", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    let s = (await start()).body.data;
+    const q = s.questions.find(
+      (x: any) => x.kind === "fact" && x.id.startsWith("appointment:"),
+    );
+    s = (
+      await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
+        expectedRevision: s.session.revision,
+        answer: { kind: "fact", text: "x" },
+      })
+    ).body.data;
+    await f.h.cleanup.query(
+      "update app.setup_item set state='applied' where id=$1",
+      [s.items[0].id],
+    );
+    s = (await start({ mainPack: "stock-price", extraPacks: [] })).body.data;
+    assert.equal(s.items[0].state, "applied");
+  } finally {
+    await f.close();
+  }
+});
+
+test("an open session with no stored questions gets its list on startSetup", async () => {
+  const { f, start } = await fixture();
+  try {
+    await start();
+    await f.h.cleanup.query(
+      "update app.setup_session set question_ids='{}' where agent_id=$1",
+      [f.h.orgA.agentId],
+    );
+    const s = (await start()).body.data;
+    assert.ok(s.questions.length > 0 && s.questions.length <= MAX_QUESTIONS);
   } finally {
     await f.close();
   }

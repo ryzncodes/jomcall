@@ -35,6 +35,19 @@ const questionSlot = (q: SetupQuestion) =>
     : q.kind === "first_words"
       ? "settings"
       : factKeyOf(q)!;
+// An item belongs to a question when it fills the same slot and, for a fact,
+// under the same pack. A removed item of a dropped pack does not hide a new
+// pack's question on the same key.
+type ItemLike = { kind: string; key: string; payload: unknown };
+const owns = (q: SetupQuestion, i: ItemLike) =>
+  q.kind === "hours"
+    ? i.kind === "schedule"
+    : q.kind === "first_words"
+      ? i.kind === "settings"
+      : i.kind === "fact" &&
+        i.key === factKeyOf(q) &&
+        (i.payload as { packId?: unknown } | null)?.packId ===
+          q.id.split(":")[0];
 const bytes = (v: unknown) =>
   new TextEncoder().encode(JSON.stringify(v)).length;
 
@@ -132,8 +145,6 @@ export async function setupRoute(
     // Missing: only live items count as filled.
     const filled = new Set<string>(confirmed);
     for (const i of live) if (slot(i)) filled.add(slot(i)!);
-    const taken = new Set<string>();
-    for (const i of items) if (slot(i)) taken.add(slot(i)!);
     const input = {
       mainPack: session.main_pack,
       extraPacks: session.extra_packs,
@@ -206,7 +217,9 @@ export async function setupRoute(
       // (answered, skipped or applied).
       questions: session.question_ids
         .map((id) => questionById(id))
-        .filter((q): q is SetupQuestion => !!q && !taken.has(questionSlot(q))),
+        .filter(
+          (q): q is SetupQuestion => !!q && !items.some((i) => owns(q, i)),
+        ),
       missing: missingFacts(input),
       conflicts,
     };
@@ -257,13 +270,15 @@ export async function setupRoute(
             [ctx.orgId, agentId],
           )
         ).rows.map((r) => r.field_key as string);
-        if (!open) {
-          // Freeze the interview once, in order.
-          const ids = setupQuestions({
+        const freeze = () =>
+          setupQuestions({
             mainPack: v.mainPack,
             extraPacks: v.extraPacks,
             filled: new Set(confirmed),
           }).map((q) => q.id);
+        if (!open) {
+          // Freeze the interview once, in order.
+          const ids = freeze();
           await tx.query(
             "insert into app.setup_session(org_id,agent_id,main_pack,extra_packs,question_ids,created_by) values($1,$2,$3,$4,$5,$6)",
             [
@@ -290,40 +305,33 @@ export async function setupRoute(
           // Facts of a pack that is no longer active are dropped.
           const dropped = new Set<string>();
           for (const i of items)
-            if (i.kind === "fact" && !active.includes(i.payload?.packId)) {
+            if (
+              i.kind === "fact" &&
+              i.state !== "applied" &&
+              !active.includes(i.payload?.packId)
+            ) {
               dropped.add(i.id);
               await tx.query(
                 "update app.setup_item set state='removed',updated_at=now() where id=$1",
                 [i.id],
               );
             }
-          const slotOf = (i: { kind: string; key: string }) =>
-            i.kind === "fact"
-              ? i.key
-              : i.kind === "catalogue_row"
-                ? null
-                : i.kind;
-          const had = new Set<string>();
           const filled = new Set<string>(confirmed);
           for (const i of items) {
-            const sl = slotOf(i);
-            if (!sl) continue;
-            had.add(sl);
-            if (!dropped.has(i.id)) filled.add(sl);
+            if (dropped.has(i.id) || i.kind === "catalogue_row") continue;
+            filled.add(i.kind === "fact" ? i.key : i.kind);
           }
           // Keep every id that already has an item, then fill the rest of
           // the 8 slots for the new packs.
           const kept = open.question_ids.filter((id) => {
             const q = questionById(id);
-            return q && had.has(questionSlot(q));
+            return q && items.some((i) => owns(q, i));
           });
           const fresh = setupQuestions({
             mainPack: v.mainPack,
             extraPacks: v.extraPacks,
             filled,
-          })
-            .filter((q) => !kept.includes(q.id))
-            .map((q) => q);
+          }).filter((q) => !kept.includes(q.id));
           while (kept.length + fresh.length > 8) {
             const at = fresh.map((q) => q.kind).lastIndexOf("fact");
             fresh.splice(at >= 0 ? at : fresh.length - 1, 1);
@@ -337,6 +345,18 @@ export async function setupRoute(
               open.id,
             ],
           );
+        } else if (open.question_ids.length === 0) {
+          // A session from before the list was stored: freeze it now if
+          // nothing has been answered yet.
+          const any = await tx.query(
+            "select 1 from app.setup_item where org_id=$1 and session_id=$2 limit 1",
+            [ctx.orgId, open.id],
+          );
+          if (!any.rowCount)
+            await tx.query(
+              "update app.setup_session set question_ids=$1,updated_at=now() where id=$2",
+              [freeze(), open.id],
+            );
         }
         // Trial credit, once. A savepoint keeps the transaction usable when
         // it was already claimed; any other failure propagates.
@@ -417,7 +437,10 @@ export async function setupRoute(
               : "fact";
         const itemKey = itemKind === "fact" ? factKeyOf(question)! : itemKind;
         let payload: Record<string, unknown> = {};
-        if (answer.kind === "fact") {
+        if (
+          answer.kind === "fact" ||
+          (answer.kind === "skip" && itemKind === "fact")
+        ) {
           const packId = question.id.startsWith("missing:")
             ? question.id.split(":")[1]!
             : question.id.split(":")[0]!;
@@ -426,8 +449,9 @@ export async function setupRoute(
             packId,
             fieldKey: itemKey,
             title: field?.label.en ?? itemKey,
-            value: answer.text,
-            language: "mixed",
+            ...(answer.kind === "fact"
+              ? { value: answer.text, language: "mixed" }
+              : {}),
           };
         } else if (answer.kind === "hours")
           payload = { timezone: answer.timezone, weekdays: answer.weekdays };
@@ -440,9 +464,9 @@ export async function setupRoute(
         // after a skip, updates that row.
         if (answer.kind === "skip")
           await tx.query(
-            `insert into app.setup_item(org_id,session_id,kind,key,payload,source,state) values($1,$2,$3,$4,'{}','interview','removed')
-             on conflict(session_id,kind,key) do update set state='removed',updated_at=now()`,
-            [ctx.orgId, session.id, itemKind, itemKey],
+            `insert into app.setup_item(org_id,session_id,kind,key,payload,source,state) values($1,$2,$3,$4,$5,'interview','removed')
+             on conflict(session_id,kind,key) do update set payload=case when app.setup_item.payload->>'packId' is not distinct from excluded.payload->>'packId' then app.setup_item.payload else excluded.payload end,state='removed',updated_at=now()`,
+            [ctx.orgId, session.id, itemKind, itemKey, JSON.stringify(payload)],
           );
         else
           await tx.query(
