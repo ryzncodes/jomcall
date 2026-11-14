@@ -46,7 +46,7 @@ One file per service on the server, in `/etc/jomcall/` (`agent.env`, `engine.env
 | `APP_ORIGIN` | The web domain you choose, e.g. `https://app.example.com` (staging: `https://staging.example.com`) | Vercel; `engine.env` |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Supabase dashboard, Project Settings, API | Vercel |
 | Database pooler host | Supabase dashboard, Connect: the pooler host, e.g. `aws-0-ap-southeast-1.pooler.supabase.com` | `JOMCALL_DATABASE_HOSTS` everywhere |
-| Database CA certificate | Supabase dashboard, Database settings, SSL: download the certificate **[UNVERIFIED]** that it is needed; the services check certificates | `JOMCALL_DATABASE_CA` (one line, `\n` for newlines) everywhere |
+| Database CA certificate | Supabase dashboard, Database settings, SSL: download the certificate. **Required** (checked 2026-11-14): the pooler's chain ends at "Supabase Root 2021 CA", which is not a public root, so without it every verified connection fails with `SELF_SIGNED_CERT_IN_CHAIN` (the migration runner reports `RELEASE_FAILED` after the schema push) | `JOMCALL_DATABASE_CA` (one line, `\n` for newlines) everywhere |
 | Four role passwords | **[OWNER]** generate: `openssl rand -hex 32` four times | `release.env`, and inside the four database URLs |
 | `APP_DATABASE_URL` | `postgresql://jomcall_app.<project-ref>:<password>@<pooler host>:6543/postgres` (transaction pooler; the `role.project-ref` user format is [UNVERIFIED] for custom roles) | Vercel |
 | `WORKER_DATABASE_URL`, `QUEUE_DATABASE_URL`, `AGENT_DATABASE_URL` | Same host, port **5432** (session pooler), roles `jomcall_worker`, `jomcall_queue`, `jomcall_agent` | `engine.env` (worker + queue), `agent.env` (agent + queue) |
@@ -357,8 +357,8 @@ Web stays on Vercel. It is kept swappable: application code uses no Vercel-only 
 ## Known gaps in this kit
 
 - **Login rate limit (launch blocker, design §5.7).** Hosted mode keys the counter by client address instead of one global bucket, but counters still live in each server instance's memory. They must move to Postgres before real users.
-- **Auth-schema grants on hosted Supabase** are unverified (step 2b).
-- **Database certificate.** Whether the Supabase pooler's certificate chains to a public root is unverified; `JOMCALL_DATABASE_CA` exists for the case it does not.
+- **Auth-schema grants on hosted Supabase**: settled on 2026-11-14, see step 2b (definer functions, migration `20261114220000`).
+- **Database certificate.** Settled on 2026-11-14: the Supabase root certificate is required in `JOMCALL_DATABASE_CA` (section B).
 - **Serverless pooler safety** (design §5.4) is unverified: no session settings or named prepared statements were audited on the web path.
 - **Health is reported, not acted on.** Docker restarts exited containers only.
 - **Concurrency limit and Deepgram retention opt-out** (design §5.6) are not built.
