@@ -1,5 +1,29 @@
 # Handoff
 
+## 2026-11-14 — pre-launch fixes from the voice branch review
+
+Branch `fix/voice-prelaunch-hardening`, started from `feat/voice-milestone-a` and merged with `main` after the voice work landed there. Pushed, with a pull request against `main`; not merged.
+
+**Changed**
+- CI: `.github/workflows/ci.yml` runs typecheck, `test:guards`, the new `test:offline` (database-free domain and inference tests, including `anthropic-voice.test.ts`) and the Python voice tests. The API, database and engine tests are not in CI: they need the local Supabase stack.
+- The two `voice-server.test.ts` tests that spawn an agent on port 54633 skip with a message when the port is busy.
+- False-success check (`packages/domain/src/agent-test/safety.ts`) covers past-tense delivery and booking claims in four languages and lets promises and conditions through; 86-sentence table in `tests/inference/safety.test.ts`.
+- Agent process stops at start with `VOICE_MODEL_KEY_MISSING` when hosted voice has no `ANTHROPIC_API_KEY`; empty `JOMCALL_VOICE_PROVIDER` means disabled. The Python worker ends a job with `voice_keys_missing` before joining the room when a speech key is missing.
+- Migration `20261114090000_voice_cache_expiry.sql`: cached answers expire after 7 days (not served, replaced on put, deleted by the worker's maintenance tick). The cache key ends with a fingerprint of the active booking resources.
+- Browser room token has `canPublishData: false`. The room client is injected (`createDispatch` in `web/lib/server/api.ts`, `AgentTestDeps` in the routes); the `globalThis` seam is gone.
+- Voice panel shows its own wording for `DISCLOSURE_REQUIRED` (`web/components/core/error-copy.ts`).
+
+**Verified** (2026-11-14, this machine)
+- `npm run check:phase2`: 192 tests, 190 pass, 2 skipped (port 54633 was busy), then 22 inference tests, 21 pass, 1 skipped. `test:guards` 20/20. `test:offline` 102 tests, 101 pass, 1 skipped. `typecheck` clean. `uv run pytest` 222 passed. `db:verify-migrations` passed.
+- The new migration is applied to the shared local database (`npm run db:migrate:local`). A checkout without this branch will see one migration it does not have.
+
+**Not verified / open**
+- The workflow has not run on GitHub. `actionlint` is not installed here; the file was only parsed as YAML and its commands were run locally without env files. Action SHAs were read from the GitHub API on 2026-11-14.
+- No hosted model or speech run: the widened false-success check was not tried against real model output, so its false-positive rate on live answers is unknown (a flagged sentence ends the turn as `UNSAFE_REPLY`).
+- The two port-54633 tests did not run (port busy).
+- The new voice wording and the missing-key paths were not checked in a browser or on a live call. The panel's behaviour when the worker ends a job with `voice_keys_missing` is unknown.
+- The cache's time-dependence decision (QA record, known limits) is still the owner's.
+
 ## 2026-11-14 — browser voice call, milestone A
 
 Branch `feat/voice-milestone-a` (builds on PR #6; not merged, not pushed).
@@ -82,6 +106,26 @@ Branch `fix/safety-checker-negation`.
 - Run 7: 48/48, no safety flags; `npm run check:hosted-model` exits zero. Runs vary by a case or two.
 - Next: speech benchmark (spec §9 sub-project 1). Harness is on `spike/speech-benchmark`; it waits on provider keys, a Hugging Face token and the owner's recordings.
 
+## 2026-11-14 — call patterns research and pack drafts
+
+Branch `claude/hopeful-neumann-aa3c64`. Research and data only, no product code.
+
+**Changed**
+- `docs/research/call-patterns.md`: validation of the call patterns, sector rules with sources, final list.
+- `docs/research/pattern-packs/`: nine JSON packs (`every-business` plus eight patterns) and a README on the shape.
+
+**Decided in the draft (owner has not reviewed)**
+- Seven patterns became eight: "order and reservation" split into `order` and `reservation-rental`; "professional" renamed and narrowed to `case-intake`.
+- Sector rules should become rule-only overlays chosen by business type.
+
+**Verified**
+- All nine files parse and pass a shape check (keys, references, counts). Details in the packs README.
+
+**Not verified / open**
+- Evaluation cases have not been run against a model.
+- Sector rules rest mostly on secondary sources; a Malaysian lawyer should review them.
+- Customer phrasings are not from real conversations. BM text not reviewed by a native editor.
+- Largest gaps: structured catalogue with import, job status list, date-range availability, structured lead/order/intake records, real call transfer, caller verification.
 ## 2026-11-14 — phone line research
 
 Branch `claude/vigorous-noether-dff306` (worktree), not pushed.

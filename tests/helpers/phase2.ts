@@ -1,8 +1,9 @@
 import { createHarness } from "./local.ts";
 import { createApiHarness } from "./api.ts";
-export async function createPhase2Harness() {
+import type { CoreDeps } from "../../web/lib/server/api.ts";
+export async function createPhase2Harness(deps: CoreDeps = {}) {
   const h = await createHarness();
-  const api = await createApiHarness(h);
+  const api = await createApiHarness(h, deps);
   const req = (method: string, path: string, body?: unknown) =>
     api.request(h.alice, h.orgA.id, method, "/api/v1" + path, body);
   const day = new Date(Date.now() + 86400000 + 8 * 3600000)

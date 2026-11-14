@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  agentVoiceProvider,
   configuredProvider,
   createModelClient,
   defaultHostedModel,
@@ -92,4 +93,33 @@ test("only the worker needs the key: a hosted client without one fails closed", 
     OPENROUTER_API_KEY: "test-key",
   });
   assert.equal(typeof client.generate, "function");
+});
+
+test("agent voice provider: empty means disabled, hosted needs the model key", () => {
+  assert.equal(agentVoiceProvider({}), "disabled");
+  assert.equal(agentVoiceProvider({ JOMCALL_VOICE_PROVIDER: "" }), "disabled");
+  assert.equal(
+    agentVoiceProvider({ JOMCALL_VOICE_PROVIDER: "disabled" }),
+    "disabled",
+  );
+  assert.equal(
+    agentVoiceProvider({
+      JOMCALL_VOICE_PROVIDER: "hosted",
+      ANTHROPIC_API_KEY: "not-a-real-key",
+    }),
+    "hosted",
+  );
+  assert.throws(
+    () => agentVoiceProvider({ JOMCALL_VOICE_PROVIDER: "local" }),
+    /^Error: VOICE_PROVIDER_INVALID$/,
+  );
+  for (const key of [undefined, "", "   "])
+    assert.throws(
+      () =>
+        agentVoiceProvider({
+          JOMCALL_VOICE_PROVIDER: "hosted",
+          ANTHROPIC_API_KEY: key,
+        }),
+      /^Error: VOICE_MODEL_KEY_MISSING$/,
+    );
 });

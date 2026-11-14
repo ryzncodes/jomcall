@@ -353,7 +353,12 @@ test("an expired session streams one VOICE_EXPIRED line; a deleted one is 401", 
   }
 });
 
-test("the agent process opens no voice port unless the provider is hosted", async () => {
+// The two tests below spawn the real agent process, which binds the fixed port
+// 54633. When a developer's own agent process already holds it they cannot run.
+const PORT_BUSY =
+  "port 54633 is busy (an agent process is already running); stop it to run this test";
+
+test("the agent process opens no voice port unless the provider is hosted", async (t) => {
   const probe = () =>
     new Promise<boolean>((resolve) => {
       const s = net.connect(54633, "127.0.0.1");
@@ -363,7 +368,7 @@ test("the agent process opens no voice port unless the provider is hosted", asyn
       });
       s.once("error", () => resolve(false));
     });
-  assert.equal(await probe(), false, "port 54633 busy before the test");
+  if (await probe()) return t.skip(PORT_BUSY);
   const env: NodeJS.ProcessEnv = { ...process.env, JOMCALL_MODE: "local" };
   delete env.JOMCALL_VOICE_PROVIDER;
   const child = spawn(
@@ -387,7 +392,17 @@ test("the agent process opens no voice port unless the provider is hosted", asyn
   }
 });
 
-test("the agent process serves voice turns on 54633 when the provider is hosted", async () => {
+test("the agent process serves voice turns on 54633 when the provider is hosted", async (t) => {
+  // Any listener counts as busy, not only one that answers the health path.
+  const listening = () =>
+    new Promise<boolean>((resolve) => {
+      const s = net.connect(54633, "127.0.0.1");
+      s.once("connect", () => {
+        s.destroy();
+        resolve(true);
+      });
+      s.once("error", () => resolve(false));
+    });
   const health = () =>
     new Promise<boolean>((resolve) => {
       http
@@ -397,7 +412,7 @@ test("the agent process serves voice turns on 54633 when the provider is hosted"
         })
         .on("error", () => resolve(false));
     });
-  assert.equal(await health(), false, "port 54633 busy before the test");
+  if (await listening()) return t.skip(PORT_BUSY);
   const child = spawn(
     process.execPath,
     [
@@ -411,6 +426,9 @@ test("the agent process serves voice turns on 54633 when the provider is hosted"
         ...process.env,
         JOMCALL_MODE: "local",
         JOMCALL_VOICE_PROVIDER: "hosted",
+        // The agent refuses to start hosted voice without a model key; the
+        // health check below never calls the model.
+        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "not-a-real-key",
       },
       stdio: "ignore",
     },

@@ -369,7 +369,7 @@ export default function VoiceTest({
           )}
         </p>
       )}
-      <Notice error={error} />
+      <Notice error={error} context="voice" />
       <div className="sr-only" role="status" aria-live="polite">
         {announce}
       </div>
