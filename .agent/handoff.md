@@ -11,7 +11,7 @@ Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 - Docs: `docs/research/payment-providers-malaysia.md`, `docs/superpowers/specs/2026-11-14-billing-design.md`.
 
 **Verified**
-- `npm run check:billing`: 15 tests (8 unit, 7 against the local database through the API) pass. See the pull request for the full command list and results.
+- `npm run check:billing`: 16 tests (8 unit, 8 against the local database through the API) pass. `check:core` 206 pass, 0 fail, 2 skipped; typecheck, test:guards, db:verify-migrations, build:local, build:mock pass.
 - Both Billplz documentation signature examples reproduce exactly.
 
 **Not verified**
