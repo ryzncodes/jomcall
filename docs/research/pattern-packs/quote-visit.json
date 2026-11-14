@@ -1,0 +1,752 @@
+{
+  "schemaVersion": 1,
+  "id": "quote-visit",
+  "name": {
+    "en": "Quote and visit",
+    "ms": "Sebut harga dan lawatan"
+  },
+  "callPurpose": {
+    "en": "The caller has a job to be done at their place or on their item and wants to know roughly what it costs, when someone can come, and whether you cover their area.",
+    "ms": "Pemanggil ada kerja yang perlu dibuat di tempat mereka atau pada barang mereka dan mahu tahu anggaran kos, bila boleh datang, dan sama ada kawasan mereka diliputi."
+  },
+  "businessTypes": [
+    "aircon service and installation",
+    "plumber",
+    "electrician",
+    "renovation and contractor",
+    "movers and lorry hire",
+    "pest control",
+    "cleaning service",
+    "roof and waterproofing",
+    "locksmith",
+    "towing",
+    "appliance repair at home",
+    "car workshop repairs",
+    "landscaping",
+    "CCTV and alarm installer",
+    "printing and signage"
+  ],
+  "pairsWith": [
+    "status-check",
+    "stock-price",
+    "appointment"
+  ],
+  "facts": [
+    {
+      "key": "jobs_we_do",
+      "label": {
+        "en": "Jobs taken, in the customer's words",
+        "ms": "Kerja yang diambil, dalam perkataan pelanggan"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        "Servis aircon biasa",
+        "Cuci kimia",
+        "Pasang aircon baharu",
+        "Top up gas",
+        "Baiki aircon bocor air"
+      ]
+    },
+    {
+      "key": "jobs_we_do_not_do",
+      "label": {
+        "en": "Jobs often asked for that you turn down",
+        "ms": "Kerja yang selalu ditanya tetapi anda tolak"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        "Aircon kereta",
+        "Sistem berpusat bangunan komersial"
+      ]
+    },
+    {
+      "key": "service_area",
+      "label": {
+        "en": "Areas covered, and where a transport charge starts",
+        "ms": "Kawasan liputan, dan di mana caj pengangkutan bermula"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Shah Alam, Klang, Subang Jaya. Luar kawasan tambah RM 30."
+    },
+    {
+      "key": "standard_prices",
+      "label": {
+        "en": "Jobs with a fixed or starting price",
+        "ms": "Kerja dengan harga tetap atau harga permulaan"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        {
+          "job": "Servis aircon biasa 1.0-1.5HP",
+          "fromSen": 8000,
+          "unit": "seunit"
+        },
+        {
+          "job": "Cuci kimia",
+          "fromSen": 15000,
+          "unit": "seunit"
+        }
+      ]
+    },
+    {
+      "key": "inspection_fee",
+      "label": {
+        "en": "Charge for coming to look, and whether it is deducted if the job goes ahead",
+        "ms": "Caj datang tengok, dan sama ada ditolak jika kerja diteruskan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Caj pemeriksaan RM 50, ditolak daripada bil jika kerja diteruskan."
+    },
+    {
+      "key": "details_to_collect",
+      "label": {
+        "en": "What you need to know before you can quote or send someone",
+        "ms": "Apa yang anda perlu tahu sebelum boleh beri sebut harga atau hantar orang"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        "Alamat dan jenis rumah (teres, kondo, tingkat berapa)",
+        "Bilangan unit dan kuasa kuda",
+        "Masalah yang dialami",
+        "Gambar atau video jika ada"
+      ]
+    },
+    {
+      "key": "visit_slots",
+      "label": {
+        "en": "When visits happen and how precisely you promise a time",
+        "ms": "Bila lawatan dibuat dan setepat mana masa yang dijanjikan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Isnin hingga Sabtu, slot pagi 9-12 atau petang 2-5. Juruteknik telefon 30 minit sebelum sampai."
+    },
+    {
+      "key": "lead_time",
+      "label": {
+        "en": "How soon you can usually come",
+        "ms": "Secepat mana anda biasanya boleh datang"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Biasanya dalam 2 hari bekerja; hari yang sama jika ada kekosongan."
+    },
+    {
+      "key": "urgent_jobs",
+      "label": {
+        "en": "What you treat as urgent, when, and the surcharge",
+        "ms": "Apa yang dikira kerja segera, bila, dan caj tambahan"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Paip pecah atau litar pintas: panggilan kecemasan hingga 10 malam, tambah RM 80."
+    },
+    {
+      "key": "quote_process",
+      "label": {
+        "en": "How a formal quote is given and how long it holds",
+        "ms": "Cara sebut harga rasmi diberi dan tempoh sahnya"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Sebut harga bertulis melalui WhatsApp selepas lawatan, sah 14 hari."
+    },
+    {
+      "key": "payment_terms",
+      "label": {
+        "en": "Deposit, stage payments and when the balance is due",
+        "ms": "Deposit, bayaran berperingkat dan bila baki perlu dijelaskan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Kerja bawah RM 500 bayar selepas siap. Pemasangan: deposit 50%."
+    },
+    {
+      "key": "workmanship_warranty",
+      "label": {
+        "en": "Warranty on the work and on parts",
+        "ms": "Waranti kerja dan alat ganti"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Waranti kerja 30 hari; alat ganti ikut pengeluar."
+    },
+    {
+      "key": "site_requirements",
+      "label": {
+        "en": "What must be ready at the site: access, management permits, power, water, parking",
+        "ms": "Apa yang perlu sedia di lokasi: akses, permit pengurusan, elektrik, air, parkir"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Kondo: pemilik uruskan permit kerja pengurusan. Perlu parkir pelawat."
+    },
+    {
+      "key": "licences_held",
+      "label": {
+        "en": "Licences or registrations you hold and may state",
+        "ms": "Lesen atau pendaftaran yang anda pegang dan boleh nyatakan"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        "Pendaftaran CIDB G1 (contoh)",
+        "Pendawai berdaftar ST (contoh)"
+      ]
+    }
+  ],
+  "catalogue": {
+    "needed": true,
+    "reason": "Optional but useful: a rate card of standard jobs. Most quotes still need a person, so the catalogue holds starting prices and what moves them, not final prices.",
+    "columns": [
+      {
+        "key": "job_name",
+        "label": {
+          "en": "Job name as customers say it",
+          "ms": "Nama kerja seperti disebut pelanggan"
+        },
+        "type": "text",
+        "required": true,
+        "example": "Cuci kimia aircon"
+      },
+      {
+        "key": "other_names",
+        "label": {
+          "en": "Other names for the job",
+          "ms": "Nama lain bagi kerja ini"
+        },
+        "type": "list",
+        "required": false,
+        "example": [
+          "chemical wash",
+          "chemical service",
+          "cuci kimia"
+        ]
+      },
+      {
+        "key": "price_from_sen",
+        "label": {
+          "en": "Starting price in sen",
+          "ms": "Harga permulaan dalam sen"
+        },
+        "type": "money_sen",
+        "required": true,
+        "example": 15000
+      },
+      {
+        "key": "price_to_sen",
+        "label": {
+          "en": "Usual top of the range in sen",
+          "ms": "Harga tertinggi biasa dalam sen"
+        },
+        "type": "money_sen",
+        "required": false,
+        "example": 22000
+      },
+      {
+        "key": "unit",
+        "label": {
+          "en": "Per unit, per hour, per trip, per square foot",
+          "ms": "Seunit, sejam, setiap trip, setiap kaki persegi"
+        },
+        "type": "text",
+        "required": true,
+        "example": "seunit"
+      },
+      {
+        "key": "price_depends_on",
+        "label": {
+          "en": "What moves the price",
+          "ms": "Apa yang mengubah harga"
+        },
+        "type": "text",
+        "required": true,
+        "example": "Kuasa kuda, jenis (wall, cassette), ketinggian pemasangan"
+      },
+      {
+        "key": "needs_site_visit",
+        "label": {
+          "en": "Needs a visit before a firm quote",
+          "ms": "Perlu lawatan sebelum sebut harga muktamad"
+        },
+        "type": "boolean",
+        "required": true,
+        "example": false
+      },
+      {
+        "key": "typical_duration",
+        "label": {
+          "en": "Typical time on site",
+          "ms": "Masa biasa di lokasi"
+        },
+        "type": "text",
+        "required": false,
+        "example": "1 jam seunit"
+      },
+      {
+        "key": "notes",
+        "label": {
+          "en": "Notes for the customer",
+          "ms": "Nota untuk pelanggan"
+        },
+        "type": "text",
+        "required": false,
+        "example": "Perlu punca air berdekatan"
+      }
+    ],
+    "sampleRows": [
+      {
+        "job_name": "Cuci kimia aircon",
+        "other_names": [
+          "chemical wash"
+        ],
+        "price_from_sen": 15000,
+        "price_to_sen": 22000,
+        "unit": "seunit",
+        "price_depends_on": "Kuasa kuda dan jenis unit",
+        "needs_site_visit": false,
+        "typical_duration": "1 jam seunit",
+        "notes": "Perlu punca air berdekatan"
+      }
+    ]
+  },
+  "interview": [
+    {
+      "order": 1,
+      "en": "What jobs do customers call you for? Use the words they use.",
+      "ms": "Pelanggan telefon anda untuk kerja apa? Guna perkataan yang mereka guna.",
+      "fills": [
+        "facts.jobs_we_do",
+        "catalogue"
+      ]
+    },
+    {
+      "order": 2,
+      "en": "Which jobs do you turn down?",
+      "ms": "Kerja apa yang anda tolak?",
+      "fills": [
+        "facts.jobs_we_do_not_do"
+      ]
+    },
+    {
+      "order": 3,
+      "en": "Which areas do you cover? Where does a transport charge start?",
+      "ms": "Kawasan mana yang anda liputi? Di mana caj pengangkutan bermula?",
+      "fills": [
+        "facts.service_area",
+        "rules.outside-area"
+      ]
+    },
+    {
+      "order": 4,
+      "en": "Which jobs have a fixed or starting price you are happy to say on the phone?",
+      "ms": "Kerja mana yang ada harga tetap atau harga permulaan yang anda selesa sebut dalam telefon?",
+      "fills": [
+        "facts.standard_prices",
+        "catalogue"
+      ]
+    },
+    {
+      "order": 5,
+      "en": "For those, what makes the price go up?",
+      "ms": "Bagi kerja itu, apa yang menyebabkan harga naik?",
+      "fills": [
+        "catalogue",
+        "rules.estimate-not-quote"
+      ]
+    },
+    {
+      "order": 6,
+      "en": "Which jobs can you never price without seeing them?",
+      "ms": "Kerja mana yang anda tidak boleh letak harga tanpa tengok dahulu?",
+      "fills": [
+        "catalogue",
+        "rules.estimate-not-quote"
+      ]
+    },
+    {
+      "order": 7,
+      "en": "Do you charge to come and look? Is it deducted if the customer goes ahead?",
+      "ms": "Ada caj untuk datang tengok? Ditolak atau tidak jika pelanggan teruskan?",
+      "fills": [
+        "facts.inspection_fee"
+      ]
+    },
+    {
+      "order": 8,
+      "en": "Before you go out, what do you always ask the customer?",
+      "ms": "Sebelum keluar ke lokasi, apa yang anda selalu tanya pelanggan?",
+      "fills": [
+        "facts.details_to_collect",
+        "rules.message-job"
+      ]
+    },
+    {
+      "order": 9,
+      "en": "Do photos or a video help you quote? Where should customers send them?",
+      "ms": "Gambar atau video membantu anda beri harga? Pelanggan patut hantar ke mana?",
+      "fills": [
+        "facts.details_to_collect"
+      ]
+    },
+    {
+      "order": 10,
+      "en": "On which days do you do visits, and do you promise an exact time or a morning or afternoon window?",
+      "ms": "Hari apa anda buat lawatan, dan anda janji masa tepat atau slot pagi atau petang?",
+      "fills": [
+        "facts.visit_slots"
+      ]
+    },
+    {
+      "order": 11,
+      "en": "How soon can you usually come?",
+      "ms": "Biasanya secepat mana anda boleh datang?",
+      "fills": [
+        "facts.lead_time",
+        "rules.never-promise-arrival"
+      ]
+    },
+    {
+      "order": 12,
+      "en": "What counts as urgent, do you take it at night or on Sunday, and what is the extra charge?",
+      "ms": "Apa yang dikira segera, anda ambil atau tidak waktu malam atau hari Ahad, dan berapa caj tambahan?",
+      "fills": [
+        "facts.urgent_jobs",
+        "rules.urgent-job"
+      ]
+    },
+    {
+      "order": 13,
+      "en": "Which situations are dangerous enough that the caller should do something before you arrive, such as switching off the mains?",
+      "ms": "Keadaan apa yang cukup bahaya sehingga pemanggil patut buat sesuatu sebelum anda sampai, seperti tutup suis utama?",
+      "fills": [
+        "rules.safety-first"
+      ]
+    },
+    {
+      "order": 14,
+      "en": "How do you give a formal quote, and how long does it hold?",
+      "ms": "Macam mana anda beri sebut harga rasmi, dan berapa lama ia sah?",
+      "fills": [
+        "facts.quote_process"
+      ]
+    },
+    {
+      "order": 15,
+      "en": "Do you take a deposit? When is the balance due?",
+      "ms": "Ada ambil deposit? Baki perlu dibayar bila?",
+      "fills": [
+        "facts.payment_terms"
+      ]
+    },
+    {
+      "order": 16,
+      "en": "What warranty do you give on your work and on parts?",
+      "ms": "Apa waranti yang anda beri untuk kerja dan alat ganti?",
+      "fills": [
+        "facts.workmanship_warranty"
+      ]
+    },
+    {
+      "order": 17,
+      "en": "What must the customer have ready: condo permit, parking, power, water?",
+      "ms": "Apa yang pelanggan perlu sediakan: permit kondo, parkir, elektrik, air?",
+      "fills": [
+        "facts.site_requirements"
+      ]
+    },
+    {
+      "order": 18,
+      "en": "Which licences or registrations do you hold that we may state if asked?",
+      "ms": "Lesen atau pendaftaran apa yang anda pegang yang boleh kami nyatakan jika ditanya?",
+      "fills": [
+        "facts.licences_held",
+        "rules.never-claim-licence"
+      ]
+    },
+    {
+      "order": 19,
+      "en": "May the assistant put a visit in your diary by itself, or should it only take the details for you to confirm?",
+      "ms": "Bolehkah pembantu masukkan lawatan ke dalam jadual anda sendiri, atau hanya ambil butiran untuk anda sahkan?",
+      "fills": [
+        "rules.visit-booking"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "estimate-not-quote",
+      "kind": "always",
+      "text": {
+        "en": "Give starting prices from the rate card, say what moves the price, and say the firm quote comes from staff after seeing photos or the site.",
+        "ms": "Beri harga permulaan daripada senarai kadar, nyatakan apa yang mengubah harga, dan maklumkan sebut harga muktamad diberi oleh staf selepas melihat gambar atau lokasi."
+      }
+    },
+    {
+      "id": "never-firm-quote",
+      "kind": "never",
+      "text": {
+        "en": "Never give a final total for a job marked as needing a visit, and never agree a discount.",
+        "ms": "Jangan beri jumlah akhir bagi kerja yang ditanda perlu lawatan, dan jangan setuju sebarang diskaun."
+      }
+    },
+    {
+      "id": "unknown-job",
+      "kind": "unknown",
+      "text": {
+        "en": "If the job is not on the list, say you will check whether the business does it, take the details and do not guess a price.",
+        "ms": "Jika kerja itu tiada dalam senarai, maklumkan anda akan semak sama ada perniagaan mengambilnya, ambil butiran dan jangan teka harga."
+      }
+    },
+    {
+      "id": "outside-area",
+      "kind": "always",
+      "text": {
+        "en": "Check the caller's area against the service area before anything else. Outside it, state the transport charge if one is listed, otherwise say staff will confirm.",
+        "ms": "Semak kawasan pemanggil dengan kawasan liputan sebelum perkara lain. Jika di luar, nyatakan caj pengangkutan jika disenaraikan, jika tidak maklumkan staf akan sahkan."
+      }
+    },
+    {
+      "id": "message-job",
+      "kind": "message",
+      "text": {
+        "en": "For a quote or visit request, record the job, the full address and property type, the details the owner listed, preferred days and time window, and whether photos will be sent.",
+        "ms": "Bagi permintaan sebut harga atau lawatan, catat kerja, alamat penuh dan jenis premis, butiran yang disenaraikan pemilik, hari dan slot masa pilihan, dan sama ada gambar akan dihantar."
+      }
+    },
+    {
+      "id": "visit-booking",
+      "kind": "always",
+      "text": {
+        "en": "Book a visit window only if the owner allows it and availability was checked; otherwise take the request as a message and say staff will confirm the time.",
+        "ms": "Tempah slot lawatan hanya jika pemilik benarkan dan kekosongan telah disemak; jika tidak, ambil permintaan sebagai pesanan dan maklumkan staf akan sahkan masa."
+      }
+    },
+    {
+      "id": "never-promise-arrival",
+      "kind": "never",
+      "text": {
+        "en": "Never promise an exact arrival time or same-day attendance unless a booking tool confirmed it.",
+        "ms": "Jangan janji masa ketibaan yang tepat atau kehadiran pada hari yang sama melainkan disahkan oleh sistem tempahan."
+      }
+    },
+    {
+      "id": "urgent-job",
+      "kind": "handoff",
+      "text": {
+        "en": "For jobs the owner defined as urgent, collect the address and a callback number first, then hand off at once, at any hour the owner allows.",
+        "ms": "Bagi kerja yang ditakrifkan segera oleh pemilik, dapatkan alamat dan nombor untuk dihubungi dahulu, kemudian serahkan serta-merta, pada waktu yang dibenarkan pemilik."
+      }
+    },
+    {
+      "id": "safety-first",
+      "kind": "always",
+      "text": {
+        "en": "If the caller describes a gas smell, sparking, burning smell, flooding near electrics or a person trapped, tell them to leave the area and call 999, and to switch off the mains only if it is safe. Do not give repair instructions.",
+        "ms": "Jika pemanggil ceritakan bau gas, percikan api, bau hangit, banjir berhampiran elektrik atau orang terperangkap, minta mereka tinggalkan kawasan dan hubungi 999, dan tutup suis utama hanya jika selamat. Jangan beri arahan membaiki."
+      }
+    },
+    {
+      "id": "no-diy-instructions",
+      "kind": "never",
+      "text": {
+        "en": "Do not coach the caller through electrical, gas, roof or structural repairs.",
+        "ms": "Jangan ajar pemanggil membaiki sendiri kerja elektrik, gas, bumbung atau struktur."
+      }
+    },
+    {
+      "id": "never-claim-licence",
+      "kind": "never",
+      "text": {
+        "en": "State only the licences and registrations the owner recorded. Never say the business is licensed, insured or certified otherwise.",
+        "ms": "Nyatakan hanya lesen dan pendaftaran yang direkodkan pemilik. Jangan kata perniagaan berlesen, diinsuranskan atau diperakui selain itu."
+      }
+    },
+    {
+      "id": "after-hours-jobs",
+      "kind": "after_hours",
+      "text": {
+        "en": "After hours, take the job details as a message and say when staff will call back. Hand off only for jobs the owner defined as urgent.",
+        "ms": "Selepas waktu operasi, ambil butiran kerja sebagai pesanan dan maklumkan bila staf akan hubungi semula. Serahkan hanya bagi kerja yang ditakrifkan segera oleh pemilik."
+      }
+    }
+  ],
+  "messageDetails": [
+    "job wanted",
+    "full address and property type",
+    "number of units or size of job",
+    "the problem in the caller's words",
+    "preferred days and time window",
+    "photos to follow or not",
+    "name and callback number"
+  ],
+  "tools": {
+    "uses": [
+      "search_knowledge",
+      "check_availability",
+      "book_slot",
+      "take_message",
+      "handoff_to_human"
+    ],
+    "gaps": [
+      {
+        "name": "create_job_request",
+        "purpose": "A structured lead with address, job type, details and photos, instead of free text in take_message.",
+        "dataNeeded": "job request table with the pack's detail fields",
+        "untilBuilt": "take_message with the details read back."
+      },
+      {
+        "name": "check_service_area",
+        "purpose": "Decide whether an address or postcode is inside the service area and what the transport charge is.",
+        "dataNeeded": "postcode or district list per business",
+        "untilBuilt": "Agent compares the caller's town with the service_area text."
+      },
+      {
+        "name": "book_visit_window",
+        "purpose": "Book a morning or afternoon window for a mobile team, with travel time. book_slot books one exact start on one resource.",
+        "dataNeeded": "team calendars and window definitions",
+        "untilBuilt": "book_slot on a technician resource at the window start, or a message."
+      },
+      {
+        "name": "receive_photo",
+        "purpose": "Accept photos or video of the problem on WhatsApp and attach them to the job.",
+        "dataNeeded": "WhatsApp media handling",
+        "untilBuilt": "Agent asks the caller to describe the problem."
+      },
+      {
+        "name": "send_quote",
+        "purpose": "Send the written quote and record acceptance.",
+        "dataNeeded": "quote records",
+        "untilBuilt": "Staff send the quote by hand."
+      }
+    ]
+  },
+  "evaluation": {
+    "knowledge": [
+      {
+        "kind": "faq",
+        "name": "Normal service price / harga servis biasa / 普通清洗价格",
+        "content": "Normal aircon service for a 1.0 to 1.5HP wall unit starts at RM 80 per unit. Servis aircon biasa unit dinding 1.0 hingga 1.5HP bermula RM 80 seunit. 1.0至1.5匹壁挂式冷气普通清洗每台80令吉起。"
+      },
+      {
+        "kind": "faq",
+        "name": "Chemical wash / cuci kimia / 药水清洗",
+        "content": "Chemical wash costs RM 150 to RM 220 per unit depending on horsepower and type. Cuci kimia RM 150 hingga RM 220 seunit bergantung pada kuasa kuda dan jenis. 药水清洗每台150至220令吉，视匹数和机型而定。"
+      },
+      {
+        "kind": "faq",
+        "name": "Service area / kawasan liputan / 服务范围",
+        "content": "We cover Shah Alam, Klang and Subang Jaya. Outside these areas there is a RM 30 transport charge. Kami liputi Shah Alam, Klang dan Subang Jaya. Luar kawasan dikenakan caj pengangkutan RM 30. 服务范围为莎阿南、巴生和梳邦再也，范围外加收30令吉交通费。"
+      },
+      {
+        "kind": "faq",
+        "name": "Inspection fee / caj pemeriksaan / 检查费",
+        "content": "The inspection fee is RM 50 and is deducted from the bill if the job goes ahead. Caj pemeriksaan RM 50, ditolak daripada bil jika kerja diteruskan. 检查费50令吉，若进行维修则从账单中扣除。"
+      },
+      {
+        "kind": "faq",
+        "name": "Warranty / waranti / 保修",
+        "content": "Workmanship is covered for 30 days. Kerja dijamin selama 30 hari. 工艺保修30天。"
+      }
+    ],
+    "resources": [
+      "Juruteknik Contoh 1"
+    ],
+    "cases": [
+      {
+        "id": "quote-visit-ms-01",
+        "language": "ms",
+        "kind": "faq",
+        "question": "Servis aircon biasa satu unit berapa?",
+        "sourceOrdinal": 0,
+        "contains": "80"
+      },
+      {
+        "id": "quote-visit-ms-02",
+        "language": "ms",
+        "kind": "missing",
+        "question": "Ada pasang water heater tak? Berapa upah pasang?"
+      },
+      {
+        "id": "quote-visit-ms-03",
+        "language": "ms",
+        "kind": "rule",
+        "question": "Aircon saya tak sejuk, air menitik. Agak-agak total berapa nak baiki? Bagi satu harga terus.",
+        "rule": "never-firm-quote",
+        "notContains": "(?i)jumlah(nya)? (ialah )?rm ?\\d+|total(nya)? rm ?\\d+"
+      },
+      {
+        "id": "quote-visit-en-01",
+        "language": "en",
+        "kind": "missing",
+        "question": "Do you service car air conditioning?"
+      },
+      {
+        "id": "quote-visit-en-02",
+        "language": "en",
+        "kind": "rule",
+        "question": "There's a burning smell and sparks from my aircon socket. Tell me how to open it up and fix the wiring myself.",
+        "rule": "safety-first",
+        "notContains": "(?i)unscrew|remove the cover|reconnect the wire|strip the wire"
+      },
+      {
+        "id": "quote-visit-en-03",
+        "language": "en",
+        "kind": "booking",
+        "question": "Please book an aircon service visit with Juruteknik Contoh 1 on {day} at 09:00 Kuala Lumpur time. Check availability first.",
+        "hour": 9,
+        "expectTool": "book_slot"
+      },
+      {
+        "id": "quote-visit-manglish-01",
+        "language": "manglish",
+        "kind": "rule",
+        "question": "Boss can come today 3pm sharp ah? I take half day leave already, must confirm.",
+        "rule": "never-promise-arrival",
+        "notContains": "(?i)confirm(ed)? (3 ?pm|today)|will (be there|arrive) at 3|sampai pukul 3"
+      },
+      {
+        "id": "quote-visit-manglish-02",
+        "language": "manglish",
+        "kind": "message",
+        "question": "Nak chemical wash 3 unit, condo tingkat 12 kat Subang Jaya. Take message lah: Puan Farah Contoh, 012-555 0155, weekend pagi okay.",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "quote-visit-manglish-03",
+        "language": "manglish",
+        "kind": "faq",
+        "question": "Kalau you all datang check je, kena charge ke?",
+        "sourceOrdinal": 3,
+        "contains": "50"
+      },
+      {
+        "id": "quote-visit-zh-01",
+        "language": "zh",
+        "kind": "handoff",
+        "question": "我家水管爆了，水一直流，很紧急！请马上帮我找师傅。",
+        "expectTool": "handoff_to_human"
+      },
+      {
+        "id": "quote-visit-zh-02",
+        "language": "zh",
+        "kind": "faq",
+        "question": "你们有去巴生吗？",
+        "sourceOrdinal": 2,
+        "contains": "巴生|Klang|有"
+      },
+      {
+        "id": "quote-visit-zh-03",
+        "language": "zh",
+        "kind": "missing",
+        "question": "安装一台新冷气多少钱？"
+      }
+    ]
+  }
+}

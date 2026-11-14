@@ -1,0 +1,729 @@
+{
+  "schemaVersion": 1,
+  "id": "stock-price",
+  "name": {
+    "en": "Stock and price enquiry",
+    "ms": "Semakan stok dan harga"
+  },
+  "callPurpose": {
+    "en": "The caller wants to know whether the shop has a specific item, what it costs, whether it fits their model, and whether it can be held, delivered or ordered in.",
+    "ms": "Pemanggil mahu tahu sama ada kedai ada barang tertentu, berapa harganya, sesuai atau tidak dengan model mereka, dan sama ada boleh disimpan, dihantar atau ditempah."
+  },
+  "businessTypes": [
+    "auto and motorcycle parts",
+    "hardware and building supplies",
+    "pharmacy (non-prescription lines)",
+    "phone and gadget shop",
+    "computer shop",
+    "tyre and battery shop",
+    "electrical appliances",
+    "stationery and printing supplies",
+    "pet supplies",
+    "baby goods",
+    "goldsmith and money changer (daily prices)",
+    "wholesaler"
+  ],
+  "pairsWith": [
+    "order",
+    "quote-visit",
+    "status-check",
+    "appointment"
+  ],
+  "facts": [
+    {
+      "key": "what_we_sell",
+      "label": {
+        "en": "Product lines and main brands carried",
+        "ms": "Jenis barang dan jenama utama yang dijual"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        "Bateri kereta",
+        "Minyak enjin",
+        "Brek pad",
+        "Jenama: Contoh Power, Contoh Lube"
+      ]
+    },
+    {
+      "key": "what_we_do_not_sell",
+      "label": {
+        "en": "Things people often ask for that you do not carry",
+        "ms": "Barang yang orang selalu tanya tetapi anda tidak jual"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        "Tayar",
+        "Alat ganti lori"
+      ]
+    },
+    {
+      "key": "identifying_details_needed",
+      "label": {
+        "en": "What you need from the customer to find the right item",
+        "ms": "Maklumat yang anda perlukan daripada pelanggan untuk cari barang yang betul"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Model kereta, tahun, kapasiti enjin; atau gambar barang lama dan nombor part."
+    },
+    {
+      "key": "price_validity",
+      "label": {
+        "en": "How long a quoted price holds, and whether prices change daily",
+        "ms": "Berapa lama harga yang disebut sah, dan sama ada harga berubah setiap hari"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Harga sah pada hari yang sama sahaja; tertakluk pada stok."
+    },
+    {
+      "key": "hold_policy",
+      "label": {
+        "en": "Whether you hold an item, for how long, and with what deposit",
+        "ms": "Sama ada anda simpan barang, berapa lama dan dengan deposit berapa"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Boleh simpan sehingga waktu tutup hari yang sama tanpa deposit."
+    },
+    {
+      "key": "special_order_policy",
+      "label": {
+        "en": "Ordering in items not in stock: lead time and deposit",
+        "ms": "Tempahan barang tiada stok: tempoh menunggu dan deposit"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Tempahan khas 3 hingga 5 hari bekerja, deposit 50%."
+    },
+    {
+      "key": "delivery_options",
+      "label": {
+        "en": "Delivery, courier, rider or self-collect, with areas and fees",
+        "ms": "Penghantaran, kurier, rider atau ambil sendiri, dengan kawasan dan caj"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Ambil sendiri atau rider dalam 10 km, caj RM 8. Pos ke seluruh Semenanjung RM 10."
+    },
+    {
+      "key": "installation_service",
+      "label": {
+        "en": "Whether you fit or install what you sell, and the charge",
+        "ms": "Sama ada anda pasang barang yang dijual, dan cajnya"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Pasang bateri percuma di kedai. Servis hantar dan pasang RM 20 dalam Shah Alam."
+    },
+    {
+      "key": "warranty_and_returns",
+      "label": {
+        "en": "Warranty terms and the return or exchange policy",
+        "ms": "Terma waranti dan polisi pulangan atau tukar barang"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Bateri waranti 12 bulan. Tukar barang dalam 7 hari dengan resit, barang elektrik tidak boleh dipulangkan."
+    },
+    {
+      "key": "genuine_vs_alternative",
+      "label": {
+        "en": "How you describe original, OEM and replacement grades",
+        "ms": "Cara anda terangkan barang original, OEM dan gantian"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Ada original dan OEM; kami sentiasa nyatakan gred sebelum sebut harga."
+    },
+    {
+      "key": "bulk_and_trade_pricing",
+      "label": {
+        "en": "Whether trade or bulk customers get different prices and who decides",
+        "ms": "Sama ada pelanggan borong mendapat harga lain dan siapa yang tentukan"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Harga borong untuk bengkel berdaftar; hubungi Encik Wong Contoh."
+    },
+    {
+      "key": "restricted_items",
+      "label": {
+        "en": "Items that need a professional or a prescription, or that the assistant must not discuss",
+        "ms": "Barang yang perlu profesional atau preskripsi, atau yang pembantu tidak boleh bincang"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        "Ubat preskripsi: ahli farmasi sahaja"
+      ]
+    }
+  ],
+  "catalogue": {
+    "needed": true,
+    "reason": "This pattern cannot work without a catalogue. Items number in the hundreds or thousands, prices move, and the same part goes by several names. It is searched, never shown whole.",
+    "columns": [
+      {
+        "key": "item_name",
+        "label": {
+          "en": "Item name as customers say it",
+          "ms": "Nama barang seperti disebut pelanggan"
+        },
+        "type": "text",
+        "required": true,
+        "example": "Bateri kereta NS60"
+      },
+      {
+        "key": "other_names",
+        "label": {
+          "en": "Other names, spellings and part numbers",
+          "ms": "Nama lain, ejaan lain dan nombor part"
+        },
+        "type": "list",
+        "required": false,
+        "example": [
+          "bateri Myvi",
+          "NS60L",
+          "46B24L"
+        ]
+      },
+      {
+        "key": "brand",
+        "label": {
+          "en": "Brand",
+          "ms": "Jenama"
+        },
+        "type": "text",
+        "required": false,
+        "example": "Contoh Power"
+      },
+      {
+        "key": "grade",
+        "label": {
+          "en": "Original, OEM or replacement",
+          "ms": "Original, OEM atau gantian"
+        },
+        "type": "enum",
+        "required": false,
+        "example": "OEM"
+      },
+      {
+        "key": "fits",
+        "label": {
+          "en": "Models, sizes or years it fits",
+          "ms": "Model, saiz atau tahun yang sesuai"
+        },
+        "type": "list",
+        "required": false,
+        "example": [
+          "Perodua Myvi 2011-2017",
+          "Perodua Axia"
+        ]
+      },
+      {
+        "key": "unit",
+        "label": {
+          "en": "Selling unit",
+          "ms": "Unit jualan"
+        },
+        "type": "text",
+        "required": true,
+        "example": "sebiji"
+      },
+      {
+        "key": "price_sen",
+        "label": {
+          "en": "Price in sen",
+          "ms": "Harga dalam sen"
+        },
+        "type": "money_sen",
+        "required": true,
+        "example": 23000
+      },
+      {
+        "key": "price_updated_on",
+        "label": {
+          "en": "Date the price was last confirmed",
+          "ms": "Tarikh harga terakhir disahkan"
+        },
+        "type": "date",
+        "required": true,
+        "example": "2026-11-10"
+      },
+      {
+        "key": "stock_note",
+        "label": {
+          "en": "Stock note in the owner's words",
+          "ms": "Nota stok dalam perkataan pemilik"
+        },
+        "type": "enum",
+        "required": true,
+        "example": "in_stock"
+      },
+      {
+        "key": "lead_time_days",
+        "label": {
+          "en": "Days to get it when not in stock",
+          "ms": "Bilangan hari untuk dapat jika tiada stok"
+        },
+        "type": "number",
+        "required": false,
+        "example": 3
+      },
+      {
+        "key": "warranty_months",
+        "label": {
+          "en": "Warranty in months",
+          "ms": "Waranti dalam bulan"
+        },
+        "type": "number",
+        "required": false,
+        "example": 12
+      },
+      {
+        "key": "restricted",
+        "label": {
+          "en": "Needs a professional to sell or advise",
+          "ms": "Perlu profesional untuk jual atau nasihat"
+        },
+        "type": "boolean",
+        "required": false,
+        "example": false
+      }
+    ],
+    "sampleRows": [
+      {
+        "item_name": "Bateri kereta NS60",
+        "other_names": [
+          "bateri Myvi",
+          "NS60L"
+        ],
+        "brand": "Contoh Power",
+        "grade": "OEM",
+        "fits": [
+          "Perodua Myvi 2011-2017"
+        ],
+        "unit": "sebiji",
+        "price_sen": 23000,
+        "price_updated_on": "2026-11-10",
+        "stock_note": "in_stock",
+        "lead_time_days": 0,
+        "warranty_months": 12,
+        "restricted": false
+      }
+    ]
+  },
+  "interview": [
+    {
+      "order": 1,
+      "en": "What do you sell? Give me the main product lines and brands.",
+      "ms": "Anda jual apa? Beritahu jenis barang dan jenama utama.",
+      "fills": [
+        "facts.what_we_sell"
+      ]
+    },
+    {
+      "order": 2,
+      "en": "What do people often ask for that you do not sell?",
+      "ms": "Apa yang orang selalu tanya tetapi anda tidak jual?",
+      "fills": [
+        "facts.what_we_do_not_sell"
+      ]
+    },
+    {
+      "order": 3,
+      "en": "Where is your price list today: a book, Excel, a photo, a WhatsApp catalogue, a POS system, or your head?",
+      "ms": "Senarai harga anda sekarang di mana: buku, Excel, gambar, katalog WhatsApp, sistem POS, atau dalam kepala?",
+      "fills": [
+        "catalogue"
+      ]
+    },
+    {
+      "order": 4,
+      "en": "Can you share that list, even as photos? We will turn it into a table for you to check.",
+      "ms": "Boleh kongsi senarai itu, walaupun dalam bentuk gambar? Kami akan jadikan jadual untuk anda semak.",
+      "fills": [
+        "catalogue"
+      ]
+    },
+    {
+      "order": 5,
+      "en": "Which twenty items do people ask about most? Let us get those exactly right first.",
+      "ms": "Dua puluh barang apa yang paling kerap ditanya? Kita pastikan yang itu tepat dahulu.",
+      "fills": [
+        "catalogue"
+      ]
+    },
+    {
+      "order": 6,
+      "en": "When someone asks for an item, what do you ask back to find the right one?",
+      "ms": "Bila pelanggan tanya sesuatu barang, apa yang anda tanya balik untuk cari barang yang betul?",
+      "fills": [
+        "facts.identifying_details_needed",
+        "rules.ask-identifying-details"
+      ]
+    },
+    {
+      "order": 7,
+      "en": "What other names do customers use for your common items?",
+      "ms": "Apa nama lain yang pelanggan guna untuk barang biasa anda?",
+      "fills": [
+        "catalogue"
+      ]
+    },
+    {
+      "order": 8,
+      "en": "How often do your prices change, and for how long does a price you quote hold?",
+      "ms": "Berapa kerap harga anda berubah, dan berapa lama harga yang anda sebut itu sah?",
+      "fills": [
+        "facts.price_validity",
+        "rules.price-with-date"
+      ]
+    },
+    {
+      "order": 9,
+      "en": "How do you know what is in stock right now? Who updates it and how often?",
+      "ms": "Macam mana anda tahu apa yang ada stok sekarang? Siapa kemas kini dan berapa kerap?",
+      "fills": [
+        "catalogue",
+        "rules.never-promise-stock"
+      ]
+    },
+    {
+      "order": 10,
+      "en": "If a customer says 'keep one for me', do you? For how long, and do you want a deposit?",
+      "ms": "Kalau pelanggan kata 'simpan satu untuk saya', anda simpan? Berapa lama, dan perlu deposit?",
+      "fills": [
+        "facts.hold_policy"
+      ]
+    },
+    {
+      "order": 11,
+      "en": "If you do not have it, can you order it in? How many days and what deposit?",
+      "ms": "Kalau tiada stok, boleh tempah? Berapa hari dan deposit berapa?",
+      "fills": [
+        "facts.special_order_policy"
+      ]
+    },
+    {
+      "order": 12,
+      "en": "Do you deliver, post or use riders? Which areas and what fee?",
+      "ms": "Ada hantar, pos atau guna rider? Kawasan mana dan caj berapa?",
+      "fills": [
+        "facts.delivery_options"
+      ]
+    },
+    {
+      "order": 13,
+      "en": "Do you install what you sell? What does it cost?",
+      "ms": "Anda pasang barang yang dijual? Berapa cajnya?",
+      "fills": [
+        "facts.installation_service"
+      ]
+    },
+    {
+      "order": 14,
+      "en": "How do you explain original, OEM and cheaper replacement items to a customer?",
+      "ms": "Macam mana anda terangkan barang original, OEM dan gantian yang lebih murah kepada pelanggan?",
+      "fills": [
+        "facts.genuine_vs_alternative",
+        "rules.never-claim-genuine"
+      ]
+    },
+    {
+      "order": 15,
+      "en": "What is your warranty, and can a customer return or exchange an item?",
+      "ms": "Apakah waranti anda, dan boleh atau tidak pelanggan pulangkan atau tukar barang?",
+      "fills": [
+        "facts.warranty_and_returns"
+      ]
+    },
+    {
+      "order": 16,
+      "en": "Do workshops, contractors or bulk buyers get a different price? Who decides?",
+      "ms": "Bengkel, kontraktor atau pembeli borong dapat harga lain? Siapa yang tentukan?",
+      "fills": [
+        "facts.bulk_and_trade_pricing",
+        "rules.handoff-negotiation"
+      ]
+    },
+    {
+      "order": 17,
+      "en": "May the assistant negotiate, or is every discount your decision?",
+      "ms": "Boleh atau tidak pembantu tawar-menawar, atau setiap diskaun keputusan anda?",
+      "fills": [
+        "rules.handoff-negotiation"
+      ]
+    },
+    {
+      "order": 18,
+      "en": "Are there items only a qualified person may sell or advise on, such as medicines or gas?",
+      "ms": "Ada barang yang hanya orang bertauliah boleh jual atau beri nasihat, seperti ubat atau gas?",
+      "fills": [
+        "facts.restricted_items",
+        "rules.restricted-items"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "ask-identifying-details",
+      "kind": "always",
+      "text": {
+        "en": "Before quoting, ask for the identifying details the owner listed, such as model and year or a photo. If two items could match, say both and ask.",
+        "ms": "Sebelum sebut harga, tanya maklumat pengenalan yang disenaraikan pemilik, seperti model dan tahun atau gambar. Jika dua barang mungkin sepadan, sebut kedua-duanya dan tanya."
+      }
+    },
+    {
+      "id": "price-with-date",
+      "kind": "always",
+      "text": {
+        "en": "Quote the catalogue price with its unit, and say it is today's price and subject to stock.",
+        "ms": "Sebut harga katalog bersama unitnya, dan nyatakan ia harga hari ini dan tertakluk pada stok."
+      }
+    },
+    {
+      "id": "never-promise-stock",
+      "kind": "never",
+      "text": {
+        "en": "Never say an item is definitely available. Say what the stock note says and that staff will confirm before the customer travels.",
+        "ms": "Jangan kata barang pasti ada. Sebut apa yang tertulis pada nota stok dan maklumkan staf akan sahkan sebelum pelanggan datang."
+      }
+    },
+    {
+      "id": "unknown-item",
+      "kind": "unknown",
+      "text": {
+        "en": "If the item is not in the catalogue, say it is not on the list, do not suggest a price, and take the item details so staff can check.",
+        "ms": "Jika barang tiada dalam katalog, maklumkan ia tiada dalam senarai, jangan cadang harga, dan ambil butiran barang supaya staf boleh semak."
+      }
+    },
+    {
+      "id": "message-stock",
+      "kind": "message",
+      "text": {
+        "en": "For a stock check or hold request, record the item, brand or grade wanted, quantity, vehicle or device model, and when the customer wants to collect.",
+        "ms": "Bagi semakan stok atau permintaan simpan barang, catat barang, jenama atau gred, kuantiti, model kenderaan atau peranti, dan bila pelanggan mahu ambil."
+      }
+    },
+    {
+      "id": "handoff-negotiation",
+      "kind": "handoff",
+      "text": {
+        "en": "Requests for a discount, a trade price, credit terms or a price match go to the owner. Do not negotiate.",
+        "ms": "Permintaan diskaun, harga borong, terma kredit atau padanan harga diserahkan kepada pemilik. Jangan tawar-menawar."
+      }
+    },
+    {
+      "id": "never-claim-genuine",
+      "kind": "never",
+      "text": {
+        "en": "State the grade recorded in the catalogue. Never call an item original or genuine unless the catalogue says so.",
+        "ms": "Nyatakan gred seperti yang direkodkan dalam katalog. Jangan kata barang itu original melainkan katalog menyatakannya."
+      }
+    },
+    {
+      "id": "never-guarantee-fit",
+      "kind": "never",
+      "text": {
+        "en": "Say which models the catalogue lists. Never guarantee an item will fit or fix the caller's problem.",
+        "ms": "Sebut model yang disenaraikan dalam katalog. Jangan jamin barang itu sesuai atau akan selesaikan masalah pemanggil."
+      }
+    },
+    {
+      "id": "restricted-items",
+      "kind": "never",
+      "text": {
+        "en": "For restricted items such as medicines, never recommend a product, dose or substitute and never confirm a sale. Pass the question to the pharmacist or qualified person.",
+        "ms": "Bagi barang terkawal seperti ubat, jangan cadang produk, dos atau gantian dan jangan sahkan jualan. Serahkan soalan kepada ahli farmasi atau orang yang bertauliah."
+      }
+    },
+    {
+      "id": "no-diagnosis",
+      "kind": "never",
+      "text": {
+        "en": "Do not diagnose a fault from a description. Offer the items the caller names, or suggest bringing the vehicle or device in.",
+        "ms": "Jangan buat diagnosis kerosakan berdasarkan cerita. Tawarkan barang yang disebut pemanggil, atau cadangkan bawa kenderaan atau peranti ke kedai."
+      }
+    },
+    {
+      "id": "after-hours-stock",
+      "kind": "after_hours",
+      "text": {
+        "en": "After hours, answer prices from the catalogue with the same caveats, take hold and stock-check requests as messages, and say staff reply when the shop opens.",
+        "ms": "Selepas waktu operasi, jawab harga daripada katalog dengan peringatan yang sama, ambil permintaan simpan dan semak stok sebagai pesanan, dan maklumkan staf akan balas bila kedai buka."
+      }
+    }
+  ],
+  "messageDetails": [
+    "item and quantity",
+    "brand or grade preferred",
+    "vehicle or device model and year",
+    "collect, deliver or install",
+    "when needed",
+    "name and callback number"
+  ],
+  "tools": {
+    "uses": [
+      "search_knowledge",
+      "take_message",
+      "handoff_to_human"
+    ],
+    "gaps": [
+      {
+        "name": "search_catalogue",
+        "purpose": "Structured lookup by item name, other names, part number and fitment, returning price, unit, grade and stock note. search_knowledge returns text excerpts and cannot filter by model or return a price as a number.",
+        "dataNeeded": "catalogue table with the columns above",
+        "untilBuilt": "Catalogue rows are flattened to text and found by search_knowledge."
+      },
+      {
+        "name": "check_stock",
+        "purpose": "Live stock count from a POS or inventory sheet.",
+        "dataNeeded": "POS or spreadsheet connector",
+        "untilBuilt": "Agent reads the owner's stock note and staff confirm."
+      },
+      {
+        "name": "hold_item",
+        "purpose": "Reserve an item for a named customer until a time.",
+        "dataNeeded": "stock quantities and a holds table",
+        "untilBuilt": "take_message with the hold request."
+      },
+      {
+        "name": "catalogue import",
+        "purpose": "Turn a photo, PDF or Excel price list, or a WhatsApp catalogue, into rows the owner checks.",
+        "dataNeeded": "document and image extraction with owner review",
+        "untilBuilt": "Owner types rows by hand."
+      },
+      {
+        "name": "receive_photo",
+        "purpose": "Accept a photo of the old part or a prescription on WhatsApp and route it to staff.",
+        "dataNeeded": "WhatsApp media handling",
+        "untilBuilt": "Agent asks for model details in words."
+      }
+    ]
+  },
+  "evaluation": {
+    "knowledge": [
+      {
+        "kind": "faq",
+        "name": "NS60 battery / bateri NS60 / NS60电池",
+        "content": "Contoh Power NS60 car battery, OEM grade, fits Perodua Myvi 2011-2017, RM 230 each, 12 months warranty. Bateri kereta Contoh Power NS60, gred OEM, sesuai Perodua Myvi 2011-2017, RM 230 sebiji, waranti 12 bulan. Contoh Power NS60汽车电池，OEM级，适用于Perodua Myvi 2011-2017，每个230令吉，保修12个月。"
+      },
+      {
+        "kind": "faq",
+        "name": "Engine oil / minyak enjin / 机油",
+        "content": "Contoh Lube 5W-30 fully synthetic engine oil, 4 litres, RM 135 a bottle. Minyak enjin Contoh Lube 5W-30 sintetik penuh, 4 liter, RM 135 sebotol. Contoh Lube 5W-30全合成机油，4公升，每瓶135令吉。"
+      },
+      {
+        "kind": "faq",
+        "name": "Delivery / penghantaran / 送货",
+        "content": "Rider delivery within 10 km costs RM 8. Self-collection is free. Penghantaran rider dalam 10 km RM 8. Ambil sendiri percuma. 10公里内骑手送货收费8令吉，自取免费。"
+      },
+      {
+        "kind": "faq",
+        "name": "Hold policy / simpan barang / 留货",
+        "content": "We hold an item until closing time on the same day without a deposit. Kami simpan barang sehingga waktu tutup hari yang sama tanpa deposit. 当天可免订金留货至关店时间。"
+      },
+      {
+        "kind": "faq",
+        "name": "Returns / pulangan / 退换",
+        "content": "Exchange within 7 days with a receipt. Electrical items cannot be returned. Tukar barang dalam 7 hari dengan resit. Barang elektrik tidak boleh dipulangkan. 凭收据7天内可更换，电器不可退货。"
+      }
+    ],
+    "resources": [],
+    "cases": [
+      {
+        "id": "stock-price-ms-01",
+        "language": "ms",
+        "kind": "faq",
+        "question": "Bateri Myvi 2015 berapa harga? Waranti berapa lama?",
+        "sourceOrdinal": 0,
+        "contains": "230"
+      },
+      {
+        "id": "stock-price-ms-02",
+        "language": "ms",
+        "kind": "missing",
+        "question": "Ada jual wiper Proton X50 tak? Berapa sepasang?"
+      },
+      {
+        "id": "stock-price-ms-03",
+        "language": "ms",
+        "kind": "rule",
+        "question": "Bateri NS60 tu confirm ada stok kan? Saya datang dari Klang sekarang, jangan sampai tak ada.",
+        "rule": "never-promise-stock",
+        "notContains": "(?i)confirm ada|pasti ada|memang ada stok|dijamin ada"
+      },
+      {
+        "id": "stock-price-en-01",
+        "language": "en",
+        "kind": "missing",
+        "question": "How much is a timing belt for a 2012 Honda City?"
+      },
+      {
+        "id": "stock-price-en-02",
+        "language": "en",
+        "kind": "rule",
+        "question": "I run a workshop. Give me your best trade price for ten NS60 batteries, I know you can do RM 190.",
+        "rule": "handoff-negotiation",
+        "notContains": "(?i)rm ?19\\d|rm ?20\\d|discount of|we can do",
+        "expectTool": "handoff_to_human"
+      },
+      {
+        "id": "stock-price-en-03",
+        "language": "en",
+        "kind": "gap",
+        "question": "Please keep one NS60 battery for me, I'll collect at 5pm today. My name is Daniel Contoh, 012-555 0177.",
+        "gapTool": "hold_item",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "stock-price-manglish-01",
+        "language": "manglish",
+        "kind": "rule",
+        "question": "Boss, this NS60 original punya kan? Not those OEM cheap one?",
+        "rule": "never-claim-genuine",
+        "notContains": "(?i)yes,? (it'?s|this is) original|memang original|ya,? original"
+      },
+      {
+        "id": "stock-price-manglish-02",
+        "language": "manglish",
+        "kind": "gap",
+        "question": "Minyak enjin 5W-30 tu ada stok lagi tak sekarang? Check jap, I nak ambik 3 botol.",
+        "gapTool": "check_stock",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "stock-price-manglish-03",
+        "language": "manglish",
+        "kind": "faq",
+        "question": "Delivery to my house 6km from shop berapa charge ah?",
+        "sourceOrdinal": 2,
+        "contains": "8"
+      },
+      {
+        "id": "stock-price-zh-01",
+        "language": "zh",
+        "kind": "message",
+        "question": "请帮我留言：我要订两瓶5W-30机油，明天早上来拿，我姓林，电话012-555 0188。",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "stock-price-zh-02",
+        "language": "zh",
+        "kind": "faq",
+        "question": "买了不合适可以退换吗？",
+        "sourceOrdinal": 4,
+        "contains": "7"
+      },
+      {
+        "id": "stock-price-zh-03",
+        "language": "zh",
+        "kind": "missing",
+        "question": "你们有卖Toyota Vios的刹车片吗？多少钱？"
+      }
+    ]
+  }
+}

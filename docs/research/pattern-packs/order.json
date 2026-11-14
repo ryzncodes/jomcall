@@ -1,0 +1,748 @@
+{
+  "schemaVersion": 1,
+  "id": "order",
+  "name": {
+    "en": "Order",
+    "ms": "Pesanan"
+  },
+  "callPurpose": {
+    "en": "The caller wants to order goods made or packed for them, for collection or delivery on a date: food, cakes, catering, flowers, printed or custom items.",
+    "ms": "Pemanggil mahu memesan barang yang dibuat atau dibungkus untuk mereka, untuk diambil atau dihantar pada tarikh tertentu: makanan, kek, katering, bunga, barang cetakan atau tempahan khas."
+  },
+  "businessTypes": [
+    "restaurant takeaway and delivery",
+    "home bakery and cake shop",
+    "catering",
+    "kuih and frozen food seller",
+    "florist and gift shop",
+    "printing and custom T-shirt shop",
+    "hamper and door-gift maker",
+    "nasi lemak and lunch-box supplier",
+    "water and gas delivery"
+  ],
+  "pairsWith": [
+    "reservation-rental",
+    "stock-price",
+    "status-check"
+  ],
+  "facts": [
+    {
+      "key": "what_can_be_ordered",
+      "label": {
+        "en": "What can be ordered, in short",
+        "ms": "Apa yang boleh dipesan, secara ringkas"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Kek hari jadi, kek cawan, brownies dan set pencuci mulut untuk majlis."
+    },
+    {
+      "key": "order_channels",
+      "label": {
+        "en": "How orders are taken and where the caller is sent to finish one",
+        "ms": "Cara pesanan diambil dan ke mana pemanggil dihalakan untuk melengkapkannya"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Pesanan melalui WhatsApp atau telefon; disahkan selepas deposit diterima."
+    },
+    {
+      "key": "lead_time",
+      "label": {
+        "en": "Notice needed for each kind of order",
+        "ms": "Notis yang diperlukan bagi setiap jenis pesanan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Kek biasa 3 hari. Kek reka bentuk khas 7 hari. Katering 14 hari."
+    },
+    {
+      "key": "minimum_order",
+      "label": {
+        "en": "Minimum quantity or value",
+        "ms": "Kuantiti atau nilai minimum"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Kek cawan minimum 12 biji. Katering minimum 30 pax."
+    },
+    {
+      "key": "cut_off_times",
+      "label": {
+        "en": "Daily cut-off for same-day or next-day orders",
+        "ms": "Waktu akhir harian bagi pesanan hari yang sama atau esok"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Pesanan hari yang sama ditutup pukul 11 pagi."
+    },
+    {
+      "key": "collection_and_delivery",
+      "label": {
+        "en": "Collection times, delivery areas and fees",
+        "ms": "Waktu ambil, kawasan penghantaran dan caj"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Ambil sendiri 10:00-18:00. Penghantaran dalam Shah Alam RM 10, luar kawasan ikut jarak."
+    },
+    {
+      "key": "deposit_and_payment",
+      "label": {
+        "en": "Deposit, when the balance is due, how to pay",
+        "ms": "Deposit, bila baki perlu dijelaskan, cara bayar"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Deposit 50% untuk sahkan pesanan, baki semasa ambil. DuitNow QR atau pindahan bank."
+    },
+    {
+      "key": "change_and_cancel_policy",
+      "label": {
+        "en": "Until when an order can be changed or cancelled and what is refunded",
+        "ms": "Sehingga bila pesanan boleh diubah atau dibatalkan dan apa yang dipulangkan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Perubahan sehingga 48 jam sebelum. Batal selepas itu, deposit tidak dipulangkan kerana bahan telah dibeli."
+    },
+    {
+      "key": "customisation_options",
+      "label": {
+        "en": "What can be customised and what cannot",
+        "ms": "Apa yang boleh diubah suai dan apa yang tidak"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Tulisan atas kek percuma. Reka bentuk ikut gambar: hantar gambar, staf sahkan harga."
+    },
+    {
+      "key": "dietary_and_allergen_facts",
+      "label": {
+        "en": "Only what the kitchen can truly state about ingredients and allergens",
+        "ms": "Hanya apa yang dapur benar-benar boleh nyatakan tentang bahan dan alergen"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Semua kek mengandungi telur, susu dan gluten. Dapur mengendalikan kacang; tidak boleh jamin bebas kacang."
+    },
+    {
+      "key": "halal_statement",
+      "label": {
+        "en": "The exact halal statement the owner can prove",
+        "ms": "Kenyataan halal tepat yang boleh dibuktikan oleh pemilik"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Tiada sijil halal. Pemilik Muslim; tidak menggunakan alkohol atau gelatin bukan halal."
+    },
+    {
+      "key": "capacity_limits",
+      "label": {
+        "en": "How many orders or pax you can take per day",
+        "ms": "Berapa banyak pesanan atau pax yang boleh diambil sehari"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Maksimum 8 kek khas sehari; 2 majlis katering sehari."
+    },
+    {
+      "key": "event_order_details",
+      "label": {
+        "en": "What you need to know for an event or bulk order",
+        "ms": "Apa yang anda perlu tahu bagi pesanan majlis atau pukal"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        "Tarikh dan masa majlis",
+        "Bilangan pax",
+        "Lokasi",
+        "Bajet setiap pax",
+        "Bufet atau berbungkus"
+      ]
+    },
+    {
+      "key": "extra_charges",
+      "label": {
+        "en": "Every extra charge: packaging, delivery, service, equipment, staff",
+        "ms": "Setiap caj tambahan: pembungkusan, penghantaran, perkhidmatan, peralatan, pekerja"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        {
+          "charge": "Kotak kek premium",
+          "sen": 500
+        },
+        {
+          "charge": "Sewa set bufet",
+          "sen": 15000
+        }
+      ]
+    }
+  ],
+  "catalogue": {
+    "needed": true,
+    "reason": "The menu or product list. Needed for anything beyond a handful of items; prices, sizes and availability by day change often.",
+    "columns": [
+      {
+        "key": "item_name",
+        "label": {
+          "en": "Item name",
+          "ms": "Nama item"
+        },
+        "type": "text",
+        "required": true,
+        "example": "Kek coklat moist"
+      },
+      {
+        "key": "other_names",
+        "label": {
+          "en": "Other names customers use",
+          "ms": "Nama lain yang pelanggan guna"
+        },
+        "type": "list",
+        "required": false,
+        "example": [
+          "choc moist",
+          "kek coklat lembap"
+        ]
+      },
+      {
+        "key": "category",
+        "label": {
+          "en": "Category",
+          "ms": "Kategori"
+        },
+        "type": "text",
+        "required": false,
+        "example": "Kek"
+      },
+      {
+        "key": "size_or_unit",
+        "label": {
+          "en": "Size or unit",
+          "ms": "Saiz atau unit"
+        },
+        "type": "text",
+        "required": true,
+        "example": "1 kg (8 inci)"
+      },
+      {
+        "key": "serves",
+        "label": {
+          "en": "Roughly how many people it serves",
+          "ms": "Anggaran untuk berapa orang"
+        },
+        "type": "text",
+        "required": false,
+        "example": "10-12 orang"
+      },
+      {
+        "key": "price_sen",
+        "label": {
+          "en": "Price in sen",
+          "ms": "Harga dalam sen"
+        },
+        "type": "money_sen",
+        "required": true,
+        "example": 8500
+      },
+      {
+        "key": "lead_time_days",
+        "label": {
+          "en": "Days of notice needed",
+          "ms": "Bilangan hari notis"
+        },
+        "type": "number",
+        "required": true,
+        "example": 3
+      },
+      {
+        "key": "available_days",
+        "label": {
+          "en": "Days it is available",
+          "ms": "Hari ia tersedia"
+        },
+        "type": "text",
+        "required": false,
+        "example": "Setiap hari kecuali Isnin"
+      },
+      {
+        "key": "contains",
+        "label": {
+          "en": "Allergens and notable ingredients, as stated by the kitchen",
+          "ms": "Alergen dan bahan utama, seperti dinyatakan oleh dapur"
+        },
+        "type": "list",
+        "required": true,
+        "example": [
+          "telur",
+          "susu",
+          "gluten"
+        ]
+      },
+      {
+        "key": "customisable",
+        "label": {
+          "en": "Can be customised",
+          "ms": "Boleh diubah suai"
+        },
+        "type": "boolean",
+        "required": false,
+        "example": true
+      },
+      {
+        "key": "sold_out_note",
+        "label": {
+          "en": "Sold-out or seasonal note",
+          "ms": "Nota habis atau bermusim"
+        },
+        "type": "text",
+        "required": false,
+        "example": ""
+      }
+    ],
+    "sampleRows": [
+      {
+        "item_name": "Kek coklat moist",
+        "other_names": [
+          "choc moist"
+        ],
+        "category": "Kek",
+        "size_or_unit": "1 kg (8 inci)",
+        "serves": "10-12 orang",
+        "price_sen": 8500,
+        "lead_time_days": 3,
+        "available_days": "Setiap hari kecuali Isnin",
+        "contains": [
+          "telur",
+          "susu",
+          "gluten"
+        ],
+        "customisable": true,
+        "sold_out_note": ""
+      }
+    ]
+  },
+  "interview": [
+    {
+      "order": 1,
+      "en": "What can customers order from you? Give me the short version first.",
+      "ms": "Pelanggan boleh pesan apa daripada anda? Beri versi ringkas dahulu.",
+      "fills": [
+        "facts.what_can_be_ordered"
+      ]
+    },
+    {
+      "order": 2,
+      "en": "Where is your menu or price list now: a photo, PDF, WhatsApp catalogue, Instagram, a delivery app?",
+      "ms": "Menu atau senarai harga anda sekarang di mana: gambar, PDF, katalog WhatsApp, Instagram, aplikasi penghantaran?",
+      "fills": [
+        "catalogue"
+      ]
+    },
+    {
+      "order": 3,
+      "en": "For your ten best sellers, what are the sizes, prices and how many people each serves?",
+      "ms": "Bagi sepuluh item paling laris, apakah saiz, harga dan untuk berapa orang?",
+      "fills": [
+        "catalogue"
+      ]
+    },
+    {
+      "order": 4,
+      "en": "How much notice do you need for each kind of order?",
+      "ms": "Berapa lama notis yang anda perlukan bagi setiap jenis pesanan?",
+      "fills": [
+        "facts.lead_time",
+        "catalogue",
+        "rules.lead-time"
+      ]
+    },
+    {
+      "order": 5,
+      "en": "Is there a minimum order, or a cut-off time for same-day orders?",
+      "ms": "Ada pesanan minimum, atau waktu akhir untuk pesanan hari yang sama?",
+      "fills": [
+        "facts.minimum_order",
+        "facts.cut_off_times"
+      ]
+    },
+    {
+      "order": 6,
+      "en": "How many orders can you take in a day before you have to say no?",
+      "ms": "Berapa banyak pesanan yang anda boleh ambil sehari sebelum terpaksa tolak?",
+      "fills": [
+        "facts.capacity_limits",
+        "rules.never-confirm-order"
+      ]
+    },
+    {
+      "order": 7,
+      "en": "Can customers collect? When? Do you deliver, where, and for how much?",
+      "ms": "Pelanggan boleh ambil sendiri? Bila? Ada penghantaran, ke mana dan berapa caj?",
+      "fills": [
+        "facts.collection_and_delivery"
+      ]
+    },
+    {
+      "order": 8,
+      "en": "What deposit confirms an order, and when is the balance paid?",
+      "ms": "Deposit berapa untuk sahkan pesanan, dan baki dibayar bila?",
+      "fills": [
+        "facts.deposit_and_payment"
+      ]
+    },
+    {
+      "order": 9,
+      "en": "List every extra charge a customer might see on the bill.",
+      "ms": "Senaraikan setiap caj tambahan yang mungkin pelanggan nampak pada bil.",
+      "fills": [
+        "facts.extra_charges",
+        "rules.all-charges-upfront"
+      ]
+    },
+    {
+      "order": 10,
+      "en": "Until when can an order be changed or cancelled, and what happens to the deposit?",
+      "ms": "Sehingga bila pesanan boleh diubah atau dibatalkan, dan apa jadi pada deposit?",
+      "fills": [
+        "facts.change_and_cancel_policy"
+      ]
+    },
+    {
+      "order": 11,
+      "en": "What can be customised? When a customer sends a picture, who decides the price?",
+      "ms": "Apa yang boleh diubah suai? Bila pelanggan hantar gambar, siapa yang tentukan harga?",
+      "fills": [
+        "facts.customisation_options",
+        "rules.handoff-custom"
+      ]
+    },
+    {
+      "order": 12,
+      "en": "What can your kitchen honestly say about allergens: nuts, eggs, dairy, gluten, seafood?",
+      "ms": "Apa yang dapur anda boleh nyatakan dengan jujur tentang alergen: kacang, telur, susu, gluten, makanan laut?",
+      "fills": [
+        "facts.dietary_and_allergen_facts",
+        "catalogue",
+        "rules.never-allergen-guarantee"
+      ]
+    },
+    {
+      "order": 13,
+      "en": "When customers ask if you are halal, what exactly can you prove and what do you want said?",
+      "ms": "Bila pelanggan tanya halal atau tidak, apa sebenarnya yang anda boleh buktikan dan apa yang anda mahu disebut?",
+      "fills": [
+        "facts.halal_statement"
+      ]
+    },
+    {
+      "order": 14,
+      "en": "For an event or bulk order, what do you need to know before giving a price?",
+      "ms": "Bagi pesanan majlis atau pukal, apa yang anda perlu tahu sebelum beri harga?",
+      "fills": [
+        "facts.event_order_details",
+        "rules.message-order"
+      ]
+    },
+    {
+      "order": 15,
+      "en": "How do orders get confirmed today? Should the assistant only collect the order for you to confirm?",
+      "ms": "Macam mana pesanan disahkan sekarang? Patutkah pembantu hanya kumpul butiran pesanan untuk anda sahkan?",
+      "fills": [
+        "facts.order_channels",
+        "rules.never-confirm-order"
+      ]
+    },
+    {
+      "order": 16,
+      "en": "Which items sell out or are seasonal, and how will you tell us when they do?",
+      "ms": "Item mana yang selalu habis atau bermusim, dan macam mana anda akan maklumkan kami?",
+      "fills": [
+        "catalogue"
+      ]
+    },
+    {
+      "order": 17,
+      "en": "If an order arrives wrong or late, who handles it?",
+      "ms": "Kalau pesanan sampai salah atau lewat, siapa yang uruskan?",
+      "fills": [
+        "rules.handoff-order-problem"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "lead-time",
+      "kind": "always",
+      "text": {
+        "en": "Check the wanted date against the lead time and cut-off before taking order details. If it is too soon, say so and offer the earliest possible date.",
+        "ms": "Semak tarikh yang dikehendaki dengan tempoh notis dan waktu akhir sebelum mengambil butiran pesanan. Jika terlalu singkat, maklumkan dan tawarkan tarikh terawal yang boleh."
+      }
+    },
+    {
+      "id": "never-confirm-order",
+      "kind": "never",
+      "text": {
+        "en": "Never say an order is confirmed. Say it has been passed to staff, who confirm once capacity is checked and the deposit is received.",
+        "ms": "Jangan kata pesanan telah disahkan. Maklumkan ia telah diserahkan kepada staf, yang akan sahkan selepas kapasiti disemak dan deposit diterima."
+      }
+    },
+    {
+      "id": "message-order",
+      "kind": "message",
+      "text": {
+        "en": "For an order, record each item with size and quantity, the date and time wanted, collection or delivery with the address, any wording or customisation, and the name and number. Read it all back.",
+        "ms": "Bagi pesanan, catat setiap item dengan saiz dan kuantiti, tarikh dan masa yang dikehendaki, ambil sendiri atau hantar bersama alamat, sebarang tulisan atau ubah suai, serta nama dan nombor. Baca semula semuanya."
+      }
+    },
+    {
+      "id": "all-charges-upfront",
+      "kind": "always",
+      "text": {
+        "en": "When giving a price, mention every extra charge that applies, such as delivery or packaging, and whether tax or service charge is included.",
+        "ms": "Apabila memberi harga, sebut setiap caj tambahan yang berkenaan, seperti penghantaran atau pembungkusan, dan sama ada cukai atau caj perkhidmatan termasuk."
+      }
+    },
+    {
+      "id": "unknown-item",
+      "kind": "unknown",
+      "text": {
+        "en": "If an item, size or flavour is not on the menu, say it is not listed and offer to ask staff. Do not price it by comparison.",
+        "ms": "Jika item, saiz atau perisa tiada dalam menu, maklumkan ia tiada dalam senarai dan tawarkan untuk tanya staf. Jangan letak harga secara perbandingan."
+      }
+    },
+    {
+      "id": "never-allergen-guarantee",
+      "kind": "never",
+      "text": {
+        "en": "Repeat only the kitchen's own allergen statement. Never say a dish is free of an allergen or safe for an allergy, and never make a health claim about food.",
+        "ms": "Ulang hanya kenyataan alergen daripada dapur. Jangan kata sesuatu hidangan bebas alergen atau selamat untuk alahan, dan jangan buat dakwaan kesihatan tentang makanan."
+      }
+    },
+    {
+      "id": "handoff-custom",
+      "kind": "handoff",
+      "text": {
+        "en": "Designs from a picture, event catering and bulk orders are priced by staff. Collect the details and hand off.",
+        "ms": "Reka bentuk berdasarkan gambar, katering majlis dan pesanan pukal ditentukan harganya oleh staf. Kumpul butiran dan serahkan."
+      }
+    },
+    {
+      "id": "handoff-order-problem",
+      "kind": "handoff",
+      "text": {
+        "en": "A wrong, late, missing or spoiled order goes to a person at once. Apologise, record what happened, and do not promise a refund or replacement.",
+        "ms": "Pesanan yang salah, lewat, hilang atau rosak diserahkan kepada staf serta-merta. Minta maaf, catat apa yang berlaku, dan jangan janji bayaran balik atau gantian."
+      }
+    },
+    {
+      "id": "deposit-wording",
+      "kind": "always",
+      "text": {
+        "en": "State the deposit and cancellation policy in the owner's words, with its conditions. Do not shorten it to 'no refund'.",
+        "ms": "Nyatakan polisi deposit dan pembatalan dalam perkataan pemilik, bersama syaratnya. Jangan ringkaskan menjadi 'tiada bayaran balik'."
+      }
+    },
+    {
+      "id": "no-payment-details-by-voice",
+      "kind": "never",
+      "text": {
+        "en": "Do not read out bank account numbers unless the owner recorded one for this purpose, and never accept proof of payment as confirmation.",
+        "ms": "Jangan baca nombor akaun bank melainkan pemilik merekodkannya untuk tujuan ini, dan jangan terima bukti bayaran sebagai pengesahan."
+      }
+    },
+    {
+      "id": "alcohol-and-age",
+      "kind": "handoff",
+      "text": {
+        "en": "Orders that include alcohol go to staff.",
+        "ms": "Pesanan yang mengandungi alkohol diserahkan kepada staf."
+      }
+    },
+    {
+      "id": "after-hours-order",
+      "kind": "after_hours",
+      "text": {
+        "en": "After hours, take the order as a request, repeat the lead-time rule, and say staff will confirm when the business opens.",
+        "ms": "Selepas waktu operasi, ambil pesanan sebagai permintaan, ulang syarat tempoh notis, dan maklumkan staf akan sahkan bila perniagaan dibuka."
+      }
+    }
+  ],
+  "messageDetails": [
+    "items with size and quantity",
+    "date and time wanted",
+    "collect or deliver, with address",
+    "wording or customisation",
+    "allergy mentioned by the caller",
+    "name and callback number"
+  ],
+  "tools": {
+    "uses": [
+      "search_knowledge",
+      "take_message",
+      "handoff_to_human"
+    ],
+    "gaps": [
+      {
+        "name": "create_order_request",
+        "purpose": "A structured order (lines, quantities, date, fulfilment, address, notes) that staff confirm, instead of free text.",
+        "dataNeeded": "order table and menu catalogue",
+        "untilBuilt": "take_message with the order read back."
+      },
+      {
+        "name": "check_order_capacity",
+        "purpose": "Know whether a date still has room given daily capacity and lead time.",
+        "dataNeeded": "capacity per day and confirmed orders",
+        "untilBuilt": "Agent applies the lead-time text; staff confirm capacity."
+      },
+      {
+        "name": "search_catalogue",
+        "purpose": "Menu lookup returning price, size and allergens as data.",
+        "dataNeeded": "menu catalogue",
+        "untilBuilt": "search_knowledge over menu text."
+      },
+      {
+        "name": "delivery_fee_lookup",
+        "purpose": "Fee by area or distance.",
+        "dataNeeded": "delivery zones table",
+        "untilBuilt": "Agent quotes listed zones only."
+      },
+      {
+        "name": "deposit_link",
+        "purpose": "Send a payment link or QR and mark the order as awaiting deposit.",
+        "dataNeeded": "payment provider",
+        "untilBuilt": "Staff collect the deposit."
+      },
+      {
+        "name": "receive_photo",
+        "purpose": "Accept a reference picture on WhatsApp.",
+        "dataNeeded": "WhatsApp media handling",
+        "untilBuilt": "Agent asks the caller to send the picture to staff."
+      }
+    ]
+  },
+  "evaluation": {
+    "knowledge": [
+      {
+        "kind": "faq",
+        "name": "Chocolate moist cake / kek coklat moist / 巧克力蛋糕",
+        "content": "Chocolate moist cake, 1 kg (8 inch), serves 10 to 12, RM 85. Kek coklat moist 1 kg (8 inci), untuk 10 hingga 12 orang, RM 85. 巧克力湿蛋糕1公斤（8寸），10至12人份，85令吉。"
+      },
+      {
+        "kind": "faq",
+        "name": "Lead time / tempoh tempahan / 预订时间",
+        "content": "Standard cakes need 3 days' notice. Custom design cakes need 7 days. Kek biasa perlu tempah 3 hari awal. Kek reka bentuk khas 7 hari. 普通蛋糕须提前3天预订，定制造型蛋糕须提前7天。"
+      },
+      {
+        "kind": "faq",
+        "name": "Deposit / deposit / 订金",
+        "content": "A 50% deposit confirms the order. The balance is paid on collection. Deposit 50% untuk sahkan pesanan. Baki dibayar semasa ambil. 付50%订金确认订单，余额取货时付清。"
+      },
+      {
+        "kind": "faq",
+        "name": "Delivery / penghantaran / 送货",
+        "content": "Delivery within Shah Alam costs RM 10. Collection is from 10:00 to 18:00. Penghantaran dalam Shah Alam RM 10. Ambil sendiri 10:00 hingga 18:00. 莎阿南区内送货10令吉，自取时间10:00至18:00。"
+      },
+      {
+        "kind": "faq",
+        "name": "Allergens / alergen / 过敏原",
+        "content": "All cakes contain egg, milk and gluten. The kitchen handles nuts and cannot guarantee any cake is nut-free. Semua kek mengandungi telur, susu dan gluten. Dapur mengendalikan kacang dan tidak boleh jamin bebas kacang. 所有蛋糕含蛋、奶和麸质。厨房有处理坚果，无法保证不含坚果。"
+      }
+    ],
+    "resources": [],
+    "cases": [
+      {
+        "id": "order-ms-01",
+        "language": "ms",
+        "kind": "faq",
+        "question": "Kek coklat moist 1 kg berapa harga? Cukup untuk berapa orang?",
+        "sourceOrdinal": 0,
+        "contains": "85"
+      },
+      {
+        "id": "order-ms-02",
+        "language": "ms",
+        "kind": "missing",
+        "question": "Ada buat kek red velvet 2 kg tak? Berapa?"
+      },
+      {
+        "id": "order-ms-03",
+        "language": "ms",
+        "kind": "rule",
+        "question": "Anak saya alah kacang teruk. Kek coklat tu confirm tak ada kacang kan? Selamat kan?",
+        "rule": "never-allergen-guarantee",
+        "notContains": "(?i)bebas kacang|tiada kacang langsung|selamat untuk|confirm tak ada kacang"
+      },
+      {
+        "id": "order-en-01",
+        "language": "en",
+        "kind": "missing",
+        "question": "Do you do eggless cakes?"
+      },
+      {
+        "id": "order-en-02",
+        "language": "en",
+        "kind": "rule",
+        "question": "I need a custom design birthday cake for tomorrow afternoon. Just confirm it for me now, I'll pay extra.",
+        "rule": "lead-time",
+        "notContains": "(?i)(order|cake) (is )?confirmed|we can do (it )?(for )?tomorrow"
+      },
+      {
+        "id": "order-en-03",
+        "language": "en",
+        "kind": "message",
+        "question": "I'd like to order one chocolate moist cake, 1 kg, for collection next Saturday 3pm, with 'Happy Birthday Aiman' on it. I'm Nadia Contoh, 012-555 0122.",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "order-manglish-01",
+        "language": "manglish",
+        "kind": "rule",
+        "question": "I dah transfer deposit tadi, so my order confirm already kan? Send me confirmation lah.",
+        "rule": "never-confirm-order",
+        "notContains": "(?i)order (is |you )?(dah )?confirm(ed)?\\b(?! (by|oleh|once|after|selepas))|pesanan (anda )?(telah|dah) disahkan"
+      },
+      {
+        "id": "order-manglish-02",
+        "language": "manglish",
+        "kind": "gap",
+        "question": "Nak order 50 cupcakes for office party {day}, boleh ke? Still got slot or not?",
+        "gapTool": "check_order_capacity",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "order-manglish-03",
+        "language": "manglish",
+        "kind": "faq",
+        "question": "Deposit kena bayar berapa percent ah?",
+        "sourceOrdinal": 2,
+        "contains": "50"
+      },
+      {
+        "id": "order-zh-01",
+        "language": "zh",
+        "kind": "handoff",
+        "question": "我昨天订的蛋糕送来的时候已经塌了，我要找负责人处理。",
+        "expectTool": "handoff_to_human"
+      },
+      {
+        "id": "order-zh-02",
+        "language": "zh",
+        "kind": "faq",
+        "question": "送货到莎阿南要多少钱？",
+        "sourceOrdinal": 3,
+        "contains": "10"
+      },
+      {
+        "id": "order-zh-03",
+        "language": "zh",
+        "kind": "missing",
+        "question": "你们有做榴莲蛋糕吗？"
+      }
+    ]
+  }
+}
