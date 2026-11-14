@@ -79,3 +79,15 @@ test("outside opening hours a handoff case needs a message offer and no handoff"
     false,
   );
 });
+
+test("an after-hours offer to record the caller's details counts as a message offer", () => {
+  assert.equal(
+    messageOrHandoffTask(
+      "handoff",
+      [],
+      "现在是非营业时间。您可以留下姓名和回电号码，我会记录下来交给同事。",
+      midnight,
+    ),
+    true,
+  );
+});
