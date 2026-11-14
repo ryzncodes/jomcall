@@ -136,6 +136,14 @@ export async function privacyRoute(
           [ctx.orgId, c.id],
         )
       ).rows,
+      // Questions the agent could not answer, asked in this contact's test
+      // sessions (the gap log stores no caller identity of its own).
+      knowledgeGaps: (
+        await tx.query(
+          "select a.question,a.language,a.channel,a.answer,a.asked_at,g.status from app.knowledge_gap_ask a join app.knowledge_gap g on g.org_id=a.org_id and g.id=a.gap_id where a.org_id=$1 and a.contact_id=$2 order by a.asked_at,a.id",
+          [ctx.orgId, c.id],
+        )
+      ).rows,
       // WhatsApp conversations with their messages and staff proposals.
       conversations: (
         await tx.query(

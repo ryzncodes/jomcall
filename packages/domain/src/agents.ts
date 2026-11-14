@@ -9,6 +9,7 @@ import {
 import { agentSettings, knowledgeInput } from "../../contracts/src/agent.ts";
 import { command, audit } from "../../db/src/receipts.ts";
 import { manager } from "./authorization.ts";
+import { freezeCore, restoreCore } from "./knowledge/snapshot.ts";
 export async function agentsRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -166,7 +167,14 @@ export async function agentsRoute(
         version = (
           await tx.query(
             "insert into app.agent_version(org_id,agent_id,sequence,snapshot,actor_id)select $1,$2,coalesce(max(sequence),0)+1,$3,$4 from app.agent_version where org_id=$1 and agent_id=$2 returning *",
-            [ctx.orgId, id, { settings, knowledge }, ctx.identity.userId],
+            [
+              ctx.orgId,
+              id,
+              // Packs, confirmed facts, resolved rules and a frozen catalogue
+              // set (by id and hash) are part of every published version.
+              { settings, knowledge, ...(await freezeCore(tx, ctx.orgId, id)) },
+              ctx.identity.userId,
+            ],
           )
         ).rows[0];
         await tx.query(
@@ -195,6 +203,7 @@ export async function agentsRoute(
             "insert into app.knowledge_item(org_id,agent_id,kind,name,content)values($1,$2,$3,$4,$5)",
             [ctx.orgId, id, item.kind, item.name, item.content],
           );
+        await restoreCore(tx, ctx.orgId, id, v.snapshot);
       }
       await tx.query(
         "update app.agent set revision=revision+1,updated_at=now() where id=$1",
