@@ -33,7 +33,7 @@ create unique index whatsapp_channel_number on app.whatsapp_channel(namespace,ph
 create table app.whatsapp_template(
  id uuid primary key default gen_random_uuid(),
  org_id uuid not null,channel_id uuid not null,
- name text not null check(name~'^[a-z0-9_]{1,512}$'),
+ name text not null check(name~'^[a-z0-9_]+$' and length(name)<=512),
  language text not null check(language~'^[a-z]{2,3}(_[A-Z]{2})?$'),
  category text not null check(category in('utility','marketing','authentication')),
  purpose text not null default 'other' check(purpose in('reengage','missed_call','booking_confirmation','owner_summary','other')),
