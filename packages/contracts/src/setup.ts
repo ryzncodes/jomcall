@@ -1,0 +1,93 @@
+// Guided setup: staged answers held until the owner confirms the review page.
+import { z } from "zod";
+import { scheduleInput } from "./agent.ts";
+
+const packId = z.string().regex(/^[a-z][a-z0-9-]{1,40}$/);
+const bytes = (v: unknown) =>
+  new TextEncoder().encode(JSON.stringify(v)).length;
+const codePoints = (s: string) => [...s].length;
+
+// Pack ids are checked against the real packs, duplicates and "extra equals
+// main" in the domain route (a refined object cannot be extended per path).
+export const setupStart = z
+  .object({ mainPack: packId, extraPacks: z.array(packId).max(3) })
+  .strict();
+
+// Fact text is trimmed. Empty text is accepted here and handled as a skip.
+export const setupAnswer = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("fact"),
+      text: z
+        .string()
+        .trim()
+        .refine((s) => codePoints(s) <= 2000, { message: "Answer too long" })
+        // Same 4,000-byte ceiling as a saved fact value.
+        .refine((s) => bytes(s) <= 4000, { message: "Value too large" }),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("hours"),
+      timezone: scheduleInput.shape.timezone,
+      weekdays: scheduleInput.shape.weekdays,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("first_words"),
+      greeting: z.string().trim().min(1).max(2000),
+      aiDisclosure: z.string().trim().min(1).max(2000),
+    })
+    .strict(),
+  z.object({ kind: z.literal("skip") }).strict(),
+]);
+export const setupAnswerInput = z
+  .object({
+    expectedRevision: z.number().int().positive(),
+    answer: setupAnswer,
+  })
+  .strict();
+export const setupItemInput = z
+  .object({
+    expectedRevision: z.number().int().positive(),
+    payload: z
+      .unknown()
+      .refine((v) => v === undefined || bytes(v) <= 8000, {
+        message: "Payload too large",
+      })
+      .optional(),
+    state: z.enum(["pending", "confirmed", "removed"]).optional(),
+  })
+  .strict();
+
+export type SetupItem = {
+  id: string;
+  kind: "fact" | "schedule" | "settings" | "catalogue_row";
+  key: string;
+  payload: unknown;
+  source: "interview" | "import";
+  needsCheck: boolean;
+  checkReason: string | null;
+  state: "pending" | "confirmed" | "removed" | "applied";
+};
+export type SetupQuestionView = {
+  id: string;
+  kind: "hours" | "first_words" | "fact";
+  en: string;
+  ms: string;
+  fills: string[];
+};
+export type Setup = {
+  session: {
+    id: string;
+    mainPack: string;
+    extraPacks: string[];
+    state: "open" | "applied";
+    revision: number;
+  } | null;
+  items: SetupItem[];
+  questions: SetupQuestionView[];
+  missing: { pack: string; key: string; en: string; ms: string }[];
+  conflicts: { itemId: string; current: unknown }[];
+};

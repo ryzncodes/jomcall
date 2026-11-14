@@ -62,6 +62,12 @@ import {
 import { uuid, name, organizationInput, type Role } from "./index.ts";
 import { agentSettings, knowledgeInput, scheduleInput } from "./agent.ts";
 import {
+  setupAnswerInput,
+  setupItemInput,
+  setupStart,
+  type Setup,
+} from "./setup.ts";
+import {
   catalogueInput,
   confirmInput,
   factInput,
@@ -505,6 +511,28 @@ export const commands = {
     "/agents/:agentId/confirm",
     confirmInput.extend({ agentId: uuid }),
     out<KnowledgeCore>(),
+  ),
+  setup: route("GET", "/agents/:id/setup", id, out<Setup>()),
+  startSetup: route(
+    "POST",
+    "/agents/:id/setup",
+    setupStart.extend({ id: uuid }),
+    out<Setup>(),
+  ),
+  answerSetup: route(
+    "PUT",
+    "/agents/:id/setup/answers/:questionId",
+    setupAnswerInput.extend({
+      id: uuid,
+      questionId: z.string().regex(/^[a-z][a-z0-9_:-]{0,80}$/),
+    }),
+    out<Setup>(),
+  ),
+  saveSetupItem: route(
+    "PUT",
+    "/agents/:id/setup/items/:itemId",
+    setupItemInput.extend({ id: uuid, itemId: uuid }),
+    out<Setup>(),
   ),
   knowledgeGaps: route("GET", "/agents/:id/gaps", id, out<KnowledgeGap[]>()),
   resolveGap: route(
