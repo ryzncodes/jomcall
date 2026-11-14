@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-11-14 — phone line, milestone B (code side)
+
+Branch `feat/phone-line`, pull request #12 against `main`; not merged.
+
+**Changed**
+- Design: `docs/superpowers/specs/2026-11-14-phone-line-design.md` (ten open decisions, each built to its recommendation). Owner steps: `docs/research/phone-line-owner-steps.md`.
+- Migration `20261114180000_phone_calls.sql`: `phone_number`, `call`, `call_turn`, `call_tool_step`, `call_proposal`, `organization.calls_suspended_at`, function `app_private.agent_call`.
+- Engine: `engine/src/agent/phone-call.ts`, `phone-server.ts` (loopback 54635), `call-repository.ts`; `voice-turn.ts` takes an optional policy (browser path unchanged).
+- Worker: `voice/jomcall_voice/phone.py`, phone branch in `worker.py`, `cap_s`/`on_opened` on `Call`, `path`/`id_field` on the brain client, busy line in `fillers.py`. Simulator `voice/tools/phone_sim.py`.
+- Web (local app only): commands `phoneNumbers`, `createPhoneNumber`, `updatePhoneNumber`, `calls`, `call`; screens in `web/components/core/phone.tsx`. `/calls` and `/phone-numbers` are no longer in the disabled list.
+
+**Verified** (2026-11-14, this machine): see the pull request body for the counts of `typecheck`, `test:guards`, `check:core`, `uv run pytest` and `db:verify-migrations`.
+
+**Not verified / open**
+- No carrier, number, trunk or live LiveKit SIP service was used; the LiveKit telephony code is checked against types and documentation only.
+- The simulator was never run. The screens were not opened in a browser.
+- Phone rules not gated on the 48 cases. PDPA export does not include calls yet.
+- The shared local database has the phone migration applied directly with psql (no `schema_migrations` row) because the WhatsApp and billing branches' versions are in it; see the shared notes file `phone-line-notes.md`.
+
 ## 2026-11-14 — pre-launch fixes from the voice branch review
 
 Branch `fix/voice-prelaunch-hardening`, started from `feat/voice-milestone-a` and merged with `main` after the voice work landed there. Pushed, with a pull request against `main`; not merged.
