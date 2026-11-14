@@ -19,3 +19,23 @@ export const businessTypes: readonly {
   { id: "laundry-repair", en: "Laundry or repair shop", ms: "Dobi atau kedai baiki", pack: "status-check" },
   { id: "other", en: "Something else", ms: "Lain-lain", pack: "every-business" },
 ]);
+
+// The business type text stored on the workspace (and shown to the agent as
+// the kind of business): the picked type's English label, or for "Something
+// else" the owner's own words, trimmed. Empty when nothing usable was given.
+export function businessTypeText(typeId: string, ownWords: string): string {
+  const type = businessTypes.find((t) => t.id === typeId);
+  if (!type) return "";
+  return type.id === "other" ? ownWords.trim() : type.en;
+}
+
+// The type to preselect from the stored text: the type whose English label
+// it is; any other text was typed for "Something else". The pack always
+// comes from the type, never from the words.
+export function typeIdForSaved(
+  saved: string | null | undefined,
+): string | undefined {
+  const text = saved?.trim();
+  if (!text) return undefined;
+  return businessTypes.find((t) => t.en === text)?.id ?? "other";
+}

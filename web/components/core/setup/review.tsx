@@ -176,8 +176,8 @@ export function Review({
         </h1>
         <p className="setup-lead">
           {w(
-            "Fix anything that is wrong. Your agent uses these answers only after you confirm below. Nothing goes live until you publish.",
-            "Betulkan apa-apa yang salah. Ejen hanya menggunakan jawapan ini selepas anda sahkan di bawah. Tiada apa-apa yang aktif sehingga anda terbitkan.",
+            "Fix anything that is wrong. Answers are saved when you confirm below. Callers hear them after you publish; opening hours apply to bookings straight away.",
+            "Betulkan apa-apa yang salah. Jawapan disimpan apabila anda sahkan di bawah. Pemanggil mendengarnya selepas anda terbitkan; waktu operasi terus digunakan untuk tempahan.",
           )}
         </p>
       </header>

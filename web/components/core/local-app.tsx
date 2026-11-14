@@ -19,7 +19,10 @@ import { LocalSettings, LocalHours } from "./settings";
 import { LocalBilling } from "./billing";
 import { LocalPhoneNumbers, LocalCalls } from "./phone";
 import { LocalWhatsApp } from "./whatsapp";
-import { businessTypes } from "../../../packages/domain/src/setup/business-types";
+import {
+  businessTypeText,
+  businessTypes,
+} from "../../../packages/domain/src/setup/business-types";
 // The guided setup flow exists only in the local and hosted builds. The mode
 // is a build-time constant, so the mock bundle drops this import.
 const SetupFlow =
@@ -44,7 +47,8 @@ function LocalWorkspace({ screen }: { screen: string }) {
     [error, setError] = useState<unknown>(),
     [epoch, setEpoch] = useState(0),
     [creating, setCreating] = useState(false),
-    [creationError, setCreationError] = useState<unknown>();
+    [creationError, setCreationError] = useState<unknown>(),
+    [typeId, setTypeId] = useState("");
   const client = useMemo(() => new HttpCoreClient({ orgId }), [orgId]);
   useEffect(() => {
     let alive = true;
@@ -195,7 +199,10 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 try {
                   const result = await client.execute("createOrganization", {
                     name: String(f.get("name")),
-                    businessType: String(f.get("businessType")),
+                    businessType: businessTypeText(
+                      String(f.get("businessType")),
+                      String(f.get("businessTypeOther") ?? ""),
+                    ),
                     primaryLocationName: String(f.get("branch")),
                   });
                   switchWorkspace(result.orgId);
@@ -217,18 +224,36 @@ function LocalWorkspace({ screen }: { screen: string }) {
                   "Pilih yang paling hampir. Persediaan akan bertanya soalan untuk jenis ini.",
                 )}
               >
-                {/* The English label is stored, so setup can preselect it. */}
-                <select name="businessType" required defaultValue="">
+                {/* The English label is stored (or, for "Something else", the
+                    owner's own words), so setup can preselect the type. */}
+                <select
+                  name="businessType"
+                  required
+                  value={typeId}
+                  onChange={(e) => setTypeId(e.target.value)}
+                >
                   <option value="" disabled>
                     {w("Choose one", "Pilih satu")}
                   </option>
                   {businessTypes.map((t) => (
-                    <option key={t.id} value={t.en}>
+                    <option key={t.id} value={t.id}>
                       {w(t.en, t.ms)}
                     </option>
                   ))}
                 </select>
               </Field>
+              {typeId === "other" && (
+                <Field
+                  label={w("What kind of business?", "Perniagaan jenis apa?")}
+                >
+                  <input
+                    name="businessTypeOther"
+                    required
+                    maxLength={80}
+                    pattern=".*\S.*"
+                  />
+                </Field>
+              )}
               <Field label={w("Primary branch", "Cawangan utama")}>
                 <input name="branch" required maxLength={120} />
               </Field>

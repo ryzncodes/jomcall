@@ -3,7 +3,10 @@
 // with, then Continue. Starting (or changing) the session freezes the
 // interview on the server.
 import { useState } from "react";
-import { businessTypes } from "../../../../packages/domain/src/setup/business-types";
+import {
+  businessTypes,
+  typeIdForSaved,
+} from "../../../../packages/domain/src/setup/business-types";
 import type { Setup } from "../../../../packages/contracts/src/setup";
 import { useCore, useWords, Notice } from "../state";
 import { HOSTED } from "@/lib/hosted";
@@ -24,8 +27,9 @@ export function BusinessTypeStage({
 }) {
   const { client, workspace } = useCore(),
     w = useWords();
-  // Preselect: the open session's pack, else the type whose English label
-  // the workspace was created with; otherwise nothing.
+  // Preselect: the open session's pack, else the type the workspace was
+  // created with (its English label, or "Something else" for the owner's
+  // own words); otherwise nothing.
   const [typeId, setTypeId] = useState(() => {
     const saved = workspace.workspace.business_type;
     if (session)
@@ -34,7 +38,7 @@ export function BusinessTypeStage({
           (t) => t.pack === session.mainPack && t.en === saved,
         ) ?? businessTypes.find((t) => t.pack === session.mainPack)
       )?.id;
-    return businessTypes.find((t) => t.en === saved)?.id;
+    return typeIdForSaved(saved);
   });
   const [extras, setExtras] = useState<string[]>(session?.extraPacks ?? []);
   const [busy, setBusy] = useState(false);

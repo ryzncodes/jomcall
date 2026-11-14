@@ -7,11 +7,40 @@ import {
   questionById,
 } from "../../packages/domain/src/setup/questions.ts";
 
+// Saved hours drop the hours question (see "saved hours and first words are
+// not asked again"). The harness saves hours for every workspace, so `start`
+// hides them while the list is frozen and puts back what was there.
+async function withoutSavedHours<T>(
+  f: Awaited<ReturnType<typeof createPhase2Harness>>,
+  run: () => Promise<T>,
+) {
+  const where = [f.h.orgA.id, f.h.orgA.locationId];
+  const prior = (
+    await f.h.cleanup.query(
+      "select weekdays from app.location_schedule where org_id=$1 and location_id=$2",
+      where,
+    )
+  ).rows[0];
+  await f.h.cleanup.query(
+    "update app.location_schedule set weekdays='[[],[],[],[],[],[],[]]' where org_id=$1 and location_id=$2",
+    where,
+  );
+  try {
+    return await run();
+  } finally {
+    if (prior)
+      await f.h.cleanup.query(
+        "update app.location_schedule set weekdays=$3 where org_id=$1 and location_id=$2",
+        [...where, JSON.stringify(prior.weekdays)],
+      );
+  }
+}
+
 async function fixture() {
   const f = await createPhase2Harness();
   const path = `/agents/${f.h.orgA.agentId}/setup`;
   const start = (body: unknown = { mainPack: "appointment", extraPacks: [] }) =>
-    f.req("POST", path, body);
+    withoutSavedHours(f, () => f.req("POST", path, body));
   const get = async () => (await f.req("GET", path)).body.data;
   return { f, path, start, get };
 }
@@ -991,6 +1020,161 @@ test("channels reports false for all three on a fresh workspace", async () => {
       whatsapp: false,
       integrations: false,
     });
+  } finally {
+    await f.close();
+  }
+});
+
+// ---- final fix wave ----
+test("saved hours and first words are not asked again; a fresh workspace gets both", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    const agentId = f.h.orgA.agentId;
+    const kinds = (s: any) => s.questions.map((q: any) => q.kind);
+    // The harness saved hours. Only a greeting: first words are still asked.
+    await f.h.cleanup.query(
+      "update app.agent set draft=draft||'{\"greeting\":\"Hai.\",\"aiDisclosure\":\"  \"}'::jsonb where id=$1",
+      [agentId],
+    );
+    let s = (
+      await f.req("POST", path, { mainPack: "appointment", extraPacks: [] })
+    ).body.data;
+    assert.ok(!kinds(s).includes("hours"));
+    assert.ok(kinds(s).includes("first_words"));
+    await f.h.cleanup.query(
+      "delete from app.setup_session where agent_id=$1",
+      [agentId],
+    );
+    // Hours and both first words saved: neither question.
+    await f.h.cleanup.query(
+      "update app.agent set draft=draft||'{\"greeting\":\"Hai.\",\"aiDisclosure\":\"Saya pembantu AI.\"}'::jsonb where id=$1",
+      [agentId],
+    );
+    s = (await f.req("POST", path, { mainPack: "appointment", extraPacks: [] }))
+      .body.data;
+    assert.ok(!kinds(s).includes("hours"));
+    assert.ok(!kinds(s).includes("first_words"));
+    assert.ok(!(await idsOf(f, agentId)).some((id: string) => id === "hours" || id === "first_words"));
+    // A pack change follows the same rule.
+    s = (await f.req("POST", path, { mainPack: "order", extraPacks: [] })).body
+      .data;
+    assert.equal(s.session.mainPack, "order");
+    assert.ok(!(await idsOf(f, agentId)).some((id: string) => id === "hours" || id === "first_words"));
+    await f.h.cleanup.query(
+      "delete from app.setup_session where agent_id=$1",
+      [agentId],
+    );
+    // Fresh: no saved hours, empty first words.
+    await f.h.cleanup.query(
+      "update app.agent set draft=draft||'{\"greeting\":\"\",\"aiDisclosure\":\"\"}'::jsonb where id=$1",
+      [agentId],
+    );
+    s = (await start()).body.data;
+    assert.equal(kinds(s)[0], "hours");
+    assert.equal(kinds(s).at(-1), "first_words");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a fact key shared by two packs: a skipped frozen question answered through Add now stays answered", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    const key = "deposit_and_payment";
+    const put = async (id: string, answer: unknown) => {
+      const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(id)}`, {
+        expectedRevision: (await get()).session.revision,
+        answer,
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      return r.body.data;
+    };
+    await start({ mainPack: "order", extraPacks: ["reservation-rental"] });
+    // Neither pack's deposit question makes the first 8, so it is frozen
+    // here as the database holds it, under the extra pack, in place of an
+    // unanswered base question (the list holds at most 8).
+    await f.h.cleanup.query(
+      "update app.setup_session set question_ids[2]='reservation-rental:11' where agent_id=$1 and state='open'",
+      [f.h.orgA.agentId],
+    );
+    let s = await get();
+    assert.ok(s.questions.some((q: any) => q.id === "reservation-rental:11"));
+    s = await put("reservation-rental:11", { kind: "skip" });
+    assert.ok(!s.questions.some((q: any) => q.id === "reservation-rental:11"));
+    // Listed once, under the pack of the skipped answer.
+    const listed = s.missing.filter((m: any) => m.key === key);
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].pack, "reservation-rental");
+    s = await put(`missing:${listed[0].pack}:${key}`, {
+      kind: "fact",
+      text: "Deposit 50%",
+    });
+    // The interview does not come back, the answer is kept, not missing.
+    assert.deepEqual(
+      s.questions.filter((q: any) => q.id === "reservation-rental:11"),
+      [],
+    );
+    let rows = s.items.filter((i: any) => i.key === key);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].payload.value, "Deposit 50%");
+    assert.equal(rows[0].state, "pending");
+    assert.ok(!s.missing.some((m: any) => m.key === key));
+    // A request naming the other pack keeps the row's pack.
+    s = await put(`missing:order:${key}`, { kind: "fact", text: "Deposit 30%" });
+    rows = s.items.filter((i: any) => i.key === key);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].payload.packId, "reservation-rental");
+    assert.equal(rows[0].payload.value, "Deposit 30%");
+    assert.ok(!s.questions.some((q: any) => q.id === "reservation-rental:11"));
+    // Skipping the other pack's question on the same key keeps the answer.
+    await f.h.cleanup.query(
+      "update app.setup_session set question_ids[3]='order:8' where agent_id=$1 and state='open'",
+      [f.h.orgA.agentId],
+    );
+    s = await put("order:8", { kind: "skip" });
+    rows = s.items.filter((i: any) => i.key === key);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].payload.value, "Deposit 30%");
+    assert.equal(rows[0].payload.packId, "reservation-rental");
+    assert.equal(rows[0].state, "pending");
+  } finally {
+    await f.close();
+  }
+});
+
+test("saveSetupItem refuses to make an incomplete item pending or confirmed", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    let s = (await start()).body.data;
+    const q = s.questions.find((x: any) => x.kind === "fact");
+    s = (
+      await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
+        expectedRevision: s.session.revision,
+        answer: { kind: "skip" },
+      })
+    ).body.data;
+    const item = s.items.find((i: any) => i.kind === "fact");
+    assert.equal(item.state, "removed");
+    assert.equal(item.payload.value, undefined);
+    for (const state of ["pending", "confirmed"]) {
+      const r = await f.req("PUT", `${path}/items/${item.id}`, {
+        expectedRevision: s.session.revision,
+        state,
+      });
+      assert.equal(r.status, 422, state);
+      assert.equal(r.body.error.code, "ITEM_INCOMPLETE");
+    }
+    // With a value it comes back.
+    const ok = await f.req("PUT", `${path}/items/${item.id}`, {
+      expectedRevision: s.session.revision,
+      payload: { value: "Ada sekarang" },
+      state: "pending",
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(
+      ok.body.data.items.find((i: any) => i.id === item.id).state,
+      "pending",
+    );
   } finally {
     await f.close();
   }

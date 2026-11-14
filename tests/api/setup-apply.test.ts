@@ -22,9 +22,27 @@ async function fixture() {
   const stage = async (
     o: { hours?: boolean; words?: boolean; fact?: string | null } = {},
   ) => {
+    // Saved hours drop the hours question, so they are hidden while the list
+    // is frozen and put back after; the staged hours then still conflict.
+    const where = [f.h.orgA.id, f.h.orgA.locationId];
+    const prior = (
+      await q(
+        "select weekdays from app.location_schedule where org_id=$1 and location_id=$2",
+        where,
+      )
+    ).rows[0];
+    await q(
+      "update app.location_schedule set weekdays='[[],[],[],[],[],[],[]]' where org_id=$1 and location_id=$2",
+      where,
+    );
     const s = (
       await f.req("POST", path, { mainPack: "appointment", extraPacks: [] })
     ).body.data;
+    if (prior)
+      await q(
+        "update app.location_schedule set weekdays=$3 where org_id=$1 and location_id=$2",
+        [...where, JSON.stringify(prior.weekdays)],
+      );
     const put = async (id: string, answer: unknown) => {
       const rev = (await state()).session.revision;
       const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(id)}`, {
@@ -562,6 +580,103 @@ test("a stale revision is refused and a missing session is not found", async () 
     const stale = await x.apply([], st.session.revision - 1);
     assert.equal(stale.status, 409);
     assert.deepEqual(await x.facts(), []);
+  } finally {
+    await x.f.close();
+  }
+});
+
+// ---- final fix wave ----
+test("apply waits for a schedule save in progress and keeps those hours", async () => {
+  const x = await fixture();
+  try {
+    const org = x.f.h.orgA.id,
+      loc = x.f.h.orgA.locationId;
+    await x.q(
+      "update app.location_schedule set weekdays='[[],[],[],[],[],[],[]]' where org_id=$1 and location_id=$2",
+      [org, loc],
+    );
+    await x.stage({ words: false, fact: null });
+    const st = await x.state();
+    assert.deepEqual(st.conflicts, []);
+    const scheduleItem = x.itemId(st, "schedule");
+    const other = await x.f.h.cleanup.connect();
+    try {
+      // Another save holds the location, as writeSchedule does.
+      await other.query("begin");
+      await other.query(
+        "select id from app.location where org_id=$1 and id=$2 for update",
+        [org, loc],
+      );
+      await other.query(
+        "update app.location_schedule set weekdays=$3 where org_id=$1 and location_id=$2",
+        [org, loc, JSON.stringify(hours("08:00", "12:00").weekdays)],
+      );
+      const pending = x.apply([], st.session.revision);
+      await new Promise((r) => setTimeout(r, 300));
+      await other.query("commit");
+      const r = await pending;
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      // Apply decided after the other save: its hours are current, so the
+      // staged hours are a conflict the owner did not name.
+      assert.equal(r.body.data.applied, 0);
+      assert.deepEqual(r.body.data.skipped, [
+        { itemId: scheduleItem, reason: "conflict" },
+      ]);
+      assert.deepEqual((await x.schedule()).weekdays[0], [
+        { start: "08:00", end: "12:00" },
+      ]);
+    } finally {
+      other.release();
+    }
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("after apply in one tab, another tab's answer or item save is a conflict", async () => {
+  const x = await fixture();
+  try {
+    // No session ever: not found.
+    const none = await x.f.req("PUT", `${x.path}/answers/hours`, {
+      expectedRevision: 1,
+      answer: { kind: "skip" },
+    });
+    assert.equal(none.status, 404);
+    const { fq } = await x.stage();
+    const st = await x.state();
+    const rev = st.session.revision;
+    const item = st.items.find((i: any) => i.kind === "fact");
+    const done = await x.apply([x.itemId(st, "schedule")], rev);
+    assert.equal(done.status, 200, JSON.stringify(done.body));
+    const answer = await x.f.req(
+      "PUT",
+      `${x.path}/answers/${encodeURIComponent(fq.id)}`,
+      { expectedRevision: rev, answer: { kind: "fact", text: "Lewat" } },
+    );
+    assert.equal(answer.status, 409, JSON.stringify(answer.body));
+    assert.equal(answer.body.error.code, "CONFLICT");
+    const save = await x.f.req("PUT", `${x.path}/items/${item.id}`, {
+      expectedRevision: rev,
+      payload: { value: "Lewat" },
+    });
+    assert.equal(save.status, 409, JSON.stringify(save.body));
+    assert.equal(save.body.error.code, "CONFLICT");
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("Something else does not add the base pack to the agent's packs", async () => {
+  const x = await fixture();
+  try {
+    const s = await x.f.req("POST", x.path, {
+      mainPack: "every-business",
+      extraPacks: [],
+    });
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual((await x.agentRow()).packs, []);
   } finally {
     await x.f.close();
   }

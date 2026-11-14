@@ -136,3 +136,27 @@ test("the chrome reads the channels command and hides unconnected channels", () 
   assert.match(text, /workspace\.complete && active !== "setup"/);
   assert.match(text, /filter\(\(item\) => !hidden\.includes\(item\.key\)\)/);
 });
+
+test("setup calls the AI agent ejen in BM and does not say nothing goes live before publish", () => {
+  const files = [
+    ...sources(),
+    { file: "packages/domain/src/setup/questions.ts", text: readFileSync("packages/domain/src/setup/questions.ts", "utf8") },
+  ];
+  for (const { file, text } of files) assert.doesNotMatch(text, /\bagen\b/i, file);
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  assert.doesNotMatch(review, /Nothing goes live until you publish/);
+  assert.match(review, /opening hours apply to bookings straight away/i);
+});
+
+test("workspace creation keeps the owner's own words for Something else", () => {
+  const app = readFileSync("web/components/core/local-app.tsx", "utf8");
+  assert.match(app, /businessTypeText\(/);
+  assert.match(app, /What kind of business\?/);
+  const at = app.indexOf('name="businessTypeOther"');
+  assert.ok(at >= 0, "no free-text field");
+  const tag = app.slice(app.lastIndexOf("<input", at), app.indexOf("/>", at));
+  assert.match(tag, /\brequired\b/);
+  assert.match(tag, /maxLength=\{80\}/);
+  const setup = readFileSync(join(dir, "business-type.tsx"), "utf8");
+  assert.match(setup, /typeIdForSaved\(/);
+});

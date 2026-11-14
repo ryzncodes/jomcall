@@ -200,3 +200,45 @@ test("questionById rebuilds a question from its id and refuses unknown ids", asy
   for (const bad of ["", "nope", "appointment:0", "appointment:abc", "nope:1", "appointment:9999", "missing:appointment:x"])
     assert.equal(questionById(bad), null);
 });
+
+// ---- final fix wave ----
+test("missingFacts lists a fact key shared by two packs once, preferring the given pack", () => {
+  const input = {
+    mainPack: "order",
+    extraPacks: ["reservation-rental"],
+    filled: none,
+  };
+  const keys = missingFacts(input).map((m) => m.key);
+  assert.equal(new Set(keys).size, keys.length);
+  const deposit = (m: ReturnType<typeof missingFacts>) =>
+    m.filter((x) => x.key === "deposit_and_payment");
+  assert.deepEqual(deposit(missingFacts(input)).map((x) => x.pack), ["order"]);
+  assert.deepEqual(
+    deposit(
+      missingFacts({
+        ...input,
+        prefer: new Map([["deposit_and_payment", "reservation-rental"]]),
+      }),
+    ).map((x) => x.pack),
+    ["reservation-rental"],
+  );
+  // A preferred pack that is not active (or does not require it) is ignored.
+  assert.deepEqual(
+    deposit(
+      missingFacts({
+        ...input,
+        prefer: new Map([["deposit_and_payment", "appointment"]]),
+      }),
+    ).map((x) => x.pack),
+    ["order"],
+  );
+});
+
+test("the first words question calls the agent ejen in BM", async () => {
+  const { questionById } = await import(
+    "../../packages/domain/src/setup/questions.ts"
+  );
+  const q = questionById("first_words")!;
+  assert.match(q.ms, /\bejen\b/);
+  assert.doesNotMatch(q.ms, /\bagen\b/);
+});

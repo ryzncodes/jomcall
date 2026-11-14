@@ -79,6 +79,8 @@ type Store = {
   agentId: string;
   view: Setup;
   setView: (v: Setup) => void;
+  // The latest view, also after an await inside a handler.
+  latest: () => Setup;
   reload: () => Promise<Setup | undefined>;
   // One write at a time, each with the latest session revision.
   write: (fn: (expectedRevision: number) => Promise<Setup>) => Promise<boolean>;
@@ -273,6 +275,7 @@ function SetupStages({
 }) {
   const { client, workspace } = useCore();
   const [view, setViewState] = useState(initial.view);
+  const latestView = useRef(initial.view);
   const revision = useRef(initial.view.session?.revision ?? 0);
   const chain = useRef<Promise<boolean>>(Promise.resolve(true));
   const [flushers] = useState(() => new Set<() => Promise<boolean>>());
@@ -298,6 +301,7 @@ function SetupStages({
   }>();
 
   const setView = useCallback((v: Setup) => {
+    latestView.current = v;
     setViewState(v);
     if (v.session) revision.current = v.session.revision;
   }, []);
@@ -374,6 +378,7 @@ function SetupStages({
     agentId,
     view,
     setView,
+    latest: () => latestView.current,
     reload,
     write,
     flushAll,

@@ -28,13 +28,15 @@ export const pollDelay = (elapsedMs: number) =>
   elapsedMs < 60_000 ? 3000 : 10_000;
 
 // The workspace name is offered only for a question that fills exactly one
-// fact, business_name, and has no answer yet. A question that also asks
-// something else is never prefilled, so Continue cannot keep half an answer.
+// fact, business_name, and has no answer yet (no item, or a skipped one). A
+// question that also asks something else is never prefilled, so Continue
+// cannot keep half an answer.
 export function namePrefill(
   fills: readonly string[],
-  answered: boolean,
+  item: { state: string } | null | undefined,
   name: string,
 ): string {
+  const answered = !!item && item.state !== "removed";
   const facts = fills.filter((f) => f.startsWith("facts."));
   return !answered && facts.length === 1 && facts[0] === "facts.business_name"
     ? name

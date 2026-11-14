@@ -342,7 +342,7 @@ function initialValue(
   // The name was typed at workspace creation; offer it, editable, only for a
   // question that asks for the name alone. It is kept only if the owner
   // continues, like any answer on screen.
-  return { kind: "fact", text: namePrefill(q.fills, !!item, name) };
+  return { kind: "fact", text: namePrefill(q.fills, item, name) };
 }
 
 function QuestionScreen({
@@ -419,11 +419,14 @@ function QuestionScreen({
   const next = async () => {
     if (!valid) return;
     setMoving(true);
-    const item = itemFor(store.view.items, q);
+    // Read before the flush, which clears what is pending.
     const typed = auto.dirty();
     // Every pending and in-flight save first; on failure stay here with the
     // error shown.
     let ok = await store.flushAll();
+    // The item as it is after those saves (this render's view is older), so
+    // an answer that was in flight is not sent a second time.
+    const item = itemFor(store.latest().items, q);
     // Nothing kept yet (or skipped before): keep what is on screen, so a
     // prefilled answer counts. Empty fact text is kept as a skip.
     if (ok && !typed && (!item || item.state === "removed"))

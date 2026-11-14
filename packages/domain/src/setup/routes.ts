@@ -57,6 +57,28 @@ const owns = (q: SetupQuestion, i: ItemLike) =>
           q.id.split(":")[0];
 const bytes = (v: unknown) =>
   new TextEncoder().encode(JSON.stringify(v)).length;
+// Whether applySetup could write this item: the same parse apply runs.
+// Catalogue rows are never written by apply, so they are not checked.
+function complete(kind: string, payload: unknown): boolean {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  if (kind === "fact")
+    return (
+      typeof p.packId === "string" &&
+      typeof p.fieldKey === "string" &&
+      (typeof p.value === "string" ? !!p.value.trim() : p.value != null) &&
+      factInput.safeParse({
+        expectedAgentRevision: 1,
+        packId: p.packId,
+        fieldKey: p.fieldKey,
+        title: p.title,
+        value: p.value,
+        language: p.language,
+      }).success
+    );
+  if (kind === "schedule") return setupSchedulePayload.safeParse(p).success;
+  if (kind === "settings") return setupSettingsPayload.safeParse(p).success;
+  return true;
+}
 
 export async function setupRoute(
   tx: PoolClient,
@@ -159,6 +181,35 @@ export async function setupRoute(
     return undefined;
   };
 
+  // What the agent already holds, so the interview does not ask it again:
+  // confirmed fact keys, "schedule" when the location has saved hours (as
+  // currentFor reads them) and "settings" when the draft has both a greeting
+  // and an AI introduction. Freezing the list and a pack change both use it.
+  const savedSlots = async () => {
+    const out = new Set<string>(
+      (
+        await tx.query(
+          "select field_key from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key is not null",
+          [ctx.orgId, agentId],
+        )
+      ).rows.map((r) => r.field_key as string),
+    );
+    if (
+      (await currentFor({ kind: "schedule", key: "schedule", payload: null })) !==
+      undefined
+    )
+      out.add("schedule");
+    const draft = (
+      await tx.query("select draft from app.agent where org_id=$1 and id=$2", [
+        ctx.orgId,
+        agentId,
+      ])
+    ).rows[0]?.draft as { greeting?: unknown; aiDisclosure?: unknown } | undefined;
+    const said = (v: unknown) => typeof v === "string" && !!v.trim();
+    if (said(draft?.greeting) && said(draft?.aiDisclosure)) out.add("settings");
+    return out;
+  };
+
   // The one state the whole interview reads: items, the questions still to
   // ask, required facts still missing, and staged values that would replace
   // something already confirmed on the agent.
@@ -234,6 +285,22 @@ export async function setupRoute(
       extraPacks: session.extra_packs,
       filled,
     };
+    // A fact key shared by two active packs is listed as missing once, under
+    // the pack of its staged item (any state), else of its frozen question,
+    // so "Add now" writes the same row under the same pack.
+    const active = [basePack, session.main_pack, ...session.extra_packs];
+    const prefer = new Map<string, string>();
+    for (const id of session.question_ids) {
+      const q = questionById(id);
+      const k = q?.kind === "fact" ? factKeyOf(q) : null;
+      const p = id.split(":")[0]!;
+      if (k && active.includes(p)) prefer.set(k, p);
+    }
+    for (const i of items) {
+      const p = (i.payload as { packId?: unknown } | null)?.packId;
+      if (i.kind === "fact" && typeof p === "string" && active.includes(p))
+        prefer.set(i.key, p);
+    }
 
     const conflicts: Setup["conflicts"] = [];
     const pending = items.filter((i) =>
@@ -259,7 +326,7 @@ export async function setupRoute(
         .filter(
           (q): q is SetupQuestion => !!q && !items.some((i) => owns(q, i)),
         ),
-      missing: missingFacts({ ...input, filled: covered }),
+      missing: missingFacts({ ...input, filled: covered, prefer }),
       conflicts,
       finish: false,
     };
@@ -272,7 +339,15 @@ export async function setupRoute(
   };
   const lockedSession = async (expected: number) => {
     const s = await openSession(true);
-    if (!s) throw new AppError("NOT_FOUND", 404);
+    if (!s) {
+      // Applied in another tab: a conflict, so the screen reloads the view.
+      const applied = await tx.query(
+        "select 1 from app.setup_session where org_id=$1 and agent_id=$2 and state='applied' limit 1",
+        [ctx.orgId, agentId],
+      );
+      if (applied.rowCount) throw new AppError("CONFLICT", 409);
+      throw new AppError("NOT_FOUND", 404);
+    }
     if (s.revision !== expected) throw new AppError("CONFLICT", 409);
     return s;
   };
@@ -304,17 +379,12 @@ export async function setupRoute(
       async () => {
         await agent();
         const open = await openSession(true);
-        const confirmed = (
-          await tx.query(
-            "select field_key from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key is not null",
-            [ctx.orgId, agentId],
-          )
-        ).rows.map((r) => r.field_key as string);
+        const saved = await savedSlots();
         const freeze = () =>
           setupQuestions({
             mainPack: v.mainPack,
             extraPacks: v.extraPacks,
-            filled: new Set(confirmed),
+            filled: new Set(saved),
           }).map((q) => q.id);
         if (!open) {
           // Freeze the interview once, in order.
@@ -356,7 +426,7 @@ export async function setupRoute(
                 [i.id],
               );
             }
-          const filled = new Set<string>(confirmed);
+          const filled = new Set<string>(saved);
           for (const i of items) {
             if (dropped.has(i.id) || i.kind === "catalogue_row") continue;
             filled.add(i.kind === "fact" ? i.key : i.kind);
@@ -431,6 +501,14 @@ export async function setupRoute(
         // The agent row lock comes first, as in every other setup command, so
         // two applies queue and the second finds the session already applied.
         const a = await agent();
+        // Then the agent's location, before any schedule is read: a schedule
+        // save in progress finishes first, so the keep-or-replace decision
+        // sees its hours. Agent before location, as no path locks them the
+        // other way round; writeSchedule takes the same location lock again.
+        await tx.query(
+          "select id from app.location where org_id=$1 and id=$2 for update",
+          [ctx.orgId, a.location_id],
+        );
         const session = await openSession(true);
         if (!session) {
           const done = await tx.query(
@@ -475,8 +553,10 @@ export async function setupRoute(
 
         // Packs merge: what the agent already has first, then the session's
         // main and extra packs that are new. The base pack stays active on
-        // its own.
-        const wanted = [session.main_pack, ...session.extra_packs];
+        // its own, so "Something else" (main pack = base pack) adds nothing.
+        const wanted = [session.main_pack, ...session.extra_packs].filter(
+          (p) => p !== basePack,
+        );
         if (wanted.some((p) => !packIds.includes(p)))
           throw new AppError("UNKNOWN_PACK", 422);
         const have = a.packs as string[];
@@ -593,6 +673,10 @@ export async function setupRoute(
         )
           ? questionById(questionId)
           : null;
+        // A "missing:" answer on a key that already has a row keeps that
+        // row's pack (when still active), so a frozen question that owns the
+        // row stays answered.
+        let keepPack: string | undefined;
         if (!question && questionId.startsWith("missing:")) {
           const [, packId, ...rest] = questionId.split(":");
           const fieldKey = rest.join(":");
@@ -600,17 +684,17 @@ export async function setupRoute(
           const field = active.includes(packId!)
             ? packById(packId!)?.facts.find((f) => f.key === fieldKey)
             : undefined;
+          const row = (
+            await tx.query(
+              "select payload->>'packId' as pack from app.setup_item where org_id=$1 and session_id=$2 and kind='fact' and key=$3",
+              [ctx.orgId, session.id, fieldKey],
+            )
+          ).rows[0] as { pack: string | null } | undefined;
+          if (row?.pack && active.includes(row.pack)) keepPack = row.pack;
           const listed =
             field?.required &&
-            ((await view()).missing.some(
-              (x) => x.pack === packId && x.key === fieldKey,
-            ) ||
-              (
-                await tx.query(
-                  "select 1 from app.setup_item where org_id=$1 and session_id=$2 and kind='fact' and key=$3 and payload->>'packId'=$4",
-                  [ctx.orgId, session.id, fieldKey, packId],
-                )
-              ).rowCount);
+            (!!row ||
+              (await view()).missing.some((x) => x.key === fieldKey));
           if (listed)
             question = {
               id: questionId,
@@ -640,7 +724,7 @@ export async function setupRoute(
           (answer.kind === "skip" && itemKind === "fact")
         ) {
           const packId = question.id.startsWith("missing:")
-            ? question.id.split(":")[1]!
+            ? (keepPack ?? question.id.split(":")[1]!)
             : question.id.split(":")[0]!;
           const field = packById(packId)?.facts.find((f) => f.key === itemKey);
           payload = {
@@ -660,10 +744,22 @@ export async function setupRoute(
           };
         // One row per (session, kind, key): a repeat answer, or an answer
         // after a skip, updates that row.
+        // A skip never discards a live answer. It marks the row removed only
+        // when the row is the question's own (same pack, its text kept so an
+        // answer or the review can bring it back) or holds no live answer. A
+        // live answer filed under another pack (from "Add now" or the review)
+        // is left as it is.
         if (answer.kind === "skip")
           await tx.query(
             `insert into app.setup_item(org_id,session_id,kind,key,payload,source,state) values($1,$2,$3,$4,$5,'interview','removed')
-             on conflict(session_id,kind,key) do update set payload=case when app.setup_item.payload->>'packId' is not distinct from excluded.payload->>'packId' then app.setup_item.payload else excluded.payload end,state='removed',updated_at=now()`,
+             on conflict(session_id,kind,key) do update set
+               payload=case when app.setup_item.payload->>'packId' is not distinct from excluded.payload->>'packId'
+                 or (app.setup_item.state in ('pending','confirmed') and btrim(coalesce(app.setup_item.payload->>'value',''))<>'')
+                 then app.setup_item.payload else excluded.payload end,
+               state=case when app.setup_item.payload->>'packId' is distinct from excluded.payload->>'packId'
+                 and app.setup_item.state in ('pending','confirmed') and btrim(coalesce(app.setup_item.payload->>'value',''))<>''
+                 then app.setup_item.state else 'removed' end,
+               updated_at=now()`,
             [ctx.orgId, session.id, itemKind, itemKey, JSON.stringify(payload)],
           );
         else
@@ -725,6 +821,14 @@ export async function setupRoute(
         }
         if (bytes(merged) > 8000) throw new AppError("VALUE_TOO_LARGE", 422);
       }
+      // A pending or confirmed item must be complete for its kind, so apply
+      // never fails on it later (a skipped fact has no value, for example).
+      const state = v.state ?? item.state;
+      if (
+        (state === "pending" || state === "confirmed") &&
+        !complete(item.kind, merged ?? item.payload)
+      )
+        throw new AppError("ITEM_INCOMPLETE", 422);
       await tx.query(
         "update app.setup_item set payload=coalesce($1::jsonb,payload),state=coalesce($2,state),updated_at=now() where id=$3",
         [

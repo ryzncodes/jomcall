@@ -48,23 +48,31 @@ test("polling is every 3 s for a minute, then every 10 s", () => {
 
 test("only a question that fills business_name alone is prefilled with the name", () => {
   assert.equal(
-    namePrefill(["facts.business_name"], false, "Kedai Contoh"),
+    namePrefill(["facts.business_name"], undefined, "Kedai Contoh"),
     "Kedai Contoh",
   );
   assert.equal(
-    namePrefill(["facts.business_name", "rules.x"], false, "Kedai Contoh"),
+    namePrefill(["facts.business_name", "rules.x"], undefined, "Kedai Contoh"),
     "Kedai Contoh",
   );
   assert.equal(
     namePrefill(
       ["facts.business_name", "facts.what_we_do"],
-      false,
+      undefined,
       "Kedai Contoh",
     ),
     "",
   );
-  assert.equal(namePrefill(["facts.business_name"], true, "Kedai Contoh"), "");
-  assert.equal(namePrefill(["facts.address"], false, "Kedai Contoh"), "");
+  assert.equal(
+    namePrefill(["facts.business_name"], { state: "pending" }, "Kedai Contoh"),
+    "",
+  );
+  // A skipped (removed) answer is not an answer: the name comes back.
+  assert.equal(
+    namePrefill(["facts.business_name"], { state: "removed" }, "Kedai Contoh"),
+    "Kedai Contoh",
+  );
+  assert.equal(namePrefill(["facts.address"], undefined, "Kedai Contoh"), "");
 });
 
 test("only live items chosen as Use new are sent in replace", () => {

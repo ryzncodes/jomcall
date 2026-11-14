@@ -54,7 +54,7 @@ export function setupQuestions(input: Input): SetupQuestion[] {
           id: "first_words",
           kind: "first_words",
           en: "What should the agent say first when it answers?",
-          ms: "Apa yang agen patut sebut dahulu apabila menjawab?",
+          ms: "Apa yang ejen patut sebut dahulu apabila menjawab?",
           fills: ["settings"],
         },
       ];
@@ -113,13 +113,23 @@ export function setupQuestions(input: Input): SetupQuestion[] {
   return [...head, ...middle, ...tail];
 }
 
+// Required facts not yet filled. A fact key that several active packs
+// require is listed once (staged answers are one row per key): under the pack
+// named in `prefer` when that pack requires it, else the first pack in order.
 export function missingFacts(
-  input: Input,
+  input: Input & { prefer?: ReadonlyMap<string, string> },
 ): { pack: string; key: string; en: string; ms: string }[] {
-  const out: { pack: string; key: string; en: string; ms: string }[] = [];
-  for (const pack of orderedPacks(input))
+  const packs = orderedPacks(input);
+  const owner = new Map<string, string>();
+  for (const pack of packs)
     for (const f of pack.facts)
       if (f.required && !input.filled.has(f.key))
+        if (!owner.has(f.key) || input.prefer?.get(f.key) === pack.id)
+          owner.set(f.key, pack.id);
+  const out: { pack: string; key: string; en: string; ms: string }[] = [];
+  for (const pack of packs)
+    for (const f of pack.facts)
+      if (f.required && owner.get(f.key) === pack.id)
         out.push({ pack: pack.id, key: f.key, en: f.label.en, ms: f.label.ms });
   return out;
 }
