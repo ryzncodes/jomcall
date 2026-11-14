@@ -1137,6 +1137,12 @@ test("a fact key shared by two packs: a skipped frozen question answered through
     assert.equal(rows[0].payload.value, "Deposit 30%");
     assert.equal(rows[0].payload.packId, "reservation-rental");
     assert.equal(rows[0].state, "pending");
+    // So does a skip sent through the other pack's "missing:" id.
+    s = await put(`missing:order:${key}`, { kind: "skip" });
+    rows = s.items.filter((i: any) => i.key === key);
+    assert.equal(rows[0].payload.value, "Deposit 30%");
+    assert.equal(rows[0].payload.packId, "reservation-rental");
+    assert.equal(rows[0].state, "pending");
   } finally {
     await f.close();
   }

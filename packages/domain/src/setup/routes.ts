@@ -675,7 +675,8 @@ export async function setupRoute(
           : null;
         // A "missing:" answer on a key that already has a row keeps that
         // row's pack (when still active), so a frozen question that owns the
-        // row stays answered.
+        // row stays answered. A skip keeps the requested pack, so the skip
+        // rule below never removes another pack's live answer.
         let keepPack: string | undefined;
         if (!question && questionId.startsWith("missing:")) {
           const [, packId, ...rest] = questionId.split(":");
@@ -724,7 +725,8 @@ export async function setupRoute(
           (answer.kind === "skip" && itemKind === "fact")
         ) {
           const packId = question.id.startsWith("missing:")
-            ? (keepPack ?? question.id.split(":")[1]!)
+            ? ((answer.kind === "skip" ? undefined : keepPack) ??
+              question.id.split(":")[1]!)
             : question.id.split(":")[0]!;
           const field = packById(packId)?.facts.find((f) => f.key === itemKey);
           payload = {
