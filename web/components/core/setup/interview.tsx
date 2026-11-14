@@ -13,6 +13,7 @@ import { HOSTED } from "@/lib/hosted";
 import {
   itemFor,
   useAutosave,
+  useLanding,
   useSetup,
   SaveMark,
   SetupNotice,
@@ -152,18 +153,14 @@ export function HoursEditor({
             </label>
             {d.open ? (
               <div className="setup-day-times">
-                <label htmlFor={`${id}-${i}-start`}>
-                  {w("Opens", "Buka")}
-                </label>
+                <label htmlFor={`${id}-${i}-start`}>{w("Opens", "Buka")}</label>
                 <input
                   id={`${id}-${i}-start`}
                   type="time"
                   value={d.start}
                   onChange={(e) => set(i, { start: e.target.value })}
                 />
-                <label htmlFor={`${id}-${i}-end`}>
-                  {w("Closes", "Tutup")}
-                </label>
+                <label htmlFor={`${id}-${i}-end`}>{w("Closes", "Tutup")}</label>
                 <input
                   id={`${id}-${i}-end`}
                   type="time"
@@ -338,7 +335,11 @@ function initialValue(
       },
     };
   const v = (live as { value?: unknown } | null)?.value;
-  return { kind: "fact", text: typeof v === "string" ? v : "" };
+  if (typeof v === "string") return { kind: "fact", text: v };
+  // The name was typed at workspace creation; offer it, editable. It is kept
+  // only if the owner continues, like any answer on screen.
+  const asksName = q.fills.includes("facts.business_name");
+  return { kind: "fact", text: asksName && !live ? name : "" };
 }
 
 function QuestionScreen({
@@ -371,6 +372,7 @@ function QuestionScreen({
     ),
   );
   const [moving, setMoving] = useState(false);
+  const heading = useLanding<HTMLHeadingElement>("question:" + q.id);
   const send = (v: Value) =>
     store.write((expectedRevision) =>
       client.execute("answerSetup", {
@@ -460,7 +462,7 @@ function QuestionScreen({
     >
       {value.kind === "fact" ? (
         <div className="setup-question">
-          <h2 className="setup-ask">
+          <h2 className="setup-ask" ref={heading} tabIndex={-1}>
             <label htmlFor={`${id}-answer`}>{w(q.en, q.ms)}</label>
           </h2>
           <textarea
@@ -483,7 +485,9 @@ function QuestionScreen({
       ) : (
         <fieldset className="setup-question">
           <legend>
-            <h2 className="setup-ask">{w(q.en, q.ms)}</h2>
+            <h2 className="setup-ask" ref={heading} tabIndex={-1}>
+              {w(q.en, q.ms)}
+            </h2>
           </legend>
           {value.kind === "hours" ? (
             <HoursEditor

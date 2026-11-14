@@ -33,7 +33,11 @@ export type PackInfo = {
   name: { en: string; ms: string };
   callPurpose: { en: string; ms: string };
   pairsWith: string[];
-  facts: { key: string; label: { en: string; ms: string }; required: boolean }[];
+  facts: {
+    key: string;
+    label: { en: string; ms: string };
+    required: boolean;
+  }[];
 };
 
 export const packOf = (i: SetupItem) =>
@@ -82,6 +86,7 @@ type Store = {
   flushAll: () => Promise<boolean>;
   revision: () => number;
   flushers: Set<() => Promise<boolean>>;
+  landed: { current: string | null };
   saving: boolean;
   saved: boolean;
   error: unknown;
@@ -129,12 +134,37 @@ export function useAutosave<T>(save: (value: T) => Promise<boolean>) {
   };
 }
 
+// After a stage or question change, bring the flow to the top and move
+// focus to the new heading. The first screen of a visit stays as it loads.
+// `screen` names the screen, so running the effect twice for the same
+// screen (React's development double run) does not move anything.
+export function useLanding<T extends HTMLElement>(screen: string) {
+  const { landed } = useSetup();
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const first = landed.current === null;
+    if (landed.current === screen) return;
+    landed.current = screen;
+    if (first) return;
+    const el = ref.current;
+    el?.closest(".setup-flow, .setup-finish")?.scrollIntoView({
+      block: "start",
+    });
+    el?.focus({ preventScroll: true });
+  }, [landed, screen]);
+  return ref;
+}
+
 export function SaveMark() {
   const { saving, saved } = useSetup(),
     w = useWords();
   return (
     <p className="setup-saved" role="status">
-      {saving ? w("Saving…", "Menyimpan…") : saved ? w("Saved", "Disimpan") : ""}
+      {saving
+        ? w("Saving…", "Menyimpan…")
+        : saved
+          ? w("Saved", "Disimpan")
+          : ""}
     </p>
   );
 }
@@ -171,7 +201,7 @@ export function SetupFlow() {
   return <SetupLoader />;
 }
 
-type Loaded = { view: Setup; packs: PackInfo[]; agentPacks: string[] };
+type Loaded = { view: Setup; packs: PackInfo[] };
 
 function SetupLoader() {
   const { client, workspace } = useCore(),
@@ -188,11 +218,10 @@ function SetupLoader() {
     Promise.all([
       client.execute("setup", { id: agentId }),
       client.execute("packs", {}),
-      client.execute("knowledgeCore", { id: agentId }),
     ])
-      .then(([view, packs, core]) => {
+      .then(([view, packs]) => {
         if (alive) {
-          setData({ view, packs, agentPacks: core.packs });
+          setData({ view, packs });
           setError(undefined);
         }
       })
@@ -237,23 +266,22 @@ function SetupStages({
   const revision = useRef(initial.view.session?.revision ?? 0);
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const [flushers] = useState(() => new Set<() => Promise<boolean>>());
+  const landed = useRef<string | null>(null);
   const [inFlight, setInFlight] = useState(0);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<unknown>();
-  // Stage overrides held for this visit only: changing the business type,
-  // the finish page right after apply (even when an older version is
-  // published), the live page right after publishing, and a "missing" fact
-  // being added. A reload reads the stage from the server again.
-  const [override, setOverride] = useState<
-    "type" | "finish" | "live" | null
-  >(null);
+  // Stage overrides held for this visit only: changing the business type
+  // and the live page right after publishing (the view's `finish` is not
+  // read again). A reload reads the stage from the server again.
+  const [override, setOverride] = useState<"type" | "live" | null>(null);
   const [interviewing, setInterviewing] = useState(false);
   const [interviewKey, setInterviewKey] = useState(0);
   const [adding, setAdding] = useState<SetupQuestionView | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
   // Keep-or-replace choices survive a trip to "Add now" and back.
   const [choices, setChoices] = useState<Record<string, "keep" | "new">>({});
-  const [returnTo, setReturnTo] = useState<"finish" | "live" | null>(null);
+  // Where Back on the business type goes when no session is open.
+  const [returnTo, setReturnTo] = useState<"live" | null | undefined>();
   const [snapshot, setSnapshot] = useState<{
     queue: SetupQuestionView[];
     total: number;
@@ -312,12 +340,12 @@ function SetupStages({
           : interviewing || view.questions.length
             ? "interview"
             : "review"
-        : override === "finish" || override === "live"
-          ? override
-          : published
-            ? "live"
-            : initial.agentPacks.length
-              ? "finish"
+        : override === "live"
+          ? "live"
+          : view.finish
+            ? "finish"
+            : published
+              ? "live"
               : "type";
 
   // Entering the interview freezes this visit's queue, so an answer saved
@@ -338,6 +366,7 @@ function SetupStages({
     flushAll,
     revision: () => revision.current,
     flushers,
+    landed,
     saving: inFlight > 0,
     saved,
     error,
@@ -358,7 +387,7 @@ function SetupStages({
           onCancel={
             view.session
               ? () => setOverride(null)
-              : returnTo
+              : returnTo !== undefined
                 ? () => setOverride(returnTo)
                 : undefined
           }
@@ -396,15 +425,14 @@ function SetupStages({
           onAdd={(q) => setAdding(q)}
           onDismiss={(id) => setDismissed((d) => [...d, id])}
           onApplied={() => {
-            setView({ ...view, session: null, questions: [] });
-            setOverride("finish");
+            setView({ ...view, session: null, questions: [], finish: true });
           }}
         />
       ) : stage === "finish" ? (
         <FinishStage
           onPublished={() => setOverride("live")}
           onRestart={() => {
-            setReturnTo("finish");
+            setReturnTo(null);
             setOverride("type");
           }}
         />

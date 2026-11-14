@@ -7,6 +7,7 @@ import type { SessionDetail } from "../../../../packages/contracts/src/agent-tes
 import { useCore, useWords, Notice } from "../state";
 import { useExperience } from "../../experience";
 import { LocalAgentTest } from "../agent-test";
+import { useLanding } from "./flow";
 
 const completed = (d: SessionDetail) =>
   d.turns.filter((t) => t.state === "completed").map((t) => t.id);
@@ -77,6 +78,7 @@ export function FinishStage({
     w = useWords(),
     { href } = useExperience();
   const tested = useTestedHere();
+  const heading = useLanding<HTMLHeadingElement>("finish");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
   const publish = async () => {
@@ -98,14 +100,17 @@ export function FinishStage({
   };
   return (
     <div className="setup-finish">
-      <p className="setup-saved" role="status">
+      <h1 className="setup-title-small" ref={heading} tabIndex={-1}>
         {w(
           "Your answers are in the draft. Try a call before you publish.",
           "Jawapan anda sudah ada dalam draf. Cuba satu panggilan sebelum menerbitkan.",
         )}
-      </p>
-      <LocalAgentTest />
-      <section className="core-panel setup-publish" aria-labelledby="setup-publish">
+      </h1>
+      <LocalAgentTest heading={false} />
+      <section
+        className="core-panel setup-publish"
+        aria-labelledby="setup-publish"
+      >
         <h2 id="setup-publish">
           {w("Publish when it sounds right", "Terbitkan apabila sudah sesuai")}
         </h2>
@@ -135,11 +140,16 @@ export function FinishStage({
             disabled={!tested || busy}
             onClick={() => void publish()}
           >
-            {busy ? w("Publishing…", "Menerbitkan…") : w("Publish", "Terbitkan")}
+            {busy
+              ? w("Publishing…", "Menerbitkan…")
+              : w("Publish", "Terbitkan")}
           </button>
         </div>
         <button type="button" className="setup-link" onClick={onRestart}>
-          {w("Answer the setup questions again", "Jawab soalan persediaan semula")}
+          {w(
+            "Answer the setup questions again",
+            "Jawab soalan persediaan semula",
+          )}
         </button>
       </section>
     </div>
@@ -149,10 +159,11 @@ export function FinishStage({
 export function LiveStage({ onRestart }: { onRestart: () => void }) {
   const w = useWords(),
     { href } = useExperience();
+  const heading = useLanding<HTMLHeadingElement>("live");
   return (
     <div className="setup-flow">
       <header className="setup-head">
-        <h1 className="setup-title">
+        <h1 className="setup-title" ref={heading} tabIndex={-1}>
           {w(
             "Your agent is live for testing.",
             "Ejen anda sudah aktif untuk ujian.",
@@ -175,7 +186,10 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
           </a>
         </div>
         <button type="button" className="setup-link" onClick={onRestart}>
-          {w("Answer the setup questions again", "Jawab soalan persediaan semula")}
+          {w(
+            "Answer the setup questions again",
+            "Jawab soalan persediaan semula",
+          )}
         </button>
       </div>
     </div>

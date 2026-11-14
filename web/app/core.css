@@ -1367,3 +1367,8 @@
 [data-theme="dark"] .setup-day-open input {
   accent-color: var(--accent);
 }
+/* Headings receive focus after a step change; they are not controls. */
+.setup-flow [tabindex="-1"]:focus,
+.setup-finish [tabindex="-1"]:focus {
+  outline: none;
+}

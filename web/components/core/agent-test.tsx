@@ -26,7 +26,9 @@ const VoiceTest =
   process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
     ? dynamic(() => import("./voice-test"))
     : null;
-export function LocalAgentTest() {
+// `heading={false}` leaves out the page heading, for a page that has its
+// own (the guided setup's finish stage).
+export function LocalAgentTest({ heading = true }: { heading?: boolean }) {
   const { workspace } = useCore(),
     w = useWords();
   if (workspace.role === "staff")
@@ -42,9 +44,9 @@ export function LocalAgentTest() {
         )}
       />
     );
-  return <AgentTestManager />;
+  return <AgentTestManager heading={heading} />;
 }
-function AgentTestManager() {
+function AgentTestManager({ heading }: { heading: boolean }) {
   const { client, workspace, epoch } = useCore(),
     w = useWords(),
     { href } = useExperience(),
@@ -153,25 +155,27 @@ function AgentTestManager() {
   );
   return (
     <>
-      <Heading
-        eyebrow={w(
-          "Agent studio · text and voice test",
-          "Studio ejen · ujian teks dan suara",
-        )}
-        title={w(
-          "A good conversation starts here.",
-          "Perbualan yang baik bermula di sini.",
-        )}
-        description={w(
-          "Ask a question. Follow the sources. Review what your agent would do before it reaches a customer.",
-          "Tanya soalan. Semak sumber. Lihat tindakan ejen sebelum berhubung dengan pelanggan.",
-        )}
-      >
-        <a className="button secondary-button" href={href("/app/agent")}>
-          {w("Edit agent", "Sunting ejen")}
-          <ArrowUpRight size={16} />
-        </a>
-      </Heading>
+      {heading && (
+        <Heading
+          eyebrow={w(
+            "Agent studio · text and voice test",
+            "Studio ejen · ujian teks dan suara",
+          )}
+          title={w(
+            "A good conversation starts here.",
+            "Perbualan yang baik bermula di sini.",
+          )}
+          description={w(
+            "Ask a question. Follow the sources. Review what your agent would do before it reaches a customer.",
+            "Tanya soalan. Semak sumber. Lihat tindakan ejen sebelum berhubung dengan pelanggan.",
+          )}
+        >
+          <a className="button secondary-button" href={href("/app/agent")}>
+            {w("Edit agent", "Sunting ejen")}
+            <ArrowUpRight size={16} />
+          </a>
+        </Heading>
+      )}
       <div className="core-test-mode">
         <span>
           <ChatCircle size={18} />

@@ -7,7 +7,7 @@ import { businessTypes } from "../../../../packages/domain/src/setup/business-ty
 import type { Setup } from "../../../../packages/contracts/src/setup";
 import { useCore, useWords, Notice } from "../state";
 import { HOSTED } from "@/lib/hosted";
-import { BASE_PACK, type PackInfo } from "./flow";
+import { BASE_PACK, useLanding, type PackInfo } from "./flow";
 
 const MAX_EXTRAS = 3;
 
@@ -38,6 +38,7 @@ export function BusinessTypeStage({
   });
   const [extras, setExtras] = useState<string[]>(session?.extraPacks ?? []);
   const [busy, setBusy] = useState(false);
+  const heading = useLanding<HTMLHeadingElement>("type");
   const [error, setError] = useState<unknown>();
   const type = businessTypes.find((t) => t.id === typeId);
   const main = packs.find((p) => p.id === type?.pack);
@@ -56,7 +57,7 @@ export function BusinessTypeStage({
               : "Persediaan berpandu · ruang kerja setempat",
           )}
         </p>
-        <h1 className="setup-title">
+        <h1 className="setup-title" ref={heading} tabIndex={-1}>
           {w("What kind of business is this?", "Apakah jenis perniagaan ini?")}
         </h1>
         <p className="setup-lead">

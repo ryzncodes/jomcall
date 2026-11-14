@@ -127,4 +127,7 @@ export type Setup = {
   questions: SetupQuestionView[];
   missing: { pack: string; key: string; en: string; ms: string }[];
   conflicts: { itemId: string; current: unknown }[];
+  // No open session and the latest one was applied after the published
+  // version (or nothing is published): the owner should test and publish.
+  finish: boolean;
 };

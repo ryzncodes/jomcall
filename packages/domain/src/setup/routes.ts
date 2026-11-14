@@ -162,6 +162,18 @@ export async function setupRoute(
   // The one state the whole interview reads: items, the questions still to
   // ask, required facts still missing, and staged values that would replace
   // something already confirmed on the agent.
+  // Finish: no open session, the most recent session was applied, and it
+  // was applied after the published version (or nothing is published).
+  const finished = async () =>
+    !!(
+      await tx.query(
+        `select 1 from (select state,updated_at from app.setup_session where org_id=$1 and agent_id=$2 order by created_at desc,id desc limit 1) s
+         join app.agent a on a.org_id=$1 and a.id=$2
+         left join app.agent_version v on v.org_id=a.org_id and v.agent_id=a.id and v.id=a.published_version_id
+         where s.state='applied' and (a.published_version_id is null or s.updated_at>v.created_at)`,
+        [ctx.orgId, agentId],
+      )
+    ).rowCount;
   const view = async (): Promise<Setup> => {
     const session = await openSession();
     if (!session)
@@ -171,6 +183,7 @@ export async function setupRoute(
         questions: [],
         missing: [],
         conflicts: [],
+        finish: await finished(),
       };
     const rows = (
       await tx.query(
@@ -200,6 +213,22 @@ export async function setupRoute(
     // Missing: only live items count as filled.
     const filled = new Set<string>(confirmed);
     for (const i of live) if (slot(i)) filled.add(slot(i)!);
+    // A question can name several facts but stores one; every fact in the
+    // fills of an answered frozen question counts as covered.
+    const covered = new Set<string>(filled);
+    for (const id of session.question_ids) {
+      const q = questionById(id);
+      if (q && live.some((i) => owns(q, i)))
+        for (const f of q.fills)
+          if (f.startsWith("facts.")) covered.add(f.slice("facts.".length));
+    }
+    // Hours live in the schedule, not in the opening_hours fact.
+    if (
+      live.some((i) => i.kind === "schedule") ||
+      (await currentFor({ kind: "schedule", key: "schedule", payload: null })) !==
+        undefined
+    )
+      covered.add("opening_hours");
     const input = {
       mainPack: session.main_pack,
       extraPacks: session.extra_packs,
@@ -230,8 +259,9 @@ export async function setupRoute(
         .filter(
           (q): q is SetupQuestion => !!q && !items.some((i) => owns(q, i)),
         ),
-      missing: missingFacts(input),
+      missing: missingFacts({ ...input, filled: covered }),
       conflicts,
+      finish: false,
     };
   };
   const bump = async (sessionId: string) => {

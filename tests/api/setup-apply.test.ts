@@ -520,7 +520,8 @@ test("a failure in one write rolls back all of them", async () => {
     assert.equal(
       (
         await x.q(
-          "select count(*)::int as n from app.setup_item where state='applied'",
+          "select count(*)::int as n from app.setup_item where state='applied' and org_id=$1",
+          [x.f.h.orgA.id],
         )
       ).rows[0].n,
       0,

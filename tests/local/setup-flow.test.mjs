@@ -93,3 +93,15 @@ test("the setup flow stays out of the mock preview and pack data", () => {
       f,
     );
 });
+
+test("staff see the one setup message before anything loads", () => {
+  const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
+  const at = flow.indexOf('workspace.role === "staff"');
+  assert.ok(at >= 0 && at < flow.indexOf("<SetupLoader"), "staff check first");
+  assert.ok(
+    flow.includes("Setup is for owners and admins. Ask one of them to finish it."),
+  );
+  assert.ok(
+    flow.includes("Persediaan untuk pemilik dan pentadbir. Minta mereka melengkapkannya."),
+  );
+});

@@ -847,3 +847,136 @@ test("an open session with no stored questions gets its list on startSetup", asy
     await f.close();
   }
 });
+
+// ---- review page and finish state (browser check fixes) ----
+test("a fact covered by an answered question's fills is not listed as missing", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const q = s.questions.find((x: any) => x.id === "every-business:1");
+    assert.ok(q, "base question 1 is asked");
+    assert.deepEqual(q.fills, ["facts.business_name", "facts.what_we_do"]);
+    assert.ok(s.missing.some((m: any) => m.key === "what_we_do"));
+    const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
+      expectedRevision: s.session.revision,
+      answer: { kind: "fact", text: "Klinik Contoh, rawatan gigi keluarga" },
+    });
+    assert.equal(r.status, 200);
+    const d = await get();
+    assert.ok(!d.missing.some((m: any) => m.key === "business_name"));
+    assert.ok(!d.missing.some((m: any) => m.key === "what_we_do"));
+    // Nothing extra is stored: one item, for the first fact.
+    assert.deepEqual(
+      d.items.map((i: any) => i.key),
+      ["business_name"],
+    );
+    // A skip does not cover the other facts.
+    const skip = await f.req(
+      "PUT",
+      `${path}/answers/${encodeURIComponent(q.id)}`,
+      { expectedRevision: d.session.revision, answer: { kind: "skip" } },
+    );
+    assert.equal(skip.status, 200);
+    assert.ok(skip.body.data.missing.some((m: any) => m.key === "what_we_do"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("opening hours are not missing once the schedule is answered", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    // Start from a location with no saved hours.
+    await f.h.cleanup.query(
+      "update app.location_schedule set weekdays='[[],[],[],[],[],[],[]]' where org_id=$1",
+      [f.h.orgA.id],
+    );
+    const s = (await start()).body.data;
+    assert.ok(s.missing.some((m: any) => m.key === "opening_hours"));
+    const r = await f.req("PUT", `${path}/answers/hours`, {
+      expectedRevision: s.session.revision,
+      answer: answerFor({ kind: "hours" }),
+    });
+    assert.equal(r.status, 200);
+    assert.ok(!r.body.data.missing.some((m: any) => m.key === "opening_hours"));
+    // Skipped hours are missing again.
+    const skip = await f.req("PUT", `${path}/answers/hours`, {
+      expectedRevision: r.body.data.session.revision,
+      answer: { kind: "skip" },
+    });
+    assert.ok(skip.body.data.missing.some((m: any) => m.key === "opening_hours"));
+    // A schedule already saved on the location counts too.
+    await f.h.cleanup.query(
+      `insert into app.location_schedule(org_id,location_id,timezone,weekdays) values($1,$2,'Asia/Kuala_Lumpur',$3)
+       on conflict (org_id,location_id) do update set weekdays=excluded.weekdays`,
+      [f.h.orgA.id, f.h.orgA.locationId, JSON.stringify(weekdaysOf("09:00", "17:00"))],
+    );
+    const fresh = (await f.req("GET", path)).body.data;
+    assert.ok(!fresh.missing.some((m: any) => m.key === "opening_hours"));
+  } finally {
+    await f.close();
+  }
+});
+
+async function answerAll(f: any, path: string) {
+  for (;;) {
+    const st = (await f.req("GET", path)).body.data;
+    const q = st.questions[0];
+    if (!q) return st;
+    const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
+      expectedRevision: st.session.revision,
+      answer: answerFor(q),
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  }
+}
+async function applyAll(f: any, path: string) {
+  const st = await answerAll(f, path);
+  const r = await f.req("POST", `${path}/apply`, {
+    expectedRevision: st.session.revision,
+    replace: st.conflicts.map((c: any) => c.itemId),
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+}
+async function publishDraft(f: any) {
+  const agent = `/agents/${f.h.orgA.agentId}`;
+  const d = (await f.req("GET", `${agent}/draft`)).body.data;
+  const r = await f.req("POST", `${agent}/publish`, {
+    expectedRevision: d.revision,
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+}
+
+test("finish is true after apply and false after publish", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    assert.equal((await get()).finish, false);
+    await start();
+    assert.equal((await get()).finish, false);
+    await applyAll(f, path);
+    const done = await get();
+    assert.equal(done.session, null);
+    assert.equal(done.finish, true);
+    await publishDraft(f);
+    assert.equal((await get()).finish, false);
+  } finally {
+    await f.close();
+  }
+});
+
+test("finish is true again when setup is re-run and applied on a published agent", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    await start();
+    await applyAll(f, path);
+    await publishDraft(f);
+    assert.equal((await get()).finish, false);
+    const again = (await start({ mainPack: "order", extraPacks: [] })).body.data;
+    assert.equal(again.session.state, "open");
+    assert.equal(again.finish, false);
+    await applyAll(f, path);
+    assert.equal((await get()).finish, true);
+  } finally {
+    await f.close();
+  }
+});

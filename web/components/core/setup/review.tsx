@@ -14,6 +14,7 @@ import { HOSTED } from "@/lib/hosted";
 import {
   packOf,
   useAutosave,
+  useLanding,
   useSetup,
   SaveMark,
   SetupNotice,
@@ -71,6 +72,8 @@ export function Review({
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [applyError, setApplyError] = useState<unknown>();
+  const [allMissing, setAllMissing] = useState(false);
+  const heading = useLanding<HTMLHeadingElement>("review");
   const label = (i: SetupItem) => {
     const f = packs
       .find((p) => p.id === packOf(i))
@@ -159,8 +162,7 @@ export function Review({
           "Some future bookings fall outside these hours. Change the hours or move those bookings, then try again.",
           "Ada tempahan akan datang di luar waktu ini. Ubah waktu operasi atau pindahkan tempahan tersebut, kemudian cuba lagi.",
         )
-      : applyError instanceof CoreError &&
-          applyError.code === "KNOWLEDGE_LIMIT"
+      : applyError instanceof CoreError && applyError.code === "KNOWLEDGE_LIMIT"
         ? w(
             "Too many call types would be active on this agent. Remove one on the Agent page, then try again.",
             "Terlalu banyak jenis panggilan akan aktif pada ejen ini. Buang satu di halaman Ejen, kemudian cuba lagi.",
@@ -170,7 +172,7 @@ export function Review({
   return (
     <div className="setup-flow">
       <header className="setup-head">
-        <h1 className="setup-title">
+        <h1 className="setup-title" ref={heading} tabIndex={-1}>
           {w("Here is what I understood", "Ini yang saya faham")}
         </h1>
         <p className="setup-lead">
@@ -187,11 +189,7 @@ export function Review({
             open={editing === hours.id}
             onToggle={() => setEditing(editing === hours.id ? null : hours.id)}
             choice={(next) =>
-              choice(
-                hours,
-                summaryOf(conflictOf(hours)?.current, w),
-                next,
-              )
+              choice(hours, summaryOf(conflictOf(hours)?.current, w), next)
             }
           />
         )}
@@ -234,12 +232,12 @@ export function Review({
             <h2 id="setup-missing">{w("Still missing", "Masih tiada")}</h2>
             <p className="setup-hint">
               {w(
-                "Your agent takes a message when callers ask about these.",
-                "Ejen akan mengambil pesanan apabila pemanggil bertanya tentang perkara ini.",
+                "Optional. You can add these later on the Agent page. Your agent takes a message when callers ask about these.",
+                "Pilihan. Anda boleh menambahnya kemudian di halaman Ejen. Ejen akan mengambil pesanan apabila pemanggil bertanya tentang perkara ini.",
               )}
             </p>
-            <ul className="setup-cards">
-              {missing.map((m) => {
+            <ul className="setup-cards" id="setup-missing-list">
+              {(allMissing ? missing : missing.slice(0, 3)).map((m) => {
                 const id = `missing:${m.pack}:${m.key}`;
                 return (
                   <li key={id} className="setup-card setup-missing">
@@ -272,6 +270,20 @@ export function Review({
                 );
               })}
             </ul>
+            {!allMissing && missing.length > 3 && (
+              <button
+                type="button"
+                className="setup-link"
+                aria-controls="setup-missing-list"
+                aria-expanded={false}
+                onClick={() => setAllMissing(true)}
+              >
+                {w(
+                  `Show all ${missing.length}`,
+                  `Tunjuk semua ${missing.length}`,
+                )}
+              </button>
+            )}
           </section>
         )}
         <SaveMark />
@@ -279,8 +291,7 @@ export function Review({
         {applyError !== undefined && (
           <div className="storage-warning" role="alert">
             {applyMessage ??
-              (applyError instanceof CoreError &&
-              applyError.code === "CONFLICT"
+              (applyError instanceof CoreError && applyError.code === "CONFLICT"
                 ? w(
                     "Setup changed in another window. The latest answers are loaded; check them and try again.",
                     "Persediaan telah berubah di tetingkap lain. Jawapan terkini sudah dimuatkan; semak dan cuba lagi.",
@@ -376,7 +387,8 @@ function HoursCard({
   const timezone =
     workspace.locations.find((l) => l.primary_location)?.timezone ??
     "Asia/Kuala_Lumpur";
-  const stored = item.state === "removed" ? null : hoursFrom(item.payload, timezone);
+  const stored =
+    item.state === "removed" ? null : hoursFrom(item.payload, timezone);
   const [value, setValue] = useState<Hours | null>(stored);
   const edited = useRef(false);
   const auto = useItemSave<Hours>(item, (h) => ({
@@ -458,7 +470,10 @@ function WordsCard({
       <div className="setup-card-row">
         <div>
           <h2 id={`${id}-title`} className="setup-card-label">
-            {w("First words on every call", "Kata-kata pertama setiap panggilan")}
+            {w(
+              "First words on every call",
+              "Kata-kata pertama setiap panggilan",
+            )}
           </h2>
           <p className="setup-card-value">{text}</p>
         </div>
@@ -470,9 +485,10 @@ function WordsCard({
               setValue(null);
             else if (open && value && wordsValid(value)) await auto.flush();
             else if (open && value && !wordsValid(value))
-              setValue(item.state === "removed" ? null : wordsFrom(item.payload));
-            if (!open && !value)
-              setValue({ greeting: "", aiDisclosure: "" });
+              setValue(
+                item.state === "removed" ? null : wordsFrom(item.payload),
+              );
+            if (!open && !value) setValue({ greeting: "", aiDisclosure: "" });
             onToggle();
           }}
         />
