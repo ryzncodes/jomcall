@@ -63,9 +63,11 @@ import { uuid, name, organizationInput, type Role } from "./index.ts";
 import { agentSettings, knowledgeInput, scheduleInput } from "./agent.ts";
 import {
   setupAnswerInput,
+  setupApplyInput,
   setupItemInput,
   setupStart,
   type Setup,
+  type SetupApplyResult,
 } from "./setup.ts";
 import {
   catalogueInput,
@@ -533,6 +535,12 @@ export const commands = {
     "/agents/:id/setup/items/:itemId",
     setupItemInput.extend({ id: uuid, itemId: uuid }),
     out<Setup>(),
+  ),
+  applySetup: route(
+    "POST",
+    "/agents/:id/setup/apply",
+    setupApplyInput.extend({ id: uuid }),
+    out<SetupApplyResult>(),
   ),
   knowledgeGaps: route("GET", "/agents/:id/gaps", id, out<KnowledgeGap[]>()),
   resolveGap: route(

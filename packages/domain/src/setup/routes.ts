@@ -1,6 +1,7 @@
 // Guided setup commands: staged answers in app.setup_session / app.setup_item.
-// Nothing here touches facts, schedules or settings the agent reads; a later
-// task applies the staged items. Owners and admins only.
+// Every command but applySetup leaves facts, schedules and settings alone;
+// applySetup writes the confirmed items in one transaction and never
+// publishes. Owners and admins only.
 import type { PoolClient } from "pg";
 import {
   AppError,
@@ -9,15 +10,21 @@ import {
 } from "../../../contracts/src/index.ts";
 import {
   setupAnswerInput,
+  setupApplyInput,
   setupFactPayload,
   setupItemInput,
   setupSchedulePayload,
   setupSettingsPayload,
   setupStart,
   type Setup,
+  type SetupApplyResult,
 } from "../../../contracts/src/setup.ts";
+import { factInput } from "../../../contracts/src/knowledge.ts";
 import { audit, command } from "../../../db/src/receipts.ts";
 import { manager } from "../authorization.ts";
+import { savePackFact } from "../knowledge/routes.ts";
+import { enforceCoreLimits } from "../knowledge/snapshot.ts";
+import { writeSchedule } from "../workspace.ts";
 import { basePack, packById, packIds } from "../packs/index.ts";
 import {
   factKeyOf,
@@ -60,13 +67,15 @@ export async function setupRoute(
   key: string,
 ) {
   const m = path.match(
-    /^\/agents\/([^/]+)\/setup(?:\/(answers|items)\/([^/]+))?$/,
+    /^\/agents\/([^/]+)\/setup(?:\/(answers|items)\/([^/]+)|\/(apply))?$/,
   );
   if (!m) return;
-  const isRoot = !m[2];
+  const isApply = !!m[4];
+  const isRoot = !m[2] && !isApply;
   const ok =
     (isRoot && ["GET", "POST"].includes(method)) ||
-    (!isRoot && method === "PUT");
+    (isApply && method === "POST") ||
+    (!isRoot && !isApply && method === "PUT");
   if (!ok) return;
   manager(ctx);
   const agentId = uuid.parse(m[1]);
@@ -80,7 +89,7 @@ export async function setupRoute(
   const agent = async () => {
     const row = (
       await tx.query(
-        "select id,draft from app.agent where org_id=$1 and id=$2 for update",
+        "select id,draft,revision,location_id,packs from app.agent where org_id=$1 and id=$2 for update",
         [ctx.orgId, agentId],
       )
     ).rows[0];
@@ -103,6 +112,52 @@ export async function setupRoute(
           revision: number;
         }
       | undefined;
+
+  // What an item would replace: the confirmed value already on the agent, or
+  // undefined when the target is empty. The review page's conflicts and
+  // applySetup's "kept unless named in replace" both read this.
+  const currentFor = async (i: {
+    kind: string;
+    key: string;
+    payload: unknown;
+  }): Promise<unknown> => {
+    if (i.kind === "fact") {
+      const packId = (i.payload as { packId?: unknown } | null)?.packId;
+      const hit = (
+        await tx.query(
+          "select value from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key=$3 and ($4::text is null or pack_id=$4) limit 1",
+          [ctx.orgId, agentId, i.key, typeof packId === "string" ? packId : null],
+        )
+      ).rows[0];
+      return hit ? hit.value : undefined;
+    }
+    if (i.kind === "schedule") {
+      // The agent's own location, as saved by the schedule screen. A fresh
+      // workspace has no row, or seven empty days: no conflict.
+      const hit = (
+        await tx.query(
+          `select s.timezone,s.weekdays from app.agent a join app.location_schedule s on s.org_id=a.org_id and s.location_id=a.location_id
+           where a.org_id=$1 and a.id=$2`,
+          [ctx.orgId, agentId],
+        )
+      ).rows[0];
+      return hit && (hit.weekdays as unknown[][]).some((d) => d.length)
+        ? { timezone: hit.timezone, weekdays: hit.weekdays }
+        : undefined;
+    }
+    if (i.kind === "settings") {
+      const draft = (
+        await tx.query("select draft from app.agent where org_id=$1 and id=$2", [
+          ctx.orgId,
+          agentId,
+        ])
+      ).rows[0]?.draft as { greeting?: string; aiDisclosure?: string } | undefined;
+      return draft?.greeting?.trim() || draft?.aiDisclosure?.trim()
+        ? { greeting: draft.greeting ?? "", aiDisclosure: draft.aiDisclosure ?? "" }
+        : undefined;
+    }
+    return undefined;
+  };
 
   // The one state the whole interview reads: items, the questions still to
   // ask, required facts still missing, and staged values that would replace
@@ -156,53 +211,8 @@ export async function setupRoute(
       ["pending", "confirmed"].includes(i.state),
     );
     for (const i of pending) {
-      if (i.kind === "fact") {
-        const packId = (i.payload as { packId?: unknown } | null)?.packId;
-        const hit = (
-          await tx.query(
-            "select value from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key=$3 and ($4::text is null or pack_id=$4) limit 1",
-            [
-              ctx.orgId,
-              agentId,
-              i.key,
-              typeof packId === "string" ? packId : null,
-            ],
-          )
-        ).rows[0];
-        if (hit) conflicts.push({ itemId: i.id, current: hit.value });
-      } else if (i.kind === "schedule") {
-        // The agent's own location, as saved by the schedule screen. A fresh
-        // workspace has no row, or seven empty days: no conflict.
-        const hit = (
-          await tx.query(
-            `select s.timezone,s.weekdays from app.agent a join app.location_schedule s on s.org_id=a.org_id and s.location_id=a.location_id
-             where a.org_id=$1 and a.id=$2`,
-            [ctx.orgId, agentId],
-          )
-        ).rows[0];
-        if (hit && (hit.weekdays as unknown[][]).some((d) => d.length))
-          conflicts.push({
-            itemId: i.id,
-            current: { timezone: hit.timezone, weekdays: hit.weekdays },
-          });
-      } else if (i.kind === "settings") {
-        const draft = (
-          await tx.query(
-            "select draft from app.agent where org_id=$1 and id=$2",
-            [ctx.orgId, agentId],
-          )
-        ).rows[0]?.draft as
-          | { greeting?: string; aiDisclosure?: string }
-          | undefined;
-        if (draft?.greeting?.trim() || draft?.aiDisclosure?.trim())
-          conflicts.push({
-            itemId: i.id,
-            current: {
-              greeting: draft.greeting ?? "",
-              aiDisclosure: draft.aiDisclosure ?? "",
-            },
-          });
-      }
+      const current = await currentFor(i);
+      if (current !== undefined) conflicts.push({ itemId: i.id, current });
     }
     return {
       session: {
@@ -372,6 +382,156 @@ export async function setupRoute(
         return { ref: { id: agentId }, data: await view() };
       },
       async () => view(),
+    );
+  }
+
+  if (isApply) {
+    const v = setupApplyInput.parse(body);
+    const out = (r: SetupApplyResult) => ({
+      ref: { id: agentId, ...r },
+      data: r,
+    });
+    return command(
+      tx,
+      ctx,
+      key,
+      "setup.apply",
+      { agentId, ...v },
+      async () => {
+        // The agent row lock comes first, as in every other setup command, so
+        // two applies queue and the second finds the session already applied.
+        const a = await agent();
+        const session = await openSession(true);
+        if (!session) {
+          const done = await tx.query(
+            "select 1 from app.setup_session where org_id=$1 and agent_id=$2 and state='applied' limit 1",
+            [ctx.orgId, agentId],
+          );
+          if (!done.rowCount) throw new AppError("NOT_FOUND", 404);
+          return out({ agentRevision: a.revision, applied: 0, skipped: [] });
+        }
+        if (session.revision !== v.expectedRevision)
+          throw new AppError("CONFLICT", 409);
+        const replace = new Set(v.replace);
+        const skipped: SetupApplyResult["skipped"] = [];
+        const written: string[] = [];
+        const items = (
+          await tx.query(
+            `select ${itemColumns} from app.setup_item where org_id=$1 and session_id=$2 and state<>'applied' order by created_at,id for update`,
+            [ctx.orgId, session.id],
+          )
+        ).rows;
+
+        // Decide every item before writing anything.
+        const plan: typeof items = [];
+        let blocked = false;
+        for (const i of items) {
+          if (i.state === "removed") {
+            skipped.push({ itemId: i.id, reason: "removed" });
+          } else if (
+            i.kind === "catalogue_row" ||
+            (i.needs_check && i.state === "pending")
+          ) {
+            skipped.push({ itemId: i.id, reason: "unconfirmed" });
+            if (i.kind !== "catalogue_row") blocked = true;
+          } else if (
+            (await currentFor(i)) !== undefined &&
+            !replace.has(i.id)
+          ) {
+            skipped.push({ itemId: i.id, reason: "conflict" });
+            blocked = true;
+          } else plan.push(i);
+        }
+
+        // Packs: the session's main and extra packs; the base pack stays
+        // active on its own.
+        const packs = [session.main_pack, ...session.extra_packs];
+        if (packs.some((p) => !packIds.includes(p)))
+          throw new AppError("UNKNOWN_PACK", 422);
+        const packsChanged = packs.join() !== (a.packs as string[]).join();
+        if (packsChanged)
+          await tx.query("update app.agent set packs=$1 where id=$2", [
+            packs,
+            agentId,
+          ]);
+
+        let draft = a.draft as Record<string, unknown>;
+        for (const i of plan) {
+          if (i.kind === "fact") {
+            const p = i.payload as Record<string, unknown>;
+            const f = factInput.parse({
+              expectedAgentRevision: 1,
+              packId: p.packId,
+              fieldKey: p.fieldKey,
+              title: p.title,
+              value: p.value,
+              language: p.language,
+            });
+            if (
+              !f.packId ||
+              !f.fieldKey ||
+              !packById(f.packId)?.facts.some((x) => x.key === f.fieldKey)
+            )
+              throw new AppError("UNKNOWN_FIELD", 422);
+            await savePackFact(
+              tx,
+              ctx.orgId,
+              agentId,
+              { ...f, packId: f.packId, fieldKey: f.fieldKey },
+              "interview",
+            );
+          } else if (i.kind === "schedule") {
+            const h = setupSchedulePayload.parse(i.payload);
+            await writeSchedule(tx, ctx, a.location_id, h, null);
+          } else if (i.kind === "settings") {
+            const w = setupSettingsPayload.parse(i.payload);
+            draft = {
+              ...draft,
+              greeting: w.greeting,
+              aiDisclosure: w.aiDisclosure,
+            };
+            await tx.query("update app.agent set draft=$1 where id=$2", [
+              draft,
+              agentId,
+            ]);
+          }
+          written.push(i.id);
+        }
+        if (written.length)
+          await tx.query(
+            "update app.setup_item set state='applied',updated_at=now() where org_id=$1 and id=any($2::uuid[])",
+            [ctx.orgId, written],
+          );
+        // The session closes unless an owner decision is still open.
+        if (!blocked)
+          await tx.query(
+            "update app.setup_session set state='applied',revision=revision+1,updated_at=now() where id=$1",
+            [session.id],
+          );
+        else if (written.length) await bump(session.id);
+
+        let agentRevision = a.revision as number;
+        if (written.length || packsChanged) {
+          await enforceCoreLimits(tx, ctx.orgId, agentId);
+          agentRevision = (
+            await tx.query(
+              "update app.agent set revision=revision+1,updated_at=now() where id=$1 returning revision",
+              [agentId],
+            )
+          ).rows[0].revision;
+        }
+        await audit(tx, ctx, "setup.apply", "agent", agentId, {
+          applied: written.length,
+          skipped: skipped.length,
+        });
+        return out({ agentRevision, applied: written.length, skipped });
+      },
+      async (ref) =>
+        ({
+          agentRevision: ref.agentRevision,
+          applied: ref.applied,
+          skipped: ref.skipped,
+        }) as SetupApplyResult,
     );
   }
 

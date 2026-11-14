@@ -20,6 +20,24 @@ import { catalogueSearchText, lookupKeys } from "./text.ts";
 
 const SHOWN_ROWS = 500;
 
+// One row per pack field: saving a field again replaces its value. `source`
+// is stored on insert (default 'owner') and, when given, on replace; when
+// omitted a replace keeps the row's source.
+export async function savePackFact(
+  tx: PoolClient,
+  orgId: string,
+  agentId: string,
+  v: { packId: string; fieldKey: string; title: string; value: unknown; language: string },
+  source: "owner" | "interview" | null = null,
+) {
+  await tx.query(
+    `insert into app.knowledge_fact(org_id,agent_id,pack_id,field_key,title,value,language,source)values($1,$2,$3,$4,$5,$6,$7,coalesce($8::text,'owner'))
+     on conflict(org_id,agent_id,pack_id,field_key)where field_key is not null
+     do update set title=excluded.title,value=excluded.value,language=excluded.language,status='confirmed',source=coalesce($8::text,app.knowledge_fact.source),revision=app.knowledge_fact.revision+1,updated_at=now()`,
+    [orgId, agentId, v.packId, v.fieldKey, v.title, JSON.stringify(v.value), v.language, source],
+  );
+}
+
 export async function knowledgeRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -185,13 +203,7 @@ export async function knowledgeRoute(
           );
           if (!r.rowCount) throw new AppError("NOT_FOUND", 404);
         } else if (v.packId)
-          // One row per pack field: saving a field again replaces its value.
-          await tx.query(
-            `insert into app.knowledge_fact(org_id,agent_id,pack_id,field_key,title,value,language)values($1,$2,$3,$4,$5,$6,$7)
-             on conflict(org_id,agent_id,pack_id,field_key)where field_key is not null
-             do update set title=excluded.title,value=excluded.value,language=excluded.language,status='confirmed',revision=app.knowledge_fact.revision+1,updated_at=now()`,
-            [ctx.orgId, agentId, v.packId, v.fieldKey, v.title, JSON.stringify(v.value), v.language],
-          );
+          await savePackFact(tx, ctx.orgId, agentId, { ...v, packId: v.packId, fieldKey: v.fieldKey! });
         else
           await tx.query(
             "insert into app.knowledge_fact(org_id,agent_id,title,value,language)values($1,$2,$3,$4,$5)",

@@ -81,6 +81,23 @@ export const setupItemInput = z
   })
   .strict();
 
+export const setupApplyInput = z
+  .object({
+    expectedRevision: z.number().int().positive(),
+    // Item ids the owner agrees may replace an existing confirmed value.
+    replace: z.array(z.uuid()).max(100),
+  })
+  .strict();
+
+export type SetupApplyResult = {
+  agentRevision: number;
+  applied: number;
+  skipped: {
+    itemId: string;
+    reason: "conflict" | "removed" | "unconfirmed";
+  }[];
+};
+
 export type SetupItem = {
   id: string;
   kind: "fact" | "schedule" | "settings" | "catalogue_row";
