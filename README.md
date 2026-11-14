@@ -134,12 +134,16 @@ Stop the matching dev server first. The two builds use separate output folders, 
 
 ```sh
 npm run typecheck
+npm run test:guards           # local-stack guard tests, no database
+npm run test:offline          # domain and inference tests that need no database
 npm run check:phase2          # core, API, database, engine and inference tests
 npm run db:verify-migrations  # replays migrations into a fresh scratch database
 npm run build:mock
 npm run build:local
 npm run contracts:generate
 ```
+
+Continuous integration (`.github/workflows/ci.yml`) runs on pull requests and on `main`. It runs only the checks that need no database: `npm run typecheck`, `npm run test:guards`, `npm run test:offline` and the Python voice tests (`cd voice && uv sync --frozen && uv run pytest`). It does not run the API, database and engine tests or the migration replay, because they need the local Supabase stack; run `npm run check:phase2` and `npm run db:verify-migrations` on your machine before merging. Two tests in `tests/engine/voice-server.test.ts` start a real agent process on port 54633 and are skipped, with a message, when that port is busy.
 
 Tests create fake users and organizations in this project's local database and use separate queue names. Migration replay uses a new scratch database and never resets your workspace. `npm run check:local-model` runs the 48-case model evaluation; it needs the local model running and currently fails by design until the model improves.
 

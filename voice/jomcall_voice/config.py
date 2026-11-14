@@ -80,5 +80,14 @@ def env(name: str) -> str:
     return value
 
 
+# Read by the worker only: Deepgram hears, Google speaks.
+SPEECH_KEYS = ("DEEPGRAM_API_KEY", "GOOGLE_CLOUD_API_KEY")
+
+
+def missing_keys() -> list[str]:
+    """Names (never values) of the speech keys that are unset or blank."""
+    return [name for name in SPEECH_KEYS if not os.environ.get(name, "").strip()]
+
+
 def turn_url() -> str:
     return os.environ.get("JOMCALL_VOICE_TURN_URL", "").strip() or DEFAULT_TURN_URL

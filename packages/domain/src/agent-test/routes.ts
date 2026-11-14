@@ -2,7 +2,7 @@ import {
   getReadiness as getModelReadiness,
   voiceReadiness,
 } from "../../../inference/src/provider.ts";
-import { startVoiceTest } from "./voice-session.ts";
+import { startVoiceTest, type VoiceRooms } from "./voice-session.ts";
 import { submitTurn, controlTurn } from "./turns.ts";
 import { applyBookingProposal } from "./proposals.ts";
 import type { PoolClient } from "pg";
@@ -17,6 +17,9 @@ import {
   publicSession,
 } from "./sessions.ts";
 import { buildKnowledgeIndex, searchKnowledge } from "./knowledge.ts";
+// Collaborators outside the database that a caller may replace. Left out, the
+// real one is built from configuration.
+export type AgentTestDeps = { voiceRooms?: VoiceRooms };
 export async function agentTestRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -25,6 +28,7 @@ export async function agentTestRoute(
   body: unknown,
   key: string,
   query: URLSearchParams,
+  deps: AgentTestDeps = {},
 ) {
   if (path === "/agent-tests/readiness" && method === "GET") {
     manager(ctx);
@@ -32,7 +36,7 @@ export async function agentTestRoute(
   }
   const voice = path.match(/^\/agent-tests\/([^/]+)\/voice$/);
   if (voice && method === "POST")
-    return startVoiceTest(tx, ctx, uuid.parse(voice[1]), body);
+    return startVoiceTest(tx, ctx, uuid.parse(voice[1]), body, deps.voiceRooms);
   const turn = path.match(
     /^\/agent-tests\/([^/]+)\/turns(?:\/([^/]+)\/(cancel|retry))?$/,
   );

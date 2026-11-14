@@ -5,7 +5,6 @@ import pg from "pg";
 import { TokenVerifier } from "livekit-server-sdk";
 import { createPhase2Harness } from "../helpers/phase2.ts";
 import {
-  setVoiceRooms,
   VOICE_PRESETS,
   type VoiceRooms,
 } from "../../packages/domain/src/agent-test/voice-session.ts";
@@ -34,7 +33,6 @@ const ENV_KEYS = [
   "LIVEKIT_API_SECRET",
 ];
 async function voiceFixture(over: Record<string, unknown> = {}) {
-  const f = await createPhase2Harness();
   const saved = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
   const calls: { room: string; agentName: string; metadata: string }[] = [];
   const rooms: VoiceRooms = {
@@ -42,7 +40,8 @@ async function voiceFixture(over: Record<string, unknown> = {}) {
       calls.push(call);
     },
   };
-  setVoiceRooms(rooms);
+  // The fake reaches the route as a dependency; no LiveKit server is needed.
+  const f = await createPhase2Harness({ agentTest: { voiceRooms: rooms } });
   Object.assign(process.env, {
     JOMCALL_VOICE_PROVIDER: "hosted",
     LIVEKIT_URL: "ws://127.0.0.1:54630",
@@ -77,7 +76,6 @@ async function voiceFixture(over: Record<string, unknown> = {}) {
     start,
     row,
     close: async () => {
-      setVoiceRooms(null);
       for (const k of ENV_KEYS)
         if (saved[k] === undefined) delete process.env[k];
         else process.env[k] = saved[k];
@@ -101,6 +99,9 @@ test("owner starts a voice test: room-only token, hashed one-call token, 300 s e
     assert.equal(claims.video?.roomAdmin, undefined);
     assert.equal(claims.video?.roomCreate, undefined);
     assert.equal(claims.video?.canPublish, true);
+    assert.equal(claims.video?.canSubscribe, true);
+    // The browser sends audio only: no data messages into the room.
+    assert.equal(claims.video?.canPublishData, false);
     await assert.rejects(
       new TokenVerifier(KEY, "x".repeat(48)).verify(data.token),
     );

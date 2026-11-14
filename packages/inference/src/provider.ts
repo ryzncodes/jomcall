@@ -105,6 +105,18 @@ export function voiceReadiness(env: Env = process.env): VoiceReadiness {
   return { configured: config !== null, reason };
 }
 
+// What the agent process serves. An unset or empty switch means disabled. The
+// spoken path calls Anthropic directly, so hosted voice without the key would
+// fail on every turn: refuse at start instead. Never echoes a value.
+export function agentVoiceProvider(env: Env = process.env) {
+  const provider = env.JOMCALL_VOICE_PROVIDER || "disabled";
+  if (provider !== "disabled" && provider !== "hosted")
+    throw Error("VOICE_PROVIDER_INVALID");
+  if (provider === "hosted" && !env.ANTHROPIC_API_KEY?.trim())
+    throw Error("VOICE_MODEL_KEY_MISSING");
+  return provider;
+}
+
 export async function createModelClient(
   config: ProviderConfig,
   env: Env = process.env,

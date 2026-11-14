@@ -36,15 +36,6 @@ export type VoiceRooms = {
   }): Promise<void>;
 };
 
-// Held on globalThis because the test runner can load this module twice
-// (once for the test file, once through the web handler).
-const slot = Symbol.for("jomcall.voiceRooms");
-const holder = globalThis as { [slot]?: VoiceRooms | null };
-// Tests swap in a fake so no LiveKit server is needed. Pass null to restore.
-export function setVoiceRooms(rooms: VoiceRooms | null) {
-  holder[slot] = rooms;
-}
-
 function liveKitRooms(url: string, key: string, secret: string): VoiceRooms {
   const host = url.replace(/^ws/, "http");
   return {
@@ -68,6 +59,8 @@ export async function startVoiceTest(
   ctx: TenantContext,
   sessionId: string,
   body: unknown,
+  // Injected by the route; the LiveKit client is built when none is given.
+  rooms?: VoiceRooms,
 ): Promise<VoiceStartResult> {
   manager(ctx);
   const v = voiceStart.parse(body);
@@ -101,7 +94,7 @@ export async function startVoiceTest(
   ).rows[0].voice_expires_at as Date;
   // A failure here rolls the transaction back, so the old token stays valid.
   await (
-    holder[slot] ?? liveKitRooms(config.url, config.apiKey, config.apiSecret)
+    rooms ?? liveKitRooms(config.url, config.apiKey, config.apiSecret)
   ).start({
     room,
     agentName: VOICE_AGENT_NAME,
@@ -123,6 +116,8 @@ export async function startVoiceTest(
     room,
     canPublish: true,
     canSubscribe: true,
+    // Audio only: the browser has no reason to send data into the room.
+    canPublishData: false,
   });
   return {
     url: config.url,
