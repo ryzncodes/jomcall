@@ -254,3 +254,23 @@ test("refunds and adjustments need a reason and cannot exceed what is left", asy
     await close();
   }
 });
+
+test("a fake top-up, callback and reconcile reach only loopback addresses", async () => {
+  const hosts = new Set<string>(),
+    original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    hosts.add(new URL(typeof input === "string" ? input : input instanceof URL ? input : input.url).hostname);
+    return original(input, init);
+  }) as typeof fetch;
+  const { h, api, close } = await setup();
+  try {
+    const t = (await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 2000 })).body.data;
+    await api.post("/api/billing/webhook/fake", fakeCallback({ id: t.provider_ref, amountSen: 2000, paid: true }), form);
+    assert.equal((await api.request(h.alice, h.orgA.id, "POST", `/api/v1/billing/topups/${t.id}/reconcile`, {})).body.data.state, "paid");
+    assert.ok(hosts.size > 0);
+    for (const host of hosts) assert.ok(["127.0.0.1", "::1", "localhost"].includes(host), host);
+  } finally {
+    globalThis.fetch = original;
+    await close();
+  }
+});
