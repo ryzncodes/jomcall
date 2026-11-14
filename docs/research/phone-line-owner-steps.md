@@ -32,7 +32,7 @@ Pick a SIP trunk provider that sells Malaysian (+60) numbers and supports SIP RE
 ## 2. Add the number in JomCall
 
 1. Publish the agent (Agent builder → Publish). An unpublished agent refuses calls.
-2. Local app (port 4182) → Phone numbers → Add number. Enter the number in E.164, pick the location, and optionally a staff number for transfers (used during opening hours only).
+2. The app (local: port 4182; hosted: this environment's origin) → Phone numbers → Add number. Enter the number in E.164, pick the location, and optionally a staff number for transfers (used during opening hours only).
 3. Check the screen says **Not connected**. That is correct until step 4.
 
 ## 3. Generate and apply the LiveKit trunk and dispatch rule
@@ -70,11 +70,13 @@ Put these in the git-ignored env files read by the agent process, the voice work
 | `JOMCALL_SIP_TRANSFER_URI` | Optional. Default `tel:{e164}`. For Plivo: `sip:{e164}@<trunk-id>.zt.plivo.com`. | agent process |
 | `JOMCALL_MAX_CONCURRENT_CALLS` | Optional. Default `1` (Google speech is limited to about 11 requests a minute). | agent process |
 | `JOMCALL_CALL_CAP_SECONDS` | Optional. Default `600`. | agent process |
-| `JOMCALL_PHONE_URL` | Optional. Default `http://127.0.0.1:54635` (the agent's loopback phone listener). | voice worker |
+| `JOMCALL_PHONE_URL` | Local mode: optional, default `http://127.0.0.1:54635`. Hosted mode: required; Compose sets `http://172.30.0.10:54635`. | voice worker |
 
 Restart the agent process, the voice worker and the web app. The phone numbers screen should now say **Phone line connected**.
 
 Before a call, run `npm run voice:prewarm` once for the `Kore` preset and once for the agent's own voice, so the busy line and fillers are cached (it sends fixed text to Google and is rate limited). A refused caller hears the busy line in `Kore`, because a refusal comes before the agent's settings are read; if it is not cached, the caller hears nothing before the hang-up.
+
+On the hosted deployment (`infra/hosted/`), follow `infra/hosted/RUNBOOK.md` step 11 instead of editing local env files: the same values go into Vercel and `agent.env`, and the phone endpoint uses the same private bind and `JOMCALL_VOICE_SERVICE_SECRET` as the browser voice endpoint.
 
 ## 5. Forwarding an existing business number (optional)
 

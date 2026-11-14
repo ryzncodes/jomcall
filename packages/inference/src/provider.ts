@@ -1,3 +1,4 @@
+import { liveKitUrlProblem } from "../../contracts/src/hosting.ts";
 import type {
   Readiness,
   VoiceReadiness,
@@ -88,6 +89,9 @@ export function voiceConfig(
   if (env.JOMCALL_VOICE_PROVIDER !== "hosted")
     missing.push("JOMCALL_VOICE_PROVIDER=hosted");
   for (const name of livekitNames) if (!env[name]) missing.push(name);
+  // Hosted mode: the browser is given this address, so it must be wss.
+  if (env.LIVEKIT_URL && liveKitUrlProblem(env))
+    missing.push("LIVEKIT_URL (wss)");
   if (missing.length)
     return { config: null, reason: "Voice needs " + missing.join(", ") };
   return {

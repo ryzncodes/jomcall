@@ -6,18 +6,58 @@ Branch `feat/phone-line`, pull request #12 against `main`; not merged.
 
 **Changed**
 - Design: `docs/superpowers/specs/2026-11-14-phone-line-design.md` (ten open decisions, each built to its recommendation). Owner steps: `docs/research/phone-line-owner-steps.md`.
-- Migration `20261114180000_phone_calls.sql`: `phone_number`, `call`, `call_turn`, `call_tool_step`, `call_proposal`, `organization.calls_suspended_at`, function `app_private.agent_call`.
+- Migration `20261114190000_phone_calls.sql`: `phone_number`, `call`, `call_turn`, `call_tool_step`, `call_proposal`, `organization.calls_suspended_at`, function `app_private.agent_call`.
 - Engine: `engine/src/agent/phone-call.ts`, `phone-server.ts` (loopback 54635), `call-repository.ts`; `voice-turn.ts` takes an optional policy (browser path unchanged).
 - Worker: `voice/jomcall_voice/phone.py`, phone branch in `worker.py`, `cap_s`/`on_opened` on `Call`, `path`/`id_field` on the brain client, busy line in `fillers.py`. Simulator `voice/tools/phone_sim.py`.
 - Web (local app only): commands `phoneNumbers`, `createPhoneNumber`, `updatePhoneNumber`, `calls`, `call`; screens in `web/components/core/phone.tsx`. `/calls` and `/phone-numbers` are no longer in the disabled list.
 
 **Verified** (2026-11-14, this machine): `typecheck` clean; `test:guards` 20/20; `check:core` 212 tests, 210 pass, 0 fail, 2 skipped (port 54633 busy: another agent process was running); the browser voice API and engine tests pass by name; `uv run pytest` 243 passed (`tests/test_call.py` unchanged); `db:verify-migrations` passed.
 
+**Merged with hosted mode (#16)**: migration renamed to `20261114190000_phone_calls.sql` (version clash with `20261114180000_hosted_namespaces.sql`) and its namespace check accepts `staging` and `prod`; the phone listener takes the voice endpoint's bind, mode and service secret; `CallRepository` uses `queueNamespace()`; the worker's phone client sends the service key and validates `JOMCALL_PHONE_URL` like the turn URL; telephony settings added to `hosted-env.ts`, the example, Compose (`JOMCALL_PHONE_URL` for voice) and RUNBOOK step 11. The SIP service is not in Compose (LiveKit Cloud recommended first).
+
 **Not verified / open**
 - No carrier, number, trunk or live LiveKit SIP service was used; the LiveKit telephony code is checked against types and documentation only.
 - The simulator was never run. The screens were not opened in a browser.
 - Phone rules not gated on the 48 cases. PDPA export does not include calls yet.
 - The shared local database has the phone migration applied directly with psql (no `schema_migrations` row) because the WhatsApp and billing branches' versions are in it; see the shared notes file `phone-line-notes.md`.
+
+## 2026-11-14 — Cloudflare email, Turnstile and R2 backups
+
+Branch `feat/hosted-mode` (same pull request, not merged).
+
+**Changed**
+- `engine/src/mail.ts`: `MailSender` interface; `SmtpSender` (Mailpit / SMTP), `CloudflareSender` (REST, `fetch`), `FakeSender`. Engine uses `createMailSender()`. Guards `mailProvider`, `cloudflareMailSettings` in `hosting.ts`.
+- Turnstile: `turnstileSettings` (hosting.ts), `verifyTurnstile` (`packages/contracts/src/turnstile.ts`), check in `web/lib/server/auth.ts` for login and signup, widget `web/components/core/turnstile.tsx`, site key passed from login/signup pages at runtime. Local body schema unchanged.
+- Backup: `scripts/hosted/backup.ts` + `s3.ts` (`npm run hosted:backup`, `--decrypt`). AES-256-GCM, SigV4 create-only PUT, single PUT up to 4 GiB.
+- Settings catalogue and `.env.hosted.example` (new service `backup`); RUNBOOK section C and backup step; design amendment.
+
+**Verified (offline)**
+- typecheck; test:guards 20/20; test:offline 170; check:core 261 pass, 2 skipped; build:hosted, build:local, build:mock. SigV4 matches AWS's published example; upload tested against a local fake S3 server.
+
+**Not verified / open**
+- Nothing contacted Cloudflare. Email Sending is beta (Workers Paid, small starting quota). Supabase SMTP on 465, pg_dump permissions as `postgres`, and the backup on a real bucket are unverified.
+
+## 2026-11-14 — hosted mode and deploy kit
+
+Branch `feat/hosted-mode` (pushed, pull request against `main`, not merged).
+
+**Changed**
+- `packages/contracts/src/hosting.ts`: third mode `hosted` and all its guards (origins, database TLS and host list, namespace, cookies, SMTP, voice bind and service secret, LiveKit wss). Used by web (`web/lib/server/*`), `packages/db`, engine, agent, voice turn endpoint. `requireLocal`/`localConfig` became `requireApp`/`appConfig`.
+- Voice worker (`voice/jomcall_voice/config.py`, `brain_client.py`): local mode refuses a non-loopback turn URL; hosted mode needs an explicit URL and sends `x-jomcall-service-key`. `JOMCALL_VOICE_CACHE_DIR` override.
+- Migration `20261114180000_hosted_namespaces.sql` (rewrites the three namespace checks from their live bodies). Not applied to the shared local database.
+- Health: `/api/health` (web), loopback `/health` on 54635 (engine) and 54636 (agent) in hosted mode, `/voice/health` checks the database in hosted mode.
+- `packages/contracts/src/hosted-env.ts` + `npm run hosted:readiness`; `npm run hosted:migrate`; `infra/hosted/` kit and `RUNBOOK.md`; `web/vercel.json` pinned to `sin1`.
+
+**Verified**
+- `npm run typecheck`; `npm run test:guards` 20/20; `npm run check:core` 239 pass, 2 skipped; `npm run test:offline` 148 pass; `cd voice && uv run pytest` 260 pass; `npm run db:verify-migrations`; `npm run build:mock`, `build:local`, `build:hosted`.
+- `docker build` of both images (not pushed); offline container checks (non-root, no env files, entrypoints fail closed); `docker compose config` with empty env files.
+
+**Not verified**
+- Anything against real Vercel, Supabase, DigitalOcean, LiveKit or email. Every [UNVERIFIED] line in `infra/hosted/RUNBOOK.md`.
+
+**Next**
+- Owner reviews the PR and the runbook's owner checklist; then runbook steps 1 to 10, each with explicit approval.
+- Before launch: login rate limit in Postgres, hosted auth-grants fallback if step 2b fails, concurrency limit, Deepgram opt-out.
 
 ## 2026-11-14 — pre-launch fixes from the voice branch review
 

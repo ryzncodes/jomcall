@@ -268,3 +268,38 @@ async def test_a_failure_after_the_start_still_ends_the_call_and_hangs_up(monkey
     await worker.entrypoint(ctx)
     assert ended == [("c1", "t1", "worker_failed", None)]
     assert ctx.deleted == 1 and ctx.shutdowns == ["worker_failed"]
+
+
+def test_the_phone_url_follows_the_turn_url_rules(monkeypatch):
+    import pytest
+
+    monkeypatch.delenv("JOMCALL_MODE", raising=False)
+    monkeypatch.delenv("JOMCALL_PHONE_URL", raising=False)
+    assert phone.phone_url() == "http://127.0.0.1:54635"
+    monkeypatch.setenv("JOMCALL_PHONE_URL", "http://10.0.0.4:54635")
+    with pytest.raises(RuntimeError, match="LOOPBACK_REQUIRED: JOMCALL_PHONE_URL"):
+        phone.phone_url()
+    monkeypatch.setenv("JOMCALL_MODE", "hosted")
+    assert phone.phone_url() == "http://10.0.0.4:54635"
+    monkeypatch.delenv("JOMCALL_PHONE_URL")
+    with pytest.raises(RuntimeError, match="PHONE_URL_REQUIRED"):
+        phone.phone_url()
+
+
+async def test_hosted_mode_sends_the_service_key_on_every_phone_request(monkeypatch):
+    secret = "phone-service-secret-".ljust(40, "x")
+    monkeypatch.setenv("JOMCALL_MODE", "hosted")
+    monkeypatch.setenv("JOMCALL_VOICE_SERVICE_SECRET", secret)
+
+    async def handler(req):
+        return Reply(headers={"content-type": "application/json"}, chunks=[b"{}"])
+
+    async with FakeServer(handler) as server:
+        client = phone.PhoneClient(server.url)
+        await client.start("r", "i")
+        await client.answered(CALL, "tok")
+        await client.end(CALL, "tok", "hangup", None)
+        await client.aclose()
+        reqs = server.requests
+    assert all(r.headers.get(config.SERVICE_KEY_HEADER) == secret for r in reqs)
+    assert reqs[1].headers["authorization"] == "Bearer tok"

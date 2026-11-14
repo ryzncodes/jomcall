@@ -50,3 +50,62 @@ test("the phone server starts a call, streams a turn with the call token, and en
     await f.close();
   }
 });
+
+test("hosted mode: the phone server needs the service key on every request, as the voice endpoint does", async () => {
+  const f = await phoneFixture();
+  const model = f.scripted([sentence("Hello there."), end("Hello there.")]);
+  const secret = "phone-test-service-secret-".padEnd(40, "x");
+  // Bind rules match voice-server.ts: no public address, no short secret.
+  await assert.rejects(
+    startPhoneServer({ ...f.deps, model: model.model }, { host: "0.0.0.0", port: 0, mode: "hosted", serviceSecret: secret }),
+    /PRIVATE_BIND_REQUIRED/,
+  );
+  await assert.rejects(
+    startPhoneServer({ ...f.deps, model: model.model }, { host: "127.0.0.1", port: 0, mode: "hosted", serviceSecret: "short" }),
+    /VOICE_SERVICE_SECRET_REQUIRED/,
+  );
+  await assert.rejects(
+    startPhoneServer({ ...f.deps, model: model.model }, { host: "10.0.0.5", port: 0 }),
+    /LOOPBACK_REQUIRED/,
+  );
+  const server = await startPhoneServer(
+    { ...f.deps, model: model.model },
+    { host: "127.0.0.1", port: 0, mode: "hosted", serviceSecret: secret },
+  );
+  const base = `http://127.0.0.1:${server.port}`;
+  const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+    fetch(base + path, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    });
+  try {
+    await f.publish();
+    const dialled = await f.addNumber();
+    const room = "call-" + dialled + "_h1";
+    const identity = "sip_" + fakeNumber();
+    f.telephony.addCaller(room, identity, {
+      "sip.trunkPhoneNumber": dialled,
+      "sip.callID": "SCL_" + randomUUID(),
+      "sip.phoneNumber": fakeNumber(),
+    });
+    const key = { "x-jomcall-service-key": secret };
+    assert.equal((await post("/phone/calls", { room, identity })).status, 401);
+    assert.equal((await post("/phone/calls", { room, identity }, { "x-jomcall-service-key": "w".repeat(40) })).status, 401);
+    const started = await (await post("/phone/calls", { room, identity }, key)).json();
+    assert.equal(started.refusal, null);
+    const turn = { callId: started.callId, transcript: "Hello", clientTurnId: randomUUID(), heardAtMs: 1 };
+    const bearer = { authorization: "Bearer " + started.token };
+    // The call token alone is not enough in hosted mode; the key alone is not either.
+    assert.equal((await post("/phone/turns", turn, bearer)).status, 401);
+    assert.equal((await post("/phone/turns", turn, key)).status, 401);
+    const res = await post("/phone/turns", turn, { ...key, ...bearer });
+    assert.equal(res.status, 200);
+    await res.text();
+    assert.equal((await post(`/phone/calls/${started.callId}/end`, { reason: "hangup" }, bearer)).status, 401);
+    assert.equal((await post(`/phone/calls/${started.callId}/end`, { reason: "hangup" }, { ...key, ...bearer })).status, 200);
+  } finally {
+    await server.close();
+    await f.close();
+  }
+});

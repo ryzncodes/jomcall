@@ -119,7 +119,7 @@ create function app_private.agent_call(p_action text,p_namespace text,p_call uui
 declare c app.call;t app.call_turn;old app.call_turn;n app.phone_number;a app.agent;v app.agent_version;p app.call_proposal;
  r jsonb;v_settings jsonb;v_contact uuid;v_dnc boolean:=false;v_at timestamptz;v_local timestamp;v_sched app.location_schedule;
  v_open boolean;v_refusal text;v_live int;v_max int;v_cap int;v_step int;v_prev uuid;v_caller text;begin
- if p_namespace<>'local' and p_namespace!~'^test_[a-f0-9-]{36}$' then raise exception 'INVALID_NAMESPACE';end if;
+ if p_namespace not in('local','staging','prod') and p_namespace!~'^test_[a-f0-9-]{36}$' then raise exception 'INVALID_NAMESPACE';end if;
 
  if p_action='call_start' then
   v_caller=nullif(p_data->>'caller','');

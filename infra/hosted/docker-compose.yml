@@ -1,0 +1,161 @@
+# JomCall on one Singapore server (design Option 1): agent and engine workers,
+# the voice worker, LiveKit and Caddy. Web runs on Vercel; Postgres and Auth on
+# Supabase. Run from this directory:
+#   JOMCALL_IMAGE_TAG=$(git rev-parse --short HEAD) docker compose up -d --build
+# Settings: one root-owned, mode 0600 file per service in ${JOMCALL_ENV_DIR}
+# (default /etc/jomcall), each mounted into its own container only.
+# Published ports (design 6.6): 80, 443, 7881/tcp, 7882/udp. Nothing else.
+# 54633 (voice turns), 54634 (voice health), 54635 and 54636 (worker health)
+# are never published.
+name: jomcall
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+services:
+  caddy:
+    <<: *hardening
+    image: ${CADDY_IMAGE:-caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d}
+    cap_add:
+      - NET_BIND_SERVICE
+    ports:
+      - "80:80/tcp"
+      - "443:443/tcp"
+    # Caddy needs the domain and a contact email only; it never sees LiveKit keys.
+    env_file:
+      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/caddy.env
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - edge
+    depends_on:
+      - livekit
+
+  livekit:
+    <<: *hardening
+    # Same digest as infra/local/livekit-lock.json (v1.13.11, Apache-2.0).
+    image: docker.io/livekit/livekit-server@sha256:25cd902de7cacbd5f1f779f6a6ac1eae20ba8f56b0935934ce6b0ab80d1e3d20
+    command: ["--config", "/etc/livekit.yaml"]
+    env_file:
+      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/livekit.env
+    ports:
+      - "7881:7881/tcp"
+      - "7882:7882/udp"
+    volumes:
+      - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
+    networks:
+      - edge
+      - private
+
+  agent:
+    <<: *hardening
+    build:
+      context: ../..
+      dockerfile: infra/hosted/worker.Dockerfile
+    image: jomcall-worker:${JOMCALL_IMAGE_TAG:-local}
+    pull_policy: build
+    command: ["node", "--import", "tsx", "engine/src/agent/index.ts"]
+    env_file:
+      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/agent.env
+    environment:
+      JOMCALL_MODE: hosted
+      # Must equal this container's address below; the endpoint listens only here.
+      JOMCALL_VOICE_BIND: 172.30.0.10
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      private:
+        ipv4_address: 172.30.0.10
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:54636/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  engine:
+    <<: *hardening
+    # Built by the agent service; never pulled from a registry.
+    image: jomcall-worker:${JOMCALL_IMAGE_TAG:-local}
+    pull_policy: never
+    command: ["node", "--import", "tsx", "engine/src/index.ts"]
+    env_file:
+      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/engine.env
+    environment:
+      JOMCALL_MODE: hosted
+    read_only: true
+    tmpfs:
+      - /tmp
+    networks:
+      - private
+    depends_on:
+      - agent
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:54635/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  voice:
+    <<: *hardening
+    build:
+      context: ../../voice
+      dockerfile: ../infra/hosted/voice.Dockerfile
+    image: jomcall-voice:${JOMCALL_IMAGE_TAG:-local}
+    pull_policy: build
+    env_file:
+      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/voice.env
+    environment:
+      JOMCALL_MODE: hosted
+      JOMCALL_VOICE_TURN_URL: http://172.30.0.10:54633
+      # Phone calls (only used when the agent runs with JOMCALL_TELEPHONY_PROVIDER=livekit_sip).
+      JOMCALL_PHONE_URL: http://172.30.0.10:54635
+      # The worker reaches LiveKit over the private network, not the public URL.
+      LIVEKIT_URL: ws://livekit:7880
+    volumes:
+      - voice-cache:/data/cache
+      - voice-stages:/data/stages
+    networks:
+      - private
+    depends_on:
+      - agent
+      - livekit
+    # A call lasts at most 300 s; the worker drains for up to 320 s.
+    stop_grace_period: 330s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:54634/', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
+
+networks:
+  # Caddy and LiveKit only.
+  edge: {}
+  # Workers and LiveKit. Fixed subnet so the agent's address is known.
+  private:
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+volumes:
+  caddy-data: {}
+  caddy-config: {}
+  voice-cache: {}
+  voice-stages: {}

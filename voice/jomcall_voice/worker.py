@@ -125,9 +125,14 @@ async def phone_entrypoint(ctx: JobContext) -> None:
         log.error("phone job refused: missing %s", ", ".join(missing))
         ctx.shutdown("voice_keys_missing")
         return
+    try:
+        client = phone.PhoneClient()
+    except RuntimeError as error:  # names the variable at fault, never a value
+        log.error("phone job refused: %s", error)
+        ctx.shutdown("phone_config_invalid")
+        return
     source = await _publish_voice(ctx)
     sink = RoomSink(source)
-    client = phone.PhoneClient()
     try:
         try:
             participant = await asyncio.wait_for(

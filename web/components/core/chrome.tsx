@@ -54,8 +54,9 @@ export function WorkspaceChrome({
   mode: "mock" | "local";
   warnings?: React.ReactNode;
 }) {
-  const { t, href, locale } = useExperience(),
+  const { t, href, locale, mode: runMode } = useExperience(),
     p = t.product;
+  const hosted = runMode === "hosted";
   const navigation = [
     { key: "home", href: "/app", label: t.admin.nav, Icon: House },
     {
@@ -177,17 +178,25 @@ export function WorkspaceChrome({
         <header className="workspace-header">
           <span>
             {mode === "local"
-              ? locale === "ms"
-                ? "Ruang kerja setempat"
-                : "Local workspace"
+              ? hosted
+                ? locale === "ms"
+                  ? "Ruang kerja"
+                  : "Workspace"
+                : locale === "ms"
+                  ? "Ruang kerja setempat"
+                  : "Local workspace"
               : p.preview}
           </span>
           <div>
             <span className="preview-badge">
               {mode === "local"
-                ? locale === "ms"
-                  ? "Data setempat"
-                  : "Local data"
+                ? hosted
+                  ? locale === "ms"
+                    ? "Beta tertutup"
+                    : "Closed beta"
+                  : locale === "ms"
+                    ? "Data setempat"
+                    : "Local data"
                 : t.sampleBadge}
             </span>
             <Controls />

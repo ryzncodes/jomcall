@@ -12,6 +12,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.hosted.example
 
 # Local data and media
 *.log
@@ -50,6 +51,7 @@ web/next-env.d.ts
 # Isolated local runtime outputs
 .next-mock/
 .next-local/
+.next-hosted/
 .superpowers/
 supabase/.temp/
 

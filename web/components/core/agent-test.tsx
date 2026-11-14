@@ -21,7 +21,8 @@ import { useExperience } from "../experience";
 // The voice control (and livekit-client) exists only in the local build. The
 // mode is a build-time constant, so the mock bundle drops this import.
 const VoiceTest =
-  process.env.NEXT_PUBLIC_JOMCALL_MODE === "local"
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "local" ||
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
     ? dynamic(() => import("./voice-test"))
     : null;
 export function LocalAgentTest() {

@@ -14,12 +14,23 @@ import os
 
 import httpx
 
+from . import config
+
 DEFAULT_PHONE_URL = "http://127.0.0.1:54635"
 LANGUAGES = ("ms", "en", "manglish", "zh")
 
 
 def phone_url() -> str:
-    return os.environ.get("JOMCALL_PHONE_URL", "").strip() or DEFAULT_PHONE_URL
+    """The agent's phone listener, under the same rules as the turn URL:
+    local mode http on 127.0.0.1 only; hosted mode required, and a private
+    address over http or a public host over https. Errors name the variable."""
+    value = os.environ.get("JOMCALL_PHONE_URL", "").strip()
+    if config.hosted() and not value:
+        raise RuntimeError("PHONE_URL_REQUIRED: JOMCALL_PHONE_URL")
+    try:
+        return config.check_turn_url(value or DEFAULT_PHONE_URL)
+    except RuntimeError as error:
+        raise RuntimeError(str(error).split(":")[0] + ": JOMCALL_PHONE_URL") from None
 
 
 def is_phone_job(raw: str) -> bool:
@@ -61,6 +72,8 @@ def parse_start(data: object) -> dict | None:
 class PhoneClient:
     def __init__(self, base_url: str | None = None, client: httpx.AsyncClient | None = None):
         self._base = (base_url or phone_url()).rstrip("/")
+        # Hosted mode: the service key on every request, as on voice turns.
+        self._service = config.service_headers()
         self._client = client or httpx.AsyncClient(
             timeout=httpx.Timeout(connect=3.0, read=10.0, write=5.0, pool=3.0)
         )
@@ -70,7 +83,9 @@ class PhoneClient:
 
     async def start(self, room: str, identity: str) -> dict | None:
         response = await self._client.post(
-            self._base + "/phone/calls", json={"room": room, "identity": identity}
+            self._base + "/phone/calls",
+            json={"room": room, "identity": identity},
+            headers=self._service,
         )
         if response.status_code != 200:
             return None
@@ -82,7 +97,7 @@ class PhoneClient:
     async def answered(self, call_id: str, token: str) -> None:
         await self._client.post(
             f"{self._base}/phone/calls/{call_id}/answered",
-            headers={"authorization": "Bearer " + token},
+            headers={**self._service, "authorization": "Bearer " + token},
             json={},
         )
 
@@ -92,7 +107,7 @@ class PhoneClient:
             body["language"] = language
         await self._client.post(
             f"{self._base}/phone/calls/{call_id}/end",
-            headers={"authorization": "Bearer " + token},
+            headers={**self._service, "authorization": "Bearer " + token},
             json=body,
         )
 

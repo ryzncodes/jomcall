@@ -101,10 +101,12 @@ async def stream_turn(
     path: str = "/voice/turns",
     id_field: str = "sessionId",
 ) -> AsyncIterator[dict]:
-    url = (base_url or config.turn_url()).rstrip("/") + path
+    base = config.check_turn_url(base_url) if base_url else config.turn_url()
+    url = base.rstrip("/") + path
     headers = {
         "authorization": f"Bearer {token}",
         "content-type": "application/json",
+        **config.service_headers(),
     }
     body = _body(session_id, transcript, client_turn_id, heard_at_ms, id_field)
     own = client is None

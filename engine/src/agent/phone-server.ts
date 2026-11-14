@@ -1,6 +1,10 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import {
+  isPrivateAddress,
+  SERVICE_KEY_HEADER,
+} from "../../../packages/contracts/src/hosting.ts";
 import { z } from "zod";
 import { runVoiceTurn, type VoiceTurnDeps, type VoiceTurnEvent } from "./voice-turn.ts";
 import { phonePolicy, startPhoneCall, PhoneError, type PhoneDeps } from "./phone-call.ts";
@@ -64,9 +68,31 @@ const hashOf = (token: string) => createHash("sha256").update(token).digest("hex
 
 export async function startPhoneServer(
   deps: PhoneDeps & { model: VoiceTurnDeps["model"] },
-  options: { host: "127.0.0.1"; port: number; maintainMs?: number },
+  options: {
+    host: string;
+    port: number;
+    maintainMs?: number;
+    // The same rules as the browser voice endpoint (voice-server.ts): local
+    // mode binds 127.0.0.1 with no second key; hosted mode binds a private
+    // address and requires the worker's service secret on every request,
+    // in addition to the per-call token.
+    mode?: "local" | "hosted";
+    serviceSecret?: string;
+  },
 ): Promise<{ port: number; close(): Promise<void> }> {
-  if (options.host !== "127.0.0.1") throw Error("LOOPBACK_REQUIRED");
+  const hosted = options.mode === "hosted";
+  if (!hosted && options.host !== "127.0.0.1") throw Error("LOOPBACK_REQUIRED");
+  if (hosted && !isPrivateAddress(options.host)) throw Error("PRIVATE_BIND_REQUIRED");
+  const serviceSecret = hosted ? (options.serviceSecret ?? "") : null;
+  if (serviceSecret !== null && serviceSecret.length < 32)
+    throw Error("VOICE_SERVICE_SECRET_REQUIRED");
+  // Compares digests, so neither the length nor a prefix leaks through timing.
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  const serviceOk = (req: http.IncomingMessage) => {
+    if (serviceSecret === null) return true;
+    const supplied = req.headers[SERVICE_KEY_HEADER];
+    return typeof supplied === "string" && timingSafeEqual(digest(supplied), digest(serviceSecret));
+  };
   const inflight = new Set<Promise<void>>();
   const policy = phonePolicy(deps);
 
@@ -129,6 +155,8 @@ export async function startPhoneServer(
     const path = (req.url ?? "").split("?")[0];
     if (path === "/phone/health" && req.method === "GET") return json(res, 200, { ok: true });
     if (req.method !== "POST") return json(res, 405, { error: "METHOD" });
+    // Hosted mode: the service key first, on call start too (it has no token yet).
+    if (!serviceOk(req)) return json(res, 401, { error: "VOICE_UNAUTHORIZED" });
     if (path === "/phone/calls") {
       const parsed = await parse(req, startBody);
       if (typeof parsed === "number") return json(res, parsed, { error: "BAD_REQUEST" });
