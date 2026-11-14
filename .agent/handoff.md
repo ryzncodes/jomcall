@@ -1,5 +1,27 @@
 # Handoff
 
+## 2026-11-14 — hosted mode and deploy kit
+
+Branch `feat/hosted-mode` (pushed, pull request against `main`, not merged).
+
+**Changed**
+- `packages/contracts/src/hosting.ts`: third mode `hosted` and all its guards (origins, database TLS and host list, namespace, cookies, SMTP, voice bind and service secret, LiveKit wss). Used by web (`web/lib/server/*`), `packages/db`, engine, agent, voice turn endpoint. `requireLocal`/`localConfig` became `requireApp`/`appConfig`.
+- Voice worker (`voice/jomcall_voice/config.py`, `brain_client.py`): local mode refuses a non-loopback turn URL; hosted mode needs an explicit URL and sends `x-jomcall-service-key`. `JOMCALL_VOICE_CACHE_DIR` override.
+- Migration `20261114180000_hosted_namespaces.sql` (rewrites the three namespace checks from their live bodies). Not applied to the shared local database.
+- Health: `/api/health` (web), loopback `/health` on 54635 (engine) and 54636 (agent) in hosted mode, `/voice/health` checks the database in hosted mode.
+- `packages/contracts/src/hosted-env.ts` + `npm run hosted:readiness`; `npm run hosted:migrate`; `infra/hosted/` kit and `RUNBOOK.md`; `web/vercel.json` pinned to `sin1`.
+
+**Verified**
+- `npm run typecheck`; `npm run test:guards` 20/20; `npm run check:core` 239 pass, 2 skipped; `npm run test:offline` 148 pass; `cd voice && uv run pytest` 260 pass; `npm run db:verify-migrations`; `npm run build:mock`, `build:local`, `build:hosted`.
+- `docker build` of both images (not pushed); offline container checks (non-root, no env files, entrypoints fail closed); `docker compose config` with empty env files.
+
+**Not verified**
+- Anything against real Vercel, Supabase, DigitalOcean, LiveKit or email. Every [UNVERIFIED] line in `infra/hosted/RUNBOOK.md`.
+
+**Next**
+- Owner reviews the PR and the runbook's owner checklist; then runbook steps 1 to 10, each with explicit approval.
+- Before launch: login rate limit in Postgres, hosted auth-grants fallback if step 2b fails, concurrency limit, Deepgram opt-out.
+
 ## 2026-11-14 — pre-launch fixes from the voice branch review
 
 Branch `fix/voice-prelaunch-hardening`, started from `feat/voice-milestone-a` and merged with `main` after the voice work landed there. Pushed, with a pull request against `main`; not merged.
