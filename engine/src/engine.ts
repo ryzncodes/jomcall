@@ -2,6 +2,12 @@ import pg from "pg";
 import { PgBoss } from "pg-boss";
 import nodemailer from "nodemailer";
 import { z } from "zod";
+import {
+  databaseConnection,
+  mailSettings,
+  validNamespace,
+  type MailSettings,
+} from "../../packages/contracts/src/hosting.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
 const payload = z
   .object({
@@ -10,50 +16,37 @@ const payload = z
     kind: z.enum(["privacy.process", "invitation.deliver"]),
   })
   .strict();
-function localDsn(value: string | undefined) {
-  const u = new URL(value ?? "");
-  if (u.hostname !== "127.0.0.1" || u.port !== "54622")
-    throw Error("LOCAL_ONLY");
-  return u.toString();
+function dsn(name: "WORKER_DATABASE_URL" | "QUEUE_DATABASE_URL") {
+  return databaseConnection(process.env[name], name, process.env, "LOCAL_ONLY");
 }
 export class Engine {
   private pool: pg.Pool;
   private boss: PgBoss;
   private queue: string;
   private smtp: ReturnType<typeof nodemailer.createTransport>;
+  private mail: MailSettings;
+  // Set by each tick that ran to the end; the health check reads it.
+  lastTickAt = 0;
   private closed = false;
   private reconciliationCursor: string | null = null;
   private constructor(readonly namespace: string) {
-    if (
-      namespace !== "local" &&
-      !(
-        process.env.NODE_ENV === "test" &&
-        /^test_[a-f0-9-]{36}$/.test(namespace)
-      )
-    )
-      throw Error("INVALID_QUEUE_NAMESPACE");
-    if (
-      process.env.SMTP_HOST !== "127.0.0.1" ||
-      process.env.SMTP_PORT !== "54625"
-    )
-      throw Error("LOCAL_SMTP_REQUIRED");
+    validNamespace(namespace);
+    // Local mode: Mailpit on loopback. Hosted mode: a real provider with TLS.
+    this.mail = mailSettings();
     this.pool = new pg.Pool({
-      connectionString: localDsn(process.env.WORKER_DATABASE_URL),
+      ...dsn("WORKER_DATABASE_URL"),
       max: 3,
     });
     this.pool.on("error", () => console.error("WORKER_DATABASE_POOL_ERROR"));
     this.boss = new PgBoss({
-      connectionString: localDsn(process.env.QUEUE_DATABASE_URL),
+      ...dsn("QUEUE_DATABASE_URL"),
       schema: "pgboss",
       createSchema: false,
     });
     this.boss.on("error", () => console.error("QUEUE_ERROR"));
     this.queue = "core_" + namespace;
     this.smtp = nodemailer.createTransport({
-      host: "127.0.0.1",
-      port: 54625,
-      secure: false,
-      ignoreTLS: true,
+      ...this.mail.transport,
       connectionTimeout: 5000,
       socketTimeout: 5000,
     });
@@ -156,11 +149,11 @@ export class Engine {
                 p.orgId + p.id,
               );
               await this.smtp.sendMail({
-                from: "JomCall <workspace@example.invalid>",
+                from: this.mail.from,
                 to: p.email,
-                subject: "Your local workspace invitation",
-                text: `Join your workspace: http://127.0.0.1:4182/invite?token=${token}`,
-                messageId: `${p.operationId}@jomcall.local`,
+                subject: this.mail.subject,
+                text: `Join your workspace: ${this.mail.inviteBase}/invite?token=${token}`,
+                messageId: `${p.operationId}@${this.mail.messageIdDomain}`,
               });
               await this.pool.query(
                 "select app_private.ack_invitation($1,$2,false)",
@@ -192,6 +185,7 @@ export class Engine {
         }
       }),
     );
+    this.lastTickAt = Date.now();
     return outbox.rowCount! + jobs.length;
   }
   async close() {

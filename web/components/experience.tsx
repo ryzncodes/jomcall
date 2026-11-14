@@ -13,7 +13,7 @@ import { LocalApp } from "./core/local-app";
 const MockExperience = lazy(() => import("./mock-experience"));
 type Theme = "light" | "dark";
 const Context = createContext<{
-  mode: "mock" | "local";
+  mode: "mock" | "local" | "hosted";
   t: typeof en;
   locale: Locale;
   theme: Theme;
@@ -73,7 +73,7 @@ export function Experience({
   screen,
   mode = "mock",
 }: {
-  mode?: "mock" | "local";
+  mode?: "mock" | "local" | "hosted";
   locale: Locale;
   initialTheme: Theme;
   screen:
@@ -117,7 +117,7 @@ export function Experience({
     const [pathname, query] = url.split("?");
     const params = new URLSearchParams(query);
     if (
-      mode === "local" &&
+      mode !== "mock" &&
       routeParams.get("workspace") &&
       !params.has("workspace")
     )
@@ -147,7 +147,7 @@ export function Experience({
             <PublicPages
               page={screen as "pricing" | "docs" | "privacy" | "terms"}
             />
-          ) : mode === "local" ? (
+          ) : mode !== "mock" ? (
             <LocalApp screen={screen} />
           ) : (
             <Suspense fallback={<p role="status">{t.product.loading}</p>}>

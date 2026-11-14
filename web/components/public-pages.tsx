@@ -39,11 +39,15 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
           <a href={href("/admin")}>{p.platform}</a>
         </nav>
         <small>
-          {mode === "local"
+          {mode === "hosted"
             ? locale === "ms"
-              ? "Pembangunan setempat · tiada saluran disambungkan"
-              : "Local development · no channels connected"
-            : p.previewOnly}
+              ? "Beta tertutup · panggilan dan WhatsApp belum disambungkan"
+              : "Closed beta · calls and WhatsApp not connected yet"
+            : mode === "local"
+              ? locale === "ms"
+                ? "Pembangunan setempat · tiada saluran disambungkan"
+                : "Local development · no channels connected"
+              : p.previewOnly}
         </small>
       </footer>
     </>

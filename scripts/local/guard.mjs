@@ -16,6 +16,6 @@ export function stopArguments(projectId) {
   return ["stop", "--project-id", projectId];
 }
 export function parseMode(mode = "mock") {
-  if (!["mock", "local"].includes(mode)) throw Error("INVALID_MODE");
+  if (!["mock", "local", "hosted"].includes(mode)) throw Error("INVALID_MODE");
   return mode;
 }

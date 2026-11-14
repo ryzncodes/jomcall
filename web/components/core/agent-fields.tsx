@@ -15,7 +15,7 @@ export function GreetingField({
     <Field
       label={t.product.greeting}
       hint={
-        mode === "local"
+        mode !== "mock"
           ? locale === "ms"
             ? "Kata-kata pembukaan. Pengenalan AI ditetapkan di bawah."
             : "Opening words. Set the required AI introduction below."

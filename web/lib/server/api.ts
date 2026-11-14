@@ -14,7 +14,7 @@ import { tokenHash } from "../../../packages/domain/src/invitation-crypto.ts";
 import { command, audit } from "../../../packages/db/src/receipts.ts";
 import { z } from "zod";
 import { AppError, name, uuid } from "../../../packages/contracts/src/index.ts";
-import { requireLocal } from "./config.ts";
+import { requireApp } from "./config.ts";
 import { verifyIdentity } from "./auth.ts";
 import { database } from "./services.ts";
 import { requireMutation } from "./csrf.ts";
@@ -32,7 +32,7 @@ export function createDispatch(deps: CoreDeps) {
 }
 async function dispatch(request: Request, deps: CoreDeps) {
   try {
-    requireLocal();
+    requireApp();
     const method = request.method,
       path = new URL(request.url).pathname.slice("/api/v1".length);
     const mutation = !["GET", "HEAD"].includes(method);

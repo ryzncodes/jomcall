@@ -9,12 +9,13 @@ import {
   AppError,
   type Identity,
 } from "../../../packages/contracts/src/index.ts";
-import { localConfig } from "./config.ts";
+import { appConfig } from "./config.ts";
 import { database } from "./services.ts";
 import { cookie, setCookie, respond, failure, readBody } from "./http.ts";
 import { issueCsrf, requireMutation } from "./csrf.ts";
+const names = () => appConfig().cookies;
 export function authClient() {
-  const c = localConfig();
+  const c = appConfig();
   return createClient(c.url, c.anon, {
     auth: {
       persistSession: false,
@@ -31,7 +32,7 @@ function checkAuthService(error: unknown) {
     throw new AppError("AUTH_UNAVAILABLE", 503);
 }
 export async function verifyIdentity(request: Request): Promise<Identity> {
-  const jwt = cookie(request, "ca_local_access");
+  const jwt = cookie(request, names().access);
   if (!jwt) throw new AppError("UNAUTHORIZED", 401);
   const auth = authClient();
   const claims = await auth.auth.getClaims(jwt);
@@ -56,22 +57,25 @@ export async function verifyIdentity(request: Request): Promise<Identity> {
 }
 function sessionResponse(session: Session) {
   const response = respond({ authenticated: true });
-  setCookie(
-    response,
-    "ca_local_access",
-    session.access_token,
-    session.expires_in,
-  );
-  setCookie(response, "ca_local_refresh", session.refresh_token, 604800);
+  setCookie(response, names().access, session.access_token, session.expires_in);
+  setCookie(response, names().refresh, session.refresh_token, 604800);
   return response;
 }
 const credentials = z
   .object({ email: z.email().max(254), password: z.string().min(8).max(128) })
   .strict();
 const rates = new Map<string, { count: number; until: number }>();
+// The platform's proxy sets these headers; the first hop is the client.
+function clientAddress(request: Request) {
+  const forwarded =
+    request.headers.get("x-real-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0] ??
+    "";
+  return forwarded.trim().slice(0, 64) || "unknown";
+}
 export async function handleAuth(request: Request) {
   try {
-    const { origin } = localConfig();
+    const { origin, hosted } = appConfig();
     const action = new URL(request.url).pathname.split("/").at(-1)!;
     const auth = authClient();
     if (action === "csrf" && request.method === "GET") return issueCsrf();
@@ -103,10 +107,17 @@ export async function handleAuth(request: Request) {
     const body = await readBody(request, 16384);
     if (["login", "signup", "forgot-password"].includes(action)) {
       const now = Date.now();
-      let rate = rates.get(action);
+      // Local mode keeps one bucket per action. On the internet that would let
+      // one person lock everybody out, so hosted mode counts per client
+      // address. The counters live in this process only (see the runbook).
+      const bucket = hosted ? action + "|" + clientAddress(request) : action;
+      if (rates.size > 5000)
+        for (const [key, value] of rates)
+          if (now > value.until) rates.delete(key);
+      let rate = rates.get(bucket);
       if (!rate || now > rate.until) {
         rate = { count: 0, until: now + 60000 };
-        rates.set(action, rate);
+        rates.set(bucket, rate);
       }
       if (++rate.count > 10) throw new AppError("RATE_LIMITED", 429);
     }
@@ -129,7 +140,7 @@ export async function handleAuth(request: Request) {
     if (action === "refresh") {
       z.object({}).strict().parse(body);
       const result = await auth.auth.refreshSession({
-        refresh_token: cookie(request, "ca_local_refresh"),
+        refresh_token: cookie(request, names().refresh),
       });
       checkAuthService(result.error);
       if (result.error || !result.data.session)
@@ -144,22 +155,23 @@ export async function handleAuth(request: Request) {
       const result = await auth.auth.resetPasswordForEmail(value.email);
       checkAuthService(result.error);
       return respond({
-        message:
-          "If this account exists, a recovery email is available in the local inbox.",
+        message: hosted
+          ? "If this account exists, a recovery email is on its way."
+          : "If this account exists, a recovery email is available in the local inbox.",
       });
     }
     if (action === "logout") {
       z.object({}).strict().parse(body);
       await verifyIdentity(request);
       const result = await auth.auth.admin.signOut(
-        cookie(request, "ca_local_access"),
+        cookie(request, names().access),
         "global",
       );
       checkAuthService(result.error);
       if (result.error) throw new AppError("LOGOUT_FAILED", 503);
       const response = respond({ authenticated: false });
-      setCookie(response, "ca_local_access", "", 0);
-      setCookie(response, "ca_local_refresh", "", 0);
+      setCookie(response, names().access, "", 0);
+      setCookie(response, names().refresh, "", 0);
       return response;
     }
     if (action === "reset-password") {
@@ -169,8 +181,8 @@ export async function handleAuth(request: Request) {
         .parse(body);
       await verifyIdentity(request);
       const session = await auth.auth.setSession({
-        access_token: cookie(request, "ca_local_access"),
-        refresh_token: cookie(request, "ca_local_refresh"),
+        access_token: cookie(request, names().access),
+        refresh_token: cookie(request, names().refresh),
       });
       checkAuthService(session.error);
       if (session.error) throw new AppError("UNAUTHORIZED", 401);
@@ -180,8 +192,8 @@ export async function handleAuth(request: Request) {
       const signedOut = await auth.auth.signOut({ scope: "global" });
       if (signedOut.error) throw new AppError("LOGOUT_FAILED", 503);
       const response = respond({ authenticated: false });
-      setCookie(response, "ca_local_access", "", 0);
-      setCookie(response, "ca_local_refresh", "", 0);
+      setCookie(response, names().access, "", 0);
+      setCookie(response, names().refresh, "", 0);
       return response;
     }
     throw new AppError("NOT_FOUND", 404);
