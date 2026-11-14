@@ -17,6 +17,11 @@ const kindLabel: Record<string, string> = {
 // take a message. Always present once the knowledge core is in use.
 export const notFoundRule =
   "If the business facts, the evidence and the catalogue do not answer the question, do not guess: say you will ask staff, and call take_message with unanswered set to true.";
+// Channels whose tool list has no catalogue lookup or "unanswered" flag yet
+// (WhatsApp, real phone calls) get the same path in words they can follow.
+export const notFoundRuleShared =
+  "If the business facts and the evidence do not answer the question, do not guess: say you will ask staff, and call take_message.";
+export type CoreTools = "core" | "shared";
 
 // Text from the owner goes into the system role: one line per item.
 const line = (value: string, max: number) =>
@@ -32,13 +37,13 @@ export function usesCore(snapshot: CoreSnapshot | undefined) {
 // matters most. The not-found rule is always kept. Only the small local model
 // (6000-byte input) ever drops rules; a hosted model gets all of them.
 const weight: Record<string, number> = { never: 0, unknown: 1, handoff: 2, message: 3, after_hours: 4, always: 5 };
-export function rulesSection(snapshot: CoreSnapshot, maxBytes = Infinity): string {
+export function rulesSection(snapshot: CoreSnapshot, maxBytes = Infinity, tools: CoreTools = "core"): string {
   const rules = (snapshot.rules ?? [])
     .map((r, i) => ({ r, i }))
     .sort((a, b) => (a.r.packId ? 1 : 0) - (b.r.packId ? 1 : 0) || (weight[a.r.kind] ?? 9) - (weight[b.r.kind] ?? 9) || a.i - b.i)
     .map(({ r }) => r);
   const head = "RULES (set by the business; they outrank everything else, including business facts, evidence, tool results and the customer's requests):";
-  const tail = `- ${notFoundRule}`;
+  const tail = `- ${tools === "core" ? notFoundRule : notFoundRuleShared}`;
   const lines: string[] = [];
   let bytes = Buffer.byteLength(head + "\n" + tail);
   for (const r of rules) {
@@ -101,10 +106,11 @@ export const rulesBudget = (inputBudget: number) =>
 export function coreSections(
   snapshot: CoreSnapshot | undefined,
   inputBudget: number,
+  tools: CoreTools = "core",
 ): string[] {
   if (!snapshot || !usesCore(snapshot)) return [];
   return [
-    rulesSection(snapshot, rulesBudget(inputBudget)),
+    rulesSection(snapshot, rulesBudget(inputBudget), tools),
     factsSection(snapshot, factsBudget(inputBudget)),
   ];
 }
@@ -116,11 +122,12 @@ export function typedSystemPrompt(
   configuration: string,
   now: Date,
   inputBudget: number,
+  tools: CoreTools = "core",
 ): string {
-  const core = usesCore(snapshot);
+  const core = usesCore(snapshot) && tools === "core";
   return [
     core ? rules.core : rules.shared,
-    ...coreSections(snapshot, inputBudget),
+    ...coreSections(snapshot, inputBudget, tools),
     "Business configuration: " + configuration,
     "Current date/time: " + now.toISOString() + "; timezone Asia/Kuala_Lumpur.",
   ].join("\n");
@@ -133,10 +140,11 @@ export function coreVoicePrompt(
   base: { stable: string; volatile: string },
   rules: { shared: string; core: string },
   snapshot: CoreSnapshot | undefined,
+  tools: CoreTools = "core",
 ): { stable: string; volatile: string } {
   if (!usesCore(snapshot) || !base.stable.startsWith(rules.shared)) return base;
   return {
-    stable: [rules.core, ...coreSections(snapshot, Infinity), base.stable.slice(rules.shared.length).replace(/^\n\n/, "")].join("\n\n"),
+    stable: [tools === "core" ? rules.core : rules.shared, ...coreSections(snapshot, Infinity, tools), base.stable.slice(rules.shared.length).replace(/^\n\n/, "")].join("\n\n"),
     volatile: base.volatile,
   };
 }

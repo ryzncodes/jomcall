@@ -1,5 +1,57 @@
 # Handoff
 
+## 2026-11-14 — knowledge core
+
+Branch `feat/knowledge-core`; pull request against `main`, not merged.
+
+**Changed**: design `docs/superpowers/specs/2026-11-14-knowledge-core-design.md`; migration `20261114200000_knowledge_core.sql`; packs in `packages/domain/src/packs/`; `packages/domain/src/knowledge/` (text, snapshot, prompt, tools, routes); `packages/contracts/src/knowledge.ts`; `packages/inference/src/embedding.ts` and budget; `engine/src/agent/brain.ts` (core option), `runner.ts`, `voice-turn.ts`, `repository.ts`; privacy export; web tab `web/components/core/knowledge-core.tsx`.
+
+**Verified**: see the pull request body for counts (typecheck, test:guards, db:verify-migrations, check:core, builds). Migration was applied to the shared local database by hand, without a `schema_migrations` row.
+
+**Not verified / next**: typed and spoken 48-case gates not re-run (cost); web tab not opened in a browser; WhatsApp and phone get rules and facts but not the catalogue tool, gap log or hours; document import, the interview and setup screens are the next piece.
+
+## 2026-11-14 — phone line, milestone B (code side)
+
+Branch `feat/phone-line`, pull request #12 against `main`; not merged.
+
+**Changed**
+- Design: `docs/superpowers/specs/2026-11-14-phone-line-design.md` (ten open decisions, each built to its recommendation). Owner steps: `docs/research/phone-line-owner-steps.md`.
+- Migration `20261114190000_phone_calls.sql`: `phone_number`, `call`, `call_turn`, `call_tool_step`, `call_proposal`, `organization.calls_suspended_at`, function `app_private.agent_call`.
+- Engine: `engine/src/agent/phone-call.ts`, `phone-server.ts` (loopback 54635), `call-repository.ts`; `voice-turn.ts` takes an optional policy (browser path unchanged).
+- Worker: `voice/jomcall_voice/phone.py`, phone branch in `worker.py`, `cap_s`/`on_opened` on `Call`, `path`/`id_field` on the brain client, busy line in `fillers.py`. Simulator `voice/tools/phone_sim.py`.
+- Web (local app only): commands `phoneNumbers`, `createPhoneNumber`, `updatePhoneNumber`, `calls`, `call`; screens in `web/components/core/phone.tsx`. `/calls` and `/phone-numbers` are no longer in the disabled list.
+
+**Verified** (2026-11-14, after merging hosted mode and WhatsApp): `typecheck` clean; `test:guards` 23/23; `test:offline` 181 tests, 180 pass, 1 skipped; `check:core` 310 tests, 308 pass, 0 fail, 2 skipped (port 54633 busy); `uv run pytest` 284 passed (`tests/test_call.py` unchanged); `db:verify-migrations` passed; GitHub CI green on b0a0ad3.
+
+**Merged with hosted mode (#16)**: migration renamed to `20261114190000_phone_calls.sql` (version clash with `20261114180000_hosted_namespaces.sql`) and its namespace check accepts `staging` and `prod`; the phone listener takes the voice endpoint's bind, mode and service secret; `CallRepository` uses `queueNamespace()`; the worker's phone client sends the service key and validates `JOMCALL_PHONE_URL` like the turn URL; telephony settings added to `hosted-env.ts`, the example, Compose (`JOMCALL_PHONE_URL` for voice) and RUNBOOK step 11. The SIP service is not in Compose (LiveKit Cloud recommended first).
+
+**Not verified / open**
+- No carrier, number, trunk or live LiveKit SIP service was used; the LiveKit telephony code is checked against types and documentation only.
+- The simulator was never run. The screens were not opened in a browser.
+- Phone rules not gated on the 48 cases. PDPA export does not include calls yet.
+- The shared local database has the phone migration applied directly with psql (no `schema_migrations` row) because the WhatsApp and billing branches' versions are in it; see the shared notes file `phone-line-notes.md`.
+
+## 2026-11-14 — WhatsApp channel against a fake (no Meta account)
+
+Branch `feat/whatsapp-channel` from `main` (merged with `origin/main` again after PR #16, hosted mode). Works in `local` and `hosted` modes through the hosting helpers (`validNamespace`, `databaseConnection`, `queueNamespace`); the webhook stays closed in `mock`. The two WhatsApp functions accept `staging` and `prod` namespaces directly, because their migrations sort before `20261114180000_hosted_namespaces.sql`. Pushed, pull request against `main`; not merged.
+
+**Changed**
+- Research `docs/research/whatsapp-go-live.md` (official Meta sources with dates, owner checklist, unofficial connector assessed and not recommended). Design `docs/superpowers/specs/2026-11-14-whatsapp-channel-design.md` (owner decisions D1-D8, open items O1-O10).
+- Migrations `20261114120000_whatsapp_channel.sql`, `20261114120100_whatsapp_worker.sql`. `consent_record.actor_id` is now nullable (customer keyword opt-outs have no staff actor).
+- `packages/whatsapp` (switch `JOMCALL_WHATSAPP_PROVIDER` = disabled | fake | cloud, webhook signature/parsing, AES-GCM sealed tokens, Cloud API client in `cloud.ts` not exported from `index.ts`, fake provider). Send rules `packages/domain/src/whatsapp/policy.ts`. Routes `packages/domain/src/whatsapp/routes.ts` and 11 commands in `packages/contracts/src/core.ts`.
+- `engine/src/agent/brain.ts` extracted from the runner (shared, not forked). `engine/src/whatsapp/worker.ts` runs in the agent process when the switch is not disabled.
+- Webhook `web/app/api/whatsapp/webhook/route.ts`; local-app screen `web/components/core/whatsapp.tsx`; simulator `npm run whatsapp:simulate`.
+
+**Verified** (2026-11-14, this machine)
+- `npm run typecheck` clean; `npm run test:guards` 23/23; `npm run db:verify-migrations` passed; `npm run check:core` 217 tests, 215 pass, 2 skipped, 0 fail. New: `tests/domain/whatsapp.test.ts` (10), `tests/engine/whatsapp-flow.test.ts` (11, against the local database with the fake provider), `tests/local/whatsapp-guard.test.mjs` (3).
+- `npm run db:migrate:local` refused because the shared database holds sibling migrations not on this branch. The two WhatsApp migrations were applied directly with psql and recorded in `supabase_migrations.schema_migrations`. Their versions (120000, 120100) sort before `20261114150000`, already applied there, so a plain `supabase db push` would need `--include-all`.
+
+**Not verified / open**
+- Nothing was run against Meta: no Cloud API call, no real webhook, no template review. Which body form Meta signs for non-ASCII text is unconfirmed (both are accepted).
+- The WhatsApp screen was not opened in a browser (port 4182 belongs to the main checkout). The inbox screen is not built; the commands exist.
+- The 48-case gate was not re-run with the WhatsApp channel note (owner decision D4).
+- Owner decisions D1-D8 in the design spec, especially D1 (approve the Cloud API as a hosted exception) and D3 (PDPA cross-border consent).
+
 ## 2026-11-14 — Cloudflare email, Turnstile and R2 backups
 
 Branch `feat/hosted-mode` (same pull request, not merged).

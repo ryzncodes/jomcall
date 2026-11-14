@@ -1,6 +1,10 @@
 import type { AgentRepository } from "./repository.ts";
 import type { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
-import { executeTestTool } from "../../../packages/domain/src/agent-test/tools.ts";
+import {
+  executeTestTool,
+  type ToolAccess,
+  type ToolResult,
+} from "../../../packages/domain/src/agent-test/tools.ts";
 import {
   buildKnowledgeIndex,
   searchKnowledge,
@@ -50,12 +54,44 @@ export type VoiceTurnEvent =
     }
   | { type: "error"; code: string };
 
+// What a spoken turn needs from storage. AgentRepository (test sessions) and
+// CallRepository (real phone calls) both provide it.
+export type VoiceStore = Pick<
+  AgentRepository,
+  | "voiceBegin"
+  | "voiceComplete"
+  | "voiceFail"
+  | "voiceCancel"
+  | "voiceCacheGet"
+  | "voiceCachePut"
+  | "access"
+> & {
+  // Knowledge core tools; only the test-session store has them (the SQL
+  // allow-list for real calls does not accept lookup_catalogue yet).
+  knowledge?: AgentRepository["knowledge"];
+};
+// How a real phone call differs from a browser voice test. Absent for the
+// test path, which then behaves exactly as before.
+export type VoiceTurnPolicy = {
+  // The answer cache; on by default (test path), off on phone calls.
+  fastLane: boolean;
+  // Extra prompt text after the shared spoken rules.
+  rules(envelope: any): { stable: string; volatile: string };
+  // Runs one validated tool call in place of executeTestTool.
+  runTool(
+    access: ToolAccess,
+    step: number,
+    call: { name: string; args: unknown },
+    envelope: any,
+  ): Promise<ToolResult | { kind: string; [key: string]: unknown }>;
+};
 export type VoiceTurnDeps = {
-  repository: AgentRepository;
+  repository: VoiceStore;
   model: typeof streamVoiceModel;
   now(): number;
   // Optional semantic search (JOMCALL_EMBEDDING_PROVIDER); null or absent = off.
   embedder?: Embedder | null;
+  policy?: VoiceTurnPolicy;
 };
 export type VoiceTurnRequest = {
   sessionId: string;
@@ -157,7 +193,8 @@ export async function runVoiceTurn(
     // and its answer is never stored.
     // (The fast lane stays off after the first turn: a follow-up question can
     // depend on what was said earlier.)
-    const standalone = history.length === 0 && key !== null;
+    const standalone =
+      (deps.policy?.fastLane ?? true) && history.length === 0 && key !== null;
     const timings = (firstSentenceAt: number | null) => {
       const end = deps.now();
       return {
@@ -206,7 +243,11 @@ export async function runVoiceTurn(
     const snapshot = envelope.session.snapshot as CoreSnapshotFull;
     // Snapshots from before the knowledge core keep the old prompt and tools.
     const core = usesCore(snapshot);
-    const knowledge = repo.knowledge(envelope);
+    // Core tools only where the store and the channel allow them (browser
+    // tests). Real calls get the rules and facts with the shared tools.
+    const knowledge =
+      core && !deps.policy && repo.knowledge ? repo.knowledge(envelope) : undefined;
+    const coreTools = !!knowledge;
     const searchOptions: SearchOptions = {
       embedder: deps.embedder,
       vector: early,
@@ -230,7 +271,7 @@ export async function runVoiceTurn(
         const hit = index.find((h) => h.sourceId === id);
         if (hit && !addEvidence(shown, [hit], 500)) break inherited;
       }
-    const system = coreVoicePrompt(
+    const base = coreVoicePrompt(
       voiceSystem(
         snapshot.settings,
         envelope.resources ?? [],
@@ -240,7 +281,15 @@ export async function runVoiceTurn(
       ),
       { shared: voiceRules, core: coreVoiceRules },
       snapshot,
+      coreTools ? "core" : "shared",
     );
+    const extra = deps.policy?.rules(envelope);
+    const system = extra
+      ? {
+          stable: base.stable + "\n\n" + extra.stable,
+          volatile: [base.volatile, extra.volatile].filter(Boolean).join("\n\n"),
+        }
+      : base;
     const messages: unknown[] = [
       ...history.flatMap((h) => [
         { role: "user", content: h.input },
@@ -261,7 +310,7 @@ export async function runVoiceTurn(
       const results: unknown[] = [];
       let content: unknown[] | null = null;
       for await (const event of deps.model(
-        core ? { ...system, messages, tools: "core" } : { ...system, messages },
+        coreTools ? { ...system, messages, tools: "core" } : { ...system, messages },
         signal,
       )) {
         checkAbort();
@@ -284,12 +333,14 @@ export async function runVoiceTurn(
           }
           checkAbort();
           const call = { name: event.name, args: event.input };
-          const result: CoreToolResult = core
+          const result: CoreToolResult = knowledge
             ? await executeCoreTool(access, knowledge, tools++, call, {
                 ...searchOptions,
                 timeoutMs: 1000,
               })
-            : await executeTestTool(access, tools++, call);
+            : ((deps.policy
+                ? await deps.policy.runTool(access, tools++, call, envelope)
+                : await executeTestTool(access, tools++, call)) as ToolResult);
           calls.push({ call: call as CoreToolCall, result });
           checkAbort();
           let shown: unknown = result;
@@ -341,7 +392,7 @@ export async function runVoiceTurn(
     if (!answer) throw Error("MODEL_OUTPUT_INVALID");
     checkAbort();
     // Before completing: the lease ends with the turn. Never fails the turn.
-    if (core && isGap(calls))
+    if (knowledge && isGap(calls))
       await knowledge
         .gap(gapRecord(input, language, "voice", answer))
         .catch(() => console.error("GAP_RECORD_FAILED"));

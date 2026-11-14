@@ -205,3 +205,18 @@ test("snapshots are put in jsonb key order before hashing", async () => {
   assert.deepEqual(Object.keys(ordered), ["packs", "context", "settings", "knowledge"]);
   assert.deepEqual(Object.keys(ordered.settings), ["b", "aa"]);
 });
+
+test("channels without core tools get rules and facts with a not-found rule they can follow", () => {
+  const shared = rulesSection(snapshot, Infinity, "shared");
+  assert.match(shared, /Never mention competitor prices/);
+  assert.doesNotMatch(shared, /unanswered/);
+  assert.match(shared, /call take_message\.$/);
+  const config = businessConfiguration(snapshot.settings);
+  const typed = typedSystemPrompt({ shared: agentRules, core: coreAgentRules }, snapshot, config, new Date(), 6000, "shared");
+  assert.ok(typed.startsWith(agentRules));
+  assert.doesNotMatch(typed, /lookup_catalogue|unanswered/);
+  assert.match(typed, /BUSINESS FACTS/);
+  const spoken = coreVoicePrompt(voiceSystem(snapshot.settings, [], [], new Date()), { shared: voiceRules, core: coreVoiceRules }, snapshot, "shared");
+  assert.ok(spoken.stable.startsWith(voiceRules + "\n\nRULES ("));
+  assert.doesNotMatch(spoken.stable, /lookup_catalogue|unanswered/);
+});

@@ -2,7 +2,10 @@ import {
   agentTestRoute,
   type AgentTestDeps,
 } from "../../../packages/domain/src/agent-test/routes.ts";
+import { whatsappReadiness } from "../../../packages/whatsapp/src/provider.ts";
+import { whatsappRoute } from "../../../packages/domain/src/whatsapp/routes.ts";
 import { bookingRoute } from "../../../packages/domain/src/booking/routes.ts";
+import { phoneRoute } from "../../../packages/domain/src/phone/routes.ts";
 import { commands } from "../../../packages/contracts/src/core.ts";
 import { privacyRoute } from "../../../packages/domain/src/privacy.ts";
 import "server-only";
@@ -41,7 +44,7 @@ async function dispatch(request: Request, deps: CoreDeps) {
     const identity = await verifyIdentity(request);
     const db = database();
     const disabled =
-      /^\/(calls|inbox|whatsapp|integrations|phone-numbers|billing|payments|outbound|admin|self-host|test-call)(?:\/|$)/.test(
+      /^\/(inbox|whatsapp|integrations|billing|payments|outbound|admin|self-host|test-call)(?:\/|$)/.test(
         path,
       );
     const matching = Object.values(commands).filter((c) =>
@@ -96,6 +99,16 @@ async function dispatch(request: Request, deps: CoreDeps) {
       orgId,
       async (tx, context) => {
         if (disabled) throw new AppError("CAPABILITY_UNAVAILABLE", 503);
+        const whatsappResult = await whatsappRoute(
+          tx,
+          context,
+          method,
+          path,
+          body,
+          key,
+          new URL(request.url).searchParams,
+        );
+        if (whatsappResult !== undefined) return respond(whatsappResult);
         const testResult = await agentTestRoute(
           tx,
           context,
@@ -121,6 +134,16 @@ async function dispatch(request: Request, deps: CoreDeps) {
           new URL(request.url).searchParams,
         );
         if (bookingResult !== undefined) return respond(bookingResult);
+        const phoneResult = await phoneRoute(
+          tx,
+          context,
+          method,
+          path,
+          body,
+          key,
+          new URL(request.url).searchParams,
+        );
+        if (phoneResult !== undefined) return respond(phoneResult);
         const memberResult = await membersRoute(
           tx,
           context,
@@ -215,7 +238,7 @@ async function dispatch(request: Request, deps: CoreDeps) {
             capabilities: {
               core: true,
               voice: false,
-              whatsapp: false,
+              whatsapp: whatsappReadiness().configured,
               calendar: false,
               payments: false,
             },

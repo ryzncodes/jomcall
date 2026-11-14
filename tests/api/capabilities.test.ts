@@ -7,12 +7,12 @@ test("disabled provider families fail closed; unknown paths and wrong methods ar
   const h = await createHarness(),
     api = await createApiHarness(h);
   try {
+    // /calls and /phone-numbers are real local routes since the phone line
+    // (tests/api/phone-numbers.test.ts); placing calls still needs a provider.
     for (const path of [
-      "/calls",
       "/inbox/send",
       "/whatsapp/send",
       "/integrations/google",
-      "/phone-numbers",
       "/billing/top-up",
       "/payments",
       "/outbound",

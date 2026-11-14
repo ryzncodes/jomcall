@@ -115,7 +115,7 @@ Closed on: 2026-12-25 (Krismas)
 
 - **Typed path.** The required system message becomes extended rules + RULES + BUSINESS FACTS + business configuration + date/time. Evidence stays per question, as before.
 - **Spoken path.** `stable` = voice rules + RULES + BUSINESS FACTS + configuration + resources. `volatile` = date/time + evidence + recorded items. Everything in `stable` comes from the session snapshot, which does not change during a call, so the cached prefix stays byte-stable across turns and evidence.
-- **Facts cap.** The facts section is capped by budget: 1,500 bytes on the local model, 16,000 on a hosted one. Facts that do not fit are still units, so `search_knowledge` finds them.
+- **Caps on the small model.** On the local model (6,000-byte input) the rules section is capped at 1,400 bytes (owner rules first, then never, unknown, handoff, message, after hours, always; the not-found rule is always kept) and the facts section at 1,200 bytes. A hosted model gets every rule and up to 16,000 bytes of facts. Facts that do not fit are still units, so `search_knowledge` finds them.
 - The existing exports `agentRules`, `voiceRules`, `voiceSystem`, `voiceTools` and `toolCallSchema` are unchanged. WhatsApp and phone-call branches import them. The browser test paths use new extended versions.
 
 ## 6. Tools
@@ -188,3 +188,11 @@ The mock preview at 4181 is unchanged.
 - Retention for gap asks, and calibration of the catalogue score floor on real traffic.
 - Using the knowledge core on the WhatsApp and phone paths, after those branches merge.
 - Running the pack evaluation fixtures through the hosted gates.
+
+## Amendment (2026-11-14): WhatsApp and real phone calls
+
+`main` gained the WhatsApp channel and real phone calls while this was built. Both reuse the brain: WhatsApp calls `runTextBrain` (`engine/src/agent/brain.ts`) and phone calls call `runVoiceTurn` with a `VoiceTurnPolicy`.
+
+- **Prompt sections: on for every channel.** When the session snapshot carries the knowledge core (`packs` or `context`), WhatsApp and phone turns get the same rules section (outranks everything) and the always-shown facts section, and search runs over units (facts as well as free text). Old snapshots keep the old prompt byte for byte.
+- **Core tools: browser tests only, for now.** `lookup_catalogue`, `take_message.unanswered` and the gap log need SQL support per channel (`whatsapp_work` and `agent_call` allow-lists, and a lease check in `agent_knowledge` for their turns). Those functions belong to the WhatsApp and phone-line work and were not changed here. Those channels get the not-found rule in words their tool list can follow ("say you will ask staff, and call take_message"), so they never emit an argument their strict schema rejects. Catalogue rows are therefore not yet reachable on WhatsApp or real calls; this is the first item of the next piece.
+- **Hours.** Hours from the schedule appear only when the session snapshot carries `context`. Browser test sessions freeze it; WhatsApp and phone sessions freeze the published version snapshot, which has rules and facts but no `context` yet, so they show no hours section until those session builders add it.

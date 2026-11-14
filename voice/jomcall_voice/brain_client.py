@@ -31,11 +31,14 @@ class BrainUnavailable(BrainError):
     """The brain could not be reached or answered with a server error."""
 
 
-def _body(session_id: str, transcript: str, turn_id: str, heard_at_ms: float) -> bytes:
+def _body(
+    session_id: str, transcript: str, turn_id: str, heard_at_ms: float,
+    id_field: str = "sessionId",
+) -> bytes:
     def encode(text: str) -> bytes:
         return json.dumps(
             {
-                "sessionId": session_id,
+                id_field: session_id,
                 "transcript": text,
                 "clientTurnId": turn_id,
                 "heardAtMs": heard_at_ms,
@@ -66,14 +69,20 @@ class BrainClient:
     server learns the turn was aborted.
     """
 
-    def __init__(self, base_url: str | None = None):
+    def __init__(
+        self, base_url: str | None = None, *,
+        path: str = "/voice/turns", id_field: str = "sessionId",
+    ):
+        # The phone path uses its own endpoint: path "/phone/turns", id "callId".
         self._base_url = base_url
+        self._path, self._id_field = path, id_field
         self._client = _new_client()
 
     def __call__(self, session_id, token, transcript, client_turn_id, heard_at_ms):
         return stream_turn(
             session_id, token, transcript, client_turn_id, heard_at_ms,
             base_url=self._base_url, client=self._client,
+            path=self._path, id_field=self._id_field,
         )
 
     async def aclose(self) -> None:
@@ -89,15 +98,17 @@ async def stream_turn(
     *,
     base_url: str | None = None,
     client: httpx.AsyncClient | None = None,
+    path: str = "/voice/turns",
+    id_field: str = "sessionId",
 ) -> AsyncIterator[dict]:
     base = config.check_turn_url(base_url) if base_url else config.turn_url()
-    url = base.rstrip("/") + "/voice/turns"
+    url = base.rstrip("/") + path
     headers = {
         "authorization": f"Bearer {token}",
         "content-type": "application/json",
         **config.service_headers(),
     }
-    body = _body(session_id, transcript, client_turn_id, heard_at_ms)
+    body = _body(session_id, transcript, client_turn_id, heard_at_ms, id_field)
     own = client is None
     http = client or _new_client()
     try:

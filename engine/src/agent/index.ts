@@ -14,6 +14,16 @@ import {
 } from "../health.ts";
 import { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
 import { createEmbedder } from "../../../packages/inference/src/embedding.ts";
+import { CallRepository } from "./call-repository.ts";
+import { startPhoneServer, PHONE_PORT } from "./phone-server.ts";
+import {
+  liveKitTelephony,
+  telephonyConfig,
+} from "../../../packages/domain/src/phone/telephony.ts";
+import { WhatsAppWorker } from "../whatsapp/worker.ts";
+import { whatsappMode } from "../../../packages/whatsapp/src/provider.ts";
+import { createCloudProvider } from "../../../packages/whatsapp/src/cloud.ts";
+import { createFakeProvider } from "../../../packages/whatsapp/src/fake.ts";
 
 // LOCAL_ONLY unless the mode is `local` or `hosted`. The listen address is
 // 127.0.0.1 in local mode; hosted mode reads a private address and the service
@@ -29,9 +39,24 @@ const embedder = createEmbedder();
 const listen = provider === "hosted" ? voiceListen() : undefined;
 const runner = await AgentRunner.create(ns, undefined, embedder);
 let lastTickAt = 0;
+// WhatsApp work runs only when the switch is on. The Cloud API client is
+// created here, in the agent process, and nowhere else.
+const whatsapp = await startWhatsApp();
+async function startWhatsApp() {
+  const choice = whatsappMode();
+  if (choice === "disabled") return undefined;
+  const sender =
+    choice === "cloud" ? createCloudProvider() : createFakeProvider();
+  return new WhatsAppWorker(ns, { provider: sender });
+}
 // Spoken turns are served only when the owner opted into the hosted model.
 let voiceRepository: AgentRepository | undefined;
 let voice: Awaited<ReturnType<typeof startVoiceServer>> | undefined;
+// Real phone calls: only when the owner set JOMCALL_TELEPHONY_PROVIDER=livekit_sip
+// (and hosted voice). Off by default; the local app then shows "not connected".
+const phoneSettings = telephonyConfig().config;
+let callRepository: CallRepository | undefined;
+let phone: Awaited<ReturnType<typeof startPhoneServer>> | undefined;
 if (provider === "hosted") {
   try {
     const repository = (voiceRepository = new AgentRepository(ns));
@@ -42,7 +67,24 @@ if (provider === "hosted") {
         health: mode === "hosted" ? () => repository.ping() : undefined,
       },
     );
+    if (phoneSettings) {
+      callRepository = new CallRepository(ns);
+      phone = await startPhoneServer(
+        {
+          calls: callRepository,
+          telephony: liveKitTelephony(phoneSettings),
+          maxConcurrent: phoneSettings.maxConcurrent,
+          capSeconds: phoneSettings.capSeconds,
+          now: Date.now,
+          model: streamVoiceModel,
+        },
+        // Same bind, mode and service secret as the browser voice endpoint.
+        { ...listen!, port: PHONE_PORT },
+      );
+    }
   } catch (error) {
+    await phone?.close();
+    await callRepository?.close();
     await voiceRepository?.close();
     await runner.close();
     throw error;
@@ -61,8 +103,11 @@ let stopping = false;
 async function stop() {
   stopping = true;
   await health?.close();
+  await phone?.close();
+  await callRepository?.close();
   await voice?.close();
   await voiceRepository?.close();
+  await whatsapp?.close();
   await runner.close();
 }
 process.once("SIGINT", stop);
@@ -73,6 +118,11 @@ while (!stopping) {
     lastTickAt = Date.now();
   } catch {
     console.error("AGENT_TICK_FAILED");
+  }
+  try {
+    await whatsapp?.tick();
+  } catch {
+    console.error("WHATSAPP_TICK_FAILED");
   }
   if (!stopping) await new Promise((r) => setTimeout(r, 1000));
 }

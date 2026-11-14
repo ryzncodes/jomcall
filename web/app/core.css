@@ -761,6 +761,19 @@
   overflow-wrap: anywhere;
 }
 
+/* Local call log: one caller line and one agent line per turn. */
+.core-call-turns {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+}
+.core-call-turns p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 /* Turnstile widget (hosted sign-up and sign-in): reserve its height. */
 .turnstile-box {
   min-height: 65px;
