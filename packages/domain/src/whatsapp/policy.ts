@@ -15,7 +15,12 @@ export type TemplateFacts = {
 };
 
 export type SendFacts = {
-  message: { kind: "text" | "template"; templateVariables: string[] };
+  message: {
+    kind: "text" | "template";
+    templateVariables: string[];
+    // The one fixed confirmation sent after a customer opts out.
+    optOutNotice: boolean;
+  };
   channel: { state: string };
   contact: { doNotContact: boolean; deletionPending: boolean };
   conversation: { lastInboundAt: string | null };
@@ -71,6 +76,9 @@ export function decideSend(facts: SendFacts): SendDecision {
   // Do-not-contact stops everything, including a reply inside the window.
   if (facts.contact.doNotContact)
     return { allow: false, reason: "DO_NOT_CONTACT" };
+  // The customer said stop on this channel. Only the confirmation goes out.
+  if (facts.consent.service === false && !facts.message.optOutNotice)
+    return { allow: false, reason: "OPTED_OUT" };
   if (facts.message.kind === "template") {
     const reason = templateAllowed(facts.template, facts);
     return reason
@@ -89,7 +97,7 @@ export function decideSend(facts: SendFacts): SendDecision {
   if (!facts.fallback) return { allow: false, reason: "WINDOW_CLOSED" };
   const reason = templateAllowed(facts.fallback, {
     ...facts,
-    message: { kind: "template", templateVariables: [] },
+    message: { kind: "template", templateVariables: [], optOutNotice: false },
   });
   return reason
     ? {

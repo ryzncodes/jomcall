@@ -70,7 +70,7 @@ create index conversation_contact on app.conversation(org_id,contact_id);
 create table app.conversation_turn(
  id uuid primary key default gen_random_uuid(),
  org_id uuid not null,conversation_id uuid not null,
- kind text not null default 'agent' check(kind in('agent','notice_opt_out','notice_unsupported')),
+ kind text not null default 'agent' check(kind in('agent','notice_opt_out','notice_unsupported','notice_handoff')),
  input text not null check(octet_length(input)<=4000),
  state text not null default 'queued' check(state in('queued','running','completed','failed','skipped','cancelled')),
  attempt integer not null default 1,
@@ -96,7 +96,7 @@ create table app.message(
  author text not null check(author in('customer','agent','staff','system')),
  kind text not null check(kind in('text','template','media','unsupported')),
  body text not null default '' check(octet_length(body)<=8192),
- media jsonb check(media is null or octet_length(media::text)<=2048),
+ media jsonb check(media is null or octet_length(media::text)<=8192),
  template_id uuid,template_variables jsonb not null default '[]' check(jsonb_typeof(template_variables)='array' and octet_length(template_variables::text)<=4096),
  provider_message_id text check(provider_message_id is null or octet_length(provider_message_id)between 1 and 256),
  status text not null check(status in('received','queued','sending','sent','delivered','read','failed','blocked','unknown')),
@@ -150,12 +150,14 @@ create table app.whatsapp_event(
  phone_number_id text not null check(phone_number_id~'^[0-9]{5,30}$'),
  kind text not null check(kind in('message','status')),
  payload jsonb not null check(octet_length(payload::text)<=65536),
- state text not null default 'pending' check(state in('pending','done','ignored','orphaned')),
+ state text not null default 'pending' check(state in('pending','done','ignored','orphaned','failed')),
  attempts integer not null default 0,
+ not_before timestamptz not null default now(),
+ error_code text check(error_code is null or error_code~'^[A-Z0-9_]{1,60}$'),
  received_at timestamptz not null default now(),processed_at timestamptz,
  unique(namespace,dedupe_key)
 );
-create index whatsapp_event_queue on app.whatsapp_event(namespace,received_at,id)where state='pending';
+create index whatsapp_event_queue on app.whatsapp_event(namespace,kind,not_before,received_at,id)where state='pending';
 
 -- A customer's own opt-out message is recorded as a consent record with no
 -- staff actor.

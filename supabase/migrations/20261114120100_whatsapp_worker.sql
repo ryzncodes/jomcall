@@ -53,8 +53,11 @@ begin
   return '{}';
 
  elsif p_action='ingest' then
-  for ev in select * from app.whatsapp_event where namespace=p_namespace and state='pending' order by received_at,id limit 50 for update skip locked loop
+  -- Messages first: a status that waits for its send must not hold up customers.
+  for ev in select * from app.whatsapp_event where namespace=p_namespace and state='pending' and not_before<=now() order by(kind='status'),received_at,id limit 50 for update skip locked loop
    v_count:=v_count+1;
+   -- Each event in its own subtransaction: one bad event is set aside, the rest continue.
+   begin
    select * into ch from app.whatsapp_channel where namespace=p_namespace and phone_number_id=ev.phone_number_id and state='connected';
    if not found then
     update app.whatsapp_event set state='ignored',payload='{}',processed_at=now() where id=ev.id;continue;
@@ -64,9 +67,9 @@ begin
     select * into m from app.message where org_id=ch.org_id and provider_message_id=ev.payload->>'id' and direction='outbound';
     if not found then
      -- The status can overtake the record of the send. Try again later, then give up.
-     if ev.attempts>=5 and ev.received_at<now()-interval '10 minutes' then
+     if ev.received_at<now()-interval '10 minutes' then
       update app.whatsapp_event set state='orphaned',payload='{}',processed_at=now() where id=ev.id;
-     else update app.whatsapp_event set attempts=attempts+1 where id=ev.id;end if;
+     else update app.whatsapp_event set attempts=attempts+1,not_before=now()+least(interval '1 second'*power(2,attempts+1),interval '2 minutes') where id=ev.id;end if;
      continue;
     end if;
     select * into c from app.conversation where org_id=m.org_id and id=m.conversation_id for update;
@@ -126,6 +129,13 @@ begin
     update app.conversation_turn set state='cancelled',completed_at=now() where org_id=c.org_id and conversation_id=c.id and state='queued';
     insert into app.conversation_turn(org_id,conversation_id,kind,input)values(c.org_id,c.id,'notice_opt_out','');
     update app.conversation set needs_attention=true,attention_reason='OPTED_OUT' where id=c.id;
+   elsif v_kind='text' and lower(btrim(v_body))in('staff','staf','human','manusia','agent','ejen','人工','真人') then
+    -- Asking for a person reaches a person, without the model deciding.
+    update app.conversation_turn set state='cancelled',completed_at=now() where org_id=c.org_id and conversation_id=c.id and state='queued';
+    if c.owner<>'staff' then
+     insert into app.conversation_turn(org_id,conversation_id,kind,input)values(c.org_id,c.id,'notice_handoff','');
+    end if;
+    update app.conversation set owner='staff',needs_attention=true,attention_reason='HANDOFF_REQUESTED' where id=c.id;
    elsif c.owner='staff' or not ch.agent_enabled then
     update app.conversation set needs_attention=true,attention_reason='CUSTOMER_REPLIED' where id=c.id;
    elsif v_kind='text' then
@@ -145,6 +155,9 @@ begin
     end if;
    end if;
    update app.whatsapp_event set state='done',payload='{}',processed_at=now() where id=ev.id;
+   exception when others then
+    update app.whatsapp_event set state='failed',payload='{}',processed_at=now(),error_code='INGEST_FAILED' where id=ev.id;
+   end;
   end loop;
   return jsonb_build_object('processed',v_count);
 
@@ -268,7 +281,8 @@ begin
   if m.template_id is not null then select * into tpl from app.whatsapp_template where org_id=m.org_id and id=m.template_id;end if;
   update app.message set status='sending',status_at=now(),lease_token=gen_random_uuid(),lease_until=now()+interval '60 seconds' where id=m.id returning * into m;
   return jsonb_build_object(
-   'message',jsonb_build_object('id',m.id,'kind',m.kind,'body',m.body,'author',m.author,'lease_token',m.lease_token,'template_variables',m.template_variables),
+   'message',jsonb_build_object('id',m.id,'kind',m.kind,'body',m.body,'author',m.author,'lease_token',m.lease_token,'template_variables',m.template_variables,
+    'turnKind',(select q.kind from app.conversation_turn q where q.org_id=m.org_id and q.id=m.turn_id)),
    'channel',jsonb_build_object('id',ch.id,'state',ch.state,'phoneNumberId',ch.phone_number_id,'credentials',ch.credentials),
    'contact',jsonb_build_object('id',k.id,'doNotContact',coalesce(k.do_not_contact,true),'deletionPending',coalesce(k.deletion_pending,true)),
    'conversation',jsonb_build_object('id',c.id,'waId',c.wa_id,'state',c.state,'lastInboundAt',c.last_inbound_at),

@@ -35,16 +35,29 @@ const unsupported: Record<ChatLanguage, string> = {
   zh: "抱歉，我目前只能阅读文字信息。我们的员工会查看您的信息。",
 };
 
-export function noticeText(
-  kind: "notice_opt_out" | "notice_unsupported",
-  preferred: unknown,
-) {
-  return (kind === "notice_opt_out" ? optOut : unsupported)[
-    language(preferred)
-  ];
+const handoff: Record<ChatLanguage, string> = {
+  ms: "Baik, saya sudah maklumkan kepada pekerja kami. Mereka akan membalas di sini secepat mungkin.",
+  en: "Sure, I have let our team know. A member of staff will reply here as soon as they can.",
+  zh: "好的，我已通知我们的员工。他们会尽快在这里回复您。",
+};
+
+export type NoticeKind =
+  | "notice_opt_out"
+  | "notice_unsupported"
+  | "notice_handoff";
+
+export function noticeText(kind: NoticeKind, preferred: unknown) {
+  return (
+    kind === "notice_opt_out"
+      ? optOut
+      : kind === "notice_handoff"
+        ? handoff
+        : unsupported
+  )[language(preferred)];
 }
 
 // Appended to the shared agent rules for this channel only. The rules
 // themselves are not changed, so the tested behaviour carries over.
+// The shared rules call every exchange a test; on WhatsApp it is not.
 export const whatsappChannelNote =
-  " Channel: WhatsApp chat with a real customer. Plain text only, no markdown; keep replies short. Proposals go to the business's staff for review.";
+  " CHANNEL OVERRIDE: this is NOT a test. You are answering a real customer of this business on WhatsApp. Tool proposals go to the business's staff for review and are not done until staff confirm them, so never say a booking or message is done. Answer only about this business; politely decline unrelated general requests. If the customer asks for a person, call handoff_to_human. Plain text only, no markdown; keep replies short.";
