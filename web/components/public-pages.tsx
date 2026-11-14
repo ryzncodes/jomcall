@@ -19,6 +19,45 @@ import {
   publicPrices,
   sourceUrl,
 } from "@/lib/pricing";
+import {
+  OPERATOR,
+  PRIVACY_CONTACT_EMAIL,
+  LEGAL_EFFECTIVE_DATE,
+} from "@/lib/operator";
+import { legalCopy } from "@/messages/legal";
+
+// Fills operator facts into legal text. Facts live only in lib/operator.ts.
+export function fillOperator(text: string): string {
+  return text
+    .replaceAll("{name}", OPERATOR.legalName)
+    .replaceAll("{reg}", OPERATOR.registrationNumber)
+    .replaceAll("{address}", OPERATOR.address)
+    .replaceAll("{email}", PRIVACY_CONTACT_EMAIL)
+    .replaceAll("{date}", LEGAL_EFFECTIVE_DATE);
+}
+
+// Operator identity shown in every public footer.
+export function OperatorDetails() {
+  const { t, href, locale } = useExperience(),
+    f = legalCopy[locale].footer;
+  return (
+    <div className="operator-details">
+      <p>
+        <strong>{fillOperator(f.product)}</strong>
+        <span>{fillOperator(f.registration)}</span>
+        <span>{OPERATOR.address}</span>
+      </p>
+      <p>
+        <a href={href("/privacy")}>{t.remaining.privacy}</a>
+        <a href={href("/terms")}>{t.remaining.terms}</a>
+        <a href={OPERATOR.repositoryUrl} rel="noopener noreferrer">
+          {f.source}
+        </a>
+        <span>{f.licence}</span>
+      </p>
+    </div>
+  );
+}
 // "{n}" and "{rate}" placeholders in the price copy.
 const fill = (text: string, value: string | number) =>
   text.replace(/\{(n|rate)\}/g, String(value));
@@ -44,11 +83,12 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
       <footer className="public-footer">
         <Brand />
         <nav aria-label={t.footerNote}>
-          <a href={href("/privacy")}>{p.privacy}</a>
-          <a href={href("/terms")}>{p.terms}</a>
+          <a href={href("/pricing")}>{p.pricing}</a>
+          <a href={href("/docs")}>{p.docs}</a>
           <a href={href("/self-host")}>{p.selfhost}</a>
           <a href={href("/admin")}>{p.platform}</a>
         </nav>
+        <OperatorDetails />
         <small>
           {mode === "hosted"
             ? locale === "ms"
@@ -58,7 +98,7 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
               ? locale === "ms"
                 ? "Pembangunan setempat · tiada saluran disambungkan"
                 : "Local development · no channels connected"
-              : p.previewOnly}
+              : legalCopy[locale].footer.preview}
         </small>
       </footer>
     </>
@@ -69,7 +109,7 @@ export function PublicPages({
 }: {
   page: "pricing" | "docs" | "privacy" | "terms";
 }) {
-  const { t, href } = useExperience(),
+  const { t, href, locale } = useExperience(),
     p = t.remaining,
     [minutes, setMinutes] = useState(300),
     [guide, setGuide] = useState<number | null>(null);
@@ -82,6 +122,7 @@ export function PublicPages({
     "/self-host",
   ];
   const legal = page === "privacy" || page === "terms";
+  const doc = legal ? legalCopy[locale][page] : null;
   return (
     <PublicFrame>
       <main tabIndex={-1} id="content" className="public-content">
@@ -99,8 +140,10 @@ export function PublicPages({
               <BookOpen size={38} />
             )}
           </span>
-          <h1>{p[`${page}Title`]}</h1>
-          <p>{legal ? p.legalIntro : p[`${page}Intro`]}</p>
+          <h1>{doc ? doc.title : p[`${page}Title`]}</h1>
+          <p>
+            {doc ? doc.intro : page === "docs" ? p.docsIntro : p.pricingIntro}
+          </p>
         </div>
         {page === "pricing" ? (
           <>
@@ -129,11 +172,15 @@ export function PublicPages({
                         : p.planNoNumber}
                     </li>
                     {plan.includedVoiceSeconds > 0 && (
-                      <li>{fill(p.planMinutes, plan.includedVoiceSeconds / 60)}</li>
+                      <li>
+                        {fill(p.planMinutes, plan.includedVoiceSeconds / 60)}
+                      </li>
                     )}
                     <li>
                       {fill(
-                        plan.includedVoiceSeconds ? p.planOverage : p.planPaygRate,
+                        plan.includedVoiceSeconds
+                          ? p.planOverage
+                          : p.planPaygRate,
                         rate(publicPrices.voiceSenPerMinute),
                       )}
                     </li>
@@ -253,32 +300,42 @@ export function PublicPages({
               </article>
             ))}
           </div>
-        ) : (
+        ) : doc ? (
           <div className="legal-layout">
             <aside>
-              <span className="remaining-chip">{p.legalDraft}</span>
-              <nav aria-label={p[page]}>
-                {p[`${page}Heads`].map((h, i) => (
-                  <a href={`#section-${i}`} key={h}>
-                    {h}
+              <span className="remaining-chip">
+                {fillOperator(doc.effective)}
+              </span>
+              <nav aria-label={legalCopy[locale].footer.contents}>
+                {doc.sections.map((sec, i) => (
+                  <a href={`#section-${i}`} key={sec.heading}>
+                    {sec.heading}
                   </a>
                 ))}
               </nav>
-              <a className="text-link" href={href("/app/contacts")}>
-                {t.crm.contacts}
-                <ArrowUpRight size={16} />
-              </a>
             </aside>
             <div>
-              {p[`${page}Heads`].map((h, i) => (
-                <section key={h} id={`section-${i}`}>
-                  <h2>{h}</h2>
-                  <p>{p[`${page}Bodies`][i]}</p>
+              {doc.sections.map((sec, i) => (
+                <section key={sec.heading} id={`section-${i}`}>
+                  <h2>{sec.heading}</h2>
+                  {sec.paragraphs.map((x) => (
+                    <p key={x}>{fillOperator(x)}</p>
+                  ))}
+                  {sec.list && (
+                    <ul>
+                      {sec.list.map((x) => (
+                        <li key={x}>{fillOperator(x)}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {sec.after?.map((x) => (
+                    <p key={x}>{fillOperator(x)}</p>
+                  ))}
                 </section>
               ))}
             </div>
           </div>
-        )}
+        ) : null}
       </main>
     </PublicFrame>
   );

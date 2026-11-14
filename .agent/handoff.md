@@ -1,5 +1,14 @@
 # Handoff
 
+## 2026-11-14 — real privacy notice, terms and operator details
+
+Branch `feat/legal-pages`; pull request against `main`, not merged (merging deploys www.jomcall.com).
+
+- `/privacy` and `/terms` now carry a real notice and preview-stage terms in EN and BM (`web/messages/legal.ts`); operator facts and the placeholder contact email live only in `web/lib/operator.ts`.
+- Both public footers show "JomCall by Digitalize Plus Enterprise", SSM no., address, Privacy, Terms, GitHub and the FSL-1.1-ALv2 note.
+- Verified: typecheck, `build:mock`, `build:local`; served pages in both languages contain no "fictional", "not final" or "before launch"; no horizontal scroll at 375 px.
+- Open: owner list in `docs/legal/README.md`; lawyer review before real customer data.
+
 ## 2026-11-14 — billing: prepaid MYR wallet (sub-project 5, partial)
 
 Branch `feat/billing-wallet`, pull request open against `main`, not merged.
