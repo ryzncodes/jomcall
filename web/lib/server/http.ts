@@ -1,6 +1,7 @@
 import "server-only";
 import { ZodError } from "zod";
 import { AppError } from "../../../packages/contracts/src/index.ts";
+import { isHosted } from "../../../packages/contracts/src/hosting.ts";
 export function respond(data: unknown, status = 200) {
   return Response.json(
     { ok: true, data, requestId: crypto.randomUUID() },
@@ -108,6 +109,7 @@ export function setCookie(
 ) {
   response.headers.append(
     "set-cookie",
-    `${key}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`,
+    `${key}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}` +
+      (isHosted() ? "; Secure" : ""),
   );
 }

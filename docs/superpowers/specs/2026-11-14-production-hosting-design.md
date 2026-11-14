@@ -546,3 +546,49 @@ PDPA:
 - Prices marked unverified in §4 and §9, and every MYR conversion.
 - The Commissioner's guideline text itself; the PDPA section rests on law-firm summaries.
 - The sibling CI and phone-line plans, which were not available when this was written.
+
+## Amendment, 2026-11-14: Cloudflare for domain, bot check, email and backups
+
+Owner decision, 2026-11-14. The text above is unchanged; where it differs, this section wins.
+
+**Decision.**
+
+- **Domain and DNS** on Cloudflare (Cloudflare Registrar, or the domain's nameservers moved to Cloudflare).
+- **Turnstile** on sign-up and login. Server-side Siteverify; off unless both keys are set; fail closed when configured; no effect in `mock` or `local` mode.
+- **Cloudflare Email Service** for transactional email. It replaces the separate provider in §8 item 9. The engine sends through its REST API (`JOMCALL_MAIL_PROVIDER=cloudflare`). Supabase Auth's own confirmation and recovery mail goes through Cloudflare's SMTP endpoint. The SMTP sender stays as a fallback.
+- **R2** for nightly encrypted database dumps (a second copy beside Supabase's daily backups) and, later, call recordings.
+- **Web stays on Vercel**, kept swappable: no Vercel-only API in application code; mode and origin from the environment. A later move to Cloudflare Workers needs Hyperdrive or an equivalent pooler. It is described in `infra/hosted/RUNBOOK.md` and marked as not done.
+- **Supabase and the Singapore server** stay as designed in §1 to §7.
+
+**What was checked** in Cloudflare's documentation on 2026-11-14:
+
+- Email Sending exists. It is in public beta and needs Workers Paid for arbitrary recipients. The REST endpoint is `POST /accounts/{account_id}/email/sending/send` with a Bearer token holding "Email Sending: Edit". There is also SMTP at `smtp.mx.cloudflare.net:465`. Limits: 50 recipients and 25 MiB per message, and a daily quota that starts small. The sending domain must use Cloudflare DNS. Onboarding adds SPF, DKIM and DMARC records.
+- Turnstile Siteverify is at `challenges.cloudflare.com/turnstile/v0/siteverify`. Tokens are at most 2048 characters, valid for 300 s and single use.
+- R2 has an S3-compatible API at `<account>.r2.cloudflarestorage.com` with region `auto`. A single PUT carries up to 5 GiB less 5 MiB.
+
+Each product exists and can do the job as described. Two cautions:
+
+- Email Sending's beta status and its starting quota.
+- Supabase's SMTP form accepting implicit TLS on port 465 is unverified.
+
+**Resulting monthly cost** (USD, before tax, before any customer). Prices are from Cloudflare's pricing pages, checked 2026-11-14:
+
+| Item | Before | After |
+|---|---|---|
+| Separate email provider (free tier) | 0 | removed |
+| Cloudflare Workers Paid (needed for Email Sending) | — | 5 |
+| Email: 3,000 included, then 0.35 per 1,000 | — | 0 at launch volume |
+| R2: 10 GB-month included, then 0.015 per GB-month; egress free | — | 0 while dumps stay under 10 GB (30-day lifecycle rule) |
+| DNS, Turnstile | — | 0 (Turnstile free-plan limits not checked) |
+| Domain | about 1 (unverified) | about 1 (unverified; Cloudflare Registrar sells at cost) |
+| **Hosting total at 0 customers** | **about 70 to 82** | **about 75 to 87** |
+
+At 10 and 100 customers, the figures in §1 rise by the same USD 5. Email past 3,000 a month adds USD 0.35 per 1,000. R2 for recordings is not costed until recordings exist.
+
+**Built on branch `feat/hosted-mode`** (offline only; no Cloudflare account exists, and nothing called Cloudflare):
+
+- the mail sender interface with SMTP, Cloudflare and fake implementations (`engine/src/mail.ts`)
+- the Turnstile check (`packages/contracts/src/turnstile.ts`, `web/lib/server/auth.ts`) and widget (`web/components/core/turnstile.tsx`)
+- the backup job, with an encrypted dump and a SigV4 PUT over `fetch` (`scripts/hosted/backup.ts`, `scripts/hosted/s3.ts`)
+- the settings in `infra/hosted/.env.hosted.example`
+- the owner checklist, section C, in `infra/hosted/RUNBOOK.md`

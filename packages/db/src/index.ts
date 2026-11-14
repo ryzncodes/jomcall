@@ -1,4 +1,5 @@
 import pg from "pg";
+import { databaseConnection } from "../../contracts/src/hosting.ts";
 import { createHash } from "node:crypto";
 import {
   AppError,
@@ -12,10 +13,11 @@ import {
 export class Database {
   pool: pg.Pool;
   constructor(url: string, max = 5) {
-    const u = new URL(url);
-    if (u.hostname !== "127.0.0.1" || u.port !== "54622")
-      throw Error("LOCAL_DATABASE_REQUIRED");
-    this.pool = new pg.Pool({ connectionString: url, max });
+    // Local mode: 127.0.0.1:54622 only. Hosted mode: TLS and an expected host.
+    this.pool = new pg.Pool({
+      ...databaseConnection(url, "APP_DATABASE_URL"),
+      max,
+    });
     this.pool.on("error", () => console.error("DATABASE_POOL_ERROR"));
   }
   async withIdentity<T>(

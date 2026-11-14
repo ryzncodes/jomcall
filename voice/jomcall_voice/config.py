@@ -6,8 +6,10 @@ a key or a voice token.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # --- Race-the-clock timing (milliseconds unless the name says otherwise) ---
 NEUTRAL_ACK_MS = 800  # no sentence yet: say a one-or-two-word acknowledgement
@@ -67,7 +69,10 @@ AGENT_NAME = "jomcall-voice"
 # its Prometheus server stays off unless prometheus_port is set). Loopback only.
 WORKER_HOST = "127.0.0.1"
 WORKER_PORT = 54634
-CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache"
+CACHE_DIR = Path(
+    os.environ.get("JOMCALL_VOICE_CACHE_DIR", "").strip()
+    or Path(__file__).resolve().parent.parent / ".cache"
+)
 
 # Brain error codes that end the call. Any other code gets the trouble line.
 FATAL_BRAIN_CODES = frozenset({"VOICE_EXPIRED", "VOICE_UNAUTHORIZED", "TURN_LIMIT"})
@@ -89,5 +94,70 @@ def missing_keys() -> list[str]:
     return [name for name in SPEECH_KEYS if not os.environ.get(name, "").strip()]
 
 
+# --- Hosted mode (JOMCALL_MODE=hosted) ---
+# The agent and this worker share a private Docker network. The agent requires
+# this header on every turn in hosted mode, as well as the per-call token.
+SERVICE_KEY_HEADER = "x-jomcall-service-key"
+SERVICE_SECRET_MIN = 32
+
+
+def hosted() -> bool:
+    return os.environ.get("JOMCALL_MODE", "").strip() == "hosted"
+
+
+def _private_ipv4(host: str) -> bool:
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.version == 4 and (address.is_loopback or address.is_private) and not address.is_unspecified
+
+
+def _loopback_or_wildcard(host: str) -> bool:
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_unspecified
+
+
+def check_turn_url(url: str) -> str:
+    """Local mode: http on 127.0.0.1 only. Hosted mode: http to a private IPv4
+    address, or https to a public host. Errors name the variable, never its value."""
+    parsed = urlsplit(url)
+    host = parsed.hostname or ""
+    if not hosted():
+        if parsed.scheme != "http" or host != "127.0.0.1":
+            raise RuntimeError("LOOPBACK_REQUIRED: JOMCALL_VOICE_TURN_URL")
+        return url
+    if parsed.scheme == "http" and _private_ipv4(host):
+        return url
+    if parsed.scheme == "https" and host and not _loopback_or_wildcard(host):
+        return url
+    raise RuntimeError("PRIVATE_OR_HTTPS_REQUIRED: JOMCALL_VOICE_TURN_URL")
+
+
 def turn_url() -> str:
-    return os.environ.get("JOMCALL_VOICE_TURN_URL", "").strip() or DEFAULT_TURN_URL
+    value = os.environ.get("JOMCALL_VOICE_TURN_URL", "").strip()
+    if hosted() and not value:
+        raise RuntimeError("VOICE_TURN_URL_REQUIRED: JOMCALL_VOICE_TURN_URL")
+    return check_turn_url(value or DEFAULT_TURN_URL)
+
+
+def startup_check() -> None:
+    """Fail at start, not on the first call: the turn URL and, in hosted mode,
+    the service secret. Raises with variable names only."""
+    turn_url()
+    service_headers()
+
+
+def service_headers() -> dict[str, str]:
+    """The service key header in hosted mode; nothing in local mode."""
+    if not hosted():
+        return {}
+    secret = os.environ.get("JOMCALL_VOICE_SERVICE_SECRET", "")
+    if len(secret) < SERVICE_SECRET_MIN or any(c.isspace() for c in secret):
+        raise RuntimeError("VOICE_SERVICE_SECRET_REQUIRED: JOMCALL_VOICE_SERVICE_SECRET")
+    return {SERVICE_KEY_HEADER: secret}
