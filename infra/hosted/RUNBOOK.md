@@ -23,22 +23,22 @@ Monthly costs are the design's figures, checked on vendor pages on 2026-11-14, i
 
 | # | Account | What to choose | Monthly cost | Notes |
 |---|---|---|---|---|
-| 1 | **[OWNER]** Domain registrar | One domain, e.g. `example.com` | about 1 (unverified) | Needed for the web app, LiveKit and email |
+| 1 | **[OWNER]** Domain | One domain, e.g. `example.com`, registered at Cloudflare Registrar or moved onto Cloudflare nameservers | about 1 (unverified) | Cloudflare Email Service needs the domain on Cloudflare DNS |
 | 2 | **[OWNER]** Vercel | Upgrade the existing team to **Pro** | 20 | Hobby is not allowed for commercial use and has no DPA |
 | 3 | **[OWNER]** Supabase, paid org | **Pro**, production project in **Singapore (ap-southeast-1)**, Postgres **17** | 25 | Daily backups, 7 days |
 | 4 | **[OWNER]** Supabase, staging | Separate **free** org, staging project in Singapore, Postgres 17 | 0 (pauses after a week idle) or 10 as a second paid Micro | Design §8 item 13 |
 | 5 | **[OWNER]** DigitalOcean (or AWS Lightsail) | Region **SGP1**. Staging: 2 GB droplet. Production: 4 GB / 2 vCPU droplet. Ubuntu LTS, SSH key login | 12 staging + 24 production | Create servers only at steps 3 and 8 |
-| 6 | **[OWNER]** Transactional email provider | Any with SMTP, a DPA and a free tier | 0 at first | Owner decision (design §8 item 9) |
+| 6 | **[OWNER]** Cloudflare (one account for staging and production) | DNS, Turnstile, R2 and Email Service. **Workers Paid** is required to send email to arbitrary recipients | 5 (Workers Paid). Email: 3,000 a month included, then 0.35 per 1,000. R2: 10 GB-month included, then 0.015 per GB-month. DNS and Turnstile: 0 (Turnstile free-plan limits not checked) | Decided 2026-11-14 (design amendment). Email Sending is in **beta**. Replaces a separate email provider. Section C |
 | 7 | **[OWNER]** Speech and model vendors | Separate **staging** and **production** keys at Deepgram, Anthropic, Google Cloud (Gemini TTS), and OpenRouter if the typed path stays on it | usage only | Set a spending cap and usage alert on each |
 | 8 | **[OWNER]** Optional monitoring | One uptime service (Better Stack or UptimeRobot free) and one error tracker (Sentry free) | 0 | Each is a new outbound service needing approval |
 
-Expected hosting total before any customer: **about USD 70 to 82 a month** (design §1).
+Expected hosting total before any customer: **about USD 75 to 87 a month** (design §1 plus USD 5 for Cloudflare Workers Paid; see the 2026-11-14 amendment at the end of the design).
 
 On every account: turn on two-factor sign-in, set a spending alert, and accept the vendor's data processing addendum (design §6.3).
 
 ### B. Values to obtain, and where each goes
 
-One file per service on the server, in `/etc/jomcall/` (`agent.env`, `engine.env`, `voice.env`, `livekit.env`, `caddy.env`; root-owned, mode 0600). Compose sets `JOMCALL_MODE`, `JOMCALL_VOICE_BIND`, `JOMCALL_VOICE_TURN_URL` and the voice worker's internal `LIVEKIT_URL` itself; leave them out of the files. Web values go into Vercel, per environment. The release values stay on the owner's laptop. `infra/hosted/.env.hosted.example` lists every name with a one-line description.
+One file per service on the server, in `/etc/jomcall/` (`agent.env`, `engine.env`, `voice.env`, `livekit.env`, `caddy.env`, and `backup.env` for the backup job; root-owned, mode 0600). Compose sets `JOMCALL_MODE`, `JOMCALL_VOICE_BIND`, `JOMCALL_VOICE_TURN_URL` and the voice worker's internal `LIVEKIT_URL` itself; leave them out of the files. Web values go into Vercel, per environment. The release values stay on the owner's laptop. `infra/hosted/.env.hosted.example` lists every name with a one-line description.
 
 | Value | Where it comes from | Goes to |
 |---|---|---|
@@ -54,11 +54,44 @@ One file per service on the server, in `/etc/jomcall/` (`agent.env`, `engine.env
 | `JOMCALL_VOICE_SERVICE_SECRET` | **[OWNER]** generate: `openssl rand -hex 32` | `agent.env` and `voice.env` (same value) |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | **[OWNER]** generate: `echo API$(openssl rand -hex 8)` and `openssl rand -hex 32` | Vercel and `voice.env`; `LIVEKIT_KEYS="<key>: <secret>"` in `livekit.env` |
 | `LIVEKIT_DOMAIN`, `ACME_EMAIL` | e.g. `livekit.example.com`, and an inbox you read | `caddy.env`; public `LIVEKIT_URL=wss://livekit.example.com` in Vercel |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Email provider dashboard | `engine.env`, and Supabase Auth SMTP settings |
+| `JOMCALL_MAIL_PROVIDER=cloudflare` | Plain setting | `engine.env` |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard, account home, Account ID (32 hex) | `engine.env`; `backup.env` |
+| `CLOUDFLARE_EMAIL_API_TOKEN` | Cloudflare, My Profile or Account API Tokens: custom token with only **Email Sending: Edit** (C3) | `engine.env` |
+| `CLOUDFLARE_EMAIL_FROM` | An address on the onboarded domain, e.g. `hello@example.com` (staging: `staging@example.com`) | `engine.env` |
+| Supabase Auth SMTP | Host `smtp.mx.cloudflare.net`, port `465`, user `api_token`, password: a **second** token with only Email Sending: Edit, sender as above | Supabase dashboard only (step 2c) |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY` | Cloudflare, Turnstile, the widget for this environment (C4) | Vercel (both; the site key is read at runtime, not build time) |
+| `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Cloudflare, R2: the bucket name and an R2 API token (C5) | `backup.env` |
+| `BACKUP_ENCRYPTION_KEY` | **[OWNER]** generate: `openssl rand -hex 32`. Keep a second copy offline (password manager): without it no backup can be restored | `backup.env`, and offline |
+| `BACKUP_DATABASE_URL` | The `postgres` session connection (port 5432), as `HOSTED_ADMIN_DATABASE_URL` | `backup.env` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Only if `JOMCALL_MAIL_PROVIDER=smtp` (the fallback): the SMTP provider's values. Cloudflare's own SMTP endpoint also works here (`smtp.mx.cloudflare.net`, 465, `api_token`, a token) | `engine.env` |
 | `ANTHROPIC_API_KEY` (and `OPENROUTER_API_KEY` if used) | Vendor consoles | `agent.env` |
 | `DEEPGRAM_API_KEY`, `GOOGLE_CLOUD_API_KEY` | Vendor consoles | `voice.env` |
 
-Plain settings per environment: `JOMCALL_MODE=hosted`, `JOMCALL_QUEUE_NAMESPACE=staging` (or `prod`), `JOMCALL_MODEL_PROVIDER`, `JOMCALL_VOICE_PROVIDER=hosted`, `HOSTED_TARGET=staging` (or `prod`).
+Plain settings per environment: `JOMCALL_MODE=hosted`, `JOMCALL_QUEUE_NAMESPACE=staging` (or `prod`), `JOMCALL_MODEL_PROVIDER`, `JOMCALL_VOICE_PROVIDER=hosted`, `HOSTED_TARGET=staging` (or `prod`), `BACKUP_ENABLED=1` in `backup.env`.
+
+### C. Cloudflare setup — [OWNER]
+
+Product facts below were read in Cloudflare's documentation on 2026-11-14. Nothing here has been done.
+
+C1. **Account.** One Cloudflare account, two-factor sign-in on. Subscribe to **Workers Paid** (USD 5 a month); Email Sending to arbitrary recipients is not available on the free plan. Set a billing notification.
+
+C2. **Domain and DNS records.** Add the domain (or register it at Cloudflare Registrar). If it was registered elsewhere, change the registrar's nameservers to the two Cloudflare gives you. Then add, per environment:
+
+| Record | Name | Value | Proxy |
+|---|---|---|---|
+| CNAME | `app` (production web) | the target Vercel shows when you add the domain | DNS only (grey cloud); Vercel issues the certificate |
+| CNAME | `staging` (staging web) | the target Vercel shows | DNS only |
+| A | `livekit` | production server address | DNS only (WebRTC and Caddy's certificate need the real address) |
+| A | `livekit.staging` | staging server address | DNS only |
+| MX, TXT (SPF, DKIM) on `cf-bounce.<domain>`, TXT `_dmarc.<domain>` | added by Cloudflare in C3 | — | — |
+
+Values go to: `APP_ORIGIN` (Vercel, `engine.env`), `LIVEKIT_DOMAIN` (`caddy.env`), `LIVEKIT_URL=wss://livekit.<domain>` (Vercel).
+
+C3. **Email Service sender verification (SPF, DKIM, DMARC).** Cloudflare dashboard, Compute, Email Service, Email Sending, **Onboard Domain**, choose the domain, review and accept the records Cloudflare adds: MX and an SPF TXT on the `cf-bounce` subdomain, a DKIM TXT, and a DMARC TXT on `_dmarc`. If a DMARC record already exists, keep one. [CHECK] the domain shows as verified (usually 5 to 15 minutes). Create two API tokens, each with only **Email Sending: Edit**: one for the engine (`CLOUDFLARE_EMAIL_API_TOKEN` in `engine.env`), one for Supabase Auth's SMTP password (step 2c). New accounts start with a small daily sending quota that grows with reputation; send only to people who expect the mail.
+
+C4. **Turnstile keys.** Cloudflare, Turnstile, Add widget, once per environment: hostname the environment's web host (`app.<domain>`, `staging.<domain>`), widget mode Managed. Copy the site key to `TURNSTILE_SITE_KEY` and the secret key to `TURNSTILE_SECRET_KEY`, both in Vercel for that environment only. Set both or neither: one alone makes every sign-in fail on purpose. The server also checks the hostname and the action (`login` or `signup`) that Cloudflare reports.
+
+C5. **R2 bucket and token.** Cloudflare, R2: create `jomcall-backups-staging` and `jomcall-backups-prod` (location hint Asia-Pacific). On each bucket add a lifecycle rule that deletes objects after 30 days, and leave public access off. Under R2, Manage API tokens, create one token per bucket: **Object Read & Write**, applied to that bucket only. Copy the Access Key ID to `R2_ACCESS_KEY_ID` and the Secret Access Key to `R2_SECRET_ACCESS_KEY` (shown once) in that environment's `backup.env`. Recordings will later get their own bucket and token.
 
 ---
 
@@ -117,7 +150,7 @@ npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.e
 2c. **[OWNER]** In the Supabase dashboard, Authentication:
 - Site URL: the staging `APP_ORIGIN`.
 - Redirect allow-list: `<APP_ORIGIN>/api/auth/confirm` and `<APP_ORIGIN>/api/auth/recovery`.
-- SMTP: the email provider's values.
+- SMTP: `smtp.mx.cloudflare.net`, port 465, user `api_token`, password the second Email Sending token from C3, sender `CLOUDFLARE_EMAIL_FROM`. [UNVERIFIED] that Supabase's SMTP form accepts implicit TLS on 465; if it does not, keep the SMTP fallback provider for Auth only.
 - Email templates: paste `supabase/templates/confirmation.html` and `recovery.html`, replacing the words "local account" and "local inbox" with neutral English and BM text.
 - Data API: remove `app` and `app_private` from the exposed schemas if listed.
 
@@ -216,6 +249,14 @@ Not possible yet: the twenty-turn speed script (`npm run check:voice-speed`) dri
 
 Run for a week. Then:
 - Restore last night's backup into a scratch Supabase project; compare row counts; write down how long it took. Delete the scratch project.
+- Encrypted off-site dump to R2 (second copy, beside Supabase's own daily backups). On the server, install a `pg_dump` matching the database's major version (17) and write `/etc/jomcall/backup.env` (0600) from the backup lines of `.env.hosted.example`, then:
+
+  ```bash
+  npm run hosted:readiness -- --service backup --env-file /etc/jomcall/backup.env
+  npm run hosted:backup -- --target staging --env-file /etc/jomcall/backup.env
+  ```
+
+  [CHECK] prints `Uploaded staging/jomcall-staging-<time>.dump.enc`; the object appears in the bucket. Then prove a restore: download it, `npm run hosted:backup -- --decrypt <file> out.dump --target staging --env-file /etc/jomcall/backup.env`, and `pg_restore --list out.dump` lists the tables. Schedule it nightly (systemd timer or cron, 03:00 Asia/Kuala_Lumpur) only after that restore worked. [UNVERIFIED] none of this has run against a real database or bucket.
 - Concurrent synthetic calls until the voice worker degrades; record the limit and set a job limit from it (not built yet).
 - Deploy a new image during a live call: `docker compose up -d --build voice` and confirm the call finishes (the worker drains for up to 320 s).
 - Stop the server on purpose; confirm every alert reaches your phone.
@@ -256,6 +297,16 @@ Typed and browser voice tests only. Real callers wait for the phone line, the Go
 
 ---
 
+## Moving web to Cloudflare Workers later — NOT DONE
+
+Web stays on Vercel. It is kept swappable: application code uses no Vercel-only API; mode and origin come from `JOMCALL_MODE` and `APP_ORIGIN`; the client address comes from `x-real-ip` / `x-forwarded-for`. The only Vercel-specific lines are build settings (`web/vercel.json`, and `distDir` in `web/next.config.ts` keyed on `VERCEL`). A move would need, and none of it is built or tested:
+
+1. A Next.js adapter for Workers (Cloudflare documents OpenNext and vinext; pick after checking support for this Next.js version).
+2. **Hyperdrive** (or an equivalent pooler) in front of Supabase for `APP_DATABASE_URL`: Workers open a new TCP connection per request, and the web path uses `pg`. The `JOMCALL_DATABASE_HOSTS` allow-list and TLS checks would have to accept the Hyperdrive host or binding.
+3. Node compatibility for `pg`, `node:crypto` and the Supabase client under `nodejs_compat`, checked by running `tests/hosting/web.test.ts` against the Workers runtime.
+4. Client address from `CF-Connecting-IP` instead of `x-real-ip` (one line in `web/lib/server/auth.ts`).
+5. Secrets as Worker secrets, a staging and a production Worker, DNS switched from Vercel's CNAME to the Worker route, and a rollback that points DNS back at Vercel.
+
 ## Known gaps in this kit
 
 - **Login rate limit (launch blocker, design §5.7).** Hosted mode keys the counter by client address instead of one global bucket, but counters still live in each server instance's memory. They must move to Postgres before real users.
@@ -268,3 +319,6 @@ Typed and browser voice tests only. Real callers wait for the phone line, the Go
 - **Engine heartbeat to an uptime service** (design §5.9) is not built; the loopback health listener exists.
 - **LiveKit and Caddy** have never been started by this kit and have no container health checks.
 - **Staging speed measurement**: the twenty-turn script is local-only (step 5).
+- **Cloudflare Email Sending is in beta** and starts with a small daily quota. The SMTP sender remains as the fallback (`JOMCALL_MAIL_PROVIDER=smtp`).
+- **Backup size.** The backup job holds the dump in memory and uploads one PUT, so it refuses dumps over 4 GiB (`BACKUP_TOO_LARGE`). Multipart upload is not built.
+- **Backup scheduling** is a runbook step, not part of the Compose file; the server needs a matching `pg_dump`. Supabase's daily backups stay the primary copy.
