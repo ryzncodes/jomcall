@@ -20,7 +20,7 @@ export const notFoundRule =
 
 // Text from the owner goes into the system role: one line per item.
 const line = (value: string, max: number) =>
-  Array.from(value.replace(/[\s\p{Cc}\p{Cf}  ]+/gu, " ").trim())
+  Array.from(value.replace(/[\s\p{Cc}\p{Cf}\u2028\u2029]+/gu, " ").trim())
     .slice(0, max)
     .join("");
 
