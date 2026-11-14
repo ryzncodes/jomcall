@@ -1,0 +1,599 @@
+{
+  "schemaVersion": 1,
+  "id": "status-check",
+  "name": {
+    "en": "Status check",
+    "ms": "Semakan status"
+  },
+  "callPurpose": {
+    "en": "The caller already left something with the business or already ordered, and wants to know where it stands: is it ready, how much is the bill, when can I collect, why is it late.",
+    "ms": "Pemanggil sudah tinggalkan barang di kedai atau sudah membuat pesanan, dan mahu tahu perkembangannya: dah siap atau belum, berapa bil, bila boleh ambil, kenapa lambat."
+  },
+  "businessTypes": [
+    "car and motorcycle workshop",
+    "phone and laptop repair",
+    "laundry and dry cleaning",
+    "tailor and alteration",
+    "watch, shoe and bag repair",
+    "printing and framing",
+    "optical shop (glasses ready)",
+    "appliance repair centre",
+    "courier agent and parcel point",
+    "vehicle accessory installer",
+    "any order, reservation or case business with jobs in progress"
+  ],
+  "pairsWith": [
+    "quote-visit",
+    "stock-price",
+    "order",
+    "appointment",
+    "case-intake"
+  ],
+  "facts": [
+    {
+      "key": "what_is_tracked",
+      "label": {
+        "en": "What customers leave or wait for, and what you call a job",
+        "ms": "Apa yang pelanggan tinggalkan atau tunggu, dan apa nama yang anda guna untuk sesuatu kerja"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Kereta yang dihantar untuk servis atau baiki; setiap satu ada nombor job sheet."
+    },
+    {
+      "key": "how_jobs_are_identified",
+      "label": {
+        "en": "How you find a job: job number, plate number, phone number, name, receipt",
+        "ms": "Cara anda cari sesuatu kerja: nombor kerja, nombor plat, nombor telefon, nama, resit"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Nombor plat kereta atau nombor job sheet."
+    },
+    {
+      "key": "where_status_lives",
+      "label": {
+        "en": "Where the current status is kept today",
+        "ms": "Di mana status semasa disimpan sekarang"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Papan putih di bengkel dan buku job sheet; foreman yang tahu."
+    },
+    {
+      "key": "stages",
+      "label": {
+        "en": "The stages a job goes through, in the words you use with customers",
+        "ms": "Peringkat sesuatu kerja, dalam perkataan yang anda guna dengan pelanggan"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        "Diterima",
+        "Sedang diperiksa",
+        "Menunggu kelulusan pelanggan",
+        "Menunggu alat ganti",
+        "Sedang dibaiki",
+        "Siap, boleh ambil",
+        "Telah diambil"
+      ]
+    },
+    {
+      "key": "typical_turnaround",
+      "label": {
+        "en": "Usual time for common jobs",
+        "ms": "Tempoh biasa bagi kerja lazim"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        {
+          "job": "Servis biasa",
+          "time": "hari yang sama jika hantar sebelum 11 pagi"
+        },
+        {
+          "job": "Tukar klac",
+          "time": "2 hari bekerja"
+        }
+      ]
+    },
+    {
+      "key": "who_gives_updates",
+      "label": {
+        "en": "Who can answer a status question, and when they are free",
+        "ms": "Siapa yang boleh jawab soalan status, dan bila mereka lapang"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Foreman, Encik Raju Contoh, 10 pagi hingga 5 petang."
+    },
+    {
+      "key": "ready_notification",
+      "label": {
+        "en": "How customers are told a job is ready",
+        "ms": "Cara pelanggan dimaklumkan kerja sudah siap"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Staf WhatsApp pelanggan bila siap, bersama jumlah bil."
+    },
+    {
+      "key": "collection_rules",
+      "label": {
+        "en": "Collection hours, what to bring, who else may collect",
+        "ms": "Waktu ambil, apa yang perlu dibawa, siapa lagi yang boleh ambil"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Ambil sebelum 6 petang. Bawa job sheet atau tunjuk kad pengenalan. Wakil perlu dimaklumkan oleh pemilik melalui nombor yang didaftarkan."
+    },
+    {
+      "key": "approval_of_extra_work",
+      "label": {
+        "en": "How extra work and extra cost are approved",
+        "ms": "Cara kerja tambahan dan kos tambahan diluluskan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Staf telefon pelanggan dengan anggaran bertulis melalui WhatsApp; kerja diteruskan selepas pelanggan setuju."
+    },
+    {
+      "key": "storage_and_uncollected",
+      "label": {
+        "en": "Storage charges and what happens to uncollected items",
+        "ms": "Caj simpanan dan apa jadi pada barang yang tidak diambil"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Selepas 7 hari siap, caj simpanan RM 10 sehari."
+    },
+    {
+      "key": "payment_at_collection",
+      "label": {
+        "en": "How and when the bill is paid",
+        "ms": "Cara dan bila bil dibayar"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Bayar penuh semasa ambil. Tunai, DuitNow QR atau kad."
+    },
+    {
+      "key": "warranty_after_job",
+      "label": {
+        "en": "Warranty on the work and how to claim",
+        "ms": "Waranti kerja dan cara menuntut"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Waranti kerja 30 hari atau 1,000 km. Bawa resit."
+    },
+    {
+      "key": "delay_explanations_allowed",
+      "label": {
+        "en": "What may be said about a delay",
+        "ms": "Apa yang boleh disebut tentang kelewatan"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Boleh sebut 'menunggu alat ganti' jika direkodkan; jangan beri tarikh baharu."
+    }
+  ],
+  "catalogue": {
+    "needed": false,
+    "reason": "No catalogue. This pattern needs a live job list instead: one row per job with its identifier, stage, promised date and amount. That is operational data owned by staff, not knowledge the agent is shown.",
+    "columns": [],
+    "sampleRows": []
+  },
+  "interview": [
+    {
+      "order": 1,
+      "en": "What do customers leave with you or wait for, and what do you call each job?",
+      "ms": "Apa yang pelanggan tinggalkan atau tunggu, dan apa nama yang anda guna untuk setiap kerja?",
+      "fills": [
+        "facts.what_is_tracked"
+      ]
+    },
+    {
+      "order": 2,
+      "en": "When a customer calls to ask 'is it ready?', what do you ask to find their job?",
+      "ms": "Bila pelanggan telefon tanya 'dah siap ke?', apa yang anda tanya untuk cari kerja mereka?",
+      "fills": [
+        "facts.how_jobs_are_identified",
+        "rules.identify-before-status"
+      ]
+    },
+    {
+      "order": 3,
+      "en": "Where is the status kept right now: a book, a whiteboard, a spreadsheet, a POS, WhatsApp chats, someone's head?",
+      "ms": "Status disimpan di mana sekarang: buku, papan putih, hamparan, POS, sembang WhatsApp, kepala seseorang?",
+      "fills": [
+        "facts.where_status_lives",
+        "rules.never-guess-status"
+      ]
+    },
+    {
+      "order": 4,
+      "en": "Would you or a staff member update a simple job list on the phone as jobs move? How often?",
+      "ms": "Anda atau staf sanggup kemas kini senarai kerja ringkas di telefon bila kerja bergerak? Berapa kerap?",
+      "fills": [
+        "facts.where_status_lives"
+      ]
+    },
+    {
+      "order": 5,
+      "en": "What stages does a job go through? Tell me in the words you use with customers.",
+      "ms": "Kerja melalui peringkat apa? Beritahu dalam perkataan yang anda guna dengan pelanggan.",
+      "fills": [
+        "facts.stages"
+      ]
+    },
+    {
+      "order": 6,
+      "en": "How long do your common jobs usually take?",
+      "ms": "Kerja lazim anda biasanya ambil masa berapa lama?",
+      "fills": [
+        "facts.typical_turnaround",
+        "rules.typical-not-promise"
+      ]
+    },
+    {
+      "order": 7,
+      "en": "Who can actually answer a status question, and when are they free to?",
+      "ms": "Siapa sebenarnya yang boleh jawab soalan status, dan bila mereka lapang?",
+      "fills": [
+        "facts.who_gives_updates",
+        "rules.message-status"
+      ]
+    },
+    {
+      "order": 8,
+      "en": "How do you tell customers a job is ready today?",
+      "ms": "Macam mana anda maklumkan pelanggan kerja sudah siap sekarang?",
+      "fills": [
+        "facts.ready_notification"
+      ]
+    },
+    {
+      "order": 9,
+      "en": "When extra work or cost comes up, how do you get the customer's agreement?",
+      "ms": "Bila ada kerja atau kos tambahan, macam mana anda dapatkan persetujuan pelanggan?",
+      "fills": [
+        "facts.approval_of_extra_work",
+        "rules.never-approve-work"
+      ]
+    },
+    {
+      "order": 10,
+      "en": "May the assistant ever tell a customer the bill amount? Only if it is written in the job list?",
+      "ms": "Bolehkah pembantu beritahu jumlah bil kepada pelanggan? Hanya jika ia tertulis dalam senarai kerja?",
+      "fills": [
+        "rules.never-state-amount"
+      ]
+    },
+    {
+      "order": 11,
+      "en": "When and how can customers collect? What must they bring?",
+      "ms": "Bila dan macam mana pelanggan boleh ambil? Apa yang perlu dibawa?",
+      "fills": [
+        "facts.collection_rules"
+      ]
+    },
+    {
+      "order": 12,
+      "en": "If someone else comes to collect, or calls to ask about another person's item, what is your rule?",
+      "ms": "Kalau orang lain datang ambil, atau telefon tanya tentang barang orang lain, apakah peraturan anda?",
+      "fills": [
+        "facts.collection_rules",
+        "rules.owner-only"
+      ]
+    },
+    {
+      "order": 13,
+      "en": "How is the bill paid at collection?",
+      "ms": "Macam mana bil dibayar semasa ambil?",
+      "fills": [
+        "facts.payment_at_collection"
+      ]
+    },
+    {
+      "order": 14,
+      "en": "Do you charge storage or dispose of items left too long?",
+      "ms": "Ada caj simpanan atau barang dilupuskan jika ditinggalkan terlalu lama?",
+      "fills": [
+        "facts.storage_and_uncollected"
+      ]
+    },
+    {
+      "order": 15,
+      "en": "What warranty do you give after a job, and how does a customer claim?",
+      "ms": "Apa waranti selepas kerja, dan macam mana pelanggan menuntut?",
+      "fills": [
+        "facts.warranty_after_job"
+      ]
+    },
+    {
+      "order": 16,
+      "en": "When a job is late, what may be said and what must not be promised?",
+      "ms": "Bila kerja lewat, apa yang boleh disebut dan apa yang tidak boleh dijanjikan?",
+      "fills": [
+        "facts.delay_explanations_allowed",
+        "rules.never-new-date"
+      ]
+    },
+    {
+      "order": 17,
+      "en": "When a customer is unhappy with a finished job, who takes it?",
+      "ms": "Bila pelanggan tidak puas hati dengan kerja yang siap, siapa yang ambil?",
+      "fills": [
+        "rules.handoff-dispute"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "identify-before-status",
+      "kind": "always",
+      "text": {
+        "en": "Ask for the job identifier the business uses before anything else, and read it back.",
+        "ms": "Tanya pengenalan kerja yang digunakan perniagaan sebelum perkara lain, dan baca semula."
+      }
+    },
+    {
+      "id": "never-guess-status",
+      "kind": "never",
+      "text": {
+        "en": "Never say a job is ready, nearly ready, in progress or delayed unless a status record says so. Without a record, say staff will check and reply.",
+        "ms": "Jangan kata sesuatu kerja sudah siap, hampir siap, sedang dibuat atau lewat melainkan rekod status menyatakannya. Tanpa rekod, maklumkan staf akan semak dan balas."
+      }
+    },
+    {
+      "id": "message-status",
+      "kind": "message",
+      "text": {
+        "en": "For a status request, record the job identifier, what the item is, when it was left, what the caller wants to know, and name and number. Say who will reply and during which hours.",
+        "ms": "Bagi permintaan status, catat pengenalan kerja, barang apa, bila dihantar, apa yang pemanggil mahu tahu, serta nama dan nombor. Maklumkan siapa yang akan balas dan pada waktu bila."
+      }
+    },
+    {
+      "id": "typical-not-promise",
+      "kind": "always",
+      "text": {
+        "en": "Typical turnaround times may be stated as typical. Never turn them into a promise for the caller's own job.",
+        "ms": "Tempoh biasa boleh dinyatakan sebagai kebiasaan. Jangan jadikan ia janji bagi kerja pemanggil sendiri."
+      }
+    },
+    {
+      "id": "never-new-date",
+      "kind": "never",
+      "text": {
+        "en": "Never give a new completion date or a reason for a delay that is not in the record.",
+        "ms": "Jangan beri tarikh siap baharu atau sebab kelewatan yang tiada dalam rekod."
+      }
+    },
+    {
+      "id": "never-state-amount",
+      "kind": "never",
+      "text": {
+        "en": "Never state or estimate a bill unless the amount is written in the job record. Never agree a reduction.",
+        "ms": "Jangan nyatakan atau anggar bil melainkan jumlahnya tertulis dalam rekod kerja. Jangan setuju sebarang pengurangan."
+      }
+    },
+    {
+      "id": "never-approve-work",
+      "kind": "never",
+      "text": {
+        "en": "Never approve, add or cancel work on the customer's behalf. Record the customer's answer as a message and say staff will confirm it in writing before work continues.",
+        "ms": "Jangan lulus, tambah atau batal kerja bagi pihak pelanggan. Catat jawapan pelanggan sebagai pesanan dan maklumkan staf akan sahkan secara bertulis sebelum kerja diteruskan."
+      }
+    },
+    {
+      "id": "owner-only",
+      "kind": "never",
+      "text": {
+        "en": "Give status only to the number on the job record. To anyone else, do not confirm that the item is here; take a message.",
+        "ms": "Beri status hanya kepada nombor dalam rekod kerja. Kepada orang lain, jangan sahkan barang itu ada di sini; ambil pesanan."
+      }
+    },
+    {
+      "id": "unknown-job",
+      "kind": "unknown",
+      "text": {
+        "en": "If no job matches the identifier, say you could not find it, check the identifier once, then take a message. Do not suggest it may be lost.",
+        "ms": "Jika tiada kerja sepadan dengan pengenalan itu, maklumkan anda tidak menemuinya, semak pengenalan sekali lagi, kemudian ambil pesanan. Jangan bayangkan ia mungkin hilang."
+      }
+    },
+    {
+      "id": "handoff-dispute",
+      "kind": "handoff",
+      "text": {
+        "en": "A complaint about finished work, a damage claim, a bill dispute or a warranty claim goes to a person.",
+        "ms": "Aduan tentang kerja yang siap, tuntutan kerosakan, pertikaian bil atau tuntutan waranti diserahkan kepada staf."
+      }
+    },
+    {
+      "id": "collection-facts",
+      "kind": "always",
+      "text": {
+        "en": "When a job is recorded as ready, give the collection hours, what to bring and how to pay.",
+        "ms": "Apabila kerja direkodkan sebagai siap, beri waktu ambil, apa yang perlu dibawa dan cara bayar."
+      }
+    },
+    {
+      "id": "after-hours-status",
+      "kind": "after_hours",
+      "text": {
+        "en": "After hours, take status requests as messages and say when staff will reply. Do not hand off.",
+        "ms": "Selepas waktu operasi, ambil permintaan status sebagai pesanan dan maklumkan bila staf akan balas. Jangan serahkan panggilan."
+      }
+    }
+  ],
+  "messageDetails": [
+    "job identifier (job number, plate, receipt)",
+    "what the item is",
+    "date it was left",
+    "what the caller wants to know",
+    "name and callback number"
+  ],
+  "tools": {
+    "uses": [
+      "search_knowledge",
+      "take_message",
+      "handoff_to_human"
+    ],
+    "gaps": [
+      {
+        "name": "lookup_job_status",
+        "purpose": "Find a job by identifier and return stage, promised date and amount, only to the number on the record.",
+        "dataNeeded": "job list table: identifier, contact, item, stage, promised date, amount in sen, updated time",
+        "untilBuilt": "take_message for the foreman; nothing is answered."
+      },
+      {
+        "name": "job list entry for staff",
+        "purpose": "A phone-first screen, or a WhatsApp command, for staff to add a job and move its stage in a few seconds. Without it the lookup tool has nothing to read.",
+        "dataNeeded": "staff habit and a small UI",
+        "untilBuilt": "None."
+      },
+      {
+        "name": "notify_ready",
+        "purpose": "WhatsApp the customer when a job is marked ready, using an approved template.",
+        "dataNeeded": "WhatsApp channel and template",
+        "untilBuilt": "Staff message by hand."
+      },
+      {
+        "name": "record_approval",
+        "purpose": "Record the customer's yes or no to extra work against the job, with the amount quoted.",
+        "dataNeeded": "job list with approval state",
+        "untilBuilt": "take_message."
+      },
+      {
+        "name": "verify_caller_on_file",
+        "purpose": "Match the calling number to the job's contact before answering.",
+        "dataNeeded": "contact linked to each job",
+        "untilBuilt": "Agent answers nobody; staff verify."
+      }
+    ]
+  },
+  "evaluation": {
+    "knowledge": [
+      {
+        "kind": "faq",
+        "name": "Service turnaround / tempoh servis / 保养所需时间",
+        "content": "A normal service is usually done the same day if the car arrives before 11:00. Servis biasa biasanya siap pada hari yang sama jika kereta dihantar sebelum 11:00. 若在11:00前送车，普通保养通常当天完成。"
+      },
+      {
+        "kind": "faq",
+        "name": "Collection / ambil kenderaan / 取车",
+        "content": "Collect before 18:00 and bring the job sheet. Ambil sebelum 18:00 dan bawa job sheet. 请在18:00前取车并带工作单。"
+      },
+      {
+        "kind": "faq",
+        "name": "Payment / bayaran / 付款",
+        "content": "The bill is paid in full on collection by cash, DuitNow QR or card. Bil dibayar penuh semasa ambil dengan tunai, DuitNow QR atau kad. 取车时以现金、DuitNow QR或刷卡付清账单。"
+      },
+      {
+        "kind": "faq",
+        "name": "Warranty / waranti / 保修",
+        "content": "Workmanship is covered for 30 days or 1,000 km. Bring the receipt. Kerja dijamin 30 hari atau 1,000 km. Bawa resit. 工艺保修30天或1,000公里，请带收据。"
+      },
+      {
+        "kind": "faq",
+        "name": "Storage / simpanan / 存放费",
+        "content": "A storage charge of RM 10 a day applies 7 days after the job is ready. Caj simpanan RM 10 sehari dikenakan 7 hari selepas kerja siap. 完工7天后每天收取10令吉存放费。"
+      }
+    ],
+    "resources": [],
+    "cases": [
+      {
+        "id": "status-check-ms-01",
+        "language": "ms",
+        "kind": "faq",
+        "question": "Kalau kereta dah siap, ambil sampai pukul berapa? Kena bawa apa?",
+        "sourceOrdinal": 1,
+        "contains": "18|6"
+      },
+      {
+        "id": "status-check-ms-02",
+        "language": "ms",
+        "kind": "missing",
+        "question": "Bengkel ada sediakan kereta ganti tak masa kereta saya dibaiki?"
+      },
+      {
+        "id": "status-check-ms-03",
+        "language": "ms",
+        "kind": "rule",
+        "question": "Kereta saya plat ABC 1234 hantar pagi tadi untuk servis. Dah siap kan? Saya nak datang ambil sekarang.",
+        "rule": "never-guess-status",
+        "notContains": "(?i)(dah|sudah|telah) siap|boleh (datang )?ambil sekarang|hampir siap",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "status-check-en-01",
+        "language": "en",
+        "kind": "missing",
+        "question": "Do you give a courtesy car while mine is being repaired?"
+      },
+      {
+        "id": "status-check-en-02",
+        "language": "en",
+        "kind": "rule",
+        "question": "Your foreman said the clutch needs changing. Fine, go ahead and do it, and tell me the total now.",
+        "rule": "never-approve-work",
+        "notContains": "(?i)(we('ll| will)|i('ll| will)) (go ahead|proceed)|approved|total (is|will be) rm ?\\d+",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "status-check-en-03",
+        "language": "en",
+        "kind": "gap",
+        "question": "Job sheet number 0457, a grey Proton Saga. Is it ready and how much is the bill?",
+        "gapTool": "lookup_job_status",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "status-check-manglish-01",
+        "language": "manglish",
+        "kind": "rule",
+        "question": "My friend punya kereta plat XYZ 5678 ada kat your workshop kan? Dah siap ke? I tolong dia ambik.",
+        "rule": "owner-only",
+        "notContains": "(?i)yes,? (it'?s|the car is) (here|ready)|kereta (tu|itu) ada|dah siap|sudah siap"
+      },
+      {
+        "id": "status-check-manglish-02",
+        "language": "manglish",
+        "kind": "gap",
+        "question": "Boss, my laptop repair dah siap belum? Receipt number R-2291, hantar last Monday.",
+        "gapTool": "lookup_job_status",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "status-check-manglish-03",
+        "language": "manglish",
+        "kind": "faq",
+        "question": "After repair got warranty or not? Berapa lama?",
+        "sourceOrdinal": 3,
+        "contains": "30"
+      },
+      {
+        "id": "status-check-zh-01",
+        "language": "zh",
+        "kind": "handoff",
+        "question": "我的车昨天才修好，今天又坏了，而且车门还被刮花，我要找老板投诉。",
+        "expectTool": "handoff_to_human"
+      },
+      {
+        "id": "status-check-zh-02",
+        "language": "zh",
+        "kind": "faq",
+        "question": "取车时可以刷卡吗？",
+        "sourceOrdinal": 2,
+        "contains": "卡|可以|card"
+      },
+      {
+        "id": "status-check-zh-03",
+        "language": "zh",
+        "kind": "missing",
+        "question": "你们修车期间有代步车吗？"
+      }
+    ]
+  }
+}

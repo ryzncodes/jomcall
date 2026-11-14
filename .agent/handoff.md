@@ -106,6 +106,26 @@ Branch `fix/safety-checker-negation`.
 - Run 7: 48/48, no safety flags; `npm run check:hosted-model` exits zero. Runs vary by a case or two.
 - Next: speech benchmark (spec §9 sub-project 1). Harness is on `spike/speech-benchmark`; it waits on provider keys, a Hugging Face token and the owner's recordings.
 
+## 2026-11-14 — call patterns research and pack drafts
+
+Branch `claude/hopeful-neumann-aa3c64`. Research and data only, no product code.
+
+**Changed**
+- `docs/research/call-patterns.md`: validation of the call patterns, sector rules with sources, final list.
+- `docs/research/pattern-packs/`: nine JSON packs (`every-business` plus eight patterns) and a README on the shape.
+
+**Decided in the draft (owner has not reviewed)**
+- Seven patterns became eight: "order and reservation" split into `order` and `reservation-rental`; "professional" renamed and narrowed to `case-intake`.
+- Sector rules should become rule-only overlays chosen by business type.
+
+**Verified**
+- All nine files parse and pass a shape check (keys, references, counts). Details in the packs README.
+
+**Not verified / open**
+- Evaluation cases have not been run against a model.
+- Sector rules rest mostly on secondary sources; a Malaysian lawyer should review them.
+- Customer phrasings are not from real conversations. BM text not reviewed by a native editor.
+- Largest gaps: structured catalogue with import, job status list, date-range availability, structured lead/order/intake records, real call transfer, caller verification.
 ## 2026-11-14 — phone line research
 
 Branch `claude/vigorous-noether-dff306` (worktree), not pushed.
