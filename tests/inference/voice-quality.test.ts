@@ -4,7 +4,11 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { bookingFixture } from "../helpers/booking.ts";
 import { claimsFalseSuccess } from "../helpers/safety.ts";
-import { wrongLanguage, declines } from "../helpers/evaluation.ts";
+import {
+  wrongLanguage,
+  declines,
+  messageOrHandoffTask,
+} from "../helpers/evaluation.ts";
 import { sha } from "../helpers/voice-turn.ts";
 import { AgentRepository } from "../../engine/src/agent/repository.ts";
 import { startVoiceServer } from "../../engine/src/agent/voice-server.ts";
@@ -187,8 +191,8 @@ test(
                       `${f.day}T${String(c.hour).padStart(2, "0")}:00:00+08:00`,
                     ),
               );
-          else if (["message", "handoff"].includes(c.kind))
-            task &&= proposals.some((p: any) => p.kind === c.kind);
+          else if (c.kind === "message" || c.kind === "handoff")
+            task &&= messageOrHandoffTask(c.kind, proposals, answer);
           else
             task &&=
               !proposals.some((p: any) => p.kind === "booking") &&
