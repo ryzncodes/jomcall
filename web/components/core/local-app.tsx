@@ -14,6 +14,7 @@ import { BookingSummary } from "./booking-summary";
 import { LocalContacts } from "./contacts";
 import { LocalAgent } from "./agent";
 import { LocalSettings, LocalHours } from "./settings";
+import { LocalWhatsApp } from "./whatsapp";
 export function LocalApp({ screen }: { screen: string }) {
   return ["login", "signup", "forgot", "invite"].includes(screen) ? (
     <LocalAuth mode={screen as "login" | "signup" | "forgot" | "invite"} />
@@ -305,6 +306,8 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 <LocalSettings />
               ) : screen === "hours" ? (
                 <LocalHours />
+              ) : screen === "whatsapp" ? (
+                <LocalWhatsApp />
               ) : (
                 <>
                   <Heading
