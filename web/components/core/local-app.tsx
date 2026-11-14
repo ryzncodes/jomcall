@@ -357,20 +357,26 @@ function LocalWorkspace({ screen }: { screen: string }) {
                     </h2>
                     <p>
                       {w(
-                        "No calls, external messages, external calendar writes or payments are sent from local mode. Use the sample preview to explore those flows.",
-                        "Tiada panggilan, mesej, perubahan kalendar atau pembayaran dihantar dalam mod setempat. Gunakan pratonton sampel untuk meneroka aliran tersebut.",
+                        HOSTED
+                          ? "This channel is not connected yet. Nothing is sent to an outside service from this page."
+                          : "No calls, external messages, external calendar writes or payments are sent from local mode. Use the sample preview to explore those flows.",
+                        HOSTED
+                          ? "Saluran ini belum disambungkan. Tiada apa-apa dihantar ke perkhidmatan luar dari halaman ini."
+                          : "Tiada panggilan, mesej, perubahan kalendar atau pembayaran dihantar dalam mod setempat. Gunakan pratonton sampel untuk meneroka aliran tersebut.",
                       )}
                     </p>
                     <div className="core-actions">
                       <a className="button button-dark" href={href("/app")}>
                         {w("Go to workspace", "Ke ruang kerja")}
                       </a>
-                      <a
-                        className="button secondary-button"
-                        href={"http://127.0.0.1:4181" + href("/app")}
-                      >
-                        {w("Open sample preview", "Buka pratonton sampel")}
-                      </a>
+                      {!HOSTED && (
+                        <a
+                          className="button secondary-button"
+                          href={"http://127.0.0.1:4181" + href("/app")}
+                        >
+                          {w("Open sample preview", "Buka pratonton sampel")}
+                        </a>
+                      )}
                     </div>
                   </section>
                 </>

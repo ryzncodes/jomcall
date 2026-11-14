@@ -253,6 +253,11 @@ export function LocalBilling() {
         <section className="core-panel">
           <h2>{w("Recent top-ups", "Tambah nilai terkini")}</h2>
           <Notice error={check.error} />
+          {check.saved && (
+            <p className="core-success" role="status">
+              {w("Checked with the payment provider. The status below is current.", "Disemak dengan penyedia pembayaran. Status di bawah adalah terkini.")}
+            </p>
+          )}
           {!topups.data ? (
             <Loading error={topups.error} />
           ) : !topups.data.items.length ? (
