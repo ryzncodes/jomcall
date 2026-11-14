@@ -156,6 +156,19 @@ test("a lookup reads the published set, not later edits", async () => {
   }
 });
 
+test("a lost lease on a call's knowledge access is TURN_CANCELLED, not a TypeError", async () => {
+  const f = await phoneFixture();
+  try {
+    const a = await liveCall(f);
+    const envelope = { auth: { call: a.callId, tokenHash: a.tokenHash }, turn: { id: a.turn, lease_token: randomUUID() } };
+    const k = f.calls.knowledge(envelope);
+    await assert.rejects(k.catalogue({ item: "servis", code: "", fits: "" }), /TURN_CANCELLED/);
+    await assert.rejects(k.units({ model: "m", vector: "", hashes: [] }), /TURN_CANCELLED/);
+  } finally {
+    await f.close();
+  }
+});
+
 test("another organization's call is refused, and an unknown WhatsApp turn id or lease returns nothing", async () => {
   const f = await phoneFixture();
   try {

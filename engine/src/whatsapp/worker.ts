@@ -247,8 +247,8 @@ export class WhatsAppWorker {
   private async turnOp(action: string, turn: { id: string; lease_token: string }, data: unknown) {
     const v = await this.op(action, turn.id, turn.lease_token, data);
     // A wrong or expired lease answers null: the turn was taken over. (The gap
-    // write may answer null on success, so it is not checked.)
-    if (action !== "gap" && v === null) throw Error("TURN_CANCELLED");
+    // write answers {id} on success, so null means a lost lease there too.)
+    if (v === null) throw Error("TURN_CANCELLED");
     return v;
   }
 

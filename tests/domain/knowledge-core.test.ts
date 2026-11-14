@@ -247,3 +247,28 @@ test("parsing an already-parsed bad lookup does not throw", async () => {
   assert.deepEqual(parseCoreDecision(bad), { kind: "bad_lookup" });
   assert.throws(() => parseCoreDecision({ kind: "tool", call: { name: "nope", args: {} } }));
 });
+
+test("executeCoreTool turns INVALID_TOOL from the catalogue into the invalid not-found result", async () => {
+  const { executeCoreTool, BAD_LOOKUP_NEXT } = await import("../../packages/domain/src/knowledge/tools.ts");
+  let recorded: unknown = null;
+  const access = {
+    read: async () => ({ snapshot: {}, locationId: "l", resources: [] }),
+    availability: async () => [],
+    record: async (_s: number, _c: unknown, effect: unknown) => {
+      recorded = effect;
+      return effect;
+    },
+  } as never;
+  const failing = (message: string) =>
+    ({
+      catalogue: async () => {
+        throw Error(message);
+      },
+      units: async () => [],
+      gap: async () => ({ id: "g" }),
+    }) as never;
+  const call = { name: "lookup_catalogue", args: { item: "", code: "-", fits: "" } };
+  await executeCoreTool(access, failing("INVALID_TOOL"), 0, call);
+  assert.deepEqual(recorded, { kind: "catalogue", found: false, items: [], invalid: true, next: BAD_LOOKUP_NEXT });
+  await assert.rejects(executeCoreTool(access, failing("boom"), 0, call), /boom/);
+});

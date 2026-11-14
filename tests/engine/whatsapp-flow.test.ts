@@ -560,22 +560,24 @@ test("a WhatsApp turn with packs can look up the catalogue", async () => {
   }
 });
 
-test("an over-long lookup item is refused without failing the turn", async () => {
-  const f = await setup({ core: true });
-  try {
-    f.answer([
-      lookupCall({ item: "x".repeat(500), code: "", fits: "" }),
-      { kind: "answer", text: "Item apa yang anda maksudkan?", citations: [] },
-    ]);
-    await f.say("Berapa harga?");
-    await f.worker.tick();
-    assert.match(JSON.stringify(f.seen[1].messages.at(-1)), /found.{1,5}false/);
-    const out = await lastOutbound(f);
-    assert.equal(out.status, "sent");
-    assert.match(out.body, /Item apa/);
-    assert.equal((await gapAsks(f)).length, 0);
-  } finally {
-    await f.close();
+test("an over-long or punctuation-only lookup is refused without failing the turn", async () => {
+  for (const args of [
+    { item: "x".repeat(500), code: "", fits: "" },
+    { item: "", code: "-", fits: "" },
+  ]) {
+    const f = await setup({ core: true });
+    try {
+      f.answer([lookupCall(args), { kind: "answer", text: "Item apa yang anda maksudkan?", citations: [] }]);
+      await f.say("Berapa harga?");
+      await f.worker.tick();
+      assert.match(JSON.stringify(f.seen[1].messages.at(-1)), /found.{1,5}false/);
+      const out = await lastOutbound(f);
+      assert.equal(out.status, "sent");
+      assert.match(out.body, /Item apa/);
+      assert.equal((await gapAsks(f)).length, 0);
+    } finally {
+      await f.close();
+    }
   }
 });
 

@@ -460,6 +460,7 @@ test("blank lookup arguments do not end the call", async () => {
     for (const args of [
       { item: "", code: "", fits: "" },
       { item: "x".repeat(5000), code: "", fits: "" },
+      { item: "", code: "-", fits: "" },
     ]) {
       const m = f.scripted([lookup(args), end("")], [sentence("Maaf, item apa?"), end("Maaf, item apa?")]);
       const events = await f.turn(call, "Berapa harga?", m.model);

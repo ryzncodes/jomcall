@@ -24,6 +24,11 @@ export type CallStart = {
   at?: string;
 };
 
+function orCancelled<T>(value: T | null): T {
+  if (value === null) throw Error("TURN_CANCELLED");
+  return value;
+}
+
 export class CallRepository {
   private pool: pg.Pool;
   constructor(readonly namespace: string) {
@@ -142,9 +147,10 @@ export class CallRepository {
     const run = (action: string, data: unknown) =>
       this.run(action, call, tokenHash, turn.id, turn.lease_token, data);
     return {
-      catalogue: (args) => run("catalogue", args),
-      units: (args) => run("units", args),
-      gap: (data) => run("gap", data),
+      // A null answer means the lease was lost: the turn was taken over.
+      catalogue: async (args) => orCancelled(await run("catalogue", args)),
+      units: async (args) => orCancelled(await run("units", args)),
+      gap: async (data) => orCancelled(await run("gap", data)),
     };
   }
   // Records the outcome of a transfer as the tool step of handoff_to_human.

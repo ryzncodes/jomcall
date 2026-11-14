@@ -210,7 +210,7 @@ export async function executeCoreTool(
     !context.resources.some((r) => r.id === resourceId && r.location_id === context.locationId && r.active)
   )
     throw new AppError("NOT_FOUND", 404);
-  let effect: ToolEffect | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string };
+  let effect: ToolEffect | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string; invalid?: boolean };
   switch (call.name) {
     case "search_knowledge": {
       const items = await searchUnits(context.snapshot as CoreSnapshotFull, knowledge, call.args.query, opts);
@@ -218,7 +218,19 @@ export async function executeCoreTool(
       break;
     }
     case "lookup_catalogue": {
-      const items = (await knowledge.catalogue(call.args)).map(catalogueHit);
+      let rows: CatalogueRow[];
+      try {
+        rows = await knowledge.catalogue(call.args);
+      } catch (e) {
+        // The database decides what an unusable code is (for example only
+        // punctuation); the turn goes on with an invalid not-found result.
+        if (e instanceof Error && e.message.includes("INVALID_TOOL")) {
+          effect = { kind: "catalogue", found: false, items: [], invalid: true, next: BAD_LOOKUP_NEXT };
+          break;
+        }
+        throw e;
+      }
+      const items = rows.map(catalogueHit);
       effect = items.length
         ? { kind: "catalogue", found: true, items }
         : { kind: "catalogue", found: false, items: [], next: NOT_FOUND_NEXT };

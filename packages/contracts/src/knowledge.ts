@@ -240,7 +240,7 @@ export type KnowledgeGap = {
   revision: number;
   question: string;
   language: string;
-  channel: "text" | "voice";
+  channel: "text" | "voice" | "phone" | "whatsapp";
   answer: string;
 };
 export type CatalogueHit = {
