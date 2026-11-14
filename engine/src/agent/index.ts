@@ -13,6 +13,7 @@ import {
   startHealthServer,
 } from "../health.ts";
 import { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
+import { createEmbedder } from "../../../packages/inference/src/embedding.ts";
 
 // LOCAL_ONLY unless the mode is `local` or `hosted`. The listen address is
 // 127.0.0.1 in local mode; hosted mode reads a private address and the service
@@ -22,8 +23,11 @@ const ns = queueNamespace();
 // Checked before anything is opened: VOICE_PROVIDER_INVALID for an unknown
 // value, VOICE_MODEL_KEY_MISSING for hosted voice without ANTHROPIC_API_KEY.
 const provider = agentVoiceProvider();
+// EMBEDDING_PROVIDER_INVALID / EMBEDDING_KEY_MISSING stop the process here.
+// Off (null) unless JOMCALL_EMBEDDING_PROVIDER=google.
+const embedder = createEmbedder();
 const listen = provider === "hosted" ? voiceListen() : undefined;
-const runner = await AgentRunner.create(ns);
+const runner = await AgentRunner.create(ns, undefined, embedder);
 let lastTickAt = 0;
 // Spoken turns are served only when the owner opted into the hosted model.
 let voiceRepository: AgentRepository | undefined;
@@ -32,7 +36,7 @@ if (provider === "hosted") {
   try {
     const repository = (voiceRepository = new AgentRepository(ns));
     voice = await startVoiceServer(
-      { repository, model: streamVoiceModel, now: Date.now },
+      { repository, model: streamVoiceModel, now: Date.now, embedder },
       {
         ...listen!,
         health: mode === "hosted" ? () => repository.ping() : undefined,

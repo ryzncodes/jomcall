@@ -13,7 +13,31 @@ import {
   configuredProvider,
   createModelClient,
 } from "../../../packages/inference/src/provider.ts";
-import { packConversationInput } from "../../../packages/inference/src/budget.ts";
+import {
+  inputBudget,
+  packConversationInput,
+} from "../../../packages/inference/src/budget.ts";
+import {
+  createEmbedder,
+  vectorLiteral,
+  type Embedder,
+} from "../../../packages/inference/src/embedding.ts";
+import {
+  coreAgentRules,
+  catalogueEvidence,
+  executeCoreTool,
+  gapRecord,
+  isGap,
+  searchUnits,
+  type CoreSnapshotFull,
+  type CoreToolResult,
+} from "../../../packages/domain/src/knowledge/tools.ts";
+import {
+  typedSystemPrompt,
+  usesCore,
+} from "../../../packages/domain/src/knowledge/prompt.ts";
+import { spokenLanguage } from "../../../packages/domain/src/agent-test/fast-lane.ts";
+import { coreDecisionSchema, type CoreToolCall } from "../../../packages/contracts/src/knowledge.ts";
 import {
   executeTestTool,
   type ToolResult,
@@ -39,14 +63,19 @@ export class AgentRunner {
   private boss: PgBoss;
   private queue: string;
   private model?: ModelClient;
+  private embedder: Embedder | null;
   private closed = false;
   private constructor(
     readonly namespace: string,
     model?: ModelClient,
+    embedder?: Embedder | null,
   ) {
     validNamespace(namespace);
-    if (model && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
+    if ((model || embedder) && process.env.NODE_ENV !== "test")
+      throw Error("TEST_ONLY");
     this.model = model;
+    // Off unless JOMCALL_EMBEDDING_PROVIDER=google; tests pass a fake.
+    this.embedder = embedder === undefined ? createEmbedder() : embedder;
     const queue = databaseConnection(
       process.env.QUEUE_DATABASE_URL,
       "QUEUE_DATABASE_URL",
@@ -60,8 +89,12 @@ export class AgentRunner {
     this.boss.on("error", () => console.error("AGENT_QUEUE_ERROR"));
     this.queue = "agent_" + namespace;
   }
-  static async create(namespace = "local", model?: ModelClient) {
-    const r = new AgentRunner(namespace, model);
+  static async create(
+    namespace = "local",
+    model?: ModelClient,
+    embedder?: Embedder | null,
+  ) {
+    const r = new AgentRunner(namespace, model, embedder);
     try {
       await r.boss.start();
       await r.boss.createQueue(r.queue, { retryLimit: 0, expireInSeconds: 90 });
@@ -74,6 +107,7 @@ export class AgentRunner {
   async tick(failAt?: "after-enqueue" | "after-claim" | "before-finalize") {
     if (failAt && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
     await this.repository.op("maintain");
+    await this.fillEmbeddings();
     const pending = await this.repository.op("pending");
     for (const t of pending) {
       const [job] = await this.boss.findJobs(this.queue, {
@@ -154,23 +188,31 @@ export class AgentRunner {
     }, 1000);
     timer.unref();
     try {
+      const snapshot = e.session.snapshot as CoreSnapshotFull;
+      // Snapshots from before the knowledge core keep the old prompt and tools.
+      const core = usesCore(snapshot);
+      const budget = inputBudget(e.session.model_digest);
+      const knowledge = this.repository.knowledge(e);
       const required: ModelInput["messages"] = [
         {
           role: "system",
-          content:
-            agentRules +
-            "\nBusiness configuration: " +
-            businessConfiguration(e.session.snapshot.settings) +
-            "\nCurrent date/time: " +
-            new Date().toISOString() +
-            "; timezone Asia/Kuala_Lumpur.",
+          content: typedSystemPrompt(
+            { shared: agentRules, core: coreAgentRules },
+            snapshot,
+            businessConfiguration(snapshot.settings),
+            new Date(),
+            budget,
+          ),
         },
         { role: "user", content: e.turn.input },
       ];
-      const initial = searchKnowledge(
-        buildKnowledgeIndex(e.session.snapshot),
-        e.turn.input,
-      );
+      const initial = core
+        ? await searchUnits(snapshot, knowledge, e.turn.input, {
+            embedder: this.embedder,
+            timeoutMs: 800,
+          })
+        : searchKnowledge(buildKnowledgeIndex(snapshot), e.turn.input);
+      const calls: { call: CoreToolCall; result?: CoreToolResult }[] = [];
       const optional: ModelInput["messages"] = [
         {
           role: "system",
@@ -191,6 +233,7 @@ export class AgentRunner {
         optional,
         [],
         e.history ?? [],
+        budget,
       ).messages;
       let latest: ModelInput["messages"] = [];
       for (const hit of initial) {
@@ -207,6 +250,7 @@ export class AgentRunner {
           [...optional, msg],
           [],
           e.history ?? [],
+          budget,
         ).messages;
         if (next.includes(msg)) {
           evidence.push(small);
@@ -220,17 +264,35 @@ export class AgentRunner {
         signal.throwIfAborted();
         let abort!: () => void;
         const decision = await Promise.race([
-          model.generate({ messages }, signal),
+          model.generate(
+            core ? { messages, decision: "core" } : { messages },
+            signal,
+          ),
           new Promise<never>((_, reject) => {
             abort = () => reject(Error("TURN_CANCELLED"));
             signal.addEventListener("abort", abort, { once: true });
           }),
         ]).finally(() => signal.removeEventListener("abort", abort));
         if (model.usage) usage.push({ ...model.usage });
-        const parsed = modelDecisionSchema.parse(decision);
+        const parsed = core
+          ? coreDecisionSchema.parse(decision)
+          : modelDecisionSchema.parse(decision);
         if (parsed.kind === "answer") {
           validateCitations(parsed.citations, evidence);
           if (failBefore) throw Error("INJECTED_CRASH");
+          // Before completing: the lease ends with the turn. A failed write
+          // never fails the customer's answer.
+          if (core && isGap(calls))
+            await knowledge
+              .gap(
+                gapRecord(
+                  e.turn.input,
+                  spokenLanguage(e.turn.input),
+                  "text",
+                  parsed.text,
+                ),
+              )
+              .catch(() => console.error("GAP_RECORD_FAILED"));
           await this.repository.op(
             "complete",
             e.turn.id,
@@ -240,12 +302,24 @@ export class AgentRunner {
           );
           return;
         }
-        const result = await executeTestTool(
-          this.repository.access(e),
-          steps++,
-          parsed.call,
-        );
+        const result: CoreToolResult = core
+          ? await executeCoreTool(
+              this.repository.access(e),
+              knowledge,
+              steps++,
+              parsed.call,
+              { embedder: this.embedder, timeoutMs: 800 },
+            )
+          : await executeTestTool(
+              this.repository.access(e),
+              steps++,
+              parsed.call,
+            );
+        calls.push({ call: parsed.call as CoreToolCall, result });
         let shown: unknown = result;
+        if (result.kind === "catalogue") {
+          evidence = [...evidence, ...result.items.map(catalogueEvidence)];
+        }
         if (result.kind === "knowledge") {
           const hits = result.items.map((h) => ({
             ...h,
@@ -272,12 +346,41 @@ export class AgentRunner {
           optional,
           latest,
           e.history ?? [],
+          budget,
         ).messages;
       }
       throw Error("TOOL_LIMIT");
     } finally {
       clearInterval(timer);
       controller.abort();
+    }
+  }
+  // Fills missing unit embeddings in small batches. Does nothing while the
+  // embedding switch is off. Never logs text.
+  private async fillEmbeddings() {
+    if (!this.embedder) return;
+    try {
+      const pending: { orgId: string; hash: string; title: string; text: string }[] =
+        await this.repository.embeddings("pending", {
+          model: this.embedder.model,
+          limit: 64,
+        });
+      if (!pending.length) return;
+      const vectors = await this.embedder.embed(
+        pending.map((u) => u.title + "\n" + u.text),
+        "document",
+        AbortSignal.timeout(15000),
+      );
+      await this.repository.embeddings("store", {
+        model: this.embedder.model,
+        items: pending.map((u, i) => ({
+          orgId: u.orgId,
+          hash: u.hash,
+          vector: vectorLiteral(vectors[i]),
+        })),
+      });
+    } catch {
+      console.error("EMBEDDING_FILL_FAILED");
     }
   }
   async close() {

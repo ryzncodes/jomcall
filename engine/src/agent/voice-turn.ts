@@ -5,7 +5,27 @@ import {
   buildKnowledgeIndex,
   searchKnowledge,
 } from "../../../packages/domain/src/agent-test/knowledge.ts";
-import { voiceSystem } from "../../../packages/domain/src/agent-test/voice-prompt.ts";
+import {
+  voiceRules,
+  voiceSystem,
+} from "../../../packages/domain/src/agent-test/voice-prompt.ts";
+import {
+  buildUnitIndex,
+  coreVoiceRules,
+  executeCoreTool,
+  gapRecord,
+  isGap,
+  searchUnits,
+  type CoreSnapshotFull,
+  type CoreToolResult,
+  type SearchOptions,
+} from "../../../packages/domain/src/knowledge/tools.ts";
+import {
+  coreVoicePrompt,
+  usesCore,
+} from "../../../packages/domain/src/knowledge/prompt.ts";
+import type { CoreToolCall } from "../../../packages/contracts/src/knowledge.ts";
+import type { Embedder } from "../../../packages/inference/src/embedding.ts";
 import {
   cacheKey,
   fastLaneKey,
@@ -34,6 +54,8 @@ export type VoiceTurnDeps = {
   repository: AgentRepository;
   model: typeof streamVoiceModel;
   now(): number;
+  // Optional semantic search (JOMCALL_EMBEDDING_PROVIDER); null or absent = off.
+  embedder?: Embedder | null;
 };
 export type VoiceTurnRequest = {
   sessionId: string;
@@ -90,6 +112,17 @@ export async function runVoiceTurn(
   }
   if (signal.aborted) return;
   const startedAt = deps.now();
+  // Start the question's embedding now, in parallel with writing the turn and
+  // reading the cache (controller's call D3). Unused if the cache answers.
+  const early: SearchOptions["vector"] = deps.embedder
+    ? {
+        query: input,
+        value: deps.embedder
+          .embed([input], "query", AbortSignal.timeout(1500))
+          .then((v) => v[0] ?? null)
+          .catch(() => null),
+      }
+    : undefined;
   let envelope: any;
   try {
     envelope = await repo.voiceBegin(request.sessionId, request.tokenHash, {
@@ -170,8 +203,22 @@ export async function runVoiceTurn(
     // only, so stored evidence never compounds from turn to turn.
     const own: Evidence[] = [];
     const shown: Evidence[] = [];
-    const index = buildKnowledgeIndex(envelope.session.snapshot);
-    const fresh = searchKnowledge(index, input);
+    const snapshot = envelope.session.snapshot as CoreSnapshotFull;
+    // Snapshots from before the knowledge core keep the old prompt and tools.
+    const core = usesCore(snapshot);
+    const knowledge = repo.knowledge(envelope);
+    const searchOptions: SearchOptions = {
+      embedder: deps.embedder,
+      vector: early,
+      timeoutMs: 250,
+    };
+    const calls: { call: CoreToolCall; result?: CoreToolResult }[] = [];
+    const index = core
+      ? buildUnitIndex(snapshot)
+      : buildKnowledgeIndex(snapshot);
+    const fresh = core
+      ? await searchUnits(snapshot, knowledge, input, searchOptions)
+      : searchKnowledge(index, input);
     addEvidence(own, fresh, 500);
     addEvidence(shown, fresh, 500);
     // Chunks that earlier answers relied on, newest turn first and in stored
@@ -183,12 +230,16 @@ export async function runVoiceTurn(
         const hit = index.find((h) => h.sourceId === id);
         if (hit && !addEvidence(shown, [hit], 500)) break inherited;
       }
-    const system = voiceSystem(
-      envelope.session.snapshot.settings,
-      envelope.resources ?? [],
-      shown,
-      new Date(),
-      envelope.recorded ?? [],
+    const system = coreVoicePrompt(
+      voiceSystem(
+        snapshot.settings,
+        envelope.resources ?? [],
+        shown,
+        new Date(),
+        envelope.recorded ?? [],
+      ),
+      { shared: voiceRules, core: coreVoiceRules },
+      snapshot,
     );
     const messages: unknown[] = [
       ...history.flatMap((h) => [
@@ -209,7 +260,10 @@ export async function runVoiceTurn(
       checkAbort();
       const results: unknown[] = [];
       let content: unknown[] | null = null;
-      for await (const event of deps.model({ ...system, messages }, signal)) {
+      for await (const event of deps.model(
+        core ? { ...system, messages, tools: "core" } : { ...system, messages },
+        signal,
+      )) {
         checkAbort();
         if (event.type === "sentence") {
           if (claimsFalseSuccess(event.text)) throw Error("UNSAFE_REPLY");
@@ -229,10 +283,14 @@ export async function runVoiceTurn(
             emit({ type: "tool", name: event.name });
           }
           checkAbort();
-          const result = await executeTestTool(access, tools++, {
-            name: event.name,
-            args: event.input,
-          });
+          const call = { name: event.name, args: event.input };
+          const result: CoreToolResult = core
+            ? await executeCoreTool(access, knowledge, tools++, call, {
+                ...searchOptions,
+                timeoutMs: 1000,
+              })
+            : await executeTestTool(access, tools++, call);
+          calls.push({ call: call as CoreToolCall, result });
           checkAbort();
           let shown: unknown = result;
           if (result.kind === "knowledge") {
@@ -246,6 +304,16 @@ export async function runVoiceTurn(
             };
           } else if (result.kind === "availability")
             shown = { kind: "availability", items: result.items.slice(0, 5) };
+          else if (result.kind === "catalogue")
+            addEvidence(
+              own,
+              result.items.map((h) => ({
+                sourceId: h.sourceId,
+                title: h.item,
+                excerpt: [h.price, h.stockNote].filter(Boolean).join("; "),
+              })),
+              300,
+            );
           results.push({
             type: "tool_result",
             tool_use_id: event.id,
@@ -272,6 +340,11 @@ export async function runVoiceTurn(
     const answer = spoken.join(" ");
     if (!answer) throw Error("MODEL_OUTPUT_INVALID");
     checkAbort();
+    // Before completing: the lease ends with the turn. Never fails the turn.
+    if (core && isGap(calls))
+      await knowledge
+        .gap(gapRecord(input, language, "voice", answer))
+        .catch(() => console.error("GAP_RECORD_FAILED"));
     const t = timings(firstSentenceAt);
     const saved = await repo.voiceComplete(
       request.sessionId,

@@ -1,5 +1,6 @@
 import { modelDecisionSchema } from "../../contracts/src/agent-test.ts";
-import { decisionFormat } from "./budget.ts";
+import { coreDecisionSchema } from "../../contracts/src/knowledge.ts";
+import { coreDecisionFormat, decisionFormat } from "./budget.ts";
 import type { ModelClient } from "./index.ts";
 
 // Hosted model client. Opt-in through JOMCALL_MODEL_PROVIDER=openrouter; see
@@ -37,6 +38,10 @@ export const hostedDecisionFormat = {
   required: ["decision"],
   additionalProperties: false,
 };
+export const coreHostedDecisionFormat = {
+  ...hostedDecisionFormat,
+  properties: { decision: portable(coreDecisionFormat) },
+};
 
 export function createOpenRouterClient(
   config: { model: string; apiKey: string },
@@ -67,7 +72,10 @@ export function createOpenRouterClient(
               json_schema: {
                 name: "decision",
                 strict: true,
-                schema: hostedDecisionFormat,
+                schema:
+                  input.decision === "core"
+                    ? coreHostedDecisionFormat
+                    : hostedDecisionFormat,
               },
             },
             // Never route to a provider that would silently ignore the schema.
@@ -96,9 +104,10 @@ export function createOpenRouterClient(
         outputTokens: output.usage?.completion_tokens ?? 0,
       };
       try {
-        return modelDecisionSchema.parse(
-          JSON.parse(choice.message.content).decision,
-        );
+        const decision = JSON.parse(choice.message.content).decision;
+        return input.decision === "core"
+          ? coreDecisionSchema.parse(decision)
+          : modelDecisionSchema.parse(decision);
       } catch {
         throw Error("MODEL_OUTPUT_INVALID");
       }
