@@ -61,14 +61,14 @@ export const SETTINGS: Setting[] = [
   },
   {
     name: "JOMCALL_DATABASE_HOSTS",
-    services: ["web", "engine", "agent", "release"],
+    services: ["web", "engine", "agent", "release", "backup"],
     secret: false,
     description:
       "Comma-separated database host names this environment may connect to",
   },
   {
     name: "JOMCALL_DATABASE_CA",
-    services: ["web", "engine", "agent", "release"],
+    services: ["web", "engine", "agent", "release", "backup"],
     secret: false,
     required: false,
     description:

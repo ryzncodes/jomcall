@@ -17,6 +17,7 @@
     "dev:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run dev -w web -- --port 4182",
     "build:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run build -w web",
     "hosted:migrate": "node --import tsx scripts/hosted/migrate.ts",
+    "hosted:backup": "node --import tsx scripts/hosted/backup.ts",
     "hosted:readiness": "node --import tsx scripts/hosted/readiness.ts",
     "build:hosted": "JOMCALL_MODE=hosted NEXT_TELEMETRY_DISABLED=1 npm run build -w web",
     "build:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run build -w web",
