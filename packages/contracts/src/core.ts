@@ -27,6 +27,15 @@ import {
   type Resource,
   type Slot,
 } from "./booking.ts";
+import {
+  phoneNumberCreate,
+  phoneNumberUpdate,
+  callList,
+  type PhoneNumber,
+  type PhoneNumbers,
+  type CallSummary,
+  type CallDetail,
+} from "./phone.ts";
 import { z } from "zod";
 import { uuid, name, organizationInput, type Role } from "./index.ts";
 import { agentSettings, knowledgeInput, scheduleInput } from "./agent.ts";
@@ -463,6 +472,21 @@ export const commands = {
     out<Member>(),
   ),
   audit: route("GET", "/audit", pages, out<Page<Audit>>()),
+  phoneNumbers: route("GET", "/phone-numbers", empty, out<PhoneNumbers>()),
+  createPhoneNumber: route(
+    "POST",
+    "/phone-numbers",
+    phoneNumberCreate,
+    out<PhoneNumber>(),
+  ),
+  updatePhoneNumber: route(
+    "PATCH",
+    "/phone-numbers/:id",
+    phoneNumberUpdate.extend({ id: uuid }),
+    out<PhoneNumber>(),
+  ),
+  calls: route("GET", "/calls", callList, out<Page<CallSummary>>()),
+  call: route("GET", "/calls/:id", id, out<CallDetail>()),
 };
 export type Command = keyof typeof commands;
 export type Input<K extends Command> = z.input<(typeof commands)[K]["input"]>;
