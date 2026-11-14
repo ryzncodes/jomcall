@@ -36,7 +36,7 @@ All names, numbers, calls and amounts in the preview are fake. Calls, payments a
 | Workspaces, branches, hours, roles | Yes | Yes, with owner/admin/staff checks | Public holidays from a verified source |
 | Agent builder and versions | Yes | Drafts, text knowledge, immutable published versions, restore | Website import, document upload |
 | Agent text test | Simulated | Real text sessions with citations and tool traces; the hosted model passes the 48-case multilingual gate, the local model is experimental | Local model passing the gate |
-| Browser test call | Simulated | Not available | Real voice |
+| Browser test call | Simulated | Voice controls in the agent test panel, on branch `feat/voice-milestone-a` only; needs hosted speech services and a human check is still pending | Phone lines, real callers |
 | Contacts, consent, do-not-contact | Yes | Yes, with history and audit | — |
 | PDPA export and delete | Yes | Durable jobs with retries and expiring downloads | Recordings and connector data (none exist yet) |
 | Bookings | Yes | Staff booking, review, confirm, reschedule, cancel; no double booking | Google Calendar and Cal.com sync |
@@ -72,6 +72,31 @@ Sign up in the local app. Open the [local Mailpit inbox](http://127.0.0.1:54624)
 To stop: press Ctrl+C in each terminal, then run `npm run local:stop`. Database volumes are kept. Do not use broad Docker volume pruning to stop development; it can delete other projects' data.
 
 More detail: [local operations guide](infra/local/README.md).
+
+### Voice test in the browser (optional, hosted services)
+
+The agent test panel can hold a spoken conversation with the agent, in the local app on port 4182 only (the mock preview has no voice). It is off by default and needs hosted speech and model services. This is an owner-approved exception to the local-only rule, on only when `JOMCALL_VOICE_PROVIDER=hosted`.
+
+**You need:** the local backend above, Docker running, `uv` for the Python worker, a microphone, and three keys in the ignored root file `.env.hosted`: `DEEPGRAM_API_KEY` (speech to text, read by the voice worker), `ANTHROPIC_API_KEY` (spoken answers, read by the agent process) and `GOOGLE_CLOUD_API_KEY` (text to speech, read by the voice worker). Never commit this file.
+
+**What leaves your computer:** microphone audio goes to Deepgram. The conversation text goes to Anthropic (the model) and to Google (text to speech). These services run outside Malaysia. Use fake conversations only. A decision on PDPA cross-border transfer is still needed before any real caller.
+
+Run these in order, each long-running one in its own terminal, from the repository root:
+
+```sh
+npm run local:start                              # database and auth
+npm run db:migrate:local                         # applies this branch's two voice migrations
+npm run livekit:prepare -- --download            # first time only: pulls the pinned LiveKit image
+npm run livekit:start                            # LiveKit server in Docker, loopback only
+npm run voice:prewarm -- --preset Kore           # first time per voice preset: fills the fixed-line cache
+JOMCALL_VOICE_PROVIDER=hosted npm run dev:agent  # agent, with the spoken-turn endpoint on 127.0.0.1:54633
+npm run dev:voice                                # voice worker
+JOMCALL_VOICE_PROVIDER=hosted npm run dev:local  # app at http://127.0.0.1:4182
+```
+
+The web app needs `JOMCALL_VOICE_PROVIDER=hosted` as well; without it the panel reports voice as unavailable. `local:start` writes the LiveKit URL and development keys to both env files. Without the prewarm step the filler phrases are silent. Open the local app at `http://127.0.0.1:4182`; opening it as `http://localhost:4182` is rejected after sign-in with "CSRF REJECTED" (verified in the browser on 2026-11-14). Then go to Agent, then Test, and start a voice test. The agent test panel was checked to render with "Voice test ready" and the "Start voice test" button, but no spoken call has been made through it yet.
+
+To stop: press Ctrl+C in the agent, voice and web terminals, run `npm run livekit:stop`, then `npm run local:stop`. A running agent or voice worker makes the `local:start` port check fail, so stop them first. Ports 54630 to 54634 are used by voice and all bind to `127.0.0.1`. Details: [local operations guide](infra/local/README.md#local-livekit-server-browser-voice). Measured speed and open decisions: [voice QA record](docs/qa/2026-11-14-voice-milestone-a.md).
 
 ### AI model for the agent text test
 
@@ -109,12 +134,16 @@ Stop the matching dev server first. The two builds use separate output folders, 
 
 ```sh
 npm run typecheck
+npm run test:guards           # local-stack guard tests, no database
+npm run test:offline          # domain and inference tests that need no database
 npm run check:phase2          # core, API, database, engine and inference tests
 npm run db:verify-migrations  # replays migrations into a fresh scratch database
 npm run build:mock
 npm run build:local
 npm run contracts:generate
 ```
+
+Continuous integration (`.github/workflows/ci.yml`) runs on pull requests and on `main`. It runs only the checks that need no database: `npm run typecheck`, `npm run test:guards`, `npm run test:offline` and the Python voice tests (`cd voice && uv sync --frozen && uv run pytest`). It does not run the API, database and engine tests or the migration replay, because they need the local Supabase stack; run `npm run check:phase2` and `npm run db:verify-migrations` on your machine before merging. Two tests in `tests/engine/voice-server.test.ts` start a real agent process on port 54633 and are skipped, with a message, when that port is busy.
 
 Tests create fake users and organizations in this project's local database and use separate queue names. Migration replay uses a new scratch database and never resets your workspace. `npm run check:local-model` runs the 48-case model evaluation; it needs the local model running and currently fails by design until the model improves.
 
@@ -124,7 +153,7 @@ Tests create fake users and organizations in this project's local database and u
 |---|---|---|
 | `web` | Next.js, TypeScript | Website, app screens, REST API, auth callbacks and webhooks |
 | `engine` | TypeScript worker | Background jobs: privacy exports and deletions, invitations, agent turns; later post-call work and outbound workflows |
-| `voice` *(planned)* | Python, LiveKit Agents | Answers calls over a Malaysian SIP trunk with swappable speech-to-text, language model and text-to-speech |
+| `voice` | Python, LiveKit Agents | Browser voice call today (speech to text, spoken brain through the agent process, text to speech); later calls over a Malaysian SIP trunk |
 | Postgres | SQL | All data, with forced row-level security per business. The job queue (pg-boss) also lives here, so self-hosters need no Redis |
 
 ```text
@@ -164,6 +193,7 @@ The mock preview and the local app are kept strictly apart. The mock uses fictio
 | [Local operations](infra/local/README.md) | Running, stopping and troubleshooting the local backend |
 | [M1 QA evidence](docs/qa/2026-10-16-local-core-platform.md) | Core platform verification |
 | [M2 QA evidence](docs/qa/2026-10-16-local-agent-booking.md) | Bookings, text agent and model evaluation results |
+| [Voice QA record](docs/qa/2026-11-14-voice-milestone-a.md) | Measured speed of the browser voice call and what is unverified |
 
 ## Contributing
 

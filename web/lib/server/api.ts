@@ -1,4 +1,7 @@
-import { agentTestRoute } from "../../../packages/domain/src/agent-test/routes.ts";
+import {
+  agentTestRoute,
+  type AgentTestDeps,
+} from "../../../packages/domain/src/agent-test/routes.ts";
 import { bookingRoute } from "../../../packages/domain/src/booking/routes.ts";
 import { commands } from "../../../packages/contracts/src/core.ts";
 import { privacyRoute } from "../../../packages/domain/src/privacy.ts";
@@ -16,7 +19,18 @@ import { verifyIdentity } from "./auth.ts";
 import { database } from "./services.ts";
 import { requireMutation } from "./csrf.ts";
 import { respond, failure, readBody } from "./http.ts";
-export async function dispatchCore(request: Request) {
+// Outside collaborators a caller may replace. The app passes none and gets the
+// real ones; tests pass fakes through createDispatch.
+export type CoreDeps = { agentTest?: AgentTestDeps };
+// Next.js route handlers receive a second argument, so the exported handler
+// takes the request only and never reads dependencies from its caller.
+export function dispatchCore(request: Request) {
+  return dispatch(request, {});
+}
+export function createDispatch(deps: CoreDeps) {
+  return (request: Request) => dispatch(request, deps);
+}
+async function dispatch(request: Request, deps: CoreDeps) {
   try {
     requireLocal();
     const method = request.method,
@@ -89,6 +103,7 @@ export async function dispatchCore(request: Request) {
           body,
           key,
           new URL(request.url).searchParams,
+          deps.agentTest,
         );
         if (testResult !== undefined)
           return respond(

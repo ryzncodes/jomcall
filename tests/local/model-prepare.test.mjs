@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 
-test("fresh checkout installs from committed lock and refuses registry drift before download", async () => {
+test("fresh checkout installs from committed lock and refuses registry drift before download", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "jomcall-model-"));
   try {
     const manifest = JSON.stringify({ layers: [{ size: 123 }] });
@@ -43,6 +43,18 @@ test("fresh checkout installs from committed lock and refuses registry drift bef
         ],
         { encoding: "utf8", env: { ...process.env, DRIFT: drift ? "1" : "" } },
       );
+    // The pinned runtime is the macOS Apple-silicon archive only. Anywhere
+    // else (the Linux CI runner) the script must refuse before any download,
+    // and the rest of this test does not apply.
+    if (process.platform !== "darwin" || process.arch !== "arm64") {
+      const refused = run(false);
+      assert.match(refused.stderr, /MODEL_RUNTIME_PLATFORM_UNSUPPORTED/);
+      assert.doesNotMatch(refused.stdout, /RUNTIME_DOWNLOAD_ATTEMPT/);
+      t.skip(
+        "lock and drift checks need macOS on Apple silicon (the pinned runtime); the platform refusal was checked instead",
+      );
+      return;
+    }
     const fresh = run(false);
     assert.match(fresh.stderr, /RUNTIME_DOWNLOAD_FAILED/);
     assert.match(fresh.stdout, /RUNTIME_DOWNLOAD_ATTEMPT/);

@@ -17,3 +17,8 @@ export {
   getReadiness,
   defaultHostedModel,
 } from "./provider.ts";
+export {
+  streamVoiceModel,
+  voiceModel,
+  type VoiceModelEvent,
+} from "./anthropic-voice.ts";

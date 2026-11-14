@@ -33,6 +33,9 @@ export const testStart = z
 export const revisionInput = z
   .object({ expectedRevision: z.number().int().positive() })
   .strict();
+export const voiceStart = z
+  .object({ expectedSessionRevision: z.number().int().positive() })
+  .strict();
 export const turnInput = z
   .object({
     text: boundedText(4000),
@@ -124,6 +127,13 @@ export type TestTurn = {
   answer: string | null;
   citations: string[];
   error_code: string | null;
+  channel: "text" | "voice";
+  // Spoken turns only: milliseconds from the caller finishing to each stage.
+  timings: {
+    transcriptMs?: number;
+    firstSentenceMs?: number | null;
+    totalMs?: number;
+  };
 };
 export type Proposal = {
   id: string;
@@ -155,4 +165,13 @@ export type Readiness = {
   available: boolean;
   modelDigest: string | null;
   reason: string | null;
+};
+export type VoiceReadiness = { configured: boolean; reason: string | null };
+export type TestReadiness = Readiness & { voice: VoiceReadiness };
+export type VoiceStartResult = {
+  url: string;
+  token: string;
+  room: string;
+  expiresAt: string;
+  voice: string;
 };
