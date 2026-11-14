@@ -37,6 +37,19 @@ import {
   type Topup,
   type Receipt,
 } from "./billing.ts";
+import {
+  channelRevision,
+  channelSave,
+  conversationList,
+  staffReply,
+  templateCreate,
+  templateStatus,
+  type ConversationDetail,
+  type ConversationSummary,
+  type WhatsAppChannel,
+  type WhatsAppOverview,
+  type WhatsAppTemplate,
+} from "./whatsapp.ts";
 import { uuid, name, organizationInput, type Role } from "./index.ts";
 import { agentSettings, knowledgeInput, scheduleInput } from "./agent.ts";
 import {
@@ -495,6 +508,72 @@ export const commands = {
     "/billing/topups/:id/reconcile",
     id,
     out<Topup>(),
+  ),
+  whatsappOverview: route(
+    "GET",
+    "/channels/whatsapp",
+    empty,
+    out<WhatsAppOverview>(),
+  ),
+  saveWhatsAppChannel: route(
+    "PUT",
+    "/channels/whatsapp",
+    channelSave,
+    out<WhatsAppChannel>(),
+  ),
+  disconnectWhatsApp: route(
+    "POST",
+    "/channels/whatsapp/disconnect",
+    channelRevision,
+    out<WhatsAppChannel>(),
+  ),
+  createWhatsAppTemplate: route(
+    "POST",
+    "/channels/whatsapp/templates",
+    templateCreate,
+    out<WhatsAppTemplate>(),
+  ),
+  updateWhatsAppTemplate: route(
+    "PATCH",
+    "/channels/whatsapp/templates/:id",
+    templateStatus.extend({ id: uuid }),
+    out<WhatsAppTemplate>(),
+  ),
+  conversations: route(
+    "GET",
+    "/conversations",
+    conversationList,
+    out<ConversationSummary[]>(),
+  ),
+  conversation: route(
+    "GET",
+    "/conversations/:id",
+    id,
+    out<ConversationDetail>(),
+  ),
+  replyConversation: route(
+    "POST",
+    "/conversations/:id/messages",
+    staffReply.extend({ id: uuid }),
+    out<ConversationDetail>(),
+  ),
+  takeoverConversation: route(
+    "POST",
+    "/conversations/:id/takeover",
+    channelRevision.extend({ id: uuid }),
+    out<ConversationDetail>(),
+  ),
+  handbackConversation: route(
+    "POST",
+    "/conversations/:id/handback",
+    channelRevision.extend({ id: uuid }),
+    out<ConversationDetail>(),
+  ),
+  resolveConversation: route(
+    "POST",
+    "/conversations/:id/resolve",
+    channelRevision.extend({ id: uuid }),
+    out<ConversationDetail>(),
   ),
 };
 export type Command = keyof typeof commands;

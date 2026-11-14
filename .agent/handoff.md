@@ -26,7 +26,29 @@ Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 1. Owner: approve a payment provider as an outbound service, then follow the checklist in the research note, section 6.
 2. Phone line and WhatsApp sessions: call `recordUsage` after the provider confirms a call or conversation, and `walletState` before starting a new one.
 3. Owner: final prices (new `billing_price` version).
+5. Follow-up (not wired): meter WhatsApp conversations by calling `recordUsage(..., kind: "whatsapp_conversation")` from the WhatsApp worker once the provider confirms a conversation.
 4. On a database where the billing migration is not yet applied: run `npm run db:migrate:local` before `npm run db:verify-migrations`, or drop the stray `jomcall_billing` role first.
+
+## 2026-11-14 — WhatsApp channel against a fake (no Meta account)
+
+Branch `feat/whatsapp-channel` from `main` (merged with `origin/main` again after PR #16, hosted mode). Works in `local` and `hosted` modes through the hosting helpers (`validNamespace`, `databaseConnection`, `queueNamespace`); the webhook stays closed in `mock`. The two WhatsApp functions accept `staging` and `prod` namespaces directly, because their migrations sort before `20261114180000_hosted_namespaces.sql`. Pushed, pull request against `main`; not merged.
+
+**Changed**
+- Research `docs/research/whatsapp-go-live.md` (official Meta sources with dates, owner checklist, unofficial connector assessed and not recommended). Design `docs/superpowers/specs/2026-11-14-whatsapp-channel-design.md` (owner decisions D1-D8, open items O1-O10).
+- Migrations `20261114120000_whatsapp_channel.sql`, `20261114120100_whatsapp_worker.sql`. `consent_record.actor_id` is now nullable (customer keyword opt-outs have no staff actor).
+- `packages/whatsapp` (switch `JOMCALL_WHATSAPP_PROVIDER` = disabled | fake | cloud, webhook signature/parsing, AES-GCM sealed tokens, Cloud API client in `cloud.ts` not exported from `index.ts`, fake provider). Send rules `packages/domain/src/whatsapp/policy.ts`. Routes `packages/domain/src/whatsapp/routes.ts` and 11 commands in `packages/contracts/src/core.ts`.
+- `engine/src/agent/brain.ts` extracted from the runner (shared, not forked). `engine/src/whatsapp/worker.ts` runs in the agent process when the switch is not disabled.
+- Webhook `web/app/api/whatsapp/webhook/route.ts`; local-app screen `web/components/core/whatsapp.tsx`; simulator `npm run whatsapp:simulate`.
+
+**Verified** (2026-11-14, this machine)
+- `npm run typecheck` clean; `npm run test:guards` 23/23; `npm run db:verify-migrations` passed; `npm run check:core` 217 tests, 215 pass, 2 skipped, 0 fail. New: `tests/domain/whatsapp.test.ts` (10), `tests/engine/whatsapp-flow.test.ts` (11, against the local database with the fake provider), `tests/local/whatsapp-guard.test.mjs` (3).
+- `npm run db:migrate:local` refused because the shared database holds sibling migrations not on this branch. The two WhatsApp migrations were applied directly with psql and recorded in `supabase_migrations.schema_migrations`. Their versions (120000, 120100) sort before `20261114150000`, already applied there, so a plain `supabase db push` would need `--include-all`.
+
+**Not verified / open**
+- Nothing was run against Meta: no Cloud API call, no real webhook, no template review. Which body form Meta signs for non-ASCII text is unconfirmed (both are accepted).
+- The WhatsApp screen was not opened in a browser (port 4182 belongs to the main checkout). The inbox screen is not built; the commands exist.
+- The 48-case gate was not re-run with the WhatsApp channel note (owner decision D4).
+- Owner decisions D1-D8 in the design spec, especially D1 (approve the Cloud API as a hosted exception) and D3 (PDPA cross-border consent).
 
 ## 2026-11-14 — Cloudflare email, Turnstile and R2 backups
 

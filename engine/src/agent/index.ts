@@ -13,6 +13,10 @@ import {
   startHealthServer,
 } from "../health.ts";
 import { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
+import { WhatsAppWorker } from "../whatsapp/worker.ts";
+import { whatsappMode } from "../../../packages/whatsapp/src/provider.ts";
+import { createCloudProvider } from "../../../packages/whatsapp/src/cloud.ts";
+import { createFakeProvider } from "../../../packages/whatsapp/src/fake.ts";
 
 // LOCAL_ONLY unless the mode is `local` or `hosted`. The listen address is
 // 127.0.0.1 in local mode; hosted mode reads a private address and the service
@@ -25,6 +29,16 @@ const provider = agentVoiceProvider();
 const listen = provider === "hosted" ? voiceListen() : undefined;
 const runner = await AgentRunner.create(ns);
 let lastTickAt = 0;
+// WhatsApp work runs only when the switch is on. The Cloud API client is
+// created here, in the agent process, and nowhere else.
+const whatsapp = await startWhatsApp();
+async function startWhatsApp() {
+  const choice = whatsappMode();
+  if (choice === "disabled") return undefined;
+  const sender =
+    choice === "cloud" ? createCloudProvider() : createFakeProvider();
+  return new WhatsAppWorker(ns, { provider: sender });
+}
 // Spoken turns are served only when the owner opted into the hosted model.
 let voiceRepository: AgentRepository | undefined;
 let voice: Awaited<ReturnType<typeof startVoiceServer>> | undefined;
@@ -59,6 +73,7 @@ async function stop() {
   await health?.close();
   await voice?.close();
   await voiceRepository?.close();
+  await whatsapp?.close();
   await runner.close();
 }
 process.once("SIGINT", stop);
@@ -69,6 +84,11 @@ while (!stopping) {
     lastTickAt = Date.now();
   } catch {
     console.error("AGENT_TICK_FAILED");
+  }
+  try {
+    await whatsapp?.tick();
+  } catch {
+    console.error("WHATSAPP_TICK_FAILED");
   }
   if (!stopping) await new Promise((r) => setTimeout(r, 1000));
 }

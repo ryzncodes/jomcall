@@ -40,6 +40,8 @@ export type Setting = {
 };
 
 const voiceOn = (env: Env) => env.JOMCALL_VOICE_PROVIDER === "hosted";
+const whatsappOn = (env: Env) =>
+  !["", "disabled"].includes(env.JOMCALL_WHATSAPP_PROVIDER?.trim() ?? "");
 const cloudflareMail = (env: Env) =>
   env.JOMCALL_MAIL_PROVIDER?.trim() === "cloudflare";
 const smtpMail = (env: Env) => !cloudflareMail(env);
@@ -124,6 +126,38 @@ export const SETTINGS: Setting[] = [
     secret: false,
     required: false,
     description: "Optional hosted model ID; web and agent must agree",
+  },
+  {
+    name: "JOMCALL_WHATSAPP_PROVIDER",
+    services: ["web", "agent"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: disabled (default), fake or cloud. cloud is not approved yet",
+  },
+  {
+    name: "WHATSAPP_APP_SECRET",
+    services: ["web"],
+    secret: true,
+    required: whatsappOn,
+    description:
+      "Meta app secret; checks webhook signatures (when WhatsApp is on)",
+  },
+  {
+    name: "WHATSAPP_VERIFY_TOKEN",
+    services: ["web"],
+    secret: true,
+    required: whatsappOn,
+    description:
+      "Webhook subscription token, 16+ characters (when WhatsApp is on)",
+  },
+  {
+    name: "WHATSAPP_CREDENTIALS_KEY",
+    services: ["web", "agent"],
+    secret: true,
+    required: (env) => env.JOMCALL_WHATSAPP_PROVIDER?.trim() === "cloud",
+    description:
+      "64 hex characters; seals access tokens (when the provider is cloud)",
   },
   {
     name: "JOMCALL_VOICE_PROVIDER",
