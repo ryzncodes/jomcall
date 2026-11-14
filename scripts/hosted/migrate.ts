@@ -98,20 +98,36 @@ async function main() {
   const client = new pg.Client(plan.connection);
   await client.connect();
   try {
-    // 2. Auth-schema grants. Locally these run as supabase_admin; hosted
-    // Supabase gives no such login. UNVERIFIED whether `postgres` may grant
-    // them (design 5.4). On a permission error, stop: RUNBOOK.md step 2b.
-    try {
-      await client.query("begin");
-      await client.query(readFileSync("supabase/auth-grants.sql", "utf8"));
-      await client.query("commit");
-      console.log("Auth-schema grants applied.");
-    } catch (e) {
-      await client.query("rollback");
-      if ((e as { code?: string }).code === "42501")
-        throw Error("AUTH_GRANTS_OWNER_STEP: see RUNBOOK.md step 2b");
-      throw Error("AUTH_GRANTS_FAILED");
-    }
+    // 2. Auth reads. Locally the grants run as supabase_admin; hosted Supabase
+    // gives no such login.
+    // Checked on hosted Supabase, 2026-11-14: `postgres` holds USAGE on schema
+    // auth without the grant option, so supabase/auth-grants.sql only raises a
+    // warning there and grants nothing. It is not applied here. Migration
+    // 20261114220000 reads Auth's tables through two definer functions owned
+    // by the migration login instead; confirm that login can read them and
+    // that the two roles may call the functions.
+    const access = (
+      await client.query(
+        `select has_schema_privilege(p.proowner,'auth','usage')
+           and has_column_privilege(p.proowner,'auth.sessions','id','select')
+           and has_column_privilege(p.proowner,'auth.sessions','user_id','select')
+           and has_column_privilege(p.proowner,'auth.users','email','select')
+           and has_function_privilege('jomcall_authz',p.oid,'execute') as ok
+         from pg_proc p join pg_namespace n on n.oid=p.pronamespace
+         where n.nspname='app_private' and p.proname in('auth_session_owned','auth_user_email')`,
+      )
+    ).rows;
+    if (access.length !== 2 || access.some((r) => r.ok !== true))
+      throw Error("AUTH_READS_UNAVAILABLE: see RUNBOOK.md step 2b");
+    if (
+      (
+        await client.query(
+          "select has_function_privilege('jomcall_agent_jobs','app_private.auth_session_owned(uuid,uuid)','execute') as ok",
+        )
+      ).rows[0].ok !== true
+    )
+      throw Error("AUTH_READS_UNAVAILABLE: see RUNBOOK.md step 2b");
+    console.log("Auth reads verified.");
     // 3. Login passwords for the four service roles, generated per environment.
     for (const [role, name] of ROLES) {
       const sql = (

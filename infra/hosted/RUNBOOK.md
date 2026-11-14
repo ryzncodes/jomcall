@@ -172,7 +172,7 @@ Apply migrations, grants and role passwords. The runner asks you to type the tar
 npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env
 ```
 
-2b. **If it stops with `AUTH_GRANTS_OWNER_STEP`** [UNVERIFIED path]: hosted Supabase gives no `supabase_admin` login, and it is not known whether `postgres` may grant `select` on `auth.sessions` and `auth.users` to `jomcall_authz` and `jomcall_agent_jobs` (design §5.4). Do not work around it by hand. Record the exact error code and stop; the fallback (definer functions owned by a role that can already read those tables) needs a new migration and review. Re-run the runner after that migration lands: it is safe to repeat.
+2b. **Auth tables on hosted Supabase** (checked on a hosted free project, 2026-11-14): `postgres` holds `USAGE` on schema `auth` without the grant option, so it cannot pass that access to `jomcall_authz` or `jomcall_agent_jobs`; the grant only raises a warning. Migration `20261114220000_hosted_auth_reads.sql` therefore reads `auth.sessions` and `auth.users` through two definer functions owned by the migration login, and the runner does not apply `supabase/auth-grants.sql`. **If the runner stops with `AUTH_READS_UNAVAILABLE`**, the migration login cannot read those tables on this project or the two roles cannot call the functions. Do not work around it by hand; record the code and stop. The runner is safe to repeat.
 
 2c. **[OWNER]** In the Supabase dashboard, Authentication:
 - Site URL: the staging `APP_ORIGIN`.
