@@ -1,10 +1,10 @@
-// Integer sen to "RM 1,234.50". Never uses floating point for the sen part.
-export function formatSen(sen: number | bigint, locale: "en" | "ms" = "en") {
-  const value = BigInt(sen),
-    negative = value < 0n,
-    abs = negative ? -value : value;
-  const ringgit = (abs / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","),
-    cents = (abs % 100n).toString().padStart(2, "0");
-  void locale;
-  return `${negative ? "−" : ""}RM ${ringgit}.${cents}`;
+// Integer sen to "RM 1,234.50". Only whole numbers of sen are accepted.
+export function formatSen(sen: number) {
+  if (!Number.isSafeInteger(sen)) throw Error("INVALID_AMOUNT");
+  const abs = Math.abs(sen);
+  const ringgit = Math.floor(abs / 100)
+      .toString()
+      .replace(/\B(?=(\d{3})+(?!\d))/g, ","),
+    cents = (abs % 100).toString().padStart(2, "0");
+  return `${sen < 0 ? "−" : ""}RM ${ringgit}.${cents}`;
 }
