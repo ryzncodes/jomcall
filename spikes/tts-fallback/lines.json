@@ -1,0 +1,14 @@
+[
+ {"id":"bm1","lang":"bm","text":"Selamat pagi, Klinik Sinar Mutiara. Dengan Puan Nurul Aisyah ke?","note":"greeting + Malay name"},
+ {"id":"bm2","lang":"bm","text":"Cabut gigi RM 85, dan ada slot kosong pukul sepuluh pagi, hari Isnin ini.","note":"price + time"},
+ {"id":"bm3","lang":"bm","text":"Alamat kami di No. 12, Jalan Melati Indah 3, Taman Seri Bayu, Shah Alam. Temujanji ialah pada 14 Disember 2026.","note":"address + date"},
+ {"id":"bm4","lang":"bm","text":"Sekejap ya, saya semak.","note":"filler"},
+ {"id":"ml1","lang":"ml","text":"Boleh, I check dulu ya. Sekejap je, tak lama pun.","note":"manglish filler"},
+ {"id":"ml2","lang":"ml","text":"Nombor you 0 1 2, 3 4 5, 6 7 8 9 kan? Okay, saya confirm, nanti staff call balik.","note":"phone digits"},
+ {"id":"ml3","lang":"ml","text":"Haircut dengan blow dry total RM 85 lah, then slot Saturday pukul tiga petang masih available.","note":"price + time"},
+ {"id":"en1","lang":"en","text":"Thanks for calling Bright Dental. How can I help you today?","note":"greeting"},
+ {"id":"en2","lang":"en","text":"Your appointment is on Monday, 14 December at 10 a.m., at 12 Jalan Melati Indah 3, Shah Alam.","note":"date + address"},
+ {"id":"en3","lang":"en","text":"The fee is RM 85. Shall I book that for you?","note":"price"},
+ {"id":"zh1","lang":"zh","text":"您好，这里是明亮牙科诊所，请问有什么可以帮您？","note":"greeting"},
+ {"id":"zh2","lang":"zh","text":"洗牙费用是 RM 85，星期六上午十点有空位，需要帮您预约吗？","note":"price + time"}
+]
