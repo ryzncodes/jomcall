@@ -12,6 +12,7 @@ build/
 .env
 .env.*
 !.env.example
+!.env.hosted.example
 
 # Local data and media
 *.log
