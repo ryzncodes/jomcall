@@ -13,6 +13,7 @@ import {
   type Snapshot,
 } from "./knowledge.ts";
 import { lockBookingContact } from "../booking/commands.ts";
+import { freezeCore, sessionContext } from "../knowledge/snapshot.ts";
 export type StoredSession = TestSession & {
   snapshot: Snapshot;
   creator_id: string;
@@ -101,6 +102,7 @@ export async function startSession(
               [ctx.orgId, agent.id],
             )
           ).rows,
+          ...(await freezeCore(tx, ctx.orgId, agent.id)),
         };
       } else {
         const version = (
@@ -112,6 +114,12 @@ export async function startSession(
         if (!version) throw new AppError("NOT_FOUND", 404);
         snapshot = version.snapshot;
       }
+      // Hours and closures as of the session start (design D8): the hash then
+      // covers them, so cached spoken answers never outlive a schedule change.
+      snapshot = {
+        ...snapshot,
+        context: await sessionContext(tx, ctx.orgId, v.locationId),
+      } as Snapshot;
       const row = (
         await tx.query(
           "insert into app.test_session(org_id,agent_id,location_id,contact_id,creator_id,auth_session_id,snapshot,snapshot_hash,source,agent_version_id,namespace)values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)returning *",

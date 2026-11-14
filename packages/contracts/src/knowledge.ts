@@ -205,6 +205,7 @@ export type CatalogueRow = {
   revision: number;
 };
 export type KnowledgeCore = {
+  revision: number;
   packs: string[];
   facts: KnowledgeFact[];
   rules: KnowledgeRule[];
