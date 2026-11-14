@@ -16,13 +16,9 @@ import {
 } from "../../billing/src/provider.ts";
 import { manager } from "./authorization.ts";
 
-// Tests swap in a provider; production builds one from the environment.
-let providerFactory: () => PaymentProvider = () => createProvider();
-export function setPaymentProviderForTests(factory: (() => PaymentProvider) | null) {
-  providerFactory = factory ?? (() => createProvider());
-}
-export function paymentProvider() {
-  return providerFactory();
+// Built from the environment on each use; see packages/billing/src/provider.ts.
+export function paymentProvider(): PaymentProvider {
+  return createProvider();
 }
 
 const empty = z.object({}).strict();

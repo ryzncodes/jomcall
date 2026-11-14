@@ -7,6 +7,7 @@ import {
 } from "../../../packages/domain/src/agent-test/knowledge.ts";
 import { voiceSystem } from "../../../packages/domain/src/agent-test/voice-prompt.ts";
 import {
+  cacheKey,
   fastLaneKey,
   mentionsLiveState,
   spokenLanguage,
@@ -112,7 +113,13 @@ export async function runVoiceTurn(
     const history: { input: string; answer: string; evidence?: unknown[] }[] =
       envelope.history ?? [];
     const language = spokenLanguage(input);
-    const key = fastLaneKey(input);
+    const questionKey = fastLaneKey(input);
+    // Scoped to the active booking resources: a resource change must not be
+    // answered from what was said before it.
+    const key =
+      questionKey === null
+        ? null
+        : cacheKey(questionKey, envelope.resources ?? []);
     // A question that leans on earlier turns is never answered from the cache,
     // and its answer is never stored.
     // (The fast lane stays off after the first turn: a follow-up question can

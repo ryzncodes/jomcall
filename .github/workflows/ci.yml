@@ -1,0 +1,58 @@
+# Offline checks only. This workflow has no secrets and calls no hosted model
+# or speech service.
+#
+# NOT RUN HERE: the API, database and engine tests (`npm run check:core`) and
+# `npm run db:verify-migrations`. They need the local Supabase stack
+# (`npm run local:start`, Postgres and Auth in Docker), which this workflow does
+# not start. Run `npm run check:phase2` on a developer machine before merging.
+# The paid checks (`check:voice-model`, `check:hosted-model`,
+# `check:voice-speed`, `voice:prewarm`) must never be added here.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Typecheck and offline Node tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24.15.0"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:guards
+      # Database-free subset: domain and inference tests that use fakes only.
+      - run: npm run test:offline
+
+  voice:
+    name: Python voice worker tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: voice
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest

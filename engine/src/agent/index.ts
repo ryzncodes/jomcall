@@ -1,12 +1,13 @@
 import { AgentRunner } from "./runner.ts";
 import { AgentRepository } from "./repository.ts";
 import { startVoiceServer } from "./voice-server.ts";
+import { agentVoiceProvider } from "../../../packages/inference/src/provider.ts";
 import { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
 
 const VOICE_PORT = 54633;
-const provider = process.env.JOMCALL_VOICE_PROVIDER ?? "disabled";
-if (provider !== "disabled" && provider !== "hosted")
-  throw Error("VOICE_PROVIDER_INVALID");
+// Checked before anything is opened: VOICE_PROVIDER_INVALID for an unknown
+// value, VOICE_MODEL_KEY_MISSING for hosted voice without ANTHROPIC_API_KEY.
+const provider = agentVoiceProvider();
 const runner = await AgentRunner.create();
 // Spoken turns are served only when the owner opted into the hosted model.
 let voiceRepository: AgentRepository | undefined;

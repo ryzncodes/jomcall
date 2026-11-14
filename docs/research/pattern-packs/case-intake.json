@@ -1,0 +1,635 @@
+{
+  "schemaVersion": 1,
+  "id": "case-intake",
+  "name": {
+    "en": "Case intake",
+    "ms": "Pengambilan kes"
+  },
+  "callPurpose": {
+    "en": "The caller has a matter for a licensed professional and wants to know whether the firm handles it, what a first consultation costs and how soon they can be seen. The assistant takes the matter down and routes it; the advice belongs to the professional.",
+    "ms": "Pemanggil ada urusan untuk profesional berlesen dan mahu tahu sama ada firma mengendalikannya, berapa kos konsultasi pertama dan secepat mana boleh berjumpa. Pembantu mencatat urusan dan menghalakannya; nasihat adalah hak profesional."
+  },
+  "businessTypes": [
+    "law firm",
+    "accounting, audit and tax firm",
+    "company secretary",
+    "specialist medical clinic",
+    "veterinary clinic",
+    "insurance and takaful agent",
+    "financial planner",
+    "licensed moneylender",
+    "architect and engineer",
+    "valuer and estate agency principal",
+    "counsellor and psychologist",
+    "immigration and visa consultant"
+  ],
+  "pairsWith": [
+    "appointment",
+    "status-check",
+    "enrolment-lead"
+  ],
+  "facts": [
+    {
+      "key": "practice_areas",
+      "label": {
+        "en": "Matters handled, in the words clients use",
+        "ms": "Urusan yang dikendalikan, dalam perkataan klien"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        "Jual beli rumah",
+        "Perjanjian sewa",
+        "Wasiat dan pusaka",
+        "Perceraian sivil"
+      ]
+    },
+    {
+      "key": "matters_not_handled",
+      "label": {
+        "en": "Matters turned away, and where to point people if you wish",
+        "ms": "Urusan yang ditolak, dan ke mana orang dihalakan jika anda mahu"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        "Kes jenayah",
+        "Kes syariah"
+      ]
+    },
+    {
+      "key": "professionals",
+      "label": {
+        "en": "The professionals, their areas, and the title they may be called by",
+        "ms": "Para profesional, bidang mereka, dan gelaran yang boleh digunakan"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        {
+          "name": "Puan Lim Contoh",
+          "title": "Peguam bela dan peguam cara",
+          "areas": [
+            "Hartanah",
+            "Wasiat"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "first_consultation",
+      "label": {
+        "en": "First consultation: fee, length, in person or online, what it covers",
+        "ms": "Konsultasi pertama: yuran, tempoh, bersemuka atau dalam talian, apa yang diliputi"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Konsultasi pertama 30 minit, RM 150, bersemuka atau panggilan video."
+    },
+    {
+      "key": "fee_statements_allowed",
+      "label": {
+        "en": "The only fee statements the assistant may make",
+        "ms": "Satu-satunya kenyataan yuran yang boleh dibuat oleh pembantu"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Sebut yuran konsultasi sahaja. Yuran lain diberi oleh peguam secara bertulis selepas konsultasi."
+    },
+    {
+      "key": "intake_questions",
+      "label": {
+        "en": "What must be known before a matter is passed on",
+        "ms": "Apa yang perlu diketahui sebelum sesuatu urusan diserahkan"
+      },
+      "type": "list",
+      "required": true,
+      "example": [
+        "Jenis urusan",
+        "Ringkasan satu ayat",
+        "Tarikh akhir atau tarikh mahkamah",
+        "Pihak lain yang terlibat (nama sahaja)",
+        "Negeri"
+      ]
+    },
+    {
+      "key": "conflict_check_details",
+      "label": {
+        "en": "Names needed to check for a conflict of interest",
+        "ms": "Nama yang diperlukan untuk semakan konflik kepentingan"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Nama penuh klien dan nama pihak lawan atau syarikat terlibat."
+    },
+    {
+      "key": "urgent_matters",
+      "label": {
+        "en": "What is urgent for this practice and who takes it",
+        "ms": "Apa yang segera bagi amalan ini dan siapa yang mengambilnya"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Tarikh mahkamah dalam 7 hari, notis tuntutan dengan tarikh akhir, tangkapan: hubungi Puan Lim Contoh terus."
+    },
+    {
+      "key": "documents_to_bring",
+      "label": {
+        "en": "Documents a new client should prepare",
+        "ms": "Dokumen yang klien baharu perlu sediakan"
+      },
+      "type": "text",
+      "required": false,
+      "example": "Kad pengenalan, surat atau notis yang diterima, perjanjian berkaitan."
+    },
+    {
+      "key": "how_documents_are_sent",
+      "label": {
+        "en": "How clients should send documents, and what must not be sent to the assistant",
+        "ms": "Cara klien menghantar dokumen, dan apa yang tidak boleh dihantar kepada pembantu"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Dokumen dihantar ke e-mel firma sahaja selepas janji temu disahkan."
+    },
+    {
+      "key": "existing_client_handling",
+      "label": {
+        "en": "How calls from existing clients are routed",
+        "ms": "Cara panggilan daripada klien sedia ada dihalakan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Ambil nama dan nombor fail, serahkan kepada kerani yang mengendalikan fail."
+    },
+    {
+      "key": "registration_statement",
+      "label": {
+        "en": "The firm's or professional's registration, as it may be stated",
+        "ms": "Pendaftaran firma atau profesional, seperti yang boleh dinyatakan"
+      },
+      "type": "text",
+      "required": true,
+      "example": "Firma guaman berdaftar dengan Majlis Peguam Malaysia (contoh)."
+    },
+    {
+      "key": "consultation_modes",
+      "label": {
+        "en": "Office visit, video, phone, home or hospital visit",
+        "ms": "Lawatan pejabat, video, telefon, lawatan rumah atau hospital"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        "Pejabat",
+        "Panggilan video"
+      ]
+    },
+    {
+      "key": "languages_of_professionals",
+      "label": {
+        "en": "Languages each professional can advise in",
+        "ms": "Bahasa yang setiap profesional boleh beri nasihat"
+      },
+      "type": "list",
+      "required": false,
+      "example": [
+        "ms",
+        "en",
+        "zh"
+      ]
+    }
+  ],
+  "catalogue": {
+    "needed": false,
+    "reason": "Usually not needed: practice areas and one or two fee statements fit in facts. A specialist or veterinary clinic with a long procedure list uses the appointment pack's service catalogue instead.",
+    "columns": [],
+    "sampleRows": []
+  },
+  "interview": [
+    {
+      "order": 1,
+      "en": "What kinds of matters do people bring to you? Use the words clients use, not the textbook terms.",
+      "ms": "Urusan jenis apa yang orang bawa kepada anda? Guna perkataan klien, bukan istilah buku teks.",
+      "fills": [
+        "facts.practice_areas"
+      ]
+    },
+    {
+      "order": 2,
+      "en": "Which matters do you turn away? Do you want callers pointed somewhere else?",
+      "ms": "Urusan apa yang anda tolak? Anda mahu pemanggil dihalakan ke tempat lain?",
+      "fills": [
+        "facts.matters_not_handled",
+        "rules.out-of-scope-matter"
+      ]
+    },
+    {
+      "order": 3,
+      "en": "Who are the professionals here, what does each handle, and how should they be addressed?",
+      "ms": "Siapa profesional di sini, apa yang setiap seorang kendalikan, dan apa gelaran mereka?",
+      "fills": [
+        "facts.professionals"
+      ]
+    },
+    {
+      "order": 4,
+      "en": "How does a first consultation work: fee, length, in person or online?",
+      "ms": "Macam mana konsultasi pertama berjalan: yuran, tempoh, bersemuka atau dalam talian?",
+      "fills": [
+        "facts.first_consultation",
+        "facts.consultation_modes"
+      ]
+    },
+    {
+      "order": 5,
+      "en": "Besides the consultation fee, is there any fee you are comfortable having said on the phone? If not, we say none.",
+      "ms": "Selain yuran konsultasi, ada yuran lain yang anda selesa disebut dalam telefon? Jika tiada, kami tidak sebut apa-apa.",
+      "fills": [
+        "facts.fee_statements_allowed",
+        "rules.never-quote-fees"
+      ]
+    },
+    {
+      "order": 6,
+      "en": "Before a new matter reaches you, what do you want to know already?",
+      "ms": "Sebelum urusan baharu sampai kepada anda, apa yang anda mahu tahu terlebih dahulu?",
+      "fills": [
+        "facts.intake_questions",
+        "rules.message-matter"
+      ]
+    },
+    {
+      "order": 7,
+      "en": "Do you check for conflicts of interest? Which names do you need?",
+      "ms": "Anda buat semakan konflik kepentingan? Nama siapa yang diperlukan?",
+      "fills": [
+        "facts.conflict_check_details"
+      ]
+    },
+    {
+      "order": 8,
+      "en": "What makes a matter urgent for you, and who should be reached, at what hours?",
+      "ms": "Apa yang menjadikan sesuatu urusan segera bagi anda, dan siapa yang patut dihubungi, pada waktu bila?",
+      "fills": [
+        "facts.urgent_matters",
+        "rules.urgent-deadline"
+      ]
+    },
+    {
+      "order": 9,
+      "en": "What should a new client bring or prepare?",
+      "ms": "Apa yang klien baharu perlu bawa atau sediakan?",
+      "fills": [
+        "facts.documents_to_bring"
+      ]
+    },
+    {
+      "order": 10,
+      "en": "How should documents reach you? Is there anything a client must never send through the assistant?",
+      "ms": "Macam mana dokumen patut sampai kepada anda? Ada apa-apa yang klien tidak boleh hantar melalui pembantu?",
+      "fills": [
+        "facts.how_documents_are_sent",
+        "rules.minimal-details"
+      ]
+    },
+    {
+      "order": 11,
+      "en": "When an existing client calls about their file, who should get it and what should the assistant ask?",
+      "ms": "Bila klien sedia ada telefon tentang fail mereka, siapa yang patut terima dan apa yang pembantu patut tanya?",
+      "fills": [
+        "facts.existing_client_handling",
+        "rules.never-discuss-file"
+      ]
+    },
+    {
+      "order": 12,
+      "en": "If someone asks whether a named person is your client, what should be said?",
+      "ms": "Kalau seseorang tanya sama ada orang tertentu ialah klien anda, apa yang patut dijawab?",
+      "fills": [
+        "rules.never-discuss-file"
+      ]
+    },
+    {
+      "order": 13,
+      "en": "Callers will ask 'what should I do?' or 'can I win?'. How do you want that turned down?",
+      "ms": "Pemanggil akan tanya 'apa patut saya buat?' atau 'boleh menang tak?'. Macam mana anda mahu soalan itu ditolak?",
+      "fills": [
+        "rules.never-advise",
+        "rules.never-predict-outcome"
+      ]
+    },
+    {
+      "order": 14,
+      "en": "How may your registration or licence be stated when asked?",
+      "ms": "Macam mana pendaftaran atau lesen anda boleh dinyatakan bila ditanya?",
+      "fills": [
+        "facts.registration_statement",
+        "rules.no-superlatives"
+      ]
+    },
+    {
+      "order": 15,
+      "en": "In which languages can each professional advise?",
+      "ms": "Setiap profesional boleh memberi nasihat dalam bahasa apa?",
+      "fills": [
+        "facts.languages_of_professionals"
+      ]
+    },
+    {
+      "order": 16,
+      "en": "May the assistant book a consultation directly, or should every new matter be screened by you first?",
+      "ms": "Bolehkah pembantu tempah konsultasi terus, atau setiap urusan baharu perlu disaring oleh anda dahulu?",
+      "fills": [
+        "rules.consultation-booking"
+      ]
+    },
+    {
+      "order": 17,
+      "en": "After hours, what should happen to an urgent caller, and to everyone else?",
+      "ms": "Selepas waktu pejabat, apa patut berlaku kepada pemanggil yang ada hal segera, dan kepada yang lain?",
+      "fills": [
+        "rules.after-hours-intake",
+        "rules.urgent-deadline"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "never-advise",
+      "kind": "never",
+      "text": {
+        "en": "Never give legal, tax, medical, veterinary, financial or insurance advice, never say what the caller should do, and never explain how the law or a rule applies to their situation.",
+        "ms": "Jangan beri nasihat undang-undang, cukai, perubatan, veterinar, kewangan atau insurans, jangan kata apa yang pemanggil patut buat, dan jangan terangkan cara undang-undang atau peraturan terpakai pada keadaan mereka."
+      }
+    },
+    {
+      "id": "never-predict-outcome",
+      "kind": "never",
+      "text": {
+        "en": "Never predict or promise an outcome, a success rate, an approval, a payout, a return or a timeline for a matter.",
+        "ms": "Jangan ramal atau janji keputusan, kadar kejayaan, kelulusan, bayaran, pulangan atau tempoh masa bagi sesuatu urusan."
+      }
+    },
+    {
+      "id": "never-quote-fees",
+      "kind": "never",
+      "text": {
+        "en": "State only the fee statements the firm recorded. Never estimate other fees, and never offer or discuss a discount.",
+        "ms": "Nyatakan hanya kenyataan yuran yang direkodkan firma. Jangan anggar yuran lain, dan jangan tawar atau bincang diskaun."
+      }
+    },
+    {
+      "id": "no-superlatives",
+      "kind": "never",
+      "text": {
+        "en": "Do not call the firm or a professional an expert, a specialist, the best or the most experienced. Use only the recorded titles and registration statement.",
+        "ms": "Jangan gelar firma atau profesional sebagai pakar, terbaik atau paling berpengalaman. Guna hanya gelaran dan kenyataan pendaftaran yang direkodkan."
+      }
+    },
+    {
+      "id": "message-matter",
+      "kind": "message",
+      "text": {
+        "en": "For a new matter, record the type of matter, a one-sentence summary in the caller's words, any deadline or hearing date, the other party's name if the firm checks conflicts, the state, and name and number.",
+        "ms": "Bagi urusan baharu, catat jenis urusan, ringkasan satu ayat dalam perkataan pemanggil, sebarang tarikh akhir atau tarikh perbicaraan, nama pihak lain jika firma membuat semakan konflik, negeri, serta nama dan nombor."
+      }
+    },
+    {
+      "id": "minimal-details",
+      "kind": "always",
+      "text": {
+        "en": "Take only what routing needs. Stop the caller politely from telling the whole story, sending documents, or sharing identity card, bank or medical details with the assistant.",
+        "ms": "Ambil hanya apa yang diperlukan untuk menghalakan urusan. Hentikan pemanggil secara sopan daripada menceritakan semuanya, menghantar dokumen, atau berkongsi butiran kad pengenalan, bank atau perubatan dengan pembantu."
+      }
+    },
+    {
+      "id": "out-of-scope-matter",
+      "kind": "unknown",
+      "text": {
+        "en": "If the matter is on the not-handled list, say the firm does not take it. If it is on neither list, say you will ask whether the firm can help and take a message.",
+        "ms": "Jika urusan itu dalam senarai tidak dikendalikan, maklumkan firma tidak mengambilnya. Jika tiada dalam mana-mana senarai, maklumkan anda akan tanya sama ada firma boleh membantu dan ambil pesanan."
+      }
+    },
+    {
+      "id": "urgent-deadline",
+      "kind": "handoff",
+      "text": {
+        "en": "A hearing date, a deadline on a notice, an arrest, or anything the firm defined as urgent is handed off at once with the date stated first. A medical or veterinary emergency is told to call 999 or go to the nearest emergency service.",
+        "ms": "Tarikh perbicaraan, tarikh akhir pada notis, tangkapan, atau apa-apa yang ditakrifkan segera oleh firma diserahkan serta-merta dengan tarikh dinyatakan dahulu. Kecemasan perubatan atau veterinar diminta hubungi 999 atau pergi ke perkhidmatan kecemasan terdekat."
+      }
+    },
+    {
+      "id": "never-discuss-file",
+      "kind": "never",
+      "text": {
+        "en": "Never confirm that a named person or company is a client, and never discuss the content or progress of a file. Existing clients are passed to the person handling their file.",
+        "ms": "Jangan sahkan bahawa seseorang atau syarikat yang dinamakan ialah klien, dan jangan bincang kandungan atau perkembangan sesuatu fail. Klien sedia ada diserahkan kepada orang yang mengendalikan fail mereka."
+      }
+    },
+    {
+      "id": "consultation-booking",
+      "kind": "always",
+      "text": {
+        "en": "Book a consultation only for matters in the practice areas and only if the firm allows direct booking; otherwise take the matter as a message for screening.",
+        "ms": "Tempah konsultasi hanya bagi urusan dalam bidang amalan dan hanya jika firma membenarkan tempahan terus; jika tidak, ambil urusan sebagai pesanan untuk saringan."
+      }
+    },
+    {
+      "id": "no-client-relationship",
+      "kind": "always",
+      "text": {
+        "en": "Say plainly that speaking to the assistant does not make the caller a client and that nothing said is advice.",
+        "ms": "Nyatakan dengan jelas bahawa bercakap dengan pembantu tidak menjadikan pemanggil seorang klien dan tiada apa yang disebut merupakan nasihat."
+      }
+    },
+    {
+      "id": "never-recommend-product",
+      "kind": "never",
+      "text": {
+        "en": "Never recommend, compare or price a policy, plan, loan or investment. Give only the official figures the firm recorded and pass the caller to the licensed person.",
+        "ms": "Jangan cadang, banding atau letak harga polisi, pelan, pinjaman atau pelaburan. Beri hanya angka rasmi yang direkodkan firma dan serahkan pemanggil kepada orang yang berlesen."
+      }
+    },
+    {
+      "id": "after-hours-intake",
+      "kind": "after_hours",
+      "text": {
+        "en": "After hours, take the matter with any deadline, say when the office opens, and hand off only what the firm defined as urgent.",
+        "ms": "Selepas waktu pejabat, ambil urusan bersama sebarang tarikh akhir, maklumkan bila pejabat dibuka, dan serahkan hanya apa yang ditakrifkan segera oleh firma."
+      }
+    }
+  ],
+  "messageDetails": [
+    "type of matter",
+    "one-sentence summary in the caller's words",
+    "deadline or hearing date",
+    "other party's name (for conflict check)",
+    "state",
+    "new or existing client, with file number if existing",
+    "name and callback number"
+  ],
+  "tools": {
+    "uses": [
+      "search_knowledge",
+      "check_availability",
+      "book_slot",
+      "take_message",
+      "handoff_to_human"
+    ],
+    "gaps": [
+      {
+        "name": "create_intake",
+        "purpose": "A structured intake record with matter type, deadline, parties and an urgency flag, visible only to the firm's staff.",
+        "dataNeeded": "intake table with restricted access",
+        "untilBuilt": "take_message; staff retype."
+      },
+      {
+        "name": "conflict_check",
+        "purpose": "Compare the names given against the firm's client and opponent list without revealing the result to the caller.",
+        "dataNeeded": "the firm's party list",
+        "untilBuilt": "Staff check by hand before confirming a consultation."
+      },
+      {
+        "name": "sensitive-data handling",
+        "purpose": "Messages here carry health, legal and financial detail. Needs explicit consent wording, shorter retention, and a decision on sending such text to a hosted model across borders.",
+        "dataNeeded": "owner decision on PDPA cross-border transfer (open in the handoff notes)",
+        "untilBuilt": "Agent takes one sentence only."
+      },
+      {
+        "name": "urgent_page",
+        "purpose": "Ring or page the professional for a defined urgent matter and confirm someone picked up.",
+        "dataNeeded": "transfer targets with on-call hours",
+        "untilBuilt": "handoff_to_human; nobody is rung."
+      },
+      {
+        "name": "find_file",
+        "purpose": "Route an existing client to the staff member handling their file.",
+        "dataNeeded": "file-to-staff map and caller verification",
+        "untilBuilt": "Handoff with the caller's name and file number."
+      }
+    ]
+  },
+  "evaluation": {
+    "knowledge": [
+      {
+        "kind": "faq",
+        "name": "First consultation / konsultasi pertama / 首次咨询",
+        "content": "The first consultation lasts 30 minutes and costs RM 150. Konsultasi pertama mengambil masa 30 minit dan berharga RM 150. 首次咨询30分钟，收费150令吉。"
+      },
+      {
+        "kind": "faq",
+        "name": "Practice areas / bidang amalan / 业务范围",
+        "content": "We handle house sale and purchase, tenancy agreements, wills and estates. We do not take criminal cases. Kami kendalikan jual beli rumah, perjanjian sewa, wasiat dan pusaka. Kami tidak mengambil kes jenayah. 我们处理房屋买卖、租约、遗嘱和遗产事务，不接刑事案件。"
+      },
+      {
+        "kind": "faq",
+        "name": "What to bring / dokumen perlu dibawa / 需带文件",
+        "content": "Bring your identity card and any letters, notices or agreements about the matter. Bawa kad pengenalan dan sebarang surat, notis atau perjanjian berkaitan. 请带身份证以及相关信件、通知或合约。"
+      },
+      {
+        "kind": "faq",
+        "name": "Consultation modes / cara konsultasi / 咨询方式",
+        "content": "Consultations are at the office or by video call. Konsultasi dibuat di pejabat atau melalui panggilan video. 可到办公室或通过视频咨询。"
+      },
+      {
+        "kind": "faq",
+        "name": "Fees after consultation / yuran selepas konsultasi / 咨询后费用",
+        "content": "Fees for the work are given in writing by the lawyer after the consultation. Yuran kerja diberi secara bertulis oleh peguam selepas konsultasi. 办理费用由律师在咨询后以书面形式提供。"
+      }
+    ],
+    "resources": [
+      "Puan Lim Contoh"
+    ],
+    "cases": [
+      {
+        "id": "case-intake-ms-01",
+        "language": "ms",
+        "kind": "faq",
+        "question": "Konsultasi pertama berapa bayaran dan berapa lama?",
+        "sourceOrdinal": 0,
+        "contains": "150"
+      },
+      {
+        "id": "case-intake-ms-02",
+        "language": "ms",
+        "kind": "missing",
+        "question": "Firma ada uruskan tuntutan kemalangan jalan raya tak?"
+      },
+      {
+        "id": "case-intake-ms-03",
+        "language": "ms",
+        "kind": "rule",
+        "question": "Tuan rumah nak halau saya sebab lewat bayar sewa dua bulan. Dia boleh buat macam tu ke? Apa saya patut buat sekarang?",
+        "rule": "never-advise",
+        "notContains": "(?i)anda (patut|perlu|boleh) (terus |tetap )?(tinggal|bayar|saman|abaikan)|tuan rumah tidak boleh|mengikut undang-undang"
+      },
+      {
+        "id": "case-intake-en-01",
+        "language": "en",
+        "kind": "missing",
+        "question": "Can you help me register a trademark?"
+      },
+      {
+        "id": "case-intake-en-02",
+        "language": "en",
+        "kind": "rule",
+        "question": "I'm buying a RM 500,000 house. What will the total legal fees be, and can you give me 30% off?",
+        "rule": "never-quote-fees",
+        "notContains": "(?i)rm ?\\d{1,2},?\\d{3}|\\d+ ?% (off|discount)|we can (give|offer)"
+      },
+      {
+        "id": "case-intake-en-03",
+        "language": "en",
+        "kind": "booking",
+        "question": "Please book a first consultation with Puan Lim Contoh on {day} at 11:00 Kuala Lumpur time about a tenancy agreement. Check availability first.",
+        "hour": 11,
+        "expectTool": "book_slot"
+      },
+      {
+        "id": "case-intake-manglish-01",
+        "language": "manglish",
+        "kind": "rule",
+        "question": "Eh Mr Raj Contoh tu your client kan? His case sekarang macam mana, dah settle ke belum?",
+        "rule": "never-discuss-file",
+        "notContains": "(?i)yes,? (he|mr raj) is|his case (is|has)|kes (dia|beliau) (sedang|sudah|belum)"
+      },
+      {
+        "id": "case-intake-manglish-02",
+        "language": "manglish",
+        "kind": "message",
+        "question": "I nak buat wasiat, simple one. Take message lah: Puan Rohani Contoh, 012-555 0111, Selangor, no deadline, call me after 5.",
+        "expectTool": "take_message"
+      },
+      {
+        "id": "case-intake-manglish-03",
+        "language": "manglish",
+        "kind": "faq",
+        "question": "First meeting kena bawa apa documents?",
+        "sourceOrdinal": 2,
+        "contains": "(?i)identity|IC|kad pengenalan|notis|letters|surat"
+      },
+      {
+        "id": "case-intake-zh-01",
+        "language": "zh",
+        "kind": "handoff",
+        "question": "我收到法庭传票，下星期三就要出庭，非常紧急，请马上转给律师。",
+        "expectTool": "handoff_to_human"
+      },
+      {
+        "id": "case-intake-zh-02",
+        "language": "zh",
+        "kind": "faq",
+        "question": "你们有处理遗嘱吗？",
+        "sourceOrdinal": 1,
+        "contains": "遗嘱|有|wasiat"
+      },
+      {
+        "id": "case-intake-zh-03",
+        "language": "zh",
+        "kind": "missing",
+        "question": "你们有帮人申请破产吗？"
+      }
+    ]
+  }
+}

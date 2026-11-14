@@ -8,6 +8,7 @@ import {
 } from "@/lib/core/client";
 import type { Bootstrap, Session } from "../../../packages/contracts/src/core";
 import { useExperience } from "../experience";
+import { contextCopy, type ErrorContext } from "./error-copy";
 export const CoreContext = createContext<{
   client: HttpCoreClient;
   workspace: Bootstrap;
@@ -21,7 +22,7 @@ export function useWords() {
   const { locale } = useExperience();
   return (en: string, ms: string) => (locale === "ms" ? ms : en);
 }
-export function errorText(error: unknown, ms = false) {
+export function errorText(error: unknown, ms = false, context?: ErrorContext) {
   const code =
     error instanceof CoreError
       ? error.code
@@ -158,10 +159,10 @@ export function errorText(error: unknown, ms = false) {
       "Cawangan utama atau yang digunakan tidak boleh diarkibkan.",
     ],
   };
-  return (messages[code] ?? [
-    code.replaceAll("_", " "),
-    code.replaceAll("_", " "),
-  ])[ms ? 1 : 0];
+  return (contextCopy(code, context) ??
+    messages[code] ?? [code.replaceAll("_", " "), code.replaceAll("_", " ")])[
+    ms ? 1 : 0
+  ];
 }
 export function useResource<T>(load: () => Promise<T>, key: string) {
   const { epoch } = useCore();
@@ -239,12 +240,21 @@ export function useAction() {
   }
   return { run, busy, error, saved };
 }
-export function Notice({ error, saved }: { error?: unknown; saved?: boolean }) {
+export function Notice({
+  error,
+  saved,
+  context,
+}: {
+  error?: unknown;
+  saved?: boolean;
+  // The screen the error happened on, when it changes the wording.
+  context?: ErrorContext;
+}) {
   const { locale, href } = useExperience();
   const w = useWords();
   return error ? (
     <div className="storage-warning" role="alert">
-      {errorText(error, locale === "ms")}
+      {errorText(error, locale === "ms", context)}
       {error instanceof CoreError && error.status === 401 && (
         <a href={href("/login")}>{w(" Sign in", " Log masuk")}</a>
       )}

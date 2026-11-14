@@ -54,10 +54,18 @@ async function voiceFixture(seconds = 300) {
     ).rows[0].value;
   const begin = (input = "Kedai buka pukul berapa?") =>
     voice("voice_begin", { input, clientTurnId: randomUUID() });
+  const work = async (action: string) =>
+    (
+      await agent.query("select app_private.agent_work($1,$2)as value", [
+        action,
+        f.h.namespace,
+      ])
+    ).rows[0].value;
   return {
     ...f,
     session,
     voice,
+    work,
     begin,
     async close() {
       await agent.end();
@@ -324,6 +332,74 @@ test("the answer cache is scoped to organization, snapshot and language", async 
     await assert.rejects(
       f.voice("voice_cache_put", { ...entry, language: "xx" }),
       /INVALID_CACHE_ENTRY/,
+    );
+  } finally {
+    await f.close();
+  }
+});
+
+const age = (f: any, key: string, interval: string) =>
+  f.h.cleanup.query(
+    "update app.voice_answer_cache set created_at=now()-$3::interval where org_id=$1 and key=$2",
+    [f.h.orgA.id, key, interval],
+  );
+
+test("a cached answer older than 7 days is not served and can be replaced", async () => {
+  const f = await voiceFixture();
+  try {
+    const entry = {
+      language: "ms",
+      key: "kedai buka pukul berapa",
+      answer: "Kami buka 9 pagi hingga 6 petang.",
+      evidence: ["abc:2:0"],
+    };
+    assert.deepEqual(await f.voice("voice_cache_put", entry), {});
+    await age(f, entry.key, "6 days 23 hours");
+    assert.deepEqual(await f.voice("voice_cache_get", entry), {
+      answer: entry.answer,
+      evidence: entry.evidence,
+    });
+    // A fresh entry is never overwritten by a later answer.
+    await f.voice("voice_cache_put", { ...entry, answer: "Lain." });
+    assert.equal(
+      (await f.voice("voice_cache_get", entry)).answer,
+      entry.answer,
+    );
+    await age(f, entry.key, "7 days 1 minute");
+    assert.equal(await f.voice("voice_cache_get", entry), null);
+    // An expired entry does not block the next answer to the same question.
+    const next = { ...entry, answer: "Kami buka 10 pagi hingga 7 petang." };
+    assert.deepEqual(await f.voice("voice_cache_put", next), {});
+    assert.deepEqual(await f.voice("voice_cache_get", entry), {
+      answer: next.answer,
+      evidence: next.evidence,
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+test("maintenance deletes cache entries older than 7 days and keeps the rest", async () => {
+  const f = await voiceFixture();
+  try {
+    const entry = {
+      language: "ms",
+      answer: "Kami buka 9 pagi hingga 6 petang.",
+      evidence: [],
+    };
+    await f.voice("voice_cache_put", { ...entry, key: "soalan contoh lama" });
+    await f.voice("voice_cache_put", { ...entry, key: "soalan contoh baru" });
+    await age(f, "soalan contoh lama", "8 days");
+    await age(f, "soalan contoh baru", "6 days");
+    assert.deepEqual(await f.work("maintain"), {});
+    assert.deepEqual(
+      (
+        await f.h.cleanup.query(
+          "select key from app.voice_answer_cache where org_id=$1",
+          [f.h.orgA.id],
+        )
+      ).rows,
+      [{ key: "soalan contoh baru" }],
     );
   } finally {
     await f.close();

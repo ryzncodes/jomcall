@@ -104,6 +104,13 @@ async def entrypoint(ctx: JobContext) -> None:
         log.error("voice job refused: bad dispatch metadata")
         ctx.shutdown("bad_metadata")
         return
+    # Without both speech keys the call could not hear or speak: end it now,
+    # before the room is joined and before the opening line. Names only.
+    missing = config.missing_keys()
+    if missing:
+        log.error("voice job refused: missing %s", ", ".join(missing))
+        ctx.shutdown("voice_keys_missing")
+        return
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
     source = rtc.AudioSource(config.TTS_SAMPLE_RATE, 1)
     await ctx.room.local_participant.publish_track(
