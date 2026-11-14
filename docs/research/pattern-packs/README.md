@@ -1,6 +1,8 @@
 # Pattern packs (draft data)
 
-Draft packs for JomCall's call patterns, written on 2026-11-14. They are research output: nothing in the product reads them yet. The reasoning behind the list is in `../call-patterns.md`.
+Draft packs for JomCall's call patterns, written on 2026-11-14. The reasoning behind the list is in `../call-patterns.md`.
+
+**The JSON files moved into the product on 2026-11-14.** They now live in `packages/domain/src/packs/`, are validated by `packSchema` in `packages/domain/src/packs/index.ts` at load, and are the only copy (so research and product cannot drift apart). This README still describes their shape. Each pack's evaluation cases are also written to `tests/fixtures/pack-evaluation.json`.
 
 All sample data is fictional. Names carry "Contoh", and phone numbers use made-up `555 01xx` ranges.
 
