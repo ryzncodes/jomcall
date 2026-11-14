@@ -1,6 +1,6 @@
 # Setup flow redesign: import first, interview as the fallback
 
-Status: approved by the owner on 2026-11-14, with the answers recorded in section 9. Nothing here is built.
+Status: approved by the owner on 2026-11-14, with the answers recorded in section 9. The interview door is built on branch `feat/setup-flow` (not merged); the import door is not built.
 
 ## 1. Why
 
@@ -147,7 +147,13 @@ Written after the interview door was built on branch `feat/setup-flow`.
 - The review page's "still missing" list leaves out facts an answered question fills, and shows 3 entries with a "Show all" button. An "Add now" answer is stored through `answerSetup` with an id of the form `missing:<pack>:<field>`; it does not count against the 8.
 - The business-name question is prefilled with the organization name. A question that fills more than one fact is never prefilled.
 - Apply merges: the agent's packs become the old packs plus the session's packs. A conflicting item the owner does not name in `replace` is marked removed, so the current value stays. Apply always closes the session. The existing check for bookings outside new opening hours stays and fails the whole apply.
-- Publish unlocks only after a test turn on a fresh draft. A test from an older draft does not count.
+- Publish unlocks only after a test turn on a fresh draft. A test from an older draft does not count. Only the setup screen enforces this; the server does not.
+- After publishing, the owner stays on a "live" page with links to the Agent page and to a test call, instead of landing on Home (section 4).
+- Running setup again shows the business-type picker first, with the earlier choice preselected (sections 4 and 7).
+- "Something else" keeps a free-text field. At workspace creation the owner types what kind of business it is (required, up to 80 characters) and those words are stored as the business type; the other types store their label. The pack always comes from the picked type, never from the words.
+- Hours and first words are not asked again when they are already saved: hours when the location has saved opening hours, first words when the draft has both a greeting and an AI introduction. Starting setup and changing packs follow the same rule.
+- A fact that two chosen packs share (for example deposit and payment) is listed as missing once, under the pack of the earlier answer or question. "Add now" keeps that pack, so a skipped question does not come back and the answer is kept. A skip never throws away an answer given another way.
+- Apply locks the branch before reading its opening hours. A schedule save in progress finishes first, and its hours then count as the current value the owner chose to keep or replace.
 - The sidebar rule (section 9, answer 2) is the `channels` command: Phone numbers shows when the phone provider is set and the workspace has a number; WhatsApp shows when its provider is not `disabled`; Integrations stays hidden.
 
 **Contact export and delete.** Setup rows are not linked to a contact, so contact export and delete do not list them. They hold the business's own answers and are removed with the agent or the organization. The import plan must revisit this when uploaded files can contain customer details.
@@ -159,7 +165,7 @@ Written after the interview door was built on branch `feat/setup-flow`.
 - Catalogue rows as setup items (today they are only reported as unconfirmed), and a place in the interview for the rules and catalogue questions left out here.
 - Model help to turn a free-text interview answer into fact fields, if the owner still wants it.
 - Contact export and delete coverage for setup rows that may hold customer details.
-- Smaller items left over from review: a skipped name question comes back empty instead of prefilled; a duplicate save is possible on Continue; a hidden tab keeps polling on the finish stage; the Agent page still says "Penerbitan menyimpan versi tetap..." outside setup; a fact answered through "Add now" can leave another pack's frozen question asking the same fact; the sidebar's setup entry flashes while the workspace loads and channels refresh only on window focus.
+- Smaller items left over from review: a hidden tab keeps polling on the finish stage; the Agent page still says "Penerbitan menyimpan versi tetap..." outside setup; the sidebar's setup entry flashes while the workspace loads and channels refresh only on window focus. (A skipped name question coming back empty, a duplicate save on Continue and an "Add now" answer leaving another pack's question open were fixed in the final fix wave.)
 
-**What no person has checked.** The controller clicked through the flow once in the local app's browser pane, at 390 px and at desktop width, in English, with a fake workspace. That was before the two later fix commits (`d63ae4d`, `04a2a88` and `65185fa`); nothing was re-checked in a browser after them. Bahasa Melayu screens, the dark theme, accessibility and a real owner have not been checked. The staff view, a real test turn and a real publish were not checked. Nothing ran on hosted staging and the migrations are not applied there. The paid 48-case gates were not re-run: this branch changes no prompt, pack or tool list (it only moves two existing writers into shared functions and adds new commands).
+**What no person has checked.** The flow was clicked through once in the local app at 375 px and at desktop width, in English and Bahasa Melayu, at commit `548560d`, with a fake workspace. Nothing was re-checked in a browser after that: the later setup fixes, the Bahasa Melayu wording changes, the sidebar change and the final fix wave have not been checked by a person. The dark theme, accessibility and a real owner have not been checked. Nothing ran on hosted staging and the migrations are not applied there. The paid 48-case gates were not re-run: this branch changes no prompt, pack or tool list (it only moves two existing writers into shared functions and adds new commands).
 

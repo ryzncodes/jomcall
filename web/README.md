@@ -44,7 +44,7 @@ The dev/start scripts bind to localhost. No environment variables or backend acc
 3. Review: what was gathered, what is still missing (3 shown, "Show all" for the rest), and any value that would replace a current one. Apply writes it to the agent. It never publishes.
 4. Finish: a test turn on the fresh draft, then Publish. After Publish the page shows the live state.
 
-The sidebar hides Phone numbers, WhatsApp and Integrations until each is connected, and hides Setup once the agent is published.
+The sidebar hides Phone numbers, WhatsApp and Integrations until each is connected. Guided setup leaves the sidebar once the agent is published, except while the owner is on it.
 
 ## Preview boundaries
 

@@ -14,10 +14,12 @@ Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/
 **Verified (2026-11-15)**
 - `npm run typecheck`: pass. `npm run test:guards`: 32 of 32. `npm run check:core`: 462 of 462.
 - `npm run db:verify-migrations`: pass, 54 tables with row-level security. `npm run build:mock` and `npm run build:hosted`: pass.
+- After the final fix wave (commit `6a8debd`, no SQL changed): `npm run typecheck` pass; `npm run test:guards` 34 of 34; `npm run check:core` 474 of 474; `npm run build:local`, `build:mock` and `build:hosted` pass. Report: `.superpowers/sdd/2026-11-14-setup-flow-interview/final-fix-report.md`.
 
 **Not verified**
-- No person has used it. One click-through by the controller (390 px and desktop, English, fake workspace) was done before the last two fix rounds; no browser re-check after.
-- Bahasa Melayu screens, dark theme, accessibility, staff view, a real publish: not checked.
+- No real owner has used it. The flow was clicked through once in the local app at 375 px and desktop width, in English and Bahasa Melayu, at commit `548560d`, with a fake workspace.
+- Nothing was re-checked in a browser after that: the later setup fixes, the Bahasa Melayu wording changes, the sidebar change and the final fix wave are unchecked by a person.
+- Dark theme, accessibility and a real owner: not checked.
 - Nothing ran on hosted staging; the two migrations are not applied there.
 - Paid gates not re-run (`check:hosted-model`, `check:voice-model`): no prompt, pack or tool list changed.
 
