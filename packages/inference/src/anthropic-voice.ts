@@ -129,7 +129,15 @@ export async function* streamVoiceModel(
       name: block.name,
       args: block.input,
     });
-    if (!parsed.success) throw Error("MODEL_OUTPUT_INVALID");
+    if (!parsed.success) {
+      // A lookup with unusable arguments is handed on as it is; the turn
+      // answers it with a failure the model can recover from.
+      if (core && block.name === "lookup_catalogue") {
+        yield { type: "tool", id: block.id, name: block.name, input: block.input };
+        continue;
+      }
+      throw Error("MODEL_OUTPUT_INVALID");
+    }
     yield {
       type: "tool",
       id: block.id,

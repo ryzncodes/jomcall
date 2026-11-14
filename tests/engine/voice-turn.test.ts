@@ -639,3 +639,20 @@ test("inherited evidence is newest first and the oldest is dropped at the cap", 
     await f.close();
   }
 });
+
+test("a blank catalogue lookup on a browser voice test returns a failure and the turn completes", async () => {
+  const f = await fixture();
+  try {
+    const s = await f.makeSession();
+    await f.h.cleanup.query("update app.test_session set snapshot=jsonb_set(snapshot,'{packs}','[]'::jsonb) where id=$1", [s.id]);
+    const m = f.scripted(
+      [toolEvent("lookup_catalogue", { item: "", code: "", fits: "" }), end("")],
+      [sentence("Item apa ya?"), end("Item apa ya?")],
+    );
+    const events = await f.run(s, "Berapa harga?", m.model);
+    assert.equal(events.at(-1)?.type, "done");
+    assert.match(JSON.stringify(m.seen[1].messages.at(-1)), /found.{1,5}false/);
+  } finally {
+    await f.close();
+  }
+});

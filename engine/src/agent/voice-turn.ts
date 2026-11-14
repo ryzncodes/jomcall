@@ -22,13 +22,17 @@ import {
   searchUnits,
   type CoreSnapshotFull,
   type CoreToolResult,
+  type KnowledgeAccess,
   type SearchOptions,
 } from "../../../packages/domain/src/knowledge/tools.ts";
 import {
   coreVoicePrompt,
   usesCore,
 } from "../../../packages/domain/src/knowledge/prompt.ts";
-import type { CoreToolCall } from "../../../packages/contracts/src/knowledge.ts";
+import {
+  catalogueArgs,
+  type CoreToolCall,
+} from "../../../packages/contracts/src/knowledge.ts";
 import type { Embedder } from "../../../packages/inference/src/embedding.ts";
 import {
   cacheKey,
@@ -66,8 +70,7 @@ export type VoiceStore = Pick<
   | "voiceCachePut"
   | "access"
 > & {
-  // Knowledge core tools; only the test-session store has them (the SQL
-  // allow-list for real calls does not accept lookup_catalogue yet).
+  // Knowledge core tools: the test-session store and the call store have them.
   knowledge?: AgentRepository["knowledge"];
 };
 // How a real phone call differs from a browser voice test. Absent for the
@@ -77,12 +80,14 @@ export type VoiceTurnPolicy = {
   fastLane: boolean;
   // Extra prompt text after the shared spoken rules.
   rules(envelope: any): { stable: string; volatile: string };
-  // Runs one validated tool call in place of executeTestTool.
+  // Runs one validated tool call in place of executeTestTool. `core` is set
+  // when the turn offers the knowledge-core tools.
   runTool(
     access: ToolAccess,
     step: number,
     call: { name: string; args: unknown },
     envelope: any,
+    core?: { knowledge: KnowledgeAccess; options: SearchOptions },
   ): Promise<ToolResult | { kind: string; [key: string]: unknown }>;
 };
 export type VoiceTurnDeps = {
@@ -127,6 +132,17 @@ function addEvidence(
     into.push(next);
   }
   return true;
+}
+
+// A lookup the model got wrong (nothing to look for, or arguments over the
+// limits) is a result it can recover from, never a failed turn: no database
+// call, and nothing is recorded for it.
+const BAD_LOOKUP_NEXT =
+  "The lookup needs an item, a code or a model (item up to 200 characters, code up to 80, model up to 200). Ask the caller which item they mean, or say you will ask staff and take a message.";
+function unusableLookup(call: { name: string; args: unknown }): CoreToolResult | null {
+  if (call.name !== "lookup_catalogue" || catalogueArgs.safeParse(call.args).success)
+    return null;
+  return { kind: "catalogue", found: false, items: [], next: BAD_LOOKUP_NEXT };
 }
 
 function errorCode(error: unknown) {
@@ -243,10 +259,8 @@ export async function runVoiceTurn(
     const snapshot = envelope.session.snapshot as CoreSnapshotFull;
     // Snapshots from before the knowledge core keep the old prompt and tools.
     const core = usesCore(snapshot);
-    // Core tools only where the store and the channel allow them (browser
-    // tests). Real calls get the rules and facts with the shared tools.
-    const knowledge =
-      core && !deps.policy && repo.knowledge ? repo.knowledge(envelope) : undefined;
+    // Core tools wherever the store has them (browser tests and real calls).
+    const knowledge = core && repo.knowledge ? repo.knowledge(envelope) : undefined;
     const coreTools = !!knowledge;
     const searchOptions: SearchOptions = {
       embedder: deps.embedder,
@@ -333,14 +347,21 @@ export async function runVoiceTurn(
           }
           checkAbort();
           const call = { name: event.name, args: event.input };
-          const result: CoreToolResult = knowledge
-            ? await executeCoreTool(access, knowledge, tools++, call, {
-                ...searchOptions,
-                timeoutMs: 1000,
-              })
-            : ((deps.policy
-                ? await deps.policy.runTool(access, tools++, call, envelope)
-                : await executeTestTool(access, tools++, call)) as ToolResult);
+          const toolOptions = { ...searchOptions, timeoutMs: 1000 };
+          const unusable = knowledge ? unusableLookup(call) : null;
+          const result: CoreToolResult = unusable
+            ? (tools++, unusable)
+            : knowledge && !deps.policy
+              ? await executeCoreTool(access, knowledge, tools++, call, toolOptions)
+              : ((deps.policy
+                  ? await deps.policy.runTool(
+                      access,
+                      tools++,
+                      call,
+                      envelope,
+                      knowledge && { knowledge, options: toolOptions },
+                    )
+                  : await executeTestTool(access, tools++, call)) as ToolResult);
           calls.push({ call: call as CoreToolCall, result });
           checkAbort();
           let shown: unknown = result;
@@ -394,7 +415,7 @@ export async function runVoiceTurn(
     // Before completing: the lease ends with the turn. Never fails the turn.
     if (knowledge && isGap(calls))
       await knowledge
-        .gap(gapRecord(input, language, "voice", answer))
+        .gap(gapRecord(input, language, deps.policy ? "phone" : "voice", answer))
         .catch(() => console.error("GAP_RECORD_FAILED"));
     const t = timings(firstSentenceAt);
     const saved = await repo.voiceComplete(

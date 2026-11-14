@@ -432,3 +432,48 @@ test("an ask needs at most one parent, and a phone or WhatsApp ask needs its own
     await f.close();
   }
 });
+
+test("an ask with a session and a call, or a browser ask with a conversation, is refused", async () => {
+  const f = await phoneFixture();
+  try {
+    const c = await liveCall(f);
+    const t = await liveTurn(f);
+    await callWork(f, "gap", c, gapData());
+    await t.work("gap", t.turn, t.lease, gapRecord("Soalan lain", "ms", "whatsapp", ""));
+    const [a, w] = await asks(f);
+    const gapId = (await f.h.cleanup.query("select gap_id from app.knowledge_gap_ask where call_id=$1", [a.call_id])).rows[0].gap_id;
+    const path = `/agents/${f.h.orgA.agentId}`;
+    const rev = (await f.req("GET", `${path}/draft`)).body.data.revision;
+    const session = (
+      await f.req("POST", "/agent-tests", { agentId: f.h.orgA.agentId, locationId: f.h.orgA.locationId, source: { kind: "draft", expectedRevision: rev } })
+    ).body.data;
+    const insert = (channel: string, parents: Record<string, unknown>) =>
+      f.h.cleanup.query(
+        `insert into app.knowledge_gap_ask(org_id,gap_id,question,language,channel,${Object.keys(parents).join(",")})values($1,$2,'q','ms',$3,${Object.keys(parents).map((_, i) => "$" + (i + 4)).join(",")})`,
+        [f.h.orgA.id, gapId, channel, ...Object.values(parents)],
+      );
+    // A session and a call together: two parents, on either channel.
+    await assert.rejects(insert("phone", { session_id: session.id, call_id: a.call_id }), /knowledge_gap_ask_one_parent/);
+    await assert.rejects(insert("text", { session_id: session.id, call_id: a.call_id }), /knowledge_gap_ask_one_parent/);
+    // The check refuses a browser ("text") ask that names a conversation: only
+    // a WhatsApp ask may carry one.
+    await assert.rejects(insert("text", { conversation_id: w.conversation_id }), /knowledge_gap_ask_one_parent/);
+    // A session alone on a browser channel is still fine.
+    await insert("text", { session_id: session.id });
+  } finally {
+    await cleanWhatsApp(f);
+    await f.close();
+  }
+});
+
+test("a phone gap with a wrong lease returns nothing and stores nothing", async () => {
+  const f = await phoneFixture();
+  try {
+    const c = await liveCall(f);
+    assert.equal(await callWork(f, "gap", { ...c, lease: randomUUID() }, gapData()), null);
+    assert.equal((await asks(f)).length, 0);
+    assert.equal(await callWork(f, "gap", c, gapData()) !== null, true);
+  } finally {
+    await f.close();
+  }
+});
