@@ -1,5 +1,27 @@
 # Handoff
 
+## 2026-11-14 — catalogue lookup on phone and WhatsApp
+
+Branch `feat/core-tools-on-channels` (not pushed; no pull request yet).
+
+**Changed**
+- Migrations `20261114230000_core_tools_channels.sql` (shared `app_private.knowledge_lookup`; `catalogue` and `units` actions on `agent_call` and `whatsapp_work`; `lookup_catalogue` in both tool allow-lists) and `20261114230100_gap_channels.sql` (gap asks for phone and WhatsApp, shared `app_private.knowledge_gap_write`, `gap` action on both functions).
+- Real calls and WhatsApp turns get `lookup_catalogue` and record unanswered questions when the published snapshot has packs. Snapshots without packs are unchanged (stored fixtures).
+- A blank or over-long `lookup_catalogue` query returns a not-found result marked invalid instead of failing a voice or typed turn.
+- AGENTS.md knowledge core entry and the knowledge core design amendment updated.
+
+**Verified**
+- `npm run typecheck`: pass.
+- `npm run test:guards`: 23 of 23 pass.
+- `npm run check:core`: 387 of 387 pass.
+- `npm run db:verify-migrations`: scratch replay passed, 52 RLS tables.
+
+**Not verified**
+- Paid gates not re-run: `npm run check:hosted-model`, `npm run check:voice-model`.
+- Nothing run against a real carrier or Meta.
+- Both migrations not applied to hosted staging (owner step: `npm run hosted:migrate`).
+- Still no hours on phone and WhatsApp prompts; the gap log masks phone numbers and emails, not names.
+
 ## 2026-11-14 — first staging environment (hosted)
 
 Done with the owner, step by step, from `infra/hosted/RUNBOOK.md` steps 2 to 4.
