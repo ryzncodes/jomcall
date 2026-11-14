@@ -120,3 +120,13 @@ async def test_an_explicit_base_url_is_checked_too(monkeypatch):
             SESSION, "tok", "hi", TURN, 1.0, base_url="http://10.0.0.5:54633"
         ):
             pass
+
+
+def test_startup_check_passes_locally_and_stops_a_half_configured_hosted_worker(monkeypatch):
+    config.startup_check()
+    monkeypatch.setenv("JOMCALL_MODE", "hosted")
+    monkeypatch.setenv("JOMCALL_VOICE_TURN_URL", "http://172.30.0.10:54633")
+    with pytest.raises(RuntimeError, match="VOICE_SERVICE_SECRET_REQUIRED"):
+        config.startup_check()
+    monkeypatch.setenv("JOMCALL_VOICE_SERVICE_SECRET", SECRET)
+    config.startup_check()

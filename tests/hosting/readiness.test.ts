@@ -100,9 +100,8 @@ test("conditional keys are required only when their feature is on", () => {
     JOMCALL_MODEL_PROVIDER: "disabled",
     JOMCALL_VOICE_PROVIDER: "disabled",
   };
-  assert.deepEqual(readiness("agent", agent), [
-    { name: "JOMCALL_VOICE_SERVICE_SECRET", code: "MISSING" },
-  ]);
+  // Voice off: no voice secret, bind address or model key needed.
+  assert.deepEqual(readiness("agent", agent), []);
   const names = readiness("agent", {
     ...agent,
     JOMCALL_VOICE_PROVIDER: "hosted",
@@ -112,6 +111,7 @@ test("conditional keys are required only when their feature is on", () => {
     "ANTHROPIC_API_KEY",
     "OPENROUTER_API_KEY",
     "JOMCALL_VOICE_BIND",
+    "JOMCALL_VOICE_SERVICE_SECRET",
   ])
     assert.ok(names.includes(n), n);
 });
@@ -148,4 +148,11 @@ test("the readiness command prints names only and exits 1 when not ready", () =>
   assert.match(out, /APP_ORIGIN: HTTPS_REQUIRED/);
   assert.match(out, /CSRF_SECRET: MISSING/);
   assert.doesNotMatch(out, new RegExp(SECRET));
+});
+
+test("the voice worker always needs its service secret", () => {
+  const names = readiness("voice", { JOMCALL_MODE: "hosted" }).map(
+    (f) => f.name,
+  );
+  assert.ok(names.includes("JOMCALL_VOICE_SERVICE_SECRET"));
 });

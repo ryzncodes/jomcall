@@ -38,7 +38,7 @@ On every account: turn on two-factor sign-in, set a spending alert, and accept t
 
 ### B. Values to obtain, and where each goes
 
-One file per service on the server, in `/etc/jomcall/` (root-owned, mode 0600). Web values go into Vercel, per environment. The release values stay on the owner's laptop. `infra/hosted/.env.hosted.example` lists every name with a one-line description.
+One file per service on the server, in `/etc/jomcall/` (`agent.env`, `engine.env`, `voice.env`, `livekit.env`, `caddy.env`; root-owned, mode 0600). Compose sets `JOMCALL_MODE`, `JOMCALL_VOICE_BIND`, `JOMCALL_VOICE_TURN_URL` and the voice worker's internal `LIVEKIT_URL` itself; leave them out of the files. Web values go into Vercel, per environment. The release values stay on the owner's laptop. `infra/hosted/.env.hosted.example` lists every name with a one-line description.
 
 | Value | Where it comes from | Goes to |
 |---|---|---|
@@ -53,7 +53,7 @@ One file per service on the server, in `/etc/jomcall/` (root-owned, mode 0600). 
 | `CSRF_SECRET`, `INVITATION_KEY` | **[OWNER]** generate: `openssl rand -hex 32` each | Vercel; `INVITATION_KEY` also `engine.env` |
 | `JOMCALL_VOICE_SERVICE_SECRET` | **[OWNER]** generate: `openssl rand -hex 32` | `agent.env` and `voice.env` (same value) |
 | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | **[OWNER]** generate: `echo API$(openssl rand -hex 8)` and `openssl rand -hex 32` | Vercel and `voice.env`; `LIVEKIT_KEYS="<key>: <secret>"` in `livekit.env` |
-| `LIVEKIT_DOMAIN`, `ACME_EMAIL` | e.g. `livekit.example.com`, and an inbox you read | `livekit.env`; public `LIVEKIT_URL=wss://livekit.example.com` in Vercel |
+| `LIVEKIT_DOMAIN`, `ACME_EMAIL` | e.g. `livekit.example.com`, and an inbox you read | `caddy.env`; public `LIVEKIT_URL=wss://livekit.example.com` in Vercel |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Email provider dashboard | `engine.env`, and Supabase Auth SMTP settings |
 | `ANTHROPIC_API_KEY` (and `OPENROUTER_API_KEY` if used) | Vendor consoles | `agent.env` |
 | `DEEPGRAM_API_KEY`, `GOOGLE_CLOUD_API_KEY` | Vendor consoles | `voice.env` |
@@ -83,7 +83,7 @@ docker compose -f infra/hosted/docker-compose.yml config --quiet
 `docker compose ... config` needs the four env files; for a dry check point it at empty files:
 
 ```bash
-d=$(mktemp -d); for n in agent engine voice livekit; do : > "$d/$n.env"; done
+d=$(mktemp -d); for n in agent engine voice livekit caddy; do : > "$d/$n.env"; done
 JOMCALL_ENV_DIR="$d" docker compose -f infra/hosted/docker-compose.yml config --quiet
 ```
 
@@ -145,10 +145,10 @@ git clone https://github.com/ryzncodes/jomcall.git /opt/jomcall
 install -d -m 0700 /etc/jomcall
 ```
 
-3d. **[OWNER]** Write `/etc/jomcall/agent.env`, `engine.env`, `voice.env` and `livekit.env` from section B (staging values, `JOMCALL_QUEUE_NAMESPACE=staging`). Before copying them up, check each on your laptop:
+3d. **[OWNER]** Write `/etc/jomcall/agent.env`, `engine.env`, `voice.env`, `livekit.env` and `caddy.env` from section B (staging values, `JOMCALL_QUEUE_NAMESPACE=staging`). Before copying them up, check each on your laptop:
 
 ```bash
-for s in agent engine voice livekit; do npm run -s hosted:readiness -- --service $s --env-file ~/secure/staging/$s.env; done
+for s in agent engine voice livekit caddy; do npm run -s hosted:readiness -- --service $s --env-file ~/secure/staging/$s.env --compose; done
 ```
 
 Then on the server: `chmod 0600 /etc/jomcall/*.env`.
@@ -202,13 +202,13 @@ Note: Docker restarts a container that exits, not one marked unhealthy. Watch `d
 
 ## Step 5. Voice on staging
 
-Browser voice test end to end from Malaysia, then the scripted caller **with staging keys only** (it calls Deepgram, Anthropic and Google):
+Browser voice test end to end from Malaysia, on a laptop and on a phone, using the staging keys.
 
-```bash
-npm run check:voice-speed
-```
+Not possible yet: the twenty-turn speed script (`npm run check:voice-speed`) drives the **local** stack only (it loads `.env.local` and the voice worker refuses a non-loopback turn URL outside hosted mode). Measuring staging speed needs a hosted variant of that tool; until then compare the browser test by ear and by the stage timings.
 
-[CHECK] compare with the local numbers in `docs/qa/2026-11-14-voice-milestone-a.md`; a test from a network that blocks UDP (if it fails, enable TURN: set `turn.enabled: true` with a TLS domain in `livekit/livekit.yaml`, open 3478/udp and 5349/tcp in the cloud firewall, redeploy); stage timings appear in the `voice-stages` volume; logs carry only codes and timestamps.
+[UNVERIFIED] The voice container reaches LiveKit by its service name, but media candidates point at the server's public address (`use_external_ip: true`), so worker media may hairpin through the public IP. A failed or silent browser test is the symptom; check `docker compose logs livekit voice` first.
+
+[CHECK] the browser test answers and speaks in each language; a test from a network that blocks UDP (if it fails, enable TURN: set `turn.enabled: true` with a TLS domain in `livekit/livekit.yaml`, open 3478/udp and 5349/tcp in the cloud firewall, redeploy); stage timings appear in the `voice-stages` volume; logs carry only codes and timestamps.
 
 [ROLLBACK] set `JOMCALL_VOICE_PROVIDER=disabled` in Vercel staging and `agent.env`, then `docker compose up -d agent`. Typed tests keep working.
 
@@ -266,3 +266,5 @@ Typed and browser voice tests only. Real callers wait for the phone line, the Go
 - **Concurrency limit and Deepgram retention opt-out** (design §5.6) are not built.
 - **Voice image licence** (design §6.5): build on the server; never push publicly.
 - **Engine heartbeat to an uptime service** (design §5.9) is not built; the loopback health listener exists.
+- **LiveKit and Caddy** have never been started by this kit and have no container health checks.
+- **Staging speed measurement**: the twenty-turn script is local-only (step 5).

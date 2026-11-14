@@ -21,6 +21,7 @@ export const SERVICES = [
   "agent",
   "voice",
   "livekit",
+  "caddy",
   "release",
 ] as const;
 export type Service = (typeof SERVICES)[number];
@@ -222,7 +223,7 @@ export const SETTINGS: Setting[] = [
     name: "JOMCALL_VOICE_SERVICE_SECRET",
     services: ["agent", "voice"],
     secret: true,
-    required: (env) => voiceOn(env) || env.JOMCALL_MODE === "hosted",
+    required: voiceOn,
     description: "At least 32 random characters, same value in agent and voice",
   },
   // --- Voice worker -------------------------------------------------------
@@ -268,14 +269,14 @@ export const SETTINGS: Setting[] = [
   },
   {
     name: "LIVEKIT_DOMAIN",
-    services: ["livekit"],
+    services: ["caddy"],
     secret: false,
     description:
       "Public host name for LiveKit, e.g. livekit.example.com (DNS A record to the server)",
   },
   {
     name: "ACME_EMAIL",
-    services: ["livekit"],
+    services: ["caddy"],
     secret: false,
     description: "Email Caddy gives the certificate authority",
   },
@@ -319,6 +320,19 @@ export const SETTINGS: Setting[] = [
     description: "64 hex characters for jomcall_agent",
   },
 ];
+
+// Values docker-compose.yml sets itself, per service, so they are not in the
+// env files. `--compose` applies them before checking. A test keeps this and
+// the Compose file equal.
+export const COMPOSE_ENVIRONMENT: Partial<Record<Service, Env>> = {
+  agent: { JOMCALL_MODE: "hosted", JOMCALL_VOICE_BIND: "172.30.0.10" },
+  engine: { JOMCALL_MODE: "hosted" },
+  voice: {
+    JOMCALL_MODE: "hosted",
+    JOMCALL_VOICE_TURN_URL: "http://172.30.0.10:54633",
+    LIVEKIT_URL: "ws://livekit:7880",
+  },
+};
 
 export type Finding = { name: string; code: string };
 

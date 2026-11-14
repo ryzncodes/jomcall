@@ -146,6 +146,13 @@ def turn_url() -> str:
     return check_turn_url(value or DEFAULT_TURN_URL)
 
 
+def startup_check() -> None:
+    """Fail at start, not on the first call: the turn URL and, in hosted mode,
+    the service secret. Raises with variable names only."""
+    turn_url()
+    service_headers()
+
+
 def service_headers() -> dict[str, str]:
     """The service key header in hosted mode; nothing in local mode."""
     if not hosted():

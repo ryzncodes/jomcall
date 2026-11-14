@@ -1,7 +1,7 @@
 # JomCall on one Singapore server (design Option 1): agent and engine workers,
 # the voice worker, LiveKit and Caddy. Web runs on Vercel; Postgres and Auth on
 # Supabase. Run from this directory:
-#   docker compose --env-file /etc/jomcall/compose.env up -d --build
+#   JOMCALL_IMAGE_TAG=$(git rev-parse --short HEAD) docker compose up -d --build
 # Settings: one root-owned, mode 0600 file per service in ${JOMCALL_ENV_DIR}
 # (default /etc/jomcall), each mounted into its own container only.
 # Published ports (design 6.6): 80, 443, 7881/tcp, 7882/udp. Nothing else.
@@ -30,8 +30,9 @@ services:
     ports:
       - "80:80/tcp"
       - "443:443/tcp"
+    # Caddy needs the domain and a contact email only; it never sees LiveKit keys.
     env_file:
-      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/livekit.env
+      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/caddy.env
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -63,6 +64,7 @@ services:
       context: ../..
       dockerfile: infra/hosted/worker.Dockerfile
     image: jomcall-worker:${JOMCALL_IMAGE_TAG:-local}
+    pull_policy: build
     command: ["node", "--import", "tsx", "engine/src/agent/index.ts"]
     env_file:
       - ${JOMCALL_ENV_DIR:-/etc/jomcall}/agent.env
@@ -86,7 +88,9 @@ services:
 
   engine:
     <<: *hardening
+    # Built by the agent service; never pulled from a registry.
     image: jomcall-worker:${JOMCALL_IMAGE_TAG:-local}
+    pull_policy: never
     command: ["node", "--import", "tsx", "engine/src/index.ts"]
     env_file:
       - ${JOMCALL_ENV_DIR:-/etc/jomcall}/engine.env
@@ -113,6 +117,7 @@ services:
       context: ../../voice
       dockerfile: ../infra/hosted/voice.Dockerfile
     image: jomcall-voice:${JOMCALL_IMAGE_TAG:-local}
+    pull_policy: build
     env_file:
       - ${JOMCALL_ENV_DIR:-/etc/jomcall}/voice.env
     environment:

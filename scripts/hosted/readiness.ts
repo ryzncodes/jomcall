@@ -1,9 +1,11 @@
-// Usage: npm run hosted:readiness -- --service agent [--env-file /etc/jomcall/agent.env]
+// Usage: npm run hosted:readiness -- --service agent [--env-file /etc/jomcall/agent.env] [--compose]
+// --compose adds the values docker-compose.yml sets itself for that service.
 // Without --env-file it checks this process's environment (run it inside the
 // container). Prints names and codes only; never a value. Exit 1 if not ready.
 import { readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import {
+  COMPOSE_ENVIRONMENT,
   readiness,
   SERVICES,
   type Service,
@@ -29,6 +31,8 @@ try {
   console.error("READINESS_ENV_FILE_UNREADABLE");
   process.exit(2);
 }
+if (args.includes("--compose"))
+  env = { ...env, ...(COMPOSE_ENVIRONMENT[service] ?? {}) };
 const findings = readiness(service, env);
 if (!findings.length) {
   console.log(`${service}: ready`);

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { COMPOSE_ENVIRONMENT } from "../../packages/contracts/src/hosted-env.ts";
 import { join } from "node:path";
 
 // Validates infra/hosted/docker-compose.yml offline with empty env files. It
@@ -15,7 +16,7 @@ function composeConfig(): any | null {
   }
   const dir = mkdtempSync(join(tmpdir(), "jomcall-compose-"));
   // A harmless marker shows which file reached which container.
-  for (const name of ["agent", "engine", "voice", "livekit"])
+  for (const name of ["agent", "engine", "voice", "livekit", "caddy"])
     writeFileSync(join(dir, `${name}.env`), `JOMCALL_ENV_MARKER=${name}\n`);
   return JSON.parse(
     execFileSync(
@@ -80,12 +81,12 @@ test(
       config.services.voice.stop_grace_period,
     )!;
     assert.ok(Number(m ?? 0) * 60 + Number(sec ?? 0) >= 330);
-    // Caddy and LiveKit read only the LiveKit file.
-    for (const name of ["caddy", "livekit"])
-      assert.equal(
-        config.services[name].environment.JOMCALL_ENV_MARKER,
-        "livekit",
-      );
+    assert.equal(
+      config.services.livekit.environment.JOMCALL_ENV_MARKER,
+      "livekit",
+    );
+    // Caddy never receives the LiveKit keys file.
+    assert.equal(config.services.caddy.environment.JOMCALL_ENV_MARKER, "caddy");
   },
 );
 
@@ -114,3 +115,15 @@ test("no secret value is written in the compose file or the LiveKit config", () 
     );
   }
 });
+
+test(
+  "readiness --compose adds exactly what Compose sets",
+  { skip: !config },
+  () => {
+    for (const name of ["agent", "engine", "voice"] as const) {
+      const { JOMCALL_ENV_MARKER, ...set } = config.services[name].environment;
+      assert.equal(JOMCALL_ENV_MARKER, name);
+      assert.deepEqual(set, COMPOSE_ENVIRONMENT[name], name);
+    }
+  },
+);
