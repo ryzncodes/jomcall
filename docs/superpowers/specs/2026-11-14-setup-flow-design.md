@@ -1,6 +1,6 @@
 # Setup flow redesign: import first, interview as the fallback
 
-Status: draft for the owner's approval (2026-11-14). Nothing here is built.
+Status: approved by the owner on 2026-11-14, with the answers recorded in section 9. Nothing here is built.
 
 ## 1. Why
 
@@ -124,11 +124,11 @@ New:
 - **Upload is a new attack surface** on a public sign-up: file type checks, size limits, rate limits per workspace, and no processing of files from unconfirmed accounts.
 - **Scope.** This touches workspace creation, the setup route, the knowledge core's write path and the sidebar. It should be planned as several small pieces, each shippable.
 
-## 9. Needs the owner's answer
+## 9. The owner's answers
 
 1. **May setup send an owner's real photos, PDFs and spreadsheets to a hosted Claude model (Anthropic)?** **Answered: yes (owner, 2026-11-14).** This is an approved outbound use for setup's document reading only, through the agent process, which already holds the Anthropic key. The upload screen must say plainly that the document is sent to Anthropic, outside Malaysia, and that the owner should not upload files with customers' personal details. The PDPA cross-border question with the lawyer stays open and still gates real callers.
-2. **Hide Phone numbers, WhatsApp and Integrations from the sidebar until each is live?** Recommended yes.
-3. **Is the RM20 trial credit part of this flow** (claimed automatically so the test call works), or left on the billing page as today?
+2. **Hide Phone numbers, WhatsApp and Integrations from the sidebar until each is live?** **Answered: yes (owner, 2026-11-14).** A page appears once its channel is connected for that workspace.
+3. **Is the RM20 trial credit part of this flow?** **Answered: yes, claimed automatically during setup (owner, 2026-11-14)**, once per workspace as today, so the first test call works without a visit to the billing page. The amount stays an owner placeholder.
 
 ## 10. Left to the builder
 
