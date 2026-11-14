@@ -1,6 +1,15 @@
 import "server-only";
 import { ZodError } from "zod";
 import { AppError } from "../../../packages/contracts/src/index.ts";
+// Safe codes raised by the billing functions in the database.
+const billingErrors: Record<string, number> = {
+  TRIAL_USED: 409,
+  INVALID_TOPUP: 422,
+  TOO_MANY_PENDING: 409,
+  APPEND_ONLY: 403,
+  INVALID_USAGE: 422,
+  UNKNOWN_USAGE_KIND: 422,
+};
 export function respond(data: unknown, status = 200) {
   return Response.json(
     { ok: true, data, requestId: crypto.randomUUID() },
@@ -35,6 +44,13 @@ export function failure(error: unknown) {
       UNAUTHORIZED: 401,
       FORBIDDEN: 403,
     }[code]!;
+  } else if (
+    error instanceof Error &&
+    error.message in billingErrors &&
+    ["P0001", "42501"].includes((error as { code?: string }).code ?? "")
+  ) {
+    code = error.message;
+    status = billingErrors[code];
   } else if ((error as { code?: string })?.code === "23P01") {
     status = 409;
     code = "SLOT_UNAVAILABLE";

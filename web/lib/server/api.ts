@@ -7,6 +7,8 @@ import { contactsRoute } from "../../../packages/domain/src/contacts.ts";
 import { agentsRoute } from "../../../packages/domain/src/agents.ts";
 import { workspaceRoute } from "../../../packages/domain/src/workspace.ts";
 import { membersRoute } from "../../../packages/domain/src/members.ts";
+import { billingRoute } from "../../../packages/domain/src/billing.ts";
+import { paymentReadiness } from "../../../packages/billing/src/provider.ts";
 import { tokenHash } from "../../../packages/domain/src/invitation-crypto.ts";
 import { command, audit } from "../../../packages/db/src/receipts.ts";
 import { z } from "zod";
@@ -26,7 +28,7 @@ export async function dispatchCore(request: Request) {
     const identity = await verifyIdentity(request);
     const db = database();
     const disabled =
-      /^\/(calls|inbox|whatsapp|integrations|phone-numbers|billing|payments|outbound|admin|self-host|test-call)(?:\/|$)/.test(
+      /^\/(calls|inbox|whatsapp|integrations|phone-numbers|payments|outbound|admin|self-host|test-call)(?:\/|$)/.test(
         path,
       );
     const matching = Object.values(commands).filter((c) =>
@@ -105,6 +107,16 @@ export async function dispatchCore(request: Request) {
           new URL(request.url).searchParams,
         );
         if (bookingResult !== undefined) return respond(bookingResult);
+        const billingResult = await billingRoute(
+          tx,
+          context,
+          method,
+          path,
+          body,
+          key,
+          new URL(request.url).searchParams,
+        );
+        if (billingResult !== undefined) return respond(billingResult);
         const memberResult = await membersRoute(
           tx,
           context,
@@ -192,7 +204,7 @@ export async function dispatchCore(request: Request) {
               voice: false,
               whatsapp: false,
               calendar: false,
-              payments: false,
+              payments: paymentReadiness().configured,
             },
           });
         }
