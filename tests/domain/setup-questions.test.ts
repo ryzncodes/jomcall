@@ -112,3 +112,83 @@ test("every fact question fills a fact", () => {
       }).filter((x) => x.kind === "fact"))
         assert.notEqual(factKeyOf(q), null, `${main}+${extra} ${q.id}`);
 });
+
+const prefixes = (qs: { id: string }[]) =>
+  qs.filter((q) => q.id.includes(":")).map((q) => q.id.split(":")[0]!);
+
+test("order is hours, base, main, extras (contiguous), first words", () => {
+  const qs = setupQuestions({
+    mainPack: "appointment",
+    extraPacks: ["order", "status-check"],
+    filled: none,
+  });
+  assert.equal(qs[0]!.id, "hours");
+  assert.equal(qs[qs.length - 1]!.id, "first_words");
+  const seq = prefixes(qs);
+  const groups = seq.filter((p, i) => i === 0 || seq[i - 1] !== p);
+  assert.deepEqual(groups, ["every-business", "appointment", "order", "status-check"]);
+});
+
+test("the cap and unique ids hold for repeated, equal and many packs", () => {
+  const cases: [string, string[]][] = [
+    ["appointment", ["order", "status-check", "quote-visit"]],
+    ["appointment", ["order", "order"]],
+    ["every-business", []],
+    ["every-business", ["every-business", "order"]],
+    ["appointment", ["appointment"]],
+    ["appointment", ["every-business"]],
+  ];
+  for (const [mainPack, extraPacks] of cases) {
+    const qs = setupQuestions({ mainPack, extraPacks, filled: none });
+    assert.ok(qs.length <= 8, `${mainPack}+${extraPacks}: ${qs.length}`);
+    assert.equal(new Set(qs.map((q) => q.id)).size, qs.length);
+  }
+});
+
+test("six fact slots split three and three between main and base", () => {
+  const qs = setupQuestions({ mainPack: "appointment", extraPacks: [], filled: none });
+  const p = prefixes(qs);
+  assert.equal(p.filter((x) => x === "appointment").length, 3);
+  assert.equal(p.filter((x) => x === "every-business").length, 3);
+});
+
+test("unknown packs throw in both functions", () => {
+  const bad = { mainPack: "nope", extraPacks: [], filled: none };
+  assert.throws(() => setupQuestions(bad), /unknown pack nope/);
+  assert.throws(() => missingFacts(bad), /unknown pack nope/);
+  assert.throws(
+    () => missingFacts({ mainPack: "order", extraPacks: ["nope"], filled: none }),
+    /unknown pack nope/,
+  );
+});
+
+test("filled facts and settings shrink or empty the list, never the cap", () => {
+  const input = { mainPack: "appointment", extraPacks: ["order"] };
+  const allKeys = new Set<string>();
+  for (const p of packs)
+    for (const q of p.interview)
+      for (const f of q.fills) if (f.startsWith("facts.")) allKeys.add(f.slice(6));
+  assert.deepEqual(
+    setupQuestions({ ...input, filled: new Set([...allKeys, "schedule", "settings"]) }),
+    [],
+  );
+  assert.deepEqual(
+    setupQuestions({ ...input, filled: allKeys }).map((q) => q.id),
+    ["hours", "first_words"],
+  );
+  const one = setupQuestions({ ...input, filled: new Set(["business_name"]) });
+  assert.equal(one.length, 8);
+});
+
+test("a fact cut from one pack can still be asked by a later pack", () => {
+  // lead_time is question 11 of quote-visit (main, cut) and 4 of order (extra).
+  const qs = setupQuestions({
+    mainPack: "quote-visit",
+    extraPacks: ["order"],
+    filled: none,
+  });
+  const keys = qs.filter((q) => q.kind === "fact").map((q) => factKeyOf(q));
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(!qs.some((q) => q.id === "quote-visit:11"));
+  assert.ok(qs.some((q) => q.id === "order:4"));
+});

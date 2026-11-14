@@ -1,6 +1,6 @@
 // The short setup interview, built from the pattern packs' own interview
 // lists. Pure functions, no database. At most MAX_QUESTIONS questions.
-import { activePacks, basePack, packById, type Pack } from "../packs/index.ts";
+import { basePack, packById, type Pack } from "../packs/index.ts";
 
 export type SetupQuestion = {
   id: string;
@@ -60,10 +60,10 @@ export function setupQuestions(input: Input): SetupQuestion[] {
       ];
   const budget = MAX_QUESTIONS - head.length - tail.length;
 
-  // Candidates per pack: in `order`, only questions that fill a fact, skipping
-  // filled facts and a second question about a fact already asked.
-  const seen = new Set<string>();
-  const candidates = orderedPacks(input).map((pack) => {
+  // Candidates per pack: in `order`, only questions that fill a fact (an
+  // answer with no fact has nowhere to be stored) and whose fact is not filled.
+  const packsInOrder = orderedPacks(input);
+  const candidates = packsInOrder.map((pack) => {
     const list: SetupQuestion[] = [];
     for (const q of [...pack.interview].sort((a, b) => a.order - b.order)) {
       const question: SetupQuestion = {
@@ -74,32 +74,42 @@ export function setupQuestions(input: Input): SetupQuestion[] {
         fills: [...q.fills],
       };
       const key = factKeyOf(question);
-      // A question that fills no fact has nowhere to store its answer.
-      if (!key || input.filled.has(key) || seen.has(key)) continue;
-      seen.add(key);
-      list.push(question);
+      if (key && !input.filled.has(key)) list.push(question);
     }
     return list;
   });
 
-  // Cut to the budget fairly: round-robin, main pack first, so a long base
-  // pack list cannot crowd out the business-specific questions.
-  const priority = candidates.map((_, i) => i);
-  if (priority.length > 1) priority.unshift(priority.splice(1, 1)[0]!);
-  const taken = candidates.map(() => 0);
+  // Cut to the budget fairly: round-robin, main pack first, then base, then
+  // the extras, so a long base list cannot crowd out business-specific
+  // questions. A fact key is marked asked only when its question is kept, so
+  // a later pack can still ask a fact whose earlier question was cut.
+  const main = packsInOrder.findIndex((p) => p.id === input.mainPack);
+  const priority = [
+    main,
+    ...packsInOrder.map((_, i) => i).filter((i) => i !== main),
+  ];
+  const kept: SetupQuestion[][] = candidates.map(() => []);
+  const next = candidates.map(() => 0);
+  const asked = new Set<string>();
   let total = 0;
   for (let progress = true; progress && total < budget; ) {
     progress = false;
     for (const i of priority) {
       if (total >= budget) break;
-      if (taken[i]! < candidates[i]!.length) {
-        taken[i]!++;
+      const list = candidates[i]!;
+      while (next[i]! < list.length) {
+        const q = list[next[i]!++]!;
+        const key = factKeyOf(q)!;
+        if (asked.has(key)) continue;
+        asked.add(key);
+        kept[i]!.push(q);
         total++;
         progress = true;
+        break;
       }
     }
   }
-  const middle = candidates.flatMap((list, i) => list.slice(0, taken[i]));
+  const middle = kept.flat();
   return [...head, ...middle, ...tail];
 }
 
@@ -107,7 +117,7 @@ export function missingFacts(
   input: Input,
 ): { pack: string; key: string; en: string; ms: string }[] {
   const out: { pack: string; key: string; en: string; ms: string }[] = [];
-  for (const pack of activePacks([input.mainPack, ...input.extraPacks]))
+  for (const pack of orderedPacks(input))
     for (const f of pack.facts)
       if (f.required && !input.filled.has(f.key))
         out.push({ pack: pack.id, key: f.key, en: f.label.en, ms: f.label.ms });
