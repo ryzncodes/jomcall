@@ -9,21 +9,32 @@ import {
 } from "../../../contracts/src/index.ts";
 import {
   setupAnswerInput,
+  setupFactPayload,
   setupItemInput,
+  setupSchedulePayload,
+  setupSettingsPayload,
   setupStart,
   type Setup,
 } from "../../../contracts/src/setup.ts";
 import { audit, command } from "../../../db/src/receipts.ts";
 import { manager } from "../authorization.ts";
-import { packById, packIds } from "../packs/index.ts";
+import { basePack, packById, packIds } from "../packs/index.ts";
 import {
   factKeyOf,
   missingFacts,
+  questionById,
   setupQuestions,
   type SetupQuestion,
 } from "./questions.ts";
 
 const itemColumns = "id,kind,key,payload,source,needs_check,check_reason,state";
+// The staging slot a question fills: a fact key, "schedule" or "settings".
+const questionSlot = (q: SetupQuestion) =>
+  q.kind === "hours"
+    ? "schedule"
+    : q.kind === "first_words"
+      ? "settings"
+      : factKeyOf(q)!;
 const bytes = (v: unknown) =>
   new TextEncoder().encode(JSON.stringify(v)).length;
 
@@ -74,6 +85,7 @@ export async function setupRoute(
           id: string;
           main_pack: string;
           extra_packs: string[];
+          question_ids: string[];
           state: "open" | "applied";
           revision: number;
         }
@@ -117,12 +129,11 @@ export async function setupRoute(
     ).rows.map((r) => r.field_key as string);
     const slot = (i: { kind: string; key: string }) =>
       i.kind === "fact" ? i.key : i.kind === "catalogue_row" ? null : i.kind;
-    // Questions: a skipped (removed) item still keeps its question out of
-    // the list for this session. Missing: only live items count as filled.
-    const asked = new Set<string>(confirmed);
+    // Missing: only live items count as filled.
     const filled = new Set<string>(confirmed);
-    for (const i of items) if (slot(i)) asked.add(slot(i)!);
     for (const i of live) if (slot(i)) filled.add(slot(i)!);
+    const taken = new Set<string>();
+    for (const i of items) if (slot(i)) taken.add(slot(i)!);
     const input = {
       mainPack: session.main_pack,
       extraPacks: session.extra_packs,
@@ -191,7 +202,11 @@ export async function setupRoute(
         revision: session.revision,
       },
       items,
-      questions: setupQuestions({ ...input, filled: asked }),
+      // The frozen list, minus every question that has an item in any state
+      // (answered, skipped or applied).
+      questions: session.question_ids
+        .map((id) => questionById(id))
+        .filter((q): q is SetupQuestion => !!q && !taken.has(questionSlot(q))),
       missing: missingFacts(input),
       conflicts,
     };
@@ -236,15 +251,91 @@ export async function setupRoute(
       async () => {
         await agent();
         const open = await openSession(true);
-        if (open) {
+        const confirmed = (
           await tx.query(
-            "update app.setup_session set main_pack=$1,extra_packs=$2,revision=revision+1,updated_at=now() where id=$3",
-            [v.mainPack, v.extraPacks, open.id],
+            "select field_key from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key is not null",
+            [ctx.orgId, agentId],
+          )
+        ).rows.map((r) => r.field_key as string);
+        if (!open) {
+          // Freeze the interview once, in order.
+          const ids = setupQuestions({
+            mainPack: v.mainPack,
+            extraPacks: v.extraPacks,
+            filled: new Set(confirmed),
+          }).map((q) => q.id);
+          await tx.query(
+            "insert into app.setup_session(org_id,agent_id,main_pack,extra_packs,question_ids,created_by) values($1,$2,$3,$4,$5,$6)",
+            [
+              ctx.orgId,
+              agentId,
+              v.mainPack,
+              v.extraPacks,
+              ids,
+              ctx.identity.userId,
+            ],
           );
-        } else {
+        } else if (
+          open.main_pack !== v.mainPack ||
+          [...open.extra_packs].sort().join() !==
+            [...v.extraPacks].sort().join()
+        ) {
+          const items = (
+            await tx.query(
+              "select id,kind,key,payload,state from app.setup_item where org_id=$1 and session_id=$2",
+              [ctx.orgId, open.id],
+            )
+          ).rows;
+          const active = [basePack, v.mainPack, ...v.extraPacks];
+          // Facts of a pack that is no longer active are dropped.
+          const dropped = new Set<string>();
+          for (const i of items)
+            if (i.kind === "fact" && !active.includes(i.payload?.packId)) {
+              dropped.add(i.id);
+              await tx.query(
+                "update app.setup_item set state='removed',updated_at=now() where id=$1",
+                [i.id],
+              );
+            }
+          const slotOf = (i: { kind: string; key: string }) =>
+            i.kind === "fact"
+              ? i.key
+              : i.kind === "catalogue_row"
+                ? null
+                : i.kind;
+          const had = new Set<string>();
+          const filled = new Set<string>(confirmed);
+          for (const i of items) {
+            const sl = slotOf(i);
+            if (!sl) continue;
+            had.add(sl);
+            if (!dropped.has(i.id)) filled.add(sl);
+          }
+          // Keep every id that already has an item, then fill the rest of
+          // the 8 slots for the new packs.
+          const kept = open.question_ids.filter((id) => {
+            const q = questionById(id);
+            return q && had.has(questionSlot(q));
+          });
+          const fresh = setupQuestions({
+            mainPack: v.mainPack,
+            extraPacks: v.extraPacks,
+            filled,
+          })
+            .filter((q) => !kept.includes(q.id))
+            .map((q) => q);
+          while (kept.length + fresh.length > 8) {
+            const at = fresh.map((q) => q.kind).lastIndexOf("fact");
+            fresh.splice(at >= 0 ? at : fresh.length - 1, 1);
+          }
           await tx.query(
-            "insert into app.setup_session(org_id,agent_id,main_pack,extra_packs,created_by) values($1,$2,$3,$4,$5)",
-            [ctx.orgId, agentId, v.mainPack, v.extraPacks, ctx.identity.userId],
+            "update app.setup_session set main_pack=$1,extra_packs=$2,question_ids=$3,revision=revision+1,updated_at=now() where id=$4",
+            [
+              v.mainPack,
+              v.extraPacks,
+              [...kept, ...fresh.map((q) => q.id)],
+              open.id,
+            ],
           );
         }
         // Trial credit, once. A savepoint keeps the transaction usable when
@@ -276,19 +367,41 @@ export async function setupRoute(
       async () => {
         await agent();
         const session = await lockedSession(v.expectedRevision);
-        const base = {
-          mainPack: session.main_pack,
-          extraPacks: session.extra_packs,
-        };
-        // The question must be one the interview offers. One the owner has
-        // already answered has left the list; look at the full list too so
-        // an answer can be changed later.
-        const current = (await view()).questions;
-        const question: SetupQuestion | undefined =
-          current.find((q) => q.id === questionId) ??
-          setupQuestions({ ...base, filled: new Set() }).find(
-            (q) => q.id === questionId,
-          );
+        // The question is in the frozen list (answered or not, so an answer
+        // can be changed), or is "missing:<pack>:<field>": a required fact
+        // of an active pack the review page adds. That one is not counted.
+        let question: SetupQuestion | null = session.question_ids.includes(
+          questionId,
+        )
+          ? questionById(questionId)
+          : null;
+        if (!question && questionId.startsWith("missing:")) {
+          const [, packId, ...rest] = questionId.split(":");
+          const fieldKey = rest.join(":");
+          const active = [basePack, session.main_pack, ...session.extra_packs];
+          const field = active.includes(packId!)
+            ? packById(packId!)?.facts.find((f) => f.key === fieldKey)
+            : undefined;
+          const listed =
+            field?.required &&
+            ((await view()).missing.some(
+              (x) => x.pack === packId && x.key === fieldKey,
+            ) ||
+              (
+                await tx.query(
+                  "select 1 from app.setup_item where org_id=$1 and session_id=$2 and kind='fact' and key=$3 and payload->>'packId'=$4",
+                  [ctx.orgId, session.id, fieldKey, packId],
+                )
+              ).rowCount);
+          if (listed)
+            question = {
+              id: questionId,
+              kind: "fact",
+              en: field!.label.en,
+              ms: field!.label.ms,
+              fills: ["facts." + fieldKey],
+            };
+        }
         if (!question) throw new AppError("NOT_FOUND", 404);
 
         let answer = v.answer;
@@ -305,7 +418,9 @@ export async function setupRoute(
         const itemKey = itemKind === "fact" ? factKeyOf(question)! : itemKind;
         let payload: Record<string, unknown> = {};
         if (answer.kind === "fact") {
-          const packId = question.id.split(":")[0]!;
+          const packId = question.id.startsWith("missing:")
+            ? question.id.split(":")[1]!
+            : question.id.split(":")[0]!;
           const field = packById(packId)?.facts.find((f) => f.key === itemKey);
           payload = {
             packId,
@@ -366,17 +481,32 @@ export async function setupRoute(
       if (item.state === "applied") throw new AppError("CONFLICT", 409);
       if (v.payload === undefined && v.state === undefined)
         throw new AppError("EMPTY_UPDATE", 422);
-      if (v.payload !== undefined && item.kind === "fact") {
-        const p = v.payload as { value?: unknown } | null;
-        if (!p || typeof p !== "object" || Array.isArray(p))
-          throw new AppError("INVALID_PAYLOAD", 422);
-        if (p.value !== undefined && bytes(p.value) > 4000)
-          throw new AppError("VALUE_TOO_LARGE", 422);
+      // Validate per kind; merge into the stored payload so packId and
+      // fieldKey of a fact stay as stored.
+      let merged: unknown = undefined;
+      if (v.payload !== undefined) {
+        const stored = (item.payload ?? {}) as Record<string, unknown>;
+        if (item.kind === "fact")
+          merged = { ...stored, ...setupFactPayload.parse(v.payload) };
+        else if (item.kind === "schedule")
+          merged = { ...stored, ...setupSchedulePayload.parse(v.payload) };
+        else if (item.kind === "settings")
+          merged = { ...stored, ...setupSettingsPayload.parse(v.payload) };
+        else {
+          if (
+            !v.payload ||
+            typeof v.payload !== "object" ||
+            Array.isArray(v.payload)
+          )
+            throw new AppError("INVALID_PAYLOAD", 422);
+          merged = { ...stored, ...(v.payload as object) };
+        }
+        if (bytes(merged) > 8000) throw new AppError("VALUE_TOO_LARGE", 422);
       }
       await tx.query(
         "update app.setup_item set payload=coalesce($1::jsonb,payload),state=coalesce($2,state),updated_at=now() where id=$3",
         [
-          v.payload === undefined ? null : JSON.stringify(v.payload),
+          merged === undefined ? null : JSON.stringify(merged),
           v.state ?? null,
           item.id,
         ],

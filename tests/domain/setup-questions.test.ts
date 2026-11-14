@@ -192,3 +192,11 @@ test("a fact cut from one pack can still be asked by a later pack", () => {
   assert.ok(!qs.some((q) => q.id === "quote-visit:11"));
   assert.ok(qs.some((q) => q.id === "order:4"));
 });
+
+test("questionById rebuilds a question from its id and refuses unknown ids", async () => {
+  const { questionById } = await import("../../packages/domain/src/setup/questions.ts");
+  const first = setupQuestions({ mainPack: "appointment", extraPacks: [], filled: none });
+  for (const q of first) assert.deepEqual(questionById(q.id), q);
+  for (const bad of ["", "nope", "appointment:0", "appointment:abc", "nope:1", "appointment:9999", "missing:appointment:x"])
+    assert.equal(questionById(bad), null);
+});

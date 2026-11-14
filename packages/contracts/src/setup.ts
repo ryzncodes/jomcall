@@ -13,31 +13,51 @@ export const setupStart = z
   .object({ mainPack: packId, extraPacks: z.array(packId).max(3) })
   .strict();
 
+const factText = z
+  .string()
+  .trim()
+  .refine((s) => codePoints(s) <= 2000, { message: "Answer too long" })
+  // Same 4,000-byte ceiling as a saved fact value.
+  .refine((s) => bytes(s) <= 4000, { message: "Value too large" });
+const hoursShape = {
+  timezone: scheduleInput.shape.timezone,
+  weekdays: scheduleInput.shape.weekdays,
+};
+const wordsShape = {
+  greeting: z.string().trim().min(1).max(2000),
+  aiDisclosure: z.string().trim().min(1).max(2000),
+};
+// Editable parts of a staged item, by kind. packId and fieldKey of a fact are
+// not editable: unknown keys are refused, and the route merges into the row.
+export const setupFactPayload = z
+  .object({
+    value: factText.min(1),
+    title: z.string().trim().min(1).max(200),
+    language: z.enum(["ms", "en", "zh", "mixed"]),
+  })
+  .partial()
+  .strict();
+export const setupSchedulePayload = z.object(hoursShape).strict();
+export const setupSettingsPayload = z.object(wordsShape).strict();
+
 // Fact text is trimmed. Empty text is accepted here and handled as a skip.
 export const setupAnswer = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("fact"),
-      text: z
-        .string()
-        .trim()
-        .refine((s) => codePoints(s) <= 2000, { message: "Answer too long" })
-        // Same 4,000-byte ceiling as a saved fact value.
-        .refine((s) => bytes(s) <= 4000, { message: "Value too large" }),
+      text: factText,
     })
     .strict(),
   z
     .object({
       kind: z.literal("hours"),
-      timezone: scheduleInput.shape.timezone,
-      weekdays: scheduleInput.shape.weekdays,
+      ...hoursShape,
     })
     .strict(),
   z
     .object({
       kind: z.literal("first_words"),
-      greeting: z.string().trim().min(1).max(2000),
-      aiDisclosure: z.string().trim().min(1).max(2000),
+      ...wordsShape,
     })
     .strict(),
   z.object({ kind: z.literal("skip") }).strict(),

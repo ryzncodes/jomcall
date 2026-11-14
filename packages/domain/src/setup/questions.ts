@@ -123,3 +123,28 @@ export function missingFacts(
         out.push({ pack: pack.id, key: f.key, en: f.label.en, ms: f.label.ms });
   return out;
 }
+
+// Rebuild a question from its id (the id of a frozen list entry). Null when
+// the id names nothing: unknown pack, missing order, or a malformed id.
+export function questionById(id: string): SetupQuestion | null {
+  const hours = setupQuestions({
+    mainPack: basePack,
+    extraPacks: [],
+    filled: new Set(),
+  });
+  const fixed = hours.find((q) => q.id === id && q.kind !== "fact");
+  if (fixed) return fixed;
+  const m = id.match(/^([a-z][a-z0-9-]{1,40}):(\d{1,3})$/);
+  if (!m) return null;
+  const pack = packById(m[1]!);
+  const q = pack?.interview.find((x) => x.order === Number(m[2]));
+  if (!pack || !q) return null;
+  const question: SetupQuestion = {
+    id,
+    kind: "fact",
+    en: q.en,
+    ms: q.ms,
+    fills: [...q.fills],
+  };
+  return factKeyOf(question) ? question : null;
+}
