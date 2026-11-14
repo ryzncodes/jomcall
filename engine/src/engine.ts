@@ -1,13 +1,11 @@
 import pg from "pg";
 import { PgBoss } from "pg-boss";
-import nodemailer from "nodemailer";
 import { z } from "zod";
 import {
   databaseConnection,
-  mailSettings,
   validNamespace,
-  type MailSettings,
 } from "../../packages/contracts/src/hosting.ts";
+import { createMailSender, type MailSender } from "./mail.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
 const payload = z
   .object({
@@ -23,16 +21,16 @@ export class Engine {
   private pool: pg.Pool;
   private boss: PgBoss;
   private queue: string;
-  private smtp: ReturnType<typeof nodemailer.createTransport>;
-  private mail: MailSettings;
+  private mail: MailSender;
   // Set by each tick that ran to the end; the health check reads it.
   lastTickAt = 0;
   private closed = false;
   private reconciliationCursor: string | null = null;
   private constructor(readonly namespace: string) {
     validNamespace(namespace);
-    // Local mode: Mailpit on loopback. Hosted mode: a real provider with TLS.
-    this.mail = mailSettings();
+    // Local mode: Mailpit on loopback. Hosted mode: SMTP with TLS, or
+    // Cloudflare Email Service when JOMCALL_MAIL_PROVIDER=cloudflare.
+    this.mail = createMailSender();
     this.pool = new pg.Pool({
       ...dsn("WORKER_DATABASE_URL"),
       max: 3,
@@ -45,11 +43,6 @@ export class Engine {
     });
     this.boss.on("error", () => console.error("QUEUE_ERROR"));
     this.queue = "core_" + namespace;
-    this.smtp = nodemailer.createTransport({
-      ...this.mail.transport,
-      connectionTimeout: 5000,
-      socketTimeout: 5000,
-    });
   }
   static async create(namespace = "local") {
     const e = new Engine(namespace);
@@ -148,12 +141,11 @@ export class Engine {
                 process.env.INVITATION_KEY!,
                 p.orgId + p.id,
               );
-              await this.smtp.sendMail({
-                from: this.mail.from,
+              await this.mail.send({
                 to: p.email,
                 subject: this.mail.subject,
                 text: `Join your workspace: ${this.mail.inviteBase}/invite?token=${token}`,
-                messageId: `${p.operationId}@${this.mail.messageIdDomain}`,
+                operationId: p.operationId,
               });
               await this.pool.query(
                 "select app_private.ack_invitation($1,$2,false)",
@@ -191,7 +183,7 @@ export class Engine {
   async close() {
     if (this.closed) return;
     this.closed = true;
-    this.smtp.close();
+    this.mail.close?.();
     await this.boss.stop({ graceful: true, timeout: 5000 });
     await this.pool.end();
   }

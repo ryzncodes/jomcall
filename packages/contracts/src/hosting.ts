@@ -291,6 +291,78 @@ export function mailSettings(env: Env = process.env): MailSettings {
   };
 }
 
+// --- Mail provider -----------------------------------------------------------
+//
+// Local mode always uses Mailpit over SMTP. Hosted mode uses SMTP (above) unless
+// JOMCALL_MAIL_PROVIDER=cloudflare selects Cloudflare Email Service's REST API.
+
+export type MailProvider = "smtp" | "cloudflare";
+
+export function mailProvider(env: Env = process.env): MailProvider {
+  const value = env.JOMCALL_MAIL_PROVIDER?.trim() || "smtp";
+  if (value !== "smtp" && value !== "cloudflare")
+    throw Error("INVALID_MAIL_PROVIDER: JOMCALL_MAIL_PROVIDER");
+  if (value === "cloudflare" && !isHosted(env))
+    throw Error("LOCAL_SMTP_REQUIRED: JOMCALL_MAIL_PROVIDER");
+  return value;
+}
+
+export type CloudflareMailSettings = {
+  endpoint: string;
+  token: string;
+  from: string;
+  subject: string;
+  inviteBase: string;
+};
+
+// POST /accounts/{account_id}/email/sending/send with a Bearer API token that
+// has the "Email Sending: Edit" permission (Cloudflare docs, checked
+// 2026-11-14). The sender's domain must be onboarded to Email Sending.
+export function cloudflareMailSettings(
+  env: Env = process.env,
+): CloudflareMailSettings {
+  if (!isHosted(env)) throw Error("LOCAL_SMTP_REQUIRED: JOMCALL_MAIL_PROVIDER");
+  const account = present(env, "CLOUDFLARE_ACCOUNT_ID");
+  if (!/^[a-f0-9]{32}$/.test(account))
+    throw Error("INVALID_ACCOUNT_ID: CLOUDFLARE_ACCOUNT_ID");
+  const token = present(env, "CLOUDFLARE_EMAIL_API_TOKEN");
+  if (/\s/.test(token) || token.length < 20)
+    throw Error("INVALID_TOKEN: CLOUDFLARE_EMAIL_API_TOKEN");
+  const from = present(env, "CLOUDFLARE_EMAIL_FROM");
+  if (!/^[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+$/.test(from))
+    throw Error("INVALID_SENDER: CLOUDFLARE_EMAIL_FROM");
+  return {
+    endpoint: `https://api.cloudflare.com/client/v4/accounts/${account}/email/sending/send`,
+    token,
+    from,
+    subject: "Your JomCall workspace invitation",
+    inviteBase: appOrigin(env),
+  };
+}
+
+// --- Turnstile ---------------------------------------------------------------
+//
+// Off unless both keys are set, and never on outside hosted mode. One key
+// without the other refuses to start instead of silently skipping the check.
+
+export type TurnstileSettings = {
+  siteKey: string;
+  secret: string;
+  hostname: string;
+};
+
+export function turnstileSettings(
+  env: Env = process.env,
+): TurnstileSettings | null {
+  if (!isHosted(env)) return null;
+  const siteKey = env.TURNSTILE_SITE_KEY?.trim() ?? "";
+  const secret = env.TURNSTILE_SECRET_KEY?.trim() ?? "";
+  if (!siteKey && !secret) return null;
+  if (!siteKey) throw Error("TURNSTILE_INCOMPLETE: TURNSTILE_SITE_KEY");
+  if (!secret) throw Error("TURNSTILE_INCOMPLETE: TURNSTILE_SECRET_KEY");
+  return { siteKey, secret, hostname: new URL(appOrigin(env)).hostname };
+}
+
 // --- Voice turn endpoint ---------------------------------------------------
 
 export const VOICE_PORT = 54633;
