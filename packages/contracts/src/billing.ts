@@ -23,7 +23,7 @@ export type Wallet = {
   trialClaimed: boolean;
   trialCreditSen: number;
   provider: {
-    name: "disabled" | "fake" | "billplz";
+    name: "disabled" | "fake" | "curlec";
     configured: boolean;
     sandbox: boolean;
     reason: string | null;
@@ -60,6 +60,20 @@ export type Topup = {
   failure_code: string | null;
   paid_at: string | null;
   created_at: string;
+  // Present only in the response that created the top-up.
+  checkout?:
+    | {
+        kind: "curlec";
+        keyId: string;
+        orderId: string;
+        amountSen: number;
+        currency: "MYR";
+        name: string;
+        description: string;
+        prefillEmail: string;
+        callbackUrl: string;
+      }
+    | { kind: "fake"; orderId: string };
 };
 export type Receipt = {
   id: string;

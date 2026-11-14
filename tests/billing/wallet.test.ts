@@ -5,10 +5,14 @@ import pg from "pg";
 import { createHarness } from "../helpers/local.ts";
 import { createApiHarness } from "../helpers/api.ts";
 import { recordUsage, walletState } from "../../packages/billing/src/usage.ts";
-import { fakeCallback } from "../../packages/billing/src/fake.ts";
+import { fakeReturn, fakeWebhook } from "../../packages/billing/src/fake.ts";
 
 type H = Awaited<ReturnType<typeof createHarness>>;
-const form = "application/x-www-form-urlencoded";
+type Api = Awaited<ReturnType<typeof createApiHarness>>;
+const hook = "/api/billing/webhook/fake";
+// A Curlec-shaped delivery, as Curlec posts it: raw JSON plus signature headers.
+const deliver = (api: Api, d: ReturnType<typeof fakeWebhook>, path = hook) =>
+  api.post(path, d.body, "application/json", { "x-razorpay-signature": d.signature, "x-razorpay-event-id": d.eventId });
 async function setup() {
   process.env.JOMCALL_PAYMENT_PROVIDER = "fake";
   const h = await createHarness(),
@@ -169,41 +173,51 @@ test("top-up through the fake provider: duplicate, replayed, wrong signature and
     assert.equal(started.status, 200);
     const topup = started.body.data;
     assert.equal(topup.state, "pending");
-    assert.match(topup.provider_ref, /^fake_[0-9a-f]{16}$/);
+    assert.match(topup.provider_ref, /^order_fake[0-9a-f]{10}$/);
+    assert.deepEqual(topup.checkout, { kind: "fake", orderId: topup.provider_ref });
     const ref = topup.provider_ref;
-    const hook = "/api/billing/webhook/fake";
-    // Wrong signature and wrong provider path are refused, nothing credited.
-    assert.equal((await api.post(hook, fakeCallback({ id: ref, amountSen: 5000, paid: true, key: "wrong" }), form)).status, 401);
-    assert.equal((await api.post("/api/billing/webhook/billplz", fakeCallback({ id: ref, amountSen: 5000, paid: true }), form)).status, 404);
-    assert.equal((await api.post(hook, "x".repeat(17 * 1024), form)).status, 413);
+    const pay = "pay_fakeA123456789";
+    const captured = fakeWebhook({ event: "payment.captured", orderId: ref, amountSen: 5000, paymentId: pay });
+    // Wrong signature, wrong provider path, oversized and form bodies are refused; nothing credited.
+    assert.equal((await deliver(api, { ...captured, signature: "0".repeat(64) })).status, 401);
+    assert.equal((await deliver(api, captured, "/api/billing/webhook/curlec")).status, 404);
+    assert.equal((await api.post(hook, "x".repeat(65 * 1024), "application/json")).status, 413);
+    assert.equal((await api.post(hook, captured.body, "application/x-www-form-urlencoded", { "x-razorpay-signature": captured.signature })).status, 400);
     assert.equal(await sum(h, h.orgA.id), 0);
-    // A failed attempt first; the bill stays payable.
-    assert.equal((await api.post(hook, fakeCallback({ id: ref, amountSen: 5000, paid: false, transactionId: "t-fail" }), form)).status, 200);
-    // Paid, then the same callback replayed, then a second paid event.
-    const paid = fakeCallback({ id: ref, amountSen: 5000, paid: true, transactionId: "t-ok" });
-    for (let i = 0; i < 3; i++) assert.equal((await api.post(hook, paid, form)).status, 200);
-    assert.equal((await api.post(hook, fakeCallback({ id: ref, amountSen: 5000, paid: true, transactionId: "t-other" }), form)).status, 200);
-    // A late failure after payment changes nothing.
-    await api.post(hook, fakeCallback({ id: ref, amountSen: 5000, paid: false, transactionId: "t-late" }), form);
+    // A failed attempt first; the order stays payable (Curlec may authorise it later).
+    assert.equal((await deliver(api, fakeWebhook({ event: "payment.failed", orderId: ref, amountSen: 5000, paymentId: "pay_fakeF123456789" }))).status, 200);
+    assert.equal((await h.cleanup.query("select state from app.billing_topup where id=$1", [topup.id])).rows[0].state, "failed");
+    // Captured, the same delivery replayed, then order.paid for the same payment.
+    for (let i = 0; i < 3; i++) assert.equal((await deliver(api, captured)).status, 200);
+    assert.equal((await deliver(api, fakeWebhook({ event: "order.paid", orderId: ref, amountSen: 5000, paymentId: pay }))).status, 200);
+    // A late failure event after capture changes nothing.
+    await deliver(api, fakeWebhook({ event: "payment.failed", orderId: ref, amountSen: 5000, paymentId: "pay_fakeL123456789" }));
     assert.equal(await sum(h, h.orgA.id), 5000);
-    const list = (await api.request(h.alice, h.orgA.id, "GET", "/api/v1/billing/topups")).body.data.items;
-    assert.equal(list[0].state, "paid");
+    const row = (await h.cleanup.query("select state,provider_payment_ref from app.billing_topup where id=$1", [topup.id])).rows[0];
+    assert.deepEqual(row, { state: "paid", provider_payment_ref: pay });
     const receipts = (await api.request(h.alice, h.orgA.id, "GET", "/api/v1/billing/receipts")).body.data.items;
     assert.equal(receipts.length, 1);
     assert.match(receipts[0].number, /^JC-\d{4}-\d{6}$/);
     assert.equal(receipts[0].amount_sen, 5000);
-    // Wrong amount: held for review, not credited, even if later corrected.
+    // A second captured payment on the same order is never credited; it is audited for a refund.
+    await deliver(api, fakeWebhook({ event: "payment.captured", orderId: ref, amountSen: 5000, paymentId: "pay_fakeB123456789" }));
+    assert.equal(await sum(h, h.orgA.id), 5000);
+    const extra = (await h.cleanup.query("select count(*)::int n from app.audit_log where org_id=$1 and action='billing.topup_extra_payment'", [h.orgA.id])).rows[0].n;
+    assert.equal(extra, 1);
+    // Wrong amount: held for review, not credited, even if a correct payment follows.
     const second = (await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 2000 })).body.data;
-    assert.equal((await api.post(hook, fakeCallback({ id: second.provider_ref, amountSen: 2000, paid: true, paidAmountSen: 200, transactionId: "t-m" }), form)).status, 200);
-    await api.post(hook, fakeCallback({ id: second.provider_ref, amountSen: 2000, paid: true, transactionId: "t-m2" }), form);
+    assert.equal((await deliver(api, fakeWebhook({ event: "payment.captured", orderId: second.provider_ref, amountSen: 200 }))).status, 200);
+    await deliver(api, fakeWebhook({ event: "payment.captured", orderId: second.provider_ref, amountSen: 2000 }));
     assert.equal(await sum(h, h.orgA.id), 5000);
     const reviewed = (await h.cleanup.query("select state,failure_code from app.billing_topup where id=$1", [second.id])).rows[0];
     assert.deepEqual(reviewed, { state: "review", failure_code: "AMOUNT_MISMATCH" });
-    // Wrong currency through the database entry point is refused the same way.
+    // Wrong currency is held the same way.
     const third = (await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 2000 })).body.data;
-    const r = (await h.cleanup.query("select app_private.settle_topup('fake',$1,'cur-1',true,2000,'USD',now(),'callback') v", [third.provider_ref])).rows[0].v;
-    assert.equal(r.outcome, "mismatch");
+    await deliver(api, fakeWebhook({ event: "payment.captured", orderId: third.provider_ref, amountSen: 2000, currency: "USD" }));
+    assert.equal((await h.cleanup.query("select state from app.billing_topup where id=$1", [third.id])).rows[0].state, "review");
     assert.equal(await sum(h, h.orgA.id), 5000);
+    // An event for an order that is not ours is recorded, never credited.
+    assert.equal((await deliver(api, fakeWebhook({ event: "payment.captured", orderId: "order_fake0000000000", amountSen: 2000 }))).status, 200);
     // Retrying the start command with the same key returns the same top-up.
     const key = randomUUID();
     const once = await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 10000 }, { "idempotency-key": key });
@@ -215,47 +229,83 @@ test("top-up through the fake provider: duplicate, replayed, wrong signature and
   }
 });
 
-test("a callback before the top-up is attached still settles on retry", async () => {
+test("a webhook before the top-up is attached still settles on retry", async () => {
   const { h, close } = await setup();
   try {
     const t = (await h.sqlAsApp(h.alice, h.orgA.id, (tx) => tx.query("select app_private.create_topup($1,2000,'fake') v", [h.orgA.id]))).rows[0].v;
-    const early = (await h.cleanup.query("select app_private.settle_topup('fake','fake_early01','cb:fake_early01:paid:t1',true,2000,'MYR',now(),'callback') v")).rows[0].v;
-    assert.equal(early.outcome, "unmatched");
-    await h.sqlAsApp(h.alice, h.orgA.id, (tx) => tx.query("select app_private.attach_topup($1,$2,'fake_early01','http://127.0.0.1:4182/app/billing')", [h.orgA.id, t.id]));
-    const retry = (await h.cleanup.query("select app_private.settle_topup('fake','fake_early01','cb:fake_early01:paid:t1',true,2000,'MYR',now(),'callback') v")).rows[0].v;
-    assert.equal(retry.outcome, "credited");
+    const settle = () => h.cleanup.query("select app_private.settle_topup('fake','order_fakeearly0001','pay_fakeearly0001','pay:pay_fakeearly0001:captured',true,2000,'MYR',now(),'callback') v");
+    assert.equal((await settle()).rows[0].v.outcome, "unmatched");
+    await h.sqlAsApp(h.alice, h.orgA.id, (tx) => tx.query("select app_private.attach_topup($1,$2,'order_fakeearly0001',null)", [h.orgA.id, t.id]));
+    assert.equal((await settle()).rows[0].v.outcome, "credited");
     assert.equal(await sum(h, h.orgA.id), 2000);
   } finally {
     await close();
   }
 });
 
-test("refunds and adjustments need a reason and cannot exceed what is left", async () => {
+test("refunds: provider refunds debit once per refund id; operator refunds need a reason", async () => {
   const { h, api, close } = await setup();
   try {
     const t = (await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 5000 })).body.data;
-    await api.post("/api/billing/webhook/fake", fakeCallback({ id: t.provider_ref, amountSen: 5000, paid: true }), form);
-    const refund = (amount: number, key: string, reason = "Customer request") =>
+    const pay = "pay_fakeR123456789";
+    await deliver(api, fakeWebhook({ event: "payment.captured", orderId: t.provider_ref, amountSen: 5000, paymentId: pay }));
+    // A refund started in the Curlec dashboard: created, then processed (twice), then a stale failure.
+    const refund = (event: "refund.created" | "refund.processed" | "refund.failed", amount = 1500, id = "rfnd_fakeR12345678") =>
+      deliver(api, fakeWebhook({ event, orderId: t.provider_ref, amountSen: 5000, paymentId: pay, refundId: id, refundAmountSen: amount }));
+    await refund("refund.created");
+    assert.equal(await sum(h, h.orgA.id), 5000);
+    await refund("refund.processed");
+    await refund("refund.processed");
+    assert.equal(await sum(h, h.orgA.id), 3500);
+    // A processed refund larger than what is left is held for an operator.
+    await refund("refund.processed", 4000, "rfnd_fakeBig2345678");
+    assert.equal(await sum(h, h.orgA.id), 3500);
+    // A refund of a payment that never credited this wallet changes nothing.
+    await deliver(api, fakeWebhook({ event: "refund.processed", orderId: t.provider_ref, amountSen: 5000, paymentId: "pay_fakeX123456789", refundId: "rfnd_fakeX12345678" }));
+    assert.equal(await sum(h, h.orgA.id), 3500);
+    // Operator refund recorded without a provider call (money returned by bank transfer).
+    const manual = (amount: number, key: string, reason = "Customer request") =>
       h.cleanup.query("select app_private.admin_refund($1,$2,$3,$4,'Test operator',$5) v", [h.orgA.id, t.id, amount, reason, key]);
-    await assert.rejects(refund(1000, "refund-no-reason", ""), /INVALID_REFUND/);
-    const r1 = (await refund(1500, "refund-key-1")).rows[0].v;
-    assert.equal(r1.balanceSen, 3500);
-    assert.equal((await refund(1500, "refund-key-1")).rows[0].v.duplicate, true);
-    await assert.rejects(refund(4000, "refund-key-2"), /REFUND_EXCEEDS/);
+    await assert.rejects(manual(1000, "refund-no-reason", ""), /INVALID_REFUND/);
+    assert.equal((await manual(500, "refund-key-1")).rows[0].v.balanceSen, 3000);
+    assert.equal((await manual(500, "refund-key-1")).rows[0].v.duplicate, true);
+    await assert.rejects(manual(4000, "refund-key-2"), /REFUND_EXCEEDS/);
     const entries = (await h.cleanup.query("select kind,amount_sen,reason from app.wallet_ledger where org_id=$1 order by created_at", [h.orgA.id])).rows;
-    assert.deepEqual(entries.map((e) => [e.kind, e.amount_sen]), [["topup", 5000], ["refund", -1500]]);
-    assert.equal(entries[1].reason, "Customer request");
+    assert.deepEqual(entries.map((e) => [e.kind, e.amount_sen]), [["topup", 5000], ["refund", -1500], ["refund", -500]]);
+    assert.equal(entries[1].reason, "Refund at payment provider");
+    assert.equal((await h.cleanup.query("select refunded_sen from app.billing_topup where id=$1", [t.id])).rows[0].refunded_sen, 2000);
     await assert.rejects(h.cleanup.query("select app_private.admin_adjust($1,100,'','op','adjust-key-1')", [h.orgA.id]), /INVALID_ADJUSTMENT/);
     const audit = (await h.cleanup.query("select action,metadata from app.audit_log where org_id=$1 and action like 'billing.%' order by created_at", [h.orgA.id])).rows;
-    assert.deepEqual(audit.map((a) => a.action), ["billing.topup_created", "billing.topup_paid", "billing.refunded"]);
-    assert.equal(audit[2].metadata.operator, "Test operator");
-    assert.equal(await sum(h, h.orgA.id), 3500);
+    assert.deepEqual(audit.map((a) => a.action), [
+      "billing.topup_created", "billing.topup_paid", "billing.refunded", "billing.refund_exceeds_topup",
+      "billing.extra_payment_refunded", "billing.refunded",
+    ]);
+    assert.equal(audit[5].metadata.operator, "Test operator");
   } finally {
     await close();
   }
 });
 
-test("a fake top-up, callback and reconcile reach only loopback addresses", async () => {
+test("the checkout return verifies Curlec's signature before anything else", async () => {
+  const { h, api, close } = await setup();
+  try {
+    const t = (await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 2000 })).body.data;
+    const back = "/api/billing/return/fake";
+    const form = "application/x-www-form-urlencoded";
+    const forged = await api.post(back, fakeReturn(t.provider_ref, "pay_fakeZ123456789", "wrong-secret"), form);
+    assert.deepEqual([forged.status, forged.location], [303, "/app/billing?payment=unverified"]);
+    // A genuine return: the fake provider holds no payment in memory, so the
+    // payment is still being confirmed and nothing is credited by the return.
+    const real = await api.post(back, fakeReturn(t.provider_ref, "pay_fakeZ123456789"), form);
+    assert.deepEqual([real.status, real.location], [303, "/app/billing?payment=processing"]);
+    assert.equal((await api.post("/api/billing/return/curlec", fakeReturn(t.provider_ref, "pay_fakeZ123456789"), form)).status, 404);
+    assert.equal(await sum(h, h.orgA.id), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("a fake top-up, webhook and reconcile reach only loopback addresses", async () => {
   const hosts = new Set<string>(),
     original = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -265,7 +315,7 @@ test("a fake top-up, callback and reconcile reach only loopback addresses", asyn
   const { h, api, close } = await setup();
   try {
     const t = (await api.request(h.alice, h.orgA.id, "POST", "/api/v1/billing/topups", { amountSen: 2000 })).body.data;
-    await api.post("/api/billing/webhook/fake", fakeCallback({ id: t.provider_ref, amountSen: 2000, paid: true }), form);
+    await deliver(api, fakeWebhook({ event: "payment.captured", orderId: t.provider_ref, amountSen: 2000 }));
     assert.equal((await api.request(h.alice, h.orgA.id, "POST", `/api/v1/billing/topups/${t.id}/reconcile`, {})).body.data.state, "paid");
     assert.ok(hosts.size > 0);
     for (const host of hosts) assert.ok(["127.0.0.1", "::1", "localhost"].includes(host), host);

@@ -6,10 +6,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 const names = new Set([
   "JOMCALL_PAYMENT_PROVIDER",
-  "BILLPLZ_ENVIRONMENT",
-  "BILLPLZ_API_KEY",
-  "BILLPLZ_X_SIGNATURE_KEY",
-  "BILLPLZ_COLLECTION_ID",
+  "CURLEC_ENVIRONMENT",
+  "CURLEC_KEY_ID",
+  "CURLEC_KEY_SECRET",
+  "CURLEC_WEBHOOK_SECRET",
   "JOMCALL_PUBLIC_ORIGIN",
 ]);
 const env = { ...process.env };

@@ -1,9 +1,12 @@
 // Asks the configured provider about recent unsettled top-ups and settles
-// the paid ones (exactly once, through the same database function as the
-// callback). Also marks top-ups older than 24 hours as expired.
-// Prints counts only. Local database only.
+// the captured ones (exactly once, through the same database function as the
+// webhook). Curlec can authorise a payment up to 3 days after it first
+// failed, so failed and expired top-ups from the last 7 days are asked too.
+// Also marks top-ups older than 24 hours as expired. Prints counts only.
+// Local database only.
 import pg from "pg";
 import { createProvider, paymentReadiness } from "../../packages/billing/src/provider.ts";
+import { settlePayment } from "../../packages/billing/src/settle.ts";
 
 const ready = paymentReadiness();
 const url = new URL(process.env.LOCAL_ADMIN_DATABASE_URL ?? "");
@@ -16,7 +19,7 @@ try {
     const provider = createProvider();
     const rows = (
       await db.query(
-        "select provider_ref from app.billing_topup where provider=$1 and provider_ref is not null and state in('pending','failed','expired') and created_at>now()-interval '30 days' order by created_at limit 200",
+        "select provider_ref from app.billing_topup where provider=$1 and provider_ref is not null and state in('pending','failed','expired') and created_at>now()-interval '7 days' order by created_at limit 200",
         [provider.name],
       )
     ).rows;
@@ -27,11 +30,7 @@ try {
           counts.unpaid = (counts.unpaid ?? 0) + 1;
           continue;
         }
-        const out = (
-          await db.query("select app_private.settle_topup($1,$2,$3,true,$4,$5,$6,'reconcile') v", [
-            provider.name, r.providerRef, r.eventKey, r.amountSen, r.currency, r.paidAt,
-          ])
-        ).rows[0].v;
+        const out = await settlePayment(db, provider.name, r, "reconcile");
         counts[out.outcome] = (counts[out.outcome] ?? 0) + 1;
       } catch (e) {
         const code = e instanceof Error && /^[A-Z_]+$/.test(e.message) ? e.message : "ERROR";

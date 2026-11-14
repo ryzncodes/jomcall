@@ -5,6 +5,42 @@ import { formatSen } from "../../../packages/billing/src/money";
 import { topupAmounts } from "../../../packages/contracts/src/billing";
 import type { Topup, LedgerEntry } from "../../../packages/contracts/src/billing";
 import { useCore, useWords, useResource, useAction, Heading, Notice, Loading } from "./state";
+import { CoreError } from "@/lib/core/client";
+
+type CurlecHandoff = Extract<NonNullable<Topup["checkout"]>, { kind: "curlec" }>;
+type CheckoutWindow = Window & { Razorpay?: new (options: Record<string, unknown>) => { open(): void } };
+
+// Loads Curlec's Standard Checkout only when an owner pays. FPX needs the
+// redirect flow, so the result comes back to /api/billing/return/curlec,
+// never to this page's JavaScript.
+function openCurlec(c: CurlecHandoff) {
+  return new Promise<void>((resolve, reject) => {
+    const w = window as CheckoutWindow;
+    const open = () => {
+      if (!w.Razorpay) return reject(new CoreError("PAYMENT_PROVIDER_UNAVAILABLE", 502));
+      new w.Razorpay({
+        key: c.keyId,
+        amount: c.amountSen,
+        currency: c.currency,
+        name: c.name,
+        description: c.description,
+        order_id: c.orderId,
+        prefill: { email: c.prefillEmail },
+        callback_url: c.callbackUrl,
+        redirect: true,
+        modal: { ondismiss: () => resolve() },
+      }).open();
+      resolve();
+    };
+    if (w.Razorpay) return open();
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = open;
+    script.onerror = () => reject(new CoreError("PAYMENT_PROVIDER_UNAVAILABLE", 502));
+    document.head.appendChild(script);
+  });
+}
 
 const when = (iso: string, ms: boolean) =>
   new Date(iso).toLocaleString(ms ? "ms-MY" : "en-MY", {
@@ -17,7 +53,7 @@ export function LocalBilling() {
   const w = useWords(),
     { client, workspace } = useCore();
   const ms = w("en", "ms") === "ms";
-  const returned = useSearchParams().get("topup");
+  const returned = useSearchParams().get("payment");
   const manager = workspace.role !== "staff";
   const wallet = useResource(() => client.execute("wallet", {}), "wallet");
   const ledger = useResource(() => client.execute("walletLedger", { limit: 25 }), "ledger");
@@ -82,11 +118,23 @@ export function LocalBilling() {
         )}
       />
       {returned && (
-        <p className="core-success" role="status">
-          {w(
-            "Back from payment. Credit appears once the payment provider confirms it.",
-            "Kembali daripada pembayaran. Kredit dipaparkan selepas penyedia pembayaran mengesahkannya.",
-          )}
+        <p className={returned === "received" ? "core-success" : "storage-warning"} role="status">
+          {returned === "received"
+            ? w("Payment received. Your credit has been added.", "Bayaran diterima. Kredit anda telah ditambah.")
+            : returned === "review"
+              ? w(
+                  "Payment received but it needs a check before credit is added. We will sort it out; do not pay again.",
+                  "Bayaran diterima tetapi perlu disemak sebelum kredit ditambah. Kami akan uruskannya; jangan bayar semula.",
+                )
+              : returned === "unverified"
+                ? w(
+                    "We could not confirm that payment page. If money left your account, credit appears once Curlec confirms it.",
+                    "Kami tidak dapat mengesahkan halaman bayaran itu. Jika wang telah keluar dari akaun anda, kredit dipaparkan selepas Curlec mengesahkannya.",
+                  )
+                : w(
+                    "Back from payment. Credit appears once the payment is confirmed; do not pay again.",
+                    "Kembali daripada pembayaran. Kredit dipaparkan selepas bayaran disahkan; jangan bayar semula.",
+                  )}
         </p>
       )}
       <div className="core-overview core-billing-overview">
@@ -115,7 +163,7 @@ export function LocalBilling() {
             {connected
               ? v.provider.name === "fake"
                 ? w("Local test provider; no money moves", "Penyedia ujian setempat; tiada wang berpindah")
-                : "Billplz"
+                : "Curlec"
               : w("Top-ups open once a payment provider is set up", "Tambah nilai dibuka selepas penyedia pembayaran disediakan")}
           </small>
         </div>
@@ -152,8 +200,11 @@ export function LocalBilling() {
               className="core-form"
               onSubmit={async (e) => {
                 e.preventDefault();
-                const t = await pay.run(() => client.execute("startTopup", { amountSen: amount }));
-                if (t?.checkout_url && t.provider !== "fake") location.assign(t.checkout_url);
+                await pay.run(async () => {
+                  const t = await client.execute("startTopup", { amountSen: amount });
+                  if (t.checkout?.kind === "curlec") await openCurlec(t.checkout);
+                  return t;
+                });
               }}
             >
               <fieldset className="core-amounts">
@@ -166,8 +217,12 @@ export function LocalBilling() {
                 ))}
               </fieldset>
               <p className="core-voice-note">
-                {w("Pay by FPX online banking", "Bayar melalui perbankan dalam talian FPX")}
-                {v.provider.name === "billplz" ? w(", card or DuitNow QR", ", kad atau DuitNow QR") : ""}.
+                {v.provider.name === "curlec"
+                  ? w(
+                      "Pay by FPX online banking, Visa or Mastercard, or an e-wallet, through Curlec.",
+                      "Bayar melalui perbankan dalam talian FPX, Visa atau Mastercard, atau e-dompet, melalui Curlec.",
+                    )
+                  : w("Simulated FPX payment.", "Bayaran FPX simulasi.")}
               </p>
               <button className="button button-dark" disabled={pay.busy}>
                 {w(`Pay ${formatSen(amount)}`, `Bayar ${formatSen(amount)}`)}

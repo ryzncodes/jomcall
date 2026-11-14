@@ -14,6 +14,7 @@ import {
   publicOrigin,
   type PaymentProvider,
 } from "../../billing/src/provider.ts";
+import { settlePayment } from "../../billing/src/settle.ts";
 import { manager } from "./authorization.ts";
 
 // Built from the environment on each use; see packages/billing/src/provider.ts.
@@ -76,7 +77,8 @@ export async function billingRoute(
   } as const;
   if (method === "GET" && path in lists)
     return page(tx, ctx.orgId, lists[path as keyof typeof lists], query);
-  if (method === "GET" && path === "/billing/wallet") return wallet(tx, ctx.orgId);
+  if (method === "GET" && path === "/billing/wallet")
+    return wallet(tx, ctx.orgId);
   if (method === "POST" && path === "/billing/trial") {
     empty.parse(body);
     return command(
@@ -94,10 +96,10 @@ export async function billingRoute(
   }
   const loadTopup = async (id: string) => {
     const row = (
-      await tx.query("select * from app.billing_topup where org_id=$1 and id=$2", [
-        ctx.orgId,
-        id,
-      ])
+      await tx.query(
+        "select * from app.billing_topup where org_id=$1 and id=$2",
+        [ctx.orgId, id],
+      )
     ).rows[0];
     if (!row) throw new AppError("NOT_FOUND", 404);
     return row;
@@ -121,34 +123,33 @@ export async function billingRoute(
             provider.name,
           ])
         ).rows[0].value;
-        const org = (
-          await tx.query("select name from app.organization where id=$1", [ctx.orgId])
-        ).rows[0];
         const origin = publicOrigin();
-        let checkout;
+        let handoff;
         try {
           // A failure here rolls the whole top-up back; nothing is charged.
-          checkout = await provider.createCheckout({
+          handoff = await provider.createCheckout({
             topupId: topup.id,
             amountSen: v.amountSen,
             description: "JomCall credit top-up",
-            payerName: org.name,
             payerEmail: ctx.identity.confirmedEmail,
-            callbackUrl: `${origin}/api/billing/webhook/${provider.name}`,
-            redirectUrl: `${origin}/app/billing?topup=${topup.id}`,
+            returnUrl: `${origin}/api/billing/return/${provider.name}`,
           });
         } catch (e) {
           throw providerError(e);
         }
         const attached = (
-          await tx.query("select app_private.attach_topup($1,$2,$3,$4) as value", [
-            ctx.orgId,
-            topup.id,
-            checkout.providerRef,
-            checkout.checkoutUrl,
-          ])
+          await tx.query(
+            "select app_private.attach_topup($1,$2,$3,$4) as value",
+            [ctx.orgId, topup.id, handoff.orderRef, null],
+          )
         ).rows[0].value;
-        return { ref: { id: topup.id }, data: attached };
+        // The checkout hand-off is returned once and not stored: it holds the
+        // public key id and the order id only. A replayed request gets the
+        // top-up without it and starts a new one.
+        return {
+          ref: { id: topup.id },
+          data: { ...attached, checkout: handoff.checkout },
+        };
       },
       async (ref) => loadTopup(String(ref.id)),
     );
@@ -158,7 +159,8 @@ export async function billingRoute(
     const id = uuid.parse(m[1]);
     empty.parse(body);
     const topup = await loadTopup(id);
-    if (!topup.provider_ref || ["paid", "review"].includes(topup.state)) return topup;
+    if (!topup.provider_ref || ["paid", "review"].includes(topup.state))
+      return topup;
     const ready = paymentReadiness();
     if (!ready.configured || ready.provider !== topup.provider)
       throw new AppError("PAYMENTS_NOT_CONNECTED", 503);
@@ -168,20 +170,9 @@ export async function billingRoute(
     } catch (e) {
       throw providerError(e);
     }
-    // Only a paid answer changes anything; an unpaid bill stays payable.
+    // Only a paid answer changes anything; an unpaid order stays payable.
     if (result.paid)
-      await tx.query(
-        "select app_private.settle_topup($1,$2,$3,$4,$5,$6,$7,'reconcile')",
-        [
-          topup.provider,
-          result.providerRef,
-          result.eventKey,
-          true,
-          result.amountSen,
-          result.currency,
-          result.paidAt,
-        ],
-      );
+      await settlePayment(tx, topup.provider, result, "reconcile");
     return loadTopup(id);
   }
 }
