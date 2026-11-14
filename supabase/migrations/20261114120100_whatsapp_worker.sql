@@ -11,7 +11,7 @@ grant create on schema app_private to jomcall_agent_jobs;
 
 create function app_private.whatsapp_intake(p_namespace text,p_events jsonb)returns integer language plpgsql security definer set search_path='' as $$
 declare e jsonb;n integer:=0;c integer;begin
- if p_namespace<>'local' and p_namespace!~'^test_[a-f0-9-]{36}$' then raise exception 'INVALID_NAMESPACE';end if;
+ if p_namespace not in('local','staging','prod') and p_namespace!~'^test_[a-f0-9-]{36}$' then raise exception 'INVALID_NAMESPACE';end if;
  if jsonb_typeof(p_events)<>'array' or jsonb_array_length(p_events)>500 then raise exception 'INVALID_EVENTS';end if;
  for e in select * from jsonb_array_elements(p_events)loop
   insert into app.whatsapp_event(namespace,dedupe_key,phone_number_id,kind,payload)
@@ -34,7 +34,7 @@ declare
  v_step int;v_resource uuid;v_days int;v_start timestamptz;v_version uuid;v_snapshot jsonb;v_location uuid;
  v_count int:=0;v_flag boolean;
 begin
- if p_namespace<>'local' and p_namespace!~'^test_[a-f0-9-]{36}$' then raise exception 'INVALID_NAMESPACE';end if;
+ if p_namespace not in('local','staging','prod') and p_namespace!~'^test_[a-f0-9-]{36}$' then raise exception 'INVALID_NAMESPACE';end if;
 
  if p_action='maintain' then
   for t in select q.* from app.conversation_turn q join app.conversation x on(x.org_id=q.org_id and x.id=q.conversation_id)join app.whatsapp_channel h on(h.org_id=x.org_id and h.id=x.channel_id)

@@ -20,8 +20,9 @@ const plain = (status: number, body = "") =>
     headers: { "content-type": "text/plain", "cache-control": "no-store" },
   });
 
+// Local and hosted modes only; the mock preview never has a webhook.
 function enabled() {
-  if (mode() !== "local") return false;
+  if (mode() === "mock") return false;
   return whatsappReadiness().configured;
 }
 

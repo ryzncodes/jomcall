@@ -1,9 +1,9 @@
 import "server-only";
 import { Database } from "../../../packages/db/src/index.ts";
-import { requireLocal } from "./config.ts";
+import { requireApp } from "./config.ts";
 let db: Database | undefined;
 export function database() {
-  requireLocal();
+  requireApp();
   return (db ??= new Database(process.env.APP_DATABASE_URL!));
 }
 export async function closeServices() {

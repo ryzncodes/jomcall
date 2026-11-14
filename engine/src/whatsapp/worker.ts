@@ -3,6 +3,10 @@
 // the provider after the send rules allow it. All database access goes
 // through app_private.whatsapp_work, which re-checks state under row locks.
 import pg from "pg";
+import {
+  databaseConnection,
+  validNamespace,
+} from "../../../packages/contracts/src/hosting.ts";
 import type { ModelClient } from "../../../packages/inference/src/index.ts";
 import {
   configuredProvider,
@@ -54,21 +58,18 @@ export class WhatsAppWorker {
     readonly namespace: string,
     private options: WhatsAppWorkerOptions,
   ) {
-    if (
-      namespace !== "local" &&
-      !(
-        process.env.NODE_ENV === "test" &&
-        /^test_[a-f0-9-]{36}$/.test(namespace)
-      )
-    )
-      throw Error("INVALID_QUEUE_NAMESPACE");
-    if (options.model && process.env.NODE_ENV !== "test")
-      throw Error("TEST_ONLY");
     this.env = options.env ?? process.env;
-    const url = new URL(this.env.AGENT_DATABASE_URL ?? "");
-    if (url.hostname !== "127.0.0.1" || url.port !== "54622")
-      throw Error("LOCAL_DATABASE_REQUIRED");
-    this.pool = new pg.Pool({ connectionString: url.toString(), max: 2 });
+    validNamespace(namespace, this.env);
+    if (options.model && this.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
+    // Local: 127.0.0.1:54622 only. Hosted: TLS and an allow-listed host.
+    this.pool = new pg.Pool({
+      ...databaseConnection(
+        this.env.AGENT_DATABASE_URL,
+        "AGENT_DATABASE_URL",
+        this.env,
+      ),
+      max: 2,
+    });
     this.pool.on("error", () => console.error("WHATSAPP_DATABASE_POOL_ERROR"));
   }
 

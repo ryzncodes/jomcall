@@ -1,6 +1,10 @@
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import { createHash } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+import {
+  isPrivateAddress,
+  SERVICE_KEY_HEADER,
+} from "../../../packages/contracts/src/hosting.ts";
 import { z } from "zod";
 import {
   runVoiceTurn,
@@ -70,18 +74,50 @@ function readBody(req: http.IncomingMessage): Promise<string | null> {
   });
 }
 
+export type VoiceServerOptions = {
+  host: string;
+  port: number;
+  // Absent means local. Hosted mode is chosen by the caller, from JOMCALL_MODE.
+  mode?: "local" | "hosted";
+  // Hosted mode only: the secret shared with the voice worker.
+  serviceSecret?: string;
+  // Hosted mode only: a cheap dependency check for /voice/health.
+  health?: () => Promise<boolean>;
+};
+
+// Compares digests, so neither the length nor a prefix of the secret leaks
+// through timing. Nothing here may log either value.
+function sameSecret(supplied: string, expected: string): boolean {
+  const digest = (value: string) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(supplied), digest(expected));
+}
+
 export async function startVoiceServer(
   deps: VoiceTurnDeps,
-  options: { host: "127.0.0.1"; port: number },
+  options: VoiceServerOptions,
 ): Promise<{ port: number; close(): Promise<void> }> {
   // The one place a voice token is exchanged for model and database access.
-  if (options.host !== "127.0.0.1") throw Error("LOOPBACK_REQUIRED");
+  const hosted = options.mode === "hosted";
+  if (!hosted && options.host !== "127.0.0.1") throw Error("LOOPBACK_REQUIRED");
+  // Hosted: a loopback or private address only; the port is never published.
+  if (hosted && !isPrivateAddress(options.host))
+    throw Error("PRIVATE_BIND_REQUIRED");
+  const serviceSecret = hosted ? (options.serviceSecret ?? "") : null;
+  if (serviceSecret !== null && serviceSecret.length < 32)
+    throw Error("VOICE_SERVICE_SECRET_REQUIRED");
   const inflight = new Set<Promise<void>>();
 
   async function handleTurn(
     req: http.IncomingMessage,
     res: http.ServerResponse,
   ) {
+    // Hosted mode: the worker's service key comes first, so a leaked call token
+    // alone is useless from elsewhere on the network. Same answer either way.
+    if (serviceSecret !== null) {
+      const supplied = req.headers[SERVICE_KEY_HEADER];
+      if (typeof supplied !== "string" || !sameSecret(supplied, serviceSecret))
+        return json(res, 401, { error: "VOICE_UNAUTHORIZED" });
+    }
     const bearer = BEARER.exec(req.headers.authorization ?? "");
     if (!bearer) return json(res, 401, { error: "VOICE_UNAUTHORIZED" });
     let raw: string | null;
@@ -150,7 +186,12 @@ export async function startVoiceServer(
     const path = (req.url ?? "").split("?")[0];
     if (path === "/voice/health") {
       if (req.method !== "GET") return json(res, 405, { error: "METHOD" });
-      return json(res, 200, { ok: true });
+      if (!options.health) return json(res, 200, { ok: true });
+      void options
+        .health()
+        .catch(() => false)
+        .then((ok) => json(res, ok ? 200 : 503, { ok }));
+      return;
     }
     if (path !== "/voice/turns") return json(res, 404, { error: "NOT_FOUND" });
     if (req.method !== "POST") {

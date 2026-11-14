@@ -50,12 +50,8 @@ import {
   consentInput,
   dncInput,
 } from "./contacts.ts";
-export type Mode = "mock" | "local";
-export function parseMode(value?: string): Mode {
-  if (value === undefined) return "mock";
-  if (value !== "mock" && value !== "local") throw Error("INVALID_MODE");
-  return value;
-}
+import { parseMode, type Mode } from "./hosting.ts";
+export { parseMode, type Mode };
 export const capabilitiesFor = (mode: Mode) => ({
   coreRead: true,
   coreWrite: true,

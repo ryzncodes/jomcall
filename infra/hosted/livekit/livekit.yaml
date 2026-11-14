@@ -1,0 +1,18 @@
+# Production LiveKit configuration for the Singapore server. No keys here:
+# the server reads them from LIVEKIT_KEYS ("<key>: <secret>") in livekit.env.
+# Signalling (7880) is reached only through Caddy (TLS) on the private network.
+port: 7880
+bind_addresses:
+  - "0.0.0.0"
+rtc:
+  tcp_port: 7881
+  udp_port: 7882
+  # Discover the server's public address so browsers get a reachable candidate.
+  use_external_ip: true
+# TURN (callers behind UDP-blocking firewalls) is off until tested on staging;
+# see RUNBOOK.md step 5. Turning it on also needs 3478/udp and 5349/tcp open.
+turn:
+  enabled: false
+logging:
+  level: info
+  json: true

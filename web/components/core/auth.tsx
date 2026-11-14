@@ -1,24 +1,30 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { HttpCoreClient } from "@/lib/core/client";
 import { PublicFrame } from "../public-pages";
 import { useExperience } from "../experience";
 import { Field } from "./field";
 import { Notice, useWords } from "./state";
+import { Turnstile, type TurnstileHandle } from "./turnstile";
 export function LocalAuth({
   mode,
 }: {
   mode: "login" | "signup" | "forgot" | "invite";
 }) {
   const w = useWords(),
-    { href } = useExperience(),
+    { href, mode: appMode, turnstileSiteKey, theme, locale } = useExperience(),
     params = useSearchParams();
+  const challenge = useRef<TurnstileHandle>(null),
+    [turnstileToken, setTurnstileToken] = useState("");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>(),
     [done, setDone] = useState(false);
   const reset = mode === "forgot" && params.get("reset") === "1";
   const token = params.get("token") ?? "";
+  // Hosted mode with Turnstile configured, on sign-up and sign-in only.
+  const guarded =
+    !!turnstileSiteKey && !reset && (mode === "login" || mode === "signup");
   const title = reset
     ? w("Choose a new password", "Pilih kata laluan baharu")
     : mode === "signup"
@@ -80,25 +86,38 @@ export function LocalAuth({
                       "Password updated. Sign in again.",
                       "Kata laluan dikemas kini. Log masuk semula.",
                     )
-                  : w(
-                      "Check your local mailbox.",
-                      "Semak peti mel setempat anda.",
-                    )}
+                  : appMode === "hosted"
+                    ? w("Check your email.", "Semak e-mel anda.")
+                    : w(
+                        "Check your local mailbox.",
+                        "Semak peti mel setempat anda.",
+                      )}
               </h3>
-              <p>
-                {w(
-                  "Confirmation and recovery messages are captured in Mailpit.",
-                  "Mesej pengesahan dan pemulihan disimpan dalam Mailpit.",
-                )}
-              </p>
-              <a
-                className="button secondary-button"
-                href="http://127.0.0.1:54624"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {w("Open local mail", "Buka mel setempat")}
-              </a>
+              {appMode === "hosted" ? (
+                <p>
+                  {w(
+                    "If the address can be used, a message with the next step is on its way.",
+                    "Jika alamat ini boleh digunakan, mesej dengan langkah seterusnya sedang dihantar.",
+                  )}
+                </p>
+              ) : (
+                <>
+                  <p>
+                    {w(
+                      "Confirmation and recovery messages are captured in Mailpit.",
+                      "Mesej pengesahan dan pemulihan disimpan dalam Mailpit.",
+                    )}
+                  </p>
+                  <a
+                    className="button secondary-button"
+                    href="http://127.0.0.1:54624"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {w("Open local mail", "Buka mel setempat")}
+                  </a>
+                </>
+              )}
               <a href={href("/login")}>{w("Sign in", "Log masuk")}</a>
             </div>
           ) : (
@@ -128,6 +147,7 @@ export function LocalAuth({
                       ...(mode === "forgot" && !reset
                         ? {}
                         : { password: String(f.get("password")) }),
+                      ...(guarded ? { turnstileToken } : {}),
                     },
                   );
                   if (mode === "login") location.assign(href("/app"));
@@ -136,6 +156,7 @@ export function LocalAuth({
                   setError(err);
                 } finally {
                   setBusy(false);
+                  if (guarded) challenge.current?.reset();
                 }
               }}
             >
@@ -190,9 +211,23 @@ export function LocalAuth({
                     )}
                   </>
                 )}
+                {guarded && (
+                  <Turnstile
+                    ref={challenge}
+                    siteKey={turnstileSiteKey!}
+                    action={mode as "login" | "signup"}
+                    theme={theme}
+                    locale={locale}
+                    onToken={setTurnstileToken}
+                  />
+                )}
                 <button
                   className="button button-dark"
-                  disabled={busy || (mode === "invite" && !token)}
+                  disabled={
+                    busy ||
+                    (mode === "invite" && !token) ||
+                    (guarded && !turnstileToken)
+                  }
                 >
                   {busy
                     ? w("Working…", "Memproses…")

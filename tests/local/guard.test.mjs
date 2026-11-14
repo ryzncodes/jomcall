@@ -15,7 +15,7 @@ test('stop never deletes volumes or unrelated projects',()=>{
  assert.throws(()=>stopArguments('another-project'),/PROJECT/);
 });
 test('mode is explicit and defaults to mock',()=>{
- assert.equal(parseMode(), 'mock');assert.equal(parseMode('local'),'local');assert.throws(()=>parseMode('live'),/INVALID_MODE/);
+ assert.equal(parseMode(), 'mock');assert.equal(parseMode('local'),'local');assert.equal(parseMode('hosted'),'hosted');assert.throws(()=>parseMode('live'),/INVALID_MODE/);
 });
 test('CLI Docker adapter pins only this project to loopback',async()=>{
  const {pinLoopback}=await import('../../scripts/local/docker-loopback.mjs');
