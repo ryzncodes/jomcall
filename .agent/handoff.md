@@ -14,11 +14,12 @@ Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/
 **Verified (2026-11-15)**
 - `npm run typecheck`: pass. `npm run test:guards`: 32 of 32. `npm run check:core`: 462 of 462.
 - `npm run db:verify-migrations`: pass, 54 tables with row-level security. `npm run build:mock` and `npm run build:hosted`: pass.
-- After the final fix wave (commit `6a8debd`, no SQL changed): `npm run typecheck` pass; `npm run test:guards` 34 of 34; `npm run check:core` 474 of 474; `npm run build:local`, `build:mock` and `build:hosted` pass. Report: `.superpowers/sdd/2026-11-14-setup-flow-interview/final-fix-report.md`.
+- After the final fix wave (commits `6a8debd` and `fb222f9`, no SQL changed): `npm run typecheck` pass; `npm run test:guards` 34 of 34; `npm run check:core` 474 of 474; `npm run build:local`, `build:mock` and `build:hosted` pass. Report: `.superpowers/sdd/2026-11-14-setup-flow-interview/final-fix-report.md`.
 
 **Not verified**
 - No real owner has used it. The flow was clicked through once in the local app at 375 px and desktop width, in English and Bahasa Melayu, at commit `548560d`, with a fake workspace.
-- Nothing was re-checked in a browser after that: the later setup fixes, the Bahasa Melayu wording changes, the sidebar change and the final fix wave are unchecked by a person.
+- A second, shorter check at `fb222f9` (375 px, English; finish page in BM at desktop): setup re-run with saved hours, review, apply, Publish locked until a new draft test answered, sidebar without the three channel pages. Not checked: the "Something else" free-text field, the reload when another tab applies, BM interview and review pages after the wording changes, publishing itself.
+- Known, left for a follow-up: after a business-type change mid-interview a shared-fact question can come back and cannot be skipped (way out: Back and pick again); the always-on pack's text question about opening hours is still asked when hours are saved.
 - Dark theme, accessibility and a real owner: not checked.
 - Nothing ran on hosted staging; the two migrations are not applied there.
 - Paid gates not re-run (`check:hosted-model`, `check:voice-model`): no prompt, pack or tool list changed.
