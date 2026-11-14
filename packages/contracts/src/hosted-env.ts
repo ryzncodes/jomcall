@@ -345,7 +345,7 @@ export function readiness(service: Service, env: Env): Finding[] {
   )
     findings.push({ name: "JOMCALL_MODE", code: "HOSTED_MODE_REQUIRED" });
   for (const s of SETTINGS) {
-    if (!s.services.includes(service)) continue;
+    if (!s.services.includes(service) || s.name === "JOMCALL_MODE") continue;
     const needed =
       s.required === undefined
         ? true
