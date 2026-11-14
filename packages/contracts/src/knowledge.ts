@@ -128,9 +128,9 @@ export const gapResolve = z.discriminatedUnion("as", [
 export const gapIgnore = z
   .object({ expectedRevision: z.number().int().positive() })
   .strict();
-// Browser test paths only (typed and spoken). The shared toolCallSchema,
-// modelDecisionSchema and voiceTools are unchanged, because the WhatsApp and
-// phone-call paths use them and their SQL allow-lists do not know these tools.
+// Core tools for sessions whose snapshot has packs (browser tests, phone calls
+// and WhatsApp). The shared toolCallSchema, modelDecisionSchema and voiceTools
+// are unchanged for snapshots without packs.
 // Every argument is required in the JSON schema the model sees (hosted strict
 // modes need that; defaults count as required in zod's output schema), but a
 // missing one parses to its default, so older tool calls stay valid.

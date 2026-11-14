@@ -46,7 +46,7 @@ export interface KnowledgeAccess {
 }
 export type CoreToolResult =
   | ToolResult
-  | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string };
+  | { kind: "catalogue"; found: boolean; items: CatalogueHit[]; next?: string; invalid?: boolean };
 
 const NOT_FOUND_NEXT =
   "Not in the catalogue. Do not suggest a price. Say you will ask staff, then call take_message with unanswered true.";
@@ -235,8 +235,8 @@ export async function executeCoreTool(
       effect = { kind: "proposal", proposal: { kind: "handoff", details: call.args } };
       break;
   }
-  // The recorded call keeps every argument; the SQL allow-list accepts
-  // lookup_catalogue for browser tests only.
+  // The recorded call keeps every argument; the SQL allow-lists of the browser
+  // tests, phone calls and WhatsApp all accept lookup_catalogue.
   return access.record(step, call as never, effect as ToolEffect) as Promise<CoreToolResult>;
 }
 
@@ -248,7 +248,7 @@ export function isGap(calls: { call: CoreToolCall; result?: CoreToolResult }[]):
   if (message.call.name === "take_message" && message.call.args.unanswered) return true;
   return calls.some(
     (c) =>
-      (c.result?.kind === "catalogue" && !c.result.found) ||
+      (c.result?.kind === "catalogue" && !c.result.found && !c.result.invalid) ||
       (c.result?.kind === "knowledge" && c.result.items.length === 0),
   );
 }

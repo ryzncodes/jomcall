@@ -122,6 +122,16 @@ test("shared tool exports are unchanged; core tools add lookup_catalogue", () =>
   assert.ok(coreDecisionSchema.parse({ kind: "tool", call: { name: "take_message", args: { text: "Call back", unanswered: true } } }));
 });
 
+test("a blank lookup followed by a plain take_message is not a gap", () => {
+  const msg = { call: { name: "take_message" as const, args: { text: "t", unanswered: false } } };
+  const look = (invalid: boolean) => ({
+    call: { name: "lookup_catalogue" as const, args: { item: "", code: "", fits: "" } },
+    result: { kind: "catalogue" as const, found: false, items: [], ...(invalid ? { invalid: true } : {}) },
+  });
+  assert.equal(isGap([look(true), msg]), false);
+  assert.equal(isGap([look(false), msg]), true, "a real not-found lookup followed by take_message is a gap");
+});
+
 test("lookup keys, money and contact masking", () => {
   assert.deepEqual(lookupKeys("Bateri NS60", ["ns-60 l", "46B24L"]).sort(), ["46B24L", "BATERINS60", "NS60", "NS60L"].sort());
   assert.equal(formatSen(23000), "RM 230.00");

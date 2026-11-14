@@ -142,7 +142,7 @@ const BAD_LOOKUP_NEXT =
 function unusableLookup(call: { name: string; args: unknown }): CoreToolResult | null {
   if (call.name !== "lookup_catalogue" || catalogueArgs.safeParse(call.args).success)
     return null;
-  return { kind: "catalogue", found: false, items: [], next: BAD_LOOKUP_NEXT };
+  return { kind: "catalogue", found: false, items: [], invalid: true, next: BAD_LOOKUP_NEXT };
 }
 
 function errorCode(error: unknown) {
@@ -349,19 +349,23 @@ export async function runVoiceTurn(
           const call = { name: event.name, args: event.input };
           const toolOptions = { ...searchOptions, timeoutMs: 1000 };
           const unusable = knowledge ? unusableLookup(call) : null;
-          const result: CoreToolResult = unusable
-            ? (tools++, unusable)
-            : knowledge && !deps.policy
-              ? await executeCoreTool(access, knowledge, tools++, call, toolOptions)
-              : ((deps.policy
-                  ? await deps.policy.runTool(
-                      access,
-                      tools++,
-                      call,
-                      envelope,
-                      knowledge && { knowledge, options: toolOptions },
-                    )
-                  : await executeTestTool(access, tools++, call)) as ToolResult);
+          let result: CoreToolResult;
+          if (unusable) {
+            tools++;
+            result = unusable;
+          } else if (knowledge && !deps.policy) {
+            result = await executeCoreTool(access, knowledge, tools++, call, toolOptions);
+          } else if (deps.policy) {
+            result = (await deps.policy.runTool(
+              access,
+              tools++,
+              call,
+              envelope,
+              knowledge && { knowledge, options: toolOptions },
+            )) as ToolResult;
+          } else {
+            result = (await executeTestTool(access, tools++, call)) as ToolResult;
+          }
           calls.push({ call: call as CoreToolCall, result });
           checkAbort();
           let shown: unknown = result;
