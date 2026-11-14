@@ -1,5 +1,30 @@
 # Handoff
 
+## 2026-11-15 — guided setup flow (interview door)
+
+Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/specs/2026-11-14-setup-flow-design.md`, dated note at the end.
+
+**Changed**
+- Migrations `20261115090000_setup_store.sql` and `20261115090100_setup_questions.sql`: staging tables for setup answers.
+- Commands `setup`, `startSetup`, `answerSetup`, `saveSetupItem`, `applySetup` and `channels`.
+- `/app/setup` in the local and hosted apps: business type, interview (at most 8 questions), review, finish (test turn, then Publish).
+- Sidebar hides Phone numbers, WhatsApp and Integrations until connected, and hides Setup once published.
+- Answers are stored as text with no model call; apply merges and never publishes.
+
+**Verified (2026-11-15)**
+- `npm run typecheck`: pass. `npm run test:guards`: 32 of 32. `npm run check:core`: 462 of 462.
+- `npm run db:verify-migrations`: pass, 54 tables with row-level security. `npm run build:mock` and `npm run build:hosted`: pass.
+
+**Not verified**
+- No person has used it. One click-through by the controller (390 px and desktop, English, fake workspace) was done before the last two fix rounds; no browser re-check after.
+- Bahasa Melayu screens, dark theme, accessibility, staff view, a real publish: not checked.
+- Nothing ran on hosted staging; the two migrations are not applied there.
+- Paid gates not re-run (`check:hosted-model`, `check:voice-model`): no prompt, pack or tool list changed.
+
+**Next**
+- Owner step: `npm run hosted:migrate` for the two new migrations on staging. Never run by us.
+- Next plan: the document import door (reader in the agent process, uploads, catalogue rows, contact export and delete for setup rows).
+
 ## 2026-11-14 — catalogue lookup on phone and WhatsApp
 
 Branch `feat/core-tools-on-channels` (not pushed; no pull request yet).
