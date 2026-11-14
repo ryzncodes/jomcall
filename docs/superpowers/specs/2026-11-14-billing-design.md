@@ -154,7 +154,7 @@ Behaviour:
 - `fake`: allowed only when `JOMCALL_MODE=local`.
 - `billplz`: needs `BILLPLZ_API_KEY`, `BILLPLZ_X_SIGNATURE_KEY`, `BILLPLZ_COLLECTION_ID` and an `https` `JOMCALL_PUBLIC_ORIGIN`. `BILLPLZ_ENVIRONMENT` is `sandbox` (default) or `production`.
 
-`paymentReadiness` reports the state without a network call. Bootstrap's `capabilities.payments` follows it. The mock preview (port 4181) is unchanged and imports none of this.
+Settings are read from the gitignored `.env.payments`, which `scripts/billing/with-payment-env.mjs` loads for `dev:local` and `start:local` (only the six payment names; model and speech keys never reach the web process). `npm run dev:local:fake-payments` starts the web app with the fake provider. `paymentReadiness` reports the state without a network call. Bootstrap's `capabilities.payments` follows it. The mock preview (port 4181) is unchanged and imports none of this.
 
 ## 7. Roles, audit, privacy
 
@@ -190,12 +190,14 @@ Behaviour:
 ## 10. Stubbed until a merchant account exists
 
 - Every real payment. The Billplz client has never sent a request.
-- Callback delivery from the internet: this needs the hosted deployment and a public HTTPS address.
+- Callback delivery from the internet: this needs the hosted deployment and a public HTTPS address, and the hosted mode must allow the webhook route, which currently calls `requireLocal()`.
 - Refund money movement (Billplz Payment Order) and its callback.
 - Card saving and automatic top-up.
 - SST and e-invoice submission.
 
 ## 11. Known limits
+
+- The shared local database records migration versions `20261114150000` and `20261114150100`. A checkout without these files gets "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000` and `20261114120100` sort earlier; on a database where billing was applied first, pushing them needs `--include-all`.
 
 - The webhook has no rate limit of its own. A forged callback costs one HMAC check and is refused before any database read.
 - The migration-check command creates `jomcall_billing` as a cluster-wide role. Run `npm run db:migrate:local` before `npm run db:verify-migrations` on a database where this migration is not yet applied. Otherwise the push fails with `permission denied to grant role "jomcall_billing"`; drop the stray role first.

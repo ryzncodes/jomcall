@@ -14,7 +14,7 @@
     "local:start": "node scripts/local/start.mjs",
     "local:stop": "node scripts/local/stop.mjs",
     "dev:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run dev -w web -- --port 4181",
-    "dev:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run dev -w web -- --port 4182",
+    "dev:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 node scripts/billing/with-payment-env.mjs npm run dev -w web -- --port 4182",
     "build:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run build -w web",
     "build:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run build -w web",
     "typecheck": "npm run typecheck -w web && tsc --noEmit -p tsconfig.json",
@@ -26,7 +26,7 @@
     "dev:engine": "JOMCALL_MODE=local node --env-file=.env.local --import tsx engine/src/index.ts",
     "contracts:generate": "node --import tsx scripts/contracts/generate.ts",
     "check:core": "npm run test:local -- tests/api/*.test.ts tests/billing/*.test.ts tests/db/*.test.ts tests/domain/*.test.ts tests/engine/*.test.ts tests/local/*.test.mjs",
-    "start:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 npm run start -w web -- --port 4182",
+    "start:local": "JOMCALL_MODE=local NEXT_TELEMETRY_DISABLED=1 node scripts/billing/with-payment-env.mjs npm run start -w web -- --port 4182",
     "start:mock": "JOMCALL_MODE=mock NEXT_TELEMETRY_DISABLED=1 npm run start -w web -- --port 4181",
     "model:prepare": "node scripts/local/model-prepare.mjs",
     "model:start": "node scripts/local/model-start.mjs",
@@ -44,9 +44,10 @@
     "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts",
     "check:billing": "npm run test:local -- tests/billing/*.test.ts",
     "billing:simulate": "node --env-file=.env.local --import tsx scripts/billing/simulate.ts",
-    "billing:reconcile": "node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx scripts/billing/reconcile.ts",
+    "billing:reconcile": "node --env-file=.env.local --env-file-if-exists=.env.payments --import tsx scripts/billing/reconcile.ts",
     "billing:admin": "node --env-file=.env.local --import tsx scripts/billing/admin.ts",
-    "db:apply-migration:local": "node --env-file=.env.local scripts/billing/apply-migration.mjs"
+    "db:apply-migration:local": "node --env-file=.env.local scripts/billing/apply-migration.mjs",
+    "dev:local:fake-payments": "JOMCALL_PAYMENT_PROVIDER=fake npm run dev:local"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",

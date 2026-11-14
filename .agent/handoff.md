@@ -16,7 +16,11 @@ Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 
 **Not verified**
 - No real provider call, no merchant account, no browser check of the wallet screen (port 4182 was in use by another session).
-- Callback delivery from the internet (needs the hosted deployment).
+- Callback delivery from the internet (needs the hosted deployment, and the hosted mode must allow the webhook route, which calls `requireLocal()`).
+- Payment settings live in the gitignored `.env.payments`; `npm run dev:local:fake-payments` runs the fake provider for `npm run billing:simulate`.
+
+**Shared database**
+- The local database records versions `20261114150000` and `20261114150100` (applied with `npm run db:apply-migration:local`). Other checkouts without these files get "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000`/`120100` sort earlier and may need `--include-all`.
 
 **Next**
 1. Owner: approve a payment provider as an outbound service, then follow the checklist in the research note, section 6.

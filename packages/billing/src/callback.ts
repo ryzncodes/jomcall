@@ -3,11 +3,8 @@ import type { ProviderResult } from "./provider.ts";
 
 // Shared by the Billplz client and the fake: both speak Billplz's callback
 // format, so tests and the simulator exercise the production parser.
-const allowed = new Set([
-  "id", "collection_id", "paid", "state", "amount", "paid_amount", "due_at",
-  "email", "mobile", "name", "url", "paid_at", "x_signature",
-  "transaction_id", "transaction_status",
-]);
+// Every posted field except x_signature is signed, so a field added later
+// by Billplz is verified too; it is ignored after verification.
 export function parseBillplzCallback(
   body: string,
   contentType: string | null,
@@ -19,7 +16,7 @@ export function parseBillplzCallback(
   const fields: [string, string][] = [];
   const seen = new Set<string>();
   for (const [k, v] of params) {
-    if (!allowed.has(k) || seen.has(k)) throw Error("INVALID_CALLBACK");
+    if (!/^[a-z_\[\]]{1,40}$/.test(k) || seen.has(k)) throw Error("INVALID_CALLBACK");
     seen.add(k);
     fields.push([k, v]);
   }

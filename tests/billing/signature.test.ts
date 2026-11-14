@@ -51,7 +51,13 @@ test("callback parser verifies before trusting any field", () => {
   const tampered = body.replace("paid_amount=5000", "paid_amount=9000");
   assert.throws(() => parseBillplzCallback(tampered, "application/x-www-form-urlencoded", fakeSignatureKey), /BAD_SIGNATURE/);
   assert.throws(() => parseBillplzCallback(body, "application/json", fakeSignatureKey), /INVALID_CALLBACK/);
-  assert.throws(() => parseBillplzCallback(body + "&extra=1", "application/x-www-form-urlencoded", fakeSignatureKey), /INVALID_CALLBACK/);
+  // An unsigned extra field breaks the signature; a signed one is accepted and ignored.
+  assert.throws(() => parseBillplzCallback(body + "&extra=1", "application/x-www-form-urlencoded", fakeSignatureKey), /BAD_SIGNATURE/);
+  const signedExtra = new URLSearchParams(body);
+  signedExtra.delete("x_signature");
+  signedExtra.append("future_field", "x");
+  signedExtra.append("x_signature", sign([...signedExtra], fakeSignatureKey));
+  assert.equal(parseBillplzCallback(signedExtra.toString(), "application/x-www-form-urlencoded", fakeSignatureKey).paid, true);
   assert.throws(() => parseBillplzCallback(body + "&id=x", "application/x-www-form-urlencoded", fakeSignatureKey), /INVALID_CALLBACK/);
   const other = fakeCallback({ id: "fake_abc", amountSen: 5000, paid: true, key: "wrong-key" });
   assert.throws(() => parseBillplzCallback(other, "application/x-www-form-urlencoded", fakeSignatureKey), /BAD_SIGNATURE/);
