@@ -115,6 +115,11 @@ async function setup() {
     answer: (d: ModelDecision[]) => (next = d),
     close: async () => {
       await worker.close();
+      // Events are keyed by namespace, not organization: remove them here.
+      await h.cleanup.query(
+        "delete from app.whatsapp_event where namespace=$1",
+        [h.namespace],
+      );
       await f.close();
     },
   };
@@ -326,13 +331,13 @@ test("WhatsApp flow against the local database", async (t) => {
         const c = await f.conversation();
         const overview = (await f.req("GET", "/channels/whatsapp")).body.data;
         const created = await f.req("POST", "/channels/whatsapp/templates", {
-            name: "jomcall_reply_request",
-            language: "ms",
-            category: "utility",
-            purpose: "reengage",
-            body: "Kami ada balasan untuk pertanyaan anda. Sila balas mesej ini untuk menyambung perbualan.",
-            variables: 0,
-          });
+          name: "jomcall_reply_request",
+          language: "ms",
+          category: "utility",
+          purpose: "reengage",
+          body: "Kami ada balasan untuk pertanyaan anda. Sila balas mesej ini untuk menyambung perbualan.",
+          variables: 0,
+        });
         assert.equal(created.status, 200, JSON.stringify(created.body));
         const tpl = created.body.data;
         assert.ok(overview.channel);
