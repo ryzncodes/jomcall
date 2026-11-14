@@ -71,8 +71,7 @@ export class AgentRunner {
     embedder?: Embedder | null,
   ) {
     validNamespace(namespace);
-    if ((model || embedder) && process.env.NODE_ENV !== "test")
-      throw Error("TEST_ONLY");
+    if (model && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
     this.model = model;
     // Off unless JOMCALL_EMBEDDING_PROVIDER=google; tests pass a fake.
     this.embedder = embedder === undefined ? createEmbedder() : embedder;
