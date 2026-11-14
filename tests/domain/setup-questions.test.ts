@@ -101,3 +101,14 @@ test("factKeyOf returns the first facts.* target or null", () => {
   assert.equal(factKeyOf(q), "a");
   assert.equal(factKeyOf({ ...q, fills: ["rules.x"] }), null);
 });
+
+test("every fact question fills a fact", () => {
+  for (const main of packIds)
+    for (const extra of [undefined, ...packIds])
+      for (const q of setupQuestions({
+        mainPack: main,
+        extraPacks: extra ? [extra] : [],
+        filled: none,
+      }).filter((x) => x.kind === "fact"))
+        assert.notEqual(factKeyOf(q), null, `${main}+${extra} ${q.id}`);
+});

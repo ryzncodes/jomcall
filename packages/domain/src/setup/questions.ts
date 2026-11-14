@@ -60,8 +60,8 @@ export function setupQuestions(input: Input): SetupQuestion[] {
       ];
   const budget = MAX_QUESTIONS - head.length - tail.length;
 
-  // Candidates per pack: in `order`, skipping filled facts and a second
-  // question about a fact already asked.
+  // Candidates per pack: in `order`, only questions that fill a fact, skipping
+  // filled facts and a second question about a fact already asked.
   const seen = new Set<string>();
   const candidates = orderedPacks(input).map((pack) => {
     const list: SetupQuestion[] = [];
@@ -74,8 +74,9 @@ export function setupQuestions(input: Input): SetupQuestion[] {
         fills: [...q.fills],
       };
       const key = factKeyOf(question);
-      if (key && (input.filled.has(key) || seen.has(key))) continue;
-      if (key) seen.add(key);
+      // A question that fills no fact has nowhere to store its answer.
+      if (!key || input.filled.has(key) || seen.has(key)) continue;
+      seen.add(key);
       list.push(question);
     }
     return list;
