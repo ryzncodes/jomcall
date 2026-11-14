@@ -192,7 +192,6 @@
   "closing": "Good service starts\nwith being there.",
   "closingBody": "See how a call could feel. Then make it your own.",
   "footerNote": "Built for the way Malaysia does business.",
-  "footerPreview": "Frontend preview · Source-available",
   "footerPrivacy": "Privacy & controls",
   "sampleBadge": "Sample data",
   "exportName": "jomcall-sample-contact",
@@ -1391,34 +1390,8 @@
     ],
     "readGuide": "Open guide",
     "tryScreen": "Try this screen",
-    "legalDraft": "Preview document · not final service terms",
     "privacyTitle": "Your conversations deserve care.",
     "termsTitle": "Clear expectations, from the start.",
-    "legalIntro": "This page describes this local fictional preview. Operator details, production providers and final policies must be completed before launch.",
-    "privacyHeads": [
-      "What this preview stores",
-      "Your controls",
-      "Recordings and retention",
-      "Before production"
-    ],
-    "privacyBodies": [
-      "Business settings, fictional contacts, messages, bookings and usage are saved in this browser. Do not enter real customer information or credentials.",
-      "Contacts includes consent history, do-not-contact, JSON export and local deletion. Export or delete a sample contact to see its linked records change.",
-      "No real call recordings are captured. Retention settings demonstrate a future policy; there is no audio deletion service in this preview.",
-      "The service operator must publish its identity, privacy contact, processing purposes, provider and transfer details, retention rules and rights request procedure. These are not finalized here."
-    ],
-    "termsHeads": [
-      "Preview scope",
-      "Use fictional data",
-      "No purchase or delivery",
-      "Launch requirements"
-    ],
-    "termsBodies": [
-      "All calls, messages, payments, access and provider checks are simulations. Local data can be lost when browser storage is cleared.",
-      "This is a demonstration workspace. Use sample names and non-deliverable emails; never add API keys, real recordings or private customer data.",
-      "Wallet top-ups, receipts and outbound delivery states represent sample events. They do not charge a bank account, send a message or reserve a real phone number.",
-      "Commercial pricing, service commitments, acceptable-use terms, payment/refund rules and governing terms require final operator review before a live launch."
-    ],
     "branchHours": "Branch hours",
     "branchHoursTitle": "Open at the right time.",
     "branchHoursIntro": "Set independent schedules and sample holiday closures for each branch. Bookings use these exact hours.",

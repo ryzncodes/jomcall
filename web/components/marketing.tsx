@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Image from "next/image";
+import { OperatorDetails } from "./public-pages";
 
 import {
   ArrowUpRight,
@@ -303,14 +304,12 @@ export function Marketing() {
           <Brand />
           <p>{t.footerNote}</p>
         </div>
-        <div>
-          <a href={href("/privacy")}>{t.remaining.privacy}</a>
-          <a href={href("/terms")}>{t.remaining.terms}</a>
+        <div className="site-footer-links">
           <a href={href("/pricing")}>{t.remaining.pricing}</a>
           <a href={href("/docs")}>{t.remaining.docs}</a>
           <a href={href("/login")}>{t.remaining.login}</a>
-          <span>{t.footerPreview}</span>
         </div>
+        <OperatorDetails />
       </footer>
     </>
   );

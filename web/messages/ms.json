@@ -192,7 +192,6 @@
   "closing": "Layanan baik bermula\ndengan sentiasa ada.",
   "closingBody": "Lihat bagaimana panggilan boleh terasa. Kemudian sesuaikan ikut cara anda.",
   "footerNote": "Dibina untuk cara Malaysia berniaga.",
-  "footerPreview": "Pratonton frontend · Sumber tersedia",
   "footerPrivacy": "Privasi & kawalan",
   "sampleBadge": "Data contoh",
   "exportName": "jomcall-kenalan-contoh",
@@ -1391,34 +1390,8 @@
     ],
     "readGuide": "Buka panduan",
     "tryScreen": "Cuba skrin ini",
-    "legalDraft": "Dokumen pratonton · bukan terma perkhidmatan muktamad",
     "privacyTitle": "Perbualan anda wajar dijaga.",
     "termsTitle": "Jangkaan jelas, sejak awal.",
-    "legalIntro": "Halaman ini menerangkan pratonton rekaan setempat. Butiran pengendali, pembekal produksi dan polisi muktamad perlu dilengkapkan sebelum pelancaran.",
-    "privacyHeads": [
-      "Apa yang disimpan",
-      "Kawalan anda",
-      "Rakaman dan penyimpanan",
-      "Sebelum produksi"
-    ],
-    "privacyBodies": [
-      "Tetapan perniagaan, kenalan rekaan, mesej, tempahan dan penggunaan disimpan dalam pelayar ini. Jangan masukkan maklumat pelanggan atau kelayakan sebenar.",
-      "Kenalan menyediakan sejarah izin, larangan hubungan, eksport JSON dan pemadaman setempat. Eksport atau padam kenalan contoh untuk melihat perubahan rekod berkaitan.",
-      "Tiada rakaman panggilan sebenar diambil. Tetapan penyimpanan menunjukkan polisi masa depan; tiada perkhidmatan pemadaman audio dalam pratonton ini.",
-      "Pengendali perlu menerbitkan identiti, hubungan privasi, tujuan pemprosesan, butiran pembekal dan pemindahan, peraturan penyimpanan serta tatacara permintaan hak. Semua ini belum dimuktamadkan."
-    ],
-    "termsHeads": [
-      "Skop pratonton",
-      "Gunakan data rekaan",
-      "Tiada pembelian atau penghantaran",
-      "Keperluan pelancaran"
-    ],
-    "termsBodies": [
-      "Semua panggilan, mesej, bayaran, akses dan semakan pembekal ialah simulasi. Data setempat boleh hilang apabila storan pelayar dikosongkan.",
-      "Ini ruang kerja demonstrasi. Gunakan nama contoh dan e-mel yang tidak boleh dihantar; jangan tambah kunci API, rakaman sebenar atau data pelanggan peribadi.",
-      "Tambah nilai dompet, resit dan status penghantaran keluar mewakili peristiwa contoh. Ia tidak mengecaj akaun bank, menghantar mesej atau menempah nombor sebenar.",
-      "Harga komersial, komitmen perkhidmatan, terma penggunaan, peraturan bayaran/bayaran balik dan terma pentadbiran memerlukan semakan pengendali sebelum pelancaran sebenar."
-    ],
     "branchHours": "Waktu cawangan",
     "branchHoursTitle": "Buka pada waktu yang tepat.",
     "branchHoursIntro": "Tetapkan jadual berasingan dan penutupan cuti contoh setiap cawangan. Tempahan menggunakan waktu yang sama.",
