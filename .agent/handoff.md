@@ -5,7 +5,7 @@
 Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 
 **Changed**
-- Migrations `20261114150000_billing_wallet.sql`, `20261114150100_billing_wallet_fixes.sql` and `20261114200000_billing_curlec.sql` (crediting payment id, `settle_refund`): append-only ledger, usage events, versioned prices, top-ups, provider events, receipts. Writes only through `app_private` functions owned by `nologin` role `jomcall_billing`; triggers refuse update, delete and truncate.
+- Migrations `20261114150000_billing_wallet.sql`, `20261114150100_billing_wallet_fixes.sql` and `20261114200100_billing_curlec.sql` (crediting payment id, `settle_refund`): append-only ledger, usage events, versioned prices, top-ups, provider events, receipts. Writes only through `app_private` functions owned by `nologin` role `jomcall_billing`; triggers refuse update, delete and truncate.
 - `packages/billing`: `recordUsage` and `walletState` for other services; provider interface; Curlec client (owner's choice 2026-11-14; never run against Curlec; Billplz client removed); local-only fake that speaks Curlec's webhook and return shapes.
 - Routes `/api/v1/billing/*`, webhook `POST /api/billing/webhook/<provider>`, checkout return `/api/billing/return/<provider>`, local wallet screen, `npm run billing:simulate | billing:reconcile | billing:admin`.
 - Docs: `docs/research/payment-providers-malaysia.md`, `docs/superpowers/specs/2026-11-14-billing-design.md`.
@@ -28,6 +28,16 @@ Branch `feat/billing-wallet`, pull request open against `main`, not merged.
 3. Owner: final prices (new `billing_price` version).
 4. On a database where the billing migration is not yet applied: run `npm run db:migrate:local` before `npm run db:verify-migrations`, or drop the stray `jomcall_billing` role first.
 5. Follow-up (not wired): meter WhatsApp conversations by calling `recordUsage(..., kind: "whatsapp_conversation")` from the WhatsApp worker once the provider confirms a conversation.
+
+## 2026-11-14 — knowledge core
+
+Branch `feat/knowledge-core`; pull request against `main`, not merged.
+
+**Changed**: design `docs/superpowers/specs/2026-11-14-knowledge-core-design.md`; migration `20261114200000_knowledge_core.sql`; packs in `packages/domain/src/packs/`; `packages/domain/src/knowledge/` (text, snapshot, prompt, tools, routes); `packages/contracts/src/knowledge.ts`; `packages/inference/src/embedding.ts` and budget; `engine/src/agent/brain.ts` (core option), `runner.ts`, `voice-turn.ts`, `repository.ts`; privacy export; web tab `web/components/core/knowledge-core.tsx`.
+
+**Verified** (2026-11-14, after merging WhatsApp, phone line and knowledge spike): `typecheck` clean; `test:guards` 23/23; `test:offline` 199 tests, 198 pass, 1 skipped; `check:core` 331 tests, 329 pass, 0 fail, 2 skipped (port 54633 busy); `db:verify-migrations` passed (RLS tables: 43); `build:local` and `build:mock` pass. Migration was applied to the shared local database by hand, without a `schema_migrations` row.
+
+**Not verified / next**: typed and spoken 48-case gates not re-run (cost); web tab not opened in a browser; WhatsApp and phone get rules and facts but not the catalogue tool, gap log or hours; document import, the interview and setup screens are the next piece.
 
 ## 2026-11-14 — phone line, milestone B (code side)
 

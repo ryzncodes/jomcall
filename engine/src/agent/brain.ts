@@ -22,6 +22,26 @@ import {
   modelDecisionSchema,
   type KnowledgeHit,
 } from "../../../packages/contracts/src/agent-test.ts";
+import {
+  coreDecisionSchema,
+  type CoreToolCall,
+} from "../../../packages/contracts/src/knowledge.ts";
+import {
+  catalogueEvidence,
+  executeCoreTool,
+  gapRecord,
+  isGap,
+  searchUnits,
+  type CoreSnapshotFull,
+  type CoreToolResult,
+  type KnowledgeAccess,
+} from "../../../packages/domain/src/knowledge/tools.ts";
+import {
+  typedSystemPrompt,
+  usesCore,
+} from "../../../packages/domain/src/knowledge/prompt.ts";
+import { spokenLanguage } from "../../../packages/domain/src/agent-test/fast-lane.ts";
+import type { Embedder } from "../../../packages/inference/src/embedding.ts";
 
 export type BrainInput = {
   model: ModelClient;
@@ -33,6 +53,17 @@ export type BrainInput = {
   history: { input: string; answer: string }[];
   resources: any[];
   access: ToolAccess;
+  // Input budget for the pinned model; 6000 bytes when absent.
+  budget?: number;
+  // Knowledge core tools (catalogue lookup, unanswered flag, gap log). Only
+  // channels whose SQL allow-list accepts them pass this (browser tests).
+  // Without it a knowledge-core snapshot still gets the rules and facts
+  // sections, with the shared tools.
+  core?: {
+    rules: string;
+    knowledge: KnowledgeAccess;
+    embedder?: Embedder | null;
+  };
 };
 export type BrainAnswer = {
   text: string;
@@ -42,23 +73,34 @@ export type BrainAnswer = {
 
 export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
   const signal = input.signal;
+  const snapshot = input.snapshot as CoreSnapshotFull;
+  const budget = input.budget ?? 6000;
+  // Old snapshots keep the old prompt and tools byte for byte.
+  const hasCore = usesCore(snapshot);
+  const core = hasCore ? input.core : undefined;
   const required: ModelInput["messages"] = [
     {
       role: "system",
-      content:
-        input.rules +
-        "\nBusiness configuration: " +
-        businessConfiguration(input.snapshot.settings) +
-        "\nCurrent date/time: " +
-        new Date().toISOString() +
-        "; timezone Asia/Kuala_Lumpur.",
+      content: typedSystemPrompt(
+        { shared: input.rules, core: core?.rules ?? input.rules },
+        snapshot,
+        businessConfiguration(input.snapshot.settings),
+        new Date(),
+        budget,
+        core ? "core" : "shared",
+      ),
     },
     { role: "user", content: input.text },
   ];
-  const initial = searchKnowledge(
-    buildKnowledgeIndex(input.snapshot),
-    input.text,
-  );
+  const initial = core
+    ? await searchUnits(snapshot, core.knowledge, input.text, {
+        embedder: core.embedder,
+        timeoutMs: 800,
+      })
+    : hasCore
+      ? await searchUnits(snapshot, undefined, input.text)
+      : searchKnowledge(buildKnowledgeIndex(input.snapshot), input.text);
+  const calls: { call: CoreToolCall; result?: CoreToolResult }[] = [];
   const optional: ModelInput["messages"] = [
     {
       role: "system",
@@ -79,6 +121,7 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
     optional,
     [],
     input.history,
+    budget,
   ).messages;
   let latest: ModelInput["messages"] = [];
   for (const hit of initial) {
@@ -95,6 +138,7 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
       [...optional, msg],
       [],
       input.history,
+      budget,
     ).messages;
     if (next.includes(msg)) {
       evidence.push(small);
@@ -108,20 +152,38 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
     signal.throwIfAborted();
     let abort!: () => void;
     const decision = await Promise.race([
-      input.model.generate({ messages }, signal),
+      input.model.generate(
+        core ? { messages, decision: "core" } : { messages },
+        signal,
+      ),
       new Promise<never>((_, reject) => {
         abort = () => reject(Error("TURN_CANCELLED"));
         signal.addEventListener("abort", abort, { once: true });
       }),
     ]).finally(() => signal.removeEventListener("abort", abort));
     if (input.model.usage) usage.push({ ...input.model.usage });
-    const parsed = modelDecisionSchema.parse(decision);
+    const parsed = core
+      ? coreDecisionSchema.parse(decision)
+      : modelDecisionSchema.parse(decision);
     if (parsed.kind === "answer") {
       validateCitations(parsed.citations, evidence);
+      // A failed gap write never fails the customer's answer.
+      if (core && isGap(calls))
+        await core.knowledge
+          .gap(gapRecord(input.text, spokenLanguage(input.text), "text", parsed.text))
+          .catch(() => console.error("GAP_RECORD_FAILED"));
       return { text: parsed.text, citations: parsed.citations, usage };
     }
-    const result = await executeTestTool(input.access, steps++, parsed.call);
+    const result: CoreToolResult = core
+      ? await executeCoreTool(input.access, core.knowledge, steps++, parsed.call, {
+          embedder: core.embedder,
+          timeoutMs: 800,
+        })
+      : await executeTestTool(input.access, steps++, parsed.call as never);
+    calls.push({ call: parsed.call as CoreToolCall, result });
     let shown: unknown = result;
+    if (result.kind === "catalogue")
+      evidence = [...evidence, ...result.items.map(catalogueEvidence)];
     if (result.kind === "knowledge") {
       const hits = result.items.map((h) => ({
         ...h,
@@ -148,6 +210,7 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
       optional,
       latest,
       input.history,
+      budget,
     ).messages;
   }
   throw Error("TOOL_LIMIT");

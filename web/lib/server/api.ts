@@ -11,6 +11,7 @@ import { privacyRoute } from "../../../packages/domain/src/privacy.ts";
 import "server-only";
 import { contactsRoute } from "../../../packages/domain/src/contacts.ts";
 import { agentsRoute } from "../../../packages/domain/src/agents.ts";
+import { knowledgeRoute } from "../../../packages/domain/src/knowledge/routes.ts";
 import { workspaceRoute } from "../../../packages/domain/src/workspace.ts";
 import { membersRoute } from "../../../packages/domain/src/members.ts";
 import { billingRoute } from "../../../packages/domain/src/billing.ts";
@@ -164,6 +165,15 @@ async function dispatch(request: Request, deps: CoreDeps) {
           key,
         );
         if (memberResult !== undefined) return respond(memberResult);
+        const knowledgeResult = await knowledgeRoute(
+          tx,
+          context,
+          method,
+          path,
+          body,
+          key,
+        );
+        if (knowledgeResult !== undefined) return respond(knowledgeResult);
         const agentResult = await agentsRoute(
           tx,
           context,

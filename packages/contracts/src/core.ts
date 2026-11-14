@@ -62,6 +62,19 @@ import {
 import { uuid, name, organizationInput, type Role } from "./index.ts";
 import { agentSettings, knowledgeInput, scheduleInput } from "./agent.ts";
 import {
+  catalogueInput,
+  confirmInput,
+  factInput,
+  gapIgnore,
+  gapResolve,
+  packsInput,
+  removeInput,
+  ruleInput,
+  type KnowledgeCore,
+  type KnowledgeGap,
+} from "./knowledge.ts";
+import type { PackSummary } from "../../domain/src/packs/index.ts";
+import {
   contactInput,
   contactUpdate,
   noteInput,
@@ -130,7 +143,15 @@ export type Version = {
   id: string;
   sequence: number;
   created_at: string;
-  snapshot: { settings: AgentSettings; knowledge: Knowledge[] };
+  snapshot: {
+    settings: AgentSettings;
+    knowledge: Knowledge[];
+    // Absent on versions from before the knowledge core.
+    packs?: string[];
+    facts?: { title: string; value: unknown }[];
+    rules?: { kind: string; text: string }[];
+    catalogue?: { setId: string; hash: string; rows: number } | null;
+  };
 };
 export type Contact = {
   id: string;
@@ -434,6 +455,69 @@ export const commands = {
     "/agents/:id/restore",
     id.extend({ ...revision, versionId: uuid }),
     out<Agent>(),
+  ),
+  packs: route("GET", "/packs", empty, out<PackSummary[]>()),
+  knowledgeCore: route("GET", "/agents/:id/core", id, out<KnowledgeCore>()),
+  savePacks: route(
+    "PUT",
+    "/agents/:agentId/packs",
+    packsInput.extend({ agentId: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  saveFact: route(
+    "POST",
+    "/agents/:agentId/facts",
+    factInput.extend({ agentId: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  deleteFact: route(
+    "DELETE",
+    "/agents/:agentId/facts/:id",
+    removeInput.extend({ agentId: uuid, id: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  saveRule: route(
+    "POST",
+    "/agents/:agentId/rules",
+    ruleInput.extend({ agentId: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  deleteRule: route(
+    "DELETE",
+    "/agents/:agentId/rules/:id",
+    removeInput.extend({ agentId: uuid, id: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  saveCatalogue: route(
+    "POST",
+    "/agents/:agentId/catalogue",
+    catalogueInput.extend({ agentId: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  deleteCatalogueRow: route(
+    "DELETE",
+    "/agents/:agentId/catalogue/:id",
+    removeInput.extend({ agentId: uuid, id: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  confirmKnowledge: route(
+    "POST",
+    "/agents/:agentId/confirm",
+    confirmInput.extend({ agentId: uuid }),
+    out<KnowledgeCore>(),
+  ),
+  knowledgeGaps: route("GET", "/agents/:id/gaps", id, out<KnowledgeGap[]>()),
+  resolveGap: route(
+    "POST",
+    "/agents/:agentId/gaps/:id/resolve",
+    z.intersection(z.object({ agentId: uuid, id: uuid }), gapResolve),
+    out<KnowledgeGap>(),
+  ),
+  ignoreGap: route(
+    "POST",
+    "/agents/:agentId/gaps/:id/ignore",
+    gapIgnore.extend({ agentId: uuid, id: uuid }),
+    out<KnowledgeGap>(),
   ),
   locations: route("GET", "/locations", empty, out<Location[]>()),
   createLocation: route(

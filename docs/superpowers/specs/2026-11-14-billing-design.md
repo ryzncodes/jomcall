@@ -27,7 +27,7 @@ Status: built on branch `feat/billing-wallet` (2026-11-14). The payment provider
 All tables are in schema `app`, carry `org_id` (except the platform price table), and use forced row-level security. Migrations:
 - `supabase/migrations/20261114150000_billing_wallet.sql`
 - `supabase/migrations/20261114150100_billing_wallet_fixes.sql`
-- `supabase/migrations/20261114200000_billing_curlec.sql` (crediting payment, refunds from the provider)
+- `supabase/migrations/20261114200100_billing_curlec.sql` (crediting payment, refunds from the provider)
 
 | Table | Purpose | Writable by |
 |---|---|---|
@@ -195,7 +195,7 @@ Settings are read from the gitignored `.env.payments`, which `scripts/billing/wi
 
 ## 11. Known limits
 
-- The shared local database records migration versions `20261114150000`, `20261114150100`, `20261114200000` and `20261114210000`. A checkout without these files gets "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000` and `20261114120100` sort earlier; on a database where billing was applied first, pushing them needs `--include-all`.
+- The shared local database records migration versions `20261114150000`, `20261114150100`, `20261114200100` and `20261114210000` (Curlec was recorded as `20261114200000` until main's knowledge core took that version; the row was renumbered). A checkout without these files gets "remote migration versions not found" from `supabase db push`. WhatsApp's `20261114120000` and `20261114120100` sort earlier; on a database where billing was applied first, pushing them needs `--include-all`.
 
 - The webhook has no rate limit of its own. A forged callback costs one HMAC check and is refused before any database read.
 - The migration-check command creates `jomcall_billing` as a cluster-wide role. Run `npm run db:migrate:local` before `npm run db:verify-migrations` on a database where this migration is not yet applied. Otherwise the push fails with `permission denied to grant role "jomcall_billing"`; drop the stray role first.

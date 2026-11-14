@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { toolCallSchema } from "../../contracts/src/agent-test.ts";
 import { splitSentences } from "../../domain/src/agent-test/sentences.ts";
 import { voiceTools } from "../../domain/src/agent-test/voice-prompt.ts";
+import { coreVoiceTools } from "../../domain/src/knowledge/tools.ts";
+import { coreToolCallSchema } from "../../contracts/src/knowledge.ts";
 
 // Spoken-path model call. Calls Anthropic directly (key from ANTHROPIC_API_KEY)
 // and streams plain speech so the voice can start on the first sentence. Every
@@ -36,15 +38,24 @@ function mapError(error: unknown): Error {
 // One client per process: building one per call would repeat its setup on
 // every spoken turn.
 const toolNames = new Set(voiceTools.map((t) => t.name));
+const coreToolNames = new Set(coreVoiceTools.map((t) => t.name));
 let shared: Anthropic | undefined;
 const sharedClient = () => (shared ??= new Anthropic());
 
 export async function* streamVoiceModel(
-  input: { stable: string; volatile: string; messages: unknown[] },
+  input: {
+    stable: string;
+    volatile: string;
+    messages: unknown[];
+    // "core": knowledge-core tools (browser tests). Omitted: shared tools.
+    tools?: "core";
+  },
   signal: AbortSignal,
   client: Pick<Anthropic, "messages"> = sharedClient(),
 ): AsyncIterable<VoiceModelEvent> {
   if (signal.aborted) return;
+  const core = input.tools === "core";
+  const names = core ? coreToolNames : toolNames;
   // The stable block carries the cache breakpoint; the volatile block (date and
   // time) follows it so a changing clock never invalidates the cached prefix.
   const system: Anthropic.TextBlockParam[] = [
@@ -66,7 +77,7 @@ export async function* streamVoiceModel(
         max_tokens: 1024,
         output_config: { effort: "low" },
         system,
-        tools: voiceTools as Anthropic.Tool[],
+        tools: (core ? coreVoiceTools : voiceTools) as Anthropic.Tool[],
         messages: input.messages as Anthropic.MessageParam[],
       },
       { signal },
@@ -79,7 +90,7 @@ export async function* streamVoiceModel(
       ) {
         // Only a known tool name may be announced; anything else is left to
         // the validated path, which fails the turn.
-        if (!toolNames.has(event.content_block.name)) continue;
+        if (!names.has(event.content_block.name)) continue;
         // Text always comes before a tool call: speak what is pending first,
         // so the caller hears the lead-in before the tool is announced.
         const lead = pending.trim();
@@ -114,7 +125,7 @@ export async function* streamVoiceModel(
   if (tail) yield { type: "sentence", text: tail };
   for (const block of message.content) {
     if (block.type !== "tool_use") continue;
-    const parsed = toolCallSchema.safeParse({
+    const parsed = (core ? coreToolCallSchema : toolCallSchema).safeParse({
       name: block.name,
       args: block.input,
     });

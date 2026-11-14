@@ -13,6 +13,7 @@ import {
   startHealthServer,
 } from "../health.ts";
 import { streamVoiceModel } from "../../../packages/inference/src/anthropic-voice.ts";
+import { createEmbedder } from "../../../packages/inference/src/embedding.ts";
 import { CallRepository } from "./call-repository.ts";
 import { startPhoneServer, PHONE_PORT } from "./phone-server.ts";
 import {
@@ -32,8 +33,11 @@ const ns = queueNamespace();
 // Checked before anything is opened: VOICE_PROVIDER_INVALID for an unknown
 // value, VOICE_MODEL_KEY_MISSING for hosted voice without ANTHROPIC_API_KEY.
 const provider = agentVoiceProvider();
+// EMBEDDING_PROVIDER_INVALID / EMBEDDING_KEY_MISSING stop the process here.
+// Off (null) unless JOMCALL_EMBEDDING_PROVIDER=google.
+const embedder = createEmbedder();
 const listen = provider === "hosted" ? voiceListen() : undefined;
-const runner = await AgentRunner.create(ns);
+const runner = await AgentRunner.create(ns, undefined, embedder);
 let lastTickAt = 0;
 // WhatsApp work runs only when the switch is on. The Cloud API client is
 // created here, in the agent process, and nowhere else.
@@ -57,7 +61,7 @@ if (provider === "hosted") {
   try {
     const repository = (voiceRepository = new AgentRepository(ns));
     voice = await startVoiceServer(
-      { repository, model: streamVoiceModel, now: Date.now },
+      { repository, model: streamVoiceModel, now: Date.now, embedder },
       {
         ...listen!,
         health: mode === "hosted" ? () => repository.ping() : undefined,

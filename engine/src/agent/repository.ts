@@ -6,6 +6,7 @@ import type {
   ToolResult,
 } from "../../../packages/domain/src/agent-test/tools.ts";
 import type { ToolCall } from "../../../packages/contracts/src/agent-test.ts";
+import type { KnowledgeAccess } from "../../../packages/domain/src/knowledge/tools.ts";
 import { calculateAvailability } from "../../../packages/domain/src/booking/availability.ts";
 export class AgentRepository {
   private pool: pg.Pool;
@@ -148,6 +149,30 @@ export class AgentRepository {
         return value;
       },
     };
+  }
+  // Catalogue, units and gap log for one running turn (typed or spoken).
+  knowledge(envelope: any): KnowledgeAccess {
+    const { turn } = envelope;
+    const call = async (action: string, data: unknown) =>
+      (
+        await this.pool.query(
+          "select app_private.agent_knowledge($1,$2,$3,$4,$5)as value",
+          [action, this.namespace, turn.id, turn.lease_token, JSON.stringify(data)],
+        )
+      ).rows[0].value;
+    return {
+      catalogue: (args) => call("catalogue", args),
+      units: (args) => call("units", args),
+      gap: (data) => call("gap", data),
+    };
+  }
+  async embeddings(action: "pending" | "store", data: unknown) {
+    return (
+      await this.pool.query(
+        "select app_private.agent_embeddings($1,$2,$3)as value",
+        [action, this.namespace, JSON.stringify(data)],
+      )
+    ).rows[0].value;
   }
   close() {
     return this.pool.end();

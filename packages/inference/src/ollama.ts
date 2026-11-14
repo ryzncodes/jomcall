@@ -3,7 +3,12 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { modelDecisionSchema } from "../../contracts/src/agent-test.ts";
 import type { Readiness } from "../../contracts/src/agent-test.ts";
-import { decisionFormat, packModelInput } from "./budget.ts";
+import {
+  coreDecisionFormat,
+  decisionFormat,
+  packModelInput,
+} from "./budget.ts";
+import { coreDecisionSchema } from "../../contracts/src/knowledge.ts";
 import type { ModelClient, ModelInput } from "./index.ts";
 export type ModelConfig = {
   url: string;
@@ -117,7 +122,8 @@ export async function createOllamaClient(
           messages: packed.messages,
           stream: false,
           think: false,
-          format: decisionFormat,
+          format:
+            input.decision === "core" ? coreDecisionFormat : decisionFormat,
           keep_alive: "30s",
           options: { num_ctx: 8192, num_predict: 512, temperature: 0 },
         },
@@ -136,7 +142,10 @@ export async function createOllamaClient(
         outputTokens: output.eval_count ?? 0,
       };
       try {
-        return modelDecisionSchema.parse(JSON.parse(output.message.content));
+        const decision = JSON.parse(output.message.content);
+        return input.decision === "core"
+          ? coreDecisionSchema.parse(decision)
+          : modelDecisionSchema.parse(decision);
       } catch {
         throw Error("MODEL_OUTPUT_INVALID");
       }
