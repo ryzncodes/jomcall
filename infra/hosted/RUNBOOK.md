@@ -89,7 +89,7 @@ Values go to: `APP_ORIGIN` (Vercel, `engine.env`), `LIVEKIT_DOMAIN` (`caddy.env`
 
 C3. **Email Service sender verification (SPF, DKIM, DMARC).** Cloudflare dashboard, Compute, Email Service, Email Sending, **Onboard Domain**, choose the domain, review and accept the records Cloudflare adds: MX and an SPF TXT on the `cf-bounce` subdomain, a DKIM TXT, and a DMARC TXT on `_dmarc`. If a DMARC record already exists, keep one. [CHECK] the domain shows as verified (usually 5 to 15 minutes). Create two API tokens, each with only **Email Sending: Edit**: one for the engine (`CLOUDFLARE_EMAIL_API_TOKEN` in `engine.env`), one for Supabase Auth's SMTP password (step 2c). New accounts start with a small daily sending quota that grows with reputation; send only to people who expect the mail.
 
-C4. **Turnstile keys.** Cloudflare, Turnstile, Add widget, once per environment: hostname the environment's web host (`app.<domain>`, `staging.<domain>`), widget mode Managed. Copy the site key to `TURNSTILE_SITE_KEY` and the secret key to `TURNSTILE_SECRET_KEY`, both in Vercel for that environment only. Set both or neither: one alone makes every sign-in fail on purpose. The server also checks the hostname and the action (`login` or `signup`) that Cloudflare reports.
+C4. **Turnstile keys.** Cloudflare, Turnstile, Add widget, once per environment: hostname the environment's web host (`app.<domain>`, `staging.<domain>`), widget mode Managed. Copy the site key to `TURNSTILE_SITE_KEY` and the secret key to `TURNSTILE_SECRET_KEY`, both in Vercel for that environment only. Set both or neither: one alone makes every sign-in fail on purpose. The server also checks the hostname and the action (`login` or `signup`) that Cloudflare reports. Leave Supabase's own captcha setting (Authentication, Bot and Abuse Protection) **off**: the app already redeems the single-use token, so a second check in Supabase would fail every sign-in.
 
 C5. **R2 bucket and token.** Cloudflare, R2: create `jomcall-backups-staging` and `jomcall-backups-prod` (location hint Asia-Pacific). On each bucket add a lifecycle rule that deletes objects after 30 days, and leave public access off. Under R2, Manage API tokens, create one token per bucket: **Object Read & Write**, applied to that bucket only. Copy the Access Key ID to `R2_ACCESS_KEY_ID` and the Secret Access Key to `R2_SECRET_ACCESS_KEY` (shown once) in that environment's `backup.env`. Recordings will later get their own bucket and token.
 
@@ -249,14 +249,19 @@ Not possible yet: the twenty-turn speed script (`npm run check:voice-speed`) dri
 
 Run for a week. Then:
 - Restore last night's backup into a scratch Supabase project; compare row counts; write down how long it took. Delete the scratch project.
-- Encrypted off-site dump to R2 (second copy, beside Supabase's own daily backups). On the server, install a `pg_dump` matching the database's major version (17) and write `/etc/jomcall/backup.env` (0600) from the backup lines of `.env.hosted.example`, then:
+- Encrypted off-site dump to R2 (second copy, beside Supabase's own daily backups). The job runs on the host, not in a container, so the server needs three extra things the Compose setup does not:
+  - Node.js 24 (the version pinned in `infra/hosted/worker.Dockerfile`), then `cd /opt/jomcall && npm ci`.
+  - `pg_dump` 17, matching the database: stock Ubuntu does not ship it. Add the PostgreSQL project's apt repository (PGDG, `apt.postgresql.org`), then `apt-get install postgresql-client-17`.
+  - `/etc/jomcall/backup.env` (0600), written from the backup lines of `.env.hosted.example`.
+
+  Alternatively, run it from the owner's laptop with the repository installed; the settings are the same. Then:
 
   ```bash
   npm run hosted:readiness -- --service backup --env-file /etc/jomcall/backup.env
   npm run hosted:backup -- --target staging --env-file /etc/jomcall/backup.env
   ```
 
-  [CHECK] prints `Uploaded staging/jomcall-staging-<time>.dump.enc`; the object appears in the bucket. Then prove a restore: download it, `npm run hosted:backup -- --decrypt <file> out.dump --target staging --env-file /etc/jomcall/backup.env`, and `pg_restore --list out.dump` lists the tables. Schedule it nightly (systemd timer or cron, 03:00 Asia/Kuala_Lumpur) only after that restore worked. [UNVERIFIED] none of this has run against a real database or bucket.
+  [CHECK] prints `Uploaded staging/jomcall-staging-<time>.dump.enc`; the object appears in the bucket. [UNVERIFIED] `pg_dump` as Supabase's `postgres` role may hit permission errors on Supabase-managed schemas; if it stops with `PG_DUMP_FAILED`, run `pg_dump` by hand with the same settings to see which schema, and record it before changing anything. Then prove a restore: download it, `npm run hosted:backup -- --decrypt <file> out.dump --target staging --env-file /etc/jomcall/backup.env`, and `pg_restore --list out.dump` lists the tables. Schedule it nightly (systemd timer or cron, 03:00 Asia/Kuala_Lumpur) only after that restore worked. [UNVERIFIED] none of this has run against a real database or bucket.
 - Concurrent synthetic calls until the voice worker degrades; record the limit and set a job limit from it (not built yet).
 - Deploy a new image during a live call: `docker compose up -d --build voice` and confirm the call finishes (the worker drains for up to 320 s).
 - Stop the server on purpose; confirm every alert reaches your phone.

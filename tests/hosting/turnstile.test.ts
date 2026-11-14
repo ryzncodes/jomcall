@@ -232,10 +232,17 @@ test("a half-configured Turnstile refuses every hosted sign-in", async () => {
   assert.equal(turnstileSiteKey(), undefined);
 });
 
-test("local mode ignores Turnstile keys and tokens entirely", async () => {
+test("local mode ignores Turnstile keys and keeps its strict body", async () => {
   set({ ...localEnv, ...KEYS });
   assert.equal(turnstileSiteKey(), undefined);
-  await login({ ...credentials, turnstileToken: "tok" }, "198.51.100.5");
+  // Unchanged from before Turnstile: an extra field is a validation error.
+  const extra = await login(
+    { ...credentials, turnstileToken: "tok" },
+    "198.51.100.5",
+  );
+  assert.equal(extra.status, 422);
+  assert.equal(calls.length, 0);
+  await login(credentials, "198.51.100.5");
   assert.ok(calls.length > 0);
   assert.ok(calls.every((c) => c.url !== SITEVERIFY_URL));
 });

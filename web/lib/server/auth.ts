@@ -123,25 +123,26 @@ export async function handleAuth(request: Request) {
       }
       if (++rate.count > 10) throw new AppError("RATE_LIMITED", 429);
     }
-    if (action === "signup" || action === "login") {
+    const turnstile =
+      action === "signup" || action === "login" ? turnstileSettings() : null;
+    if (turnstile) {
       // Hosted mode with both Turnstile keys set: the token must verify before
-      // anything reaches the auth service. Otherwise the field is ignored.
+      // anything reaches the auth service. Without Turnstile the body schema
+      // is unchanged and an extra field is still rejected.
       const { turnstileToken, ...rest } = (body ?? {}) as Record<
         string,
         unknown
       >;
       body = rest;
-      const turnstile = turnstileSettings();
-      if (turnstile)
-        try {
-          await verifyTurnstile(turnstile, {
-            token: turnstileToken,
-            action,
-            remoteip: clientAddress(request),
-          });
-        } catch {
-          throw new AppError("VERIFICATION_FAILED", 403);
-        }
+      try {
+        await verifyTurnstile(turnstile, {
+          token: turnstileToken,
+          action,
+          remoteip: clientAddress(request),
+        });
+      } catch {
+        throw new AppError("VERIFICATION_FAILED", 403);
+      }
     }
     if (action === "signup") {
       const value = credentials.parse(body);

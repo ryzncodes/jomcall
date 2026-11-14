@@ -1,5 +1,21 @@
 # Handoff
 
+## 2026-11-14 — Cloudflare email, Turnstile and R2 backups
+
+Branch `feat/hosted-mode` (same pull request, not merged).
+
+**Changed**
+- `engine/src/mail.ts`: `MailSender` interface; `SmtpSender` (Mailpit / SMTP), `CloudflareSender` (REST, `fetch`), `FakeSender`. Engine uses `createMailSender()`. Guards `mailProvider`, `cloudflareMailSettings` in `hosting.ts`.
+- Turnstile: `turnstileSettings` (hosting.ts), `verifyTurnstile` (`packages/contracts/src/turnstile.ts`), check in `web/lib/server/auth.ts` for login and signup, widget `web/components/core/turnstile.tsx`, site key passed from login/signup pages at runtime. Local body schema unchanged.
+- Backup: `scripts/hosted/backup.ts` + `s3.ts` (`npm run hosted:backup`, `--decrypt`). AES-256-GCM, SigV4 create-only PUT, single PUT up to 4 GiB.
+- Settings catalogue and `.env.hosted.example` (new service `backup`); RUNBOOK section C and backup step; design amendment.
+
+**Verified (offline)**
+- typecheck; test:guards 20/20; test:offline 170; check:core 261 pass, 2 skipped; build:hosted, build:local, build:mock. SigV4 matches AWS's published example; upload tested against a local fake S3 server.
+
+**Not verified / open**
+- Nothing contacted Cloudflare. Email Sending is beta (Workers Paid, small starting quota). Supabase SMTP on 465, pg_dump permissions as `postgres`, and the backup on a real bucket are unverified.
+
 ## 2026-11-14 — hosted mode and deploy kit
 
 Branch `feat/hosted-mode` (pushed, pull request against `main`, not merged).
