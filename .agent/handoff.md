@@ -1,5 +1,35 @@
 # Handoff
 
+## 2026-11-14 — first staging environment (hosted)
+
+Done with the owner, step by step, from `infra/hosted/RUNBOOK.md` steps 2 to 4.
+
+**Exists now**
+- Supabase project `JomCall` (free plan, Singapore, ref `khinigndotktlwcfcofb`): 30 migrations applied by `npm run hosted:migrate`, namespace `staging`.
+- DigitalOcean droplet `jomcall-staging` (SGP1, 2 GB, Ubuntu 24.04, 2 GB swap added), cloud firewall: 22 from the owner's address; 80, 443, 7881/tcp and 7882/udp open. Compose stack running from `/opt/jomcall`; settings in `/etc/jomcall`.
+- DNS on Cloudflare: `livekit.staging.jomcall.com` (A, DNS only), `staging.jomcall.com` (CNAME to Vercel), Resend sending records, and Email Routing (catch-all to the owner's mailbox).
+- Vercel project `jomcall`: custom environment `staging`, tracks `main`, domain `staging.jomcall.com`, 15 variables.
+- Owner's copies of every settings file: `~/secure/` on the owner's laptop (never in git).
+
+**Owner decisions**
+- Mail for staging goes through Resend's SMTP relay (`JOMCALL_MAIL_PROVIDER=smtp`, `smtp.resend.com`), free plan, instead of Cloudflare Email Service for now. Engine only.
+- Staging uses the owner's existing development keys for Deepgram, Anthropic, Google and OpenRouter (the runbook prefers separate staging keys).
+
+**Found and fixed**
+- Hosted Supabase does not let `postgres` pass on access to schema `auth`: pull request #20 (definer functions).
+- The pooler needs Supabase's root certificate in `JOMCALL_DATABASE_CA`; runbook section B updated.
+
+**Verified**
+- Runner output `Verified: 30 migrations recorded, 11 jomcall roles present`; four service logins connect over verified TLS.
+- `docker compose ps`: agent, engine, voice healthy; caddy and livekit running. `https://livekit.staging.jomcall.com` serves a valid certificate. Ports checked from outside.
+
+**Not verified / open**
+- No sign-in, typed turn, email or voice call has been made on staging.
+- Supabase Auth settings (site URL, redirect list, SMTP, templates: runbook 2c) not set.
+- Filler audio not prewarmed on the server.
+- The staging LiveKit API secret was shown in a screenshot; rotate it.
+- Free Supabase pauses after a week idle and has no backups: not for real customers.
+
 ## 2026-11-14 — real privacy notice, terms and operator details
 
 Branch `feat/legal-pages`; pull request against `main`, not merged (merging deploys www.jomcall.com).
