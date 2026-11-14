@@ -120,3 +120,10 @@ test("the interview prefills the name only through the tested rule", () => {
   assert.match(interview, /namePrefill\(q\.fills,/);
   assert.doesNotMatch(interview, /fills\.includes\("facts\.business_name"\)/);
 });
+
+test("the chrome reads the channels command and hides unconnected channels", () => {
+  const text = readFileSync("web/components/core/chrome.tsx", "utf8");
+  assert.match(text, /execute\(\s*["']channels["']/);
+  for (const key of ["phones", "whatsapp", "integrations"])
+    assert.match(text, new RegExp(key));
+});

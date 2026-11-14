@@ -32,6 +32,7 @@ import {
   phoneNumberUpdate,
   callList,
   type PhoneNumber,
+  type Channels,
   type PhoneNumbers,
   type CallSummary,
   type CallDetail,
@@ -638,6 +639,7 @@ export const commands = {
     id,
     out<Topup>(),
   ),
+  channels: route("GET", "/channels", empty, out<Channels>()),
   phoneNumbers: route("GET", "/phone-numbers", empty, out<PhoneNumbers>()),
   createPhoneNumber: route(
     "POST",

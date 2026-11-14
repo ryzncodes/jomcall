@@ -142,6 +142,7 @@ function LocalWorkspace({ screen }: { screen: string }) {
   return (
     <WorkspaceChrome
       mode="local"
+      orgId={orgId}
       active={active}
       workspace={{
         name: workspace?.workspace.name,

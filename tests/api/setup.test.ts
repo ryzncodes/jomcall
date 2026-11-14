@@ -980,3 +980,18 @@ test("finish is true again when setup is re-run and applied on a published agent
     await f.close();
   }
 });
+
+test("channels reports false for all three on a fresh workspace", async () => {
+  const { f } = await fixture();
+  try {
+    const r = await f.req("GET", "/channels");
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.data, {
+      phone: false,
+      whatsapp: false,
+      integrations: false,
+    });
+  } finally {
+    await f.close();
+  }
+});

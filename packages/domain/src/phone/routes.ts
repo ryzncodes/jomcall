@@ -9,6 +9,7 @@ import {
 import { manager } from "../authorization.ts";
 import { command, audit } from "../../../db/src/receipts.ts";
 import { telephonyReadiness } from "./telephony.ts";
+import { whatsappMode } from "../../../whatsapp/src/provider.ts";
 
 const SUMMARY =
   "id,caller_e164,dialled_e164,state,refusal,outcome,language,after_hours,do_not_contact,transfer_result,started_at,duration_seconds";
@@ -67,6 +68,23 @@ export async function phoneRoute(
   key: string,
   query: URLSearchParams,
 ) {
+  // Which channel pages the sidebar shows. Three booleans, readable by every
+  // member role. A provider switch with an invalid value counts as off.
+  if (path === "/channels" && method === "GET") {
+    let whatsapp = false;
+    try {
+      whatsapp = whatsappMode() !== "disabled";
+    } catch {}
+    const phone =
+      telephonyReadiness().configured &&
+      (
+        await tx.query(
+          "select 1 from app.phone_number where org_id=$1 limit 1",
+          [ctx.orgId],
+        )
+      ).rowCount! > 0;
+    return { phone, whatsapp, integrations: false };
+  }
   const numbers = path.match(/^\/phone-numbers(?:\/([^/]+))?$/);
   if (numbers) {
     const id = numbers[1] ? uuid.parse(numbers[1]) : null;

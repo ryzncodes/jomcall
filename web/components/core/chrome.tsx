@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useMemo, useState } from "react";
 import {
   House,
   GitBranch,
@@ -20,6 +21,8 @@ import {
 } from "@phosphor-icons/react";
 import { WorkspaceNavigation } from "../product/navigation";
 import { Brand, Controls, useExperience } from "../experience";
+import { HttpCoreClient } from "@/lib/core/client";
+import type { Channels } from "../../../packages/contracts/src/phone";
 export type ActiveScreen =
   | "home"
   | "settings"
@@ -42,6 +45,7 @@ export function WorkspaceChrome({
   workspace,
   mode,
   warnings,
+  orgId,
 }: {
   active: ActiveScreen;
   children: React.ReactNode;
@@ -53,11 +57,39 @@ export function WorkspaceChrome({
   };
   mode: "mock" | "local";
   warnings?: React.ReactNode;
+  orgId?: string;
 }) {
   const { t, href, locale, mode: runMode } = useExperience(),
     p = t.product;
   const hosted = runMode === "hosted";
-  const navigation = [
+  // Local and hosted modes hide channel pages that are not connected. While
+  // the read is loading or failed the three entries stay out (fail closed).
+  // Mock mode shows every entry, as before.
+  const [channels, setChannels] = useState<Channels>();
+  const channelClient = useMemo(
+    () => (mode === "local" && orgId ? new HttpCoreClient({ orgId }) : undefined),
+    [mode, orgId],
+  );
+  useEffect(() => {
+    setChannels(undefined);
+    if (!channelClient) return;
+    let alive = true;
+    const load = () =>
+      channelClient
+        .execute("channels", {})
+        .then((v) => alive && setChannels(v))
+        .catch(() => alive && setChannels(undefined));
+    void load();
+    const focus = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    window.addEventListener("focus", focus);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", focus);
+    };
+  }, [channelClient]);
+  const all = [
     { key: "home", href: "/app", label: t.admin.nav, Icon: House },
     {
       key: "inbox",
@@ -129,6 +161,16 @@ export function WorkspaceChrome({
       Icon: GearSix,
     },
   ];
+  const hidden: string[] =
+    mode === "local"
+      ? [
+          ...(channels?.phone ? [] : ["phones"]),
+          ...(channels?.whatsapp ? [] : ["whatsapp"]),
+          ...(channels?.integrations ? [] : ["integrations"]),
+          ...(workspace.complete ? ["setup"] : []),
+        ]
+      : [];
+  const navigation = all.filter((item) => !hidden.includes(item.key));
   return (
     <div className="workspace product-workspace">
       <a className="skip-link" href="#workspace-content">
