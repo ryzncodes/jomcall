@@ -64,6 +64,9 @@ supabase/.temp/
 # Synthetic local model evaluation output
 output/phase2/
 
+# Setup reading check results (npm run check:setup-reader)
+output/setup-reader/
+
 # Local agent tooling and private keys
 .claude/
 *.pem

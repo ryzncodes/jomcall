@@ -1,5 +1,5 @@
 {
- "note": "Synthetic documents for npm run check:setup-reader. Every business, person, address and number is invented. d01-d12 and their rows come from the knowledge-intake spike (2026-11-14); d07-d09 were workbooks there and are delimited text here; d13 and d14 are new. priceSen is the price in sen (null: the document gives no readable price). trap marks a price the document itself makes unsure: unreadable (physically covered), no-price ('call', 'TBA', 'tanya boss'), ambiguous (a smudged digit: right when correct or flagged), corrected (an old price replaced; truth is the new one), approx ('about', 'dari'), range (two prices). optional: fine to read or to leave out. variantAlt: other acceptable wordings of the variant. factLabels are for people only and are not scored.",
+ "note": "Synthetic documents for npm run check:setup-reader. Every business, person, address and number is invented. d01-d12 and their rows come from the knowledge-intake spike (2026-11-14); d07-d09 were workbooks there and are delimited text here; d13, d14 and d15 are new (d15 is d08's content as pasted text). mustNotAppear: phrases from lines that are not price rows (d14's debt book). priceSen is the price in sen (null: the document gives no readable price). trap marks a price the document itself makes unsure: unreadable (physically covered), no-price ('call', 'TBA', 'tanya boss'), ambiguous (a smudged or half-covered digit, or an add-on amount such as '+15' or 'tambah RM2'), corrected (an old price replaced; truth is the new one), approx ('about', 'dari'), range (two prices). An unsure price (unreadable, no-price, ambiguous, approx, range) must come back flagged or without a price. optional: fine to read or to leave out. variantAlt: other acceptable wordings of the variant. factLabels are for people only and are not scored.",
  "documents": [
   {
    "id": "d01",
@@ -341,6 +341,7 @@
     {
      "item": "Bungkus",
      "priceSen": 30,
+     "trap": "ambiguous",
      "optional": true
     }
    ],
@@ -1335,7 +1336,8 @@
     },
     {
      "item": "Kucing – Rawatan kutu",
-     "priceSen": 1500
+     "priceSen": 1500,
+     "trap": "ambiguous"
     },
     {
      "item": "Kucing – Rawatan kulat",
@@ -1384,7 +1386,8 @@
     },
     {
      "item": "Anjing – Deshedding",
-     "priceSen": 3000
+     "priceSen": 3000,
+     "trap": "ambiguous"
     },
     {
      "item": "Boarding",
@@ -1462,7 +1465,8 @@
     },
     {
      "item": "Potong die-cut",
-     "priceSen": 200
+     "priceSen": 200,
+     "trap": "ambiguous"
     },
     {
      "item": "Banner",
@@ -1512,6 +1516,7 @@
     {
      "item": "Below 50 pax surcharge",
      "priceSen": 200,
+     "trap": "ambiguous",
      "optional": true
     },
     {
@@ -1735,7 +1740,167 @@
      "0100-000-103",
      "0100-000-104"
     ]
-   }
+   },
+   "mustNotAppear": [
+    "hutang",
+    "buku hutang",
+    "kain satin 10 meter",
+    "janji bayar hujung bulan"
+   ]
+  },
+  {
+   "id": "d15",
+   "file": "d15-bakery-paste.txt",
+   "kind": "text",
+   "mainPack": "order",
+   "source": "new",
+   "about": "The content of d08 (the spike's d08 workbook as tab-separated cells) as text an owner pastes from a spreadsheet, sent as pasted text rather than a file. Same truth as d08; measures the paste path.",
+   "rows": [
+    {
+     "item": "Kek Coklat Moist",
+     "variant": "6 inci",
+     "variantAlt": [
+      "6\"",
+      "6 inch",
+      "6in"
+     ],
+     "priceSen": 5500
+    },
+    {
+     "item": "Kek Coklat Moist",
+     "variant": "8 inci",
+     "variantAlt": [
+      "8\"",
+      "8 inch",
+      "8in"
+     ],
+     "priceSen": 9000,
+     "trap": "corrected"
+    },
+    {
+     "item": "Kek Coklat Moist",
+     "variant": "10 inci",
+     "variantAlt": [
+      "10\"",
+      "10 inch",
+      "10in"
+     ],
+     "priceSen": 12000
+    },
+    {
+     "item": "Red Velvet",
+     "variant": "6 inci",
+     "variantAlt": [
+      "6\"",
+      "6 inch"
+     ],
+     "priceSen": 6500
+    },
+    {
+     "item": "Red Velvet",
+     "variant": "8 inci",
+     "variantAlt": [
+      "8\"",
+      "8 inch"
+     ],
+     "priceSen": 9500
+    },
+    {
+     "item": "Red Velvet",
+     "variant": "10 inci",
+     "variantAlt": [
+      "10\"",
+      "10 inch"
+     ],
+     "priceSen": 13500
+    },
+    {
+     "item": "Kek Pandan Gula Melaka",
+     "variant": "6 inci",
+     "variantAlt": [
+      "6\"",
+      "6 inch"
+     ],
+     "priceSen": 6000
+    },
+    {
+     "item": "Kek Pandan Gula Melaka",
+     "variant": "8 inci",
+     "variantAlt": [
+      "8\"",
+      "8 inch"
+     ],
+     "priceSen": 9500,
+     "trap": "corrected"
+    },
+    {
+     "item": "Kek Pandan Gula Melaka",
+     "variant": "10 inci",
+     "variantAlt": [
+      "10\"",
+      "10 inch"
+     ],
+     "priceSen": 12500
+    },
+    {
+     "item": "Cheesecake Blueberry",
+     "variant": "6 inci",
+     "variantAlt": [
+      "6\"",
+      "6 inch"
+     ],
+     "priceSen": 7500
+    },
+    {
+     "item": "Cheesecake Blueberry",
+     "variant": "8 inci",
+     "variantAlt": [
+      "8\"",
+      "8 inch"
+     ],
+     "priceSen": 11000
+    },
+    {
+     "item": "Kek Lapis Sarawak",
+     "priceSen": 15000
+    },
+    {
+     "item": "Karipap ayam",
+     "priceSen": 90
+    },
+    {
+     "item": "Donut gula",
+     "priceSen": 120
+    },
+    {
+     "item": "Roti sosej",
+     "priceSen": 250
+    },
+    {
+     "item": "Tart telur",
+     "priceSen": 200
+    },
+    {
+     "item": "Brownies (box of 9)",
+     "priceSen": 2800
+    },
+    {
+     "item": "Cookies coklat chip (balang 400g)",
+     "priceSen": 2500
+    },
+    {
+     "item": "Delivery Kajang/Bangi",
+     "priceSen": 1000,
+     "optional": true
+    }
+   ],
+   "factLabels": [
+    "order 3 days ahead",
+    "deposit 50%",
+    "delivery Kajang/Bangi RM10",
+    "pickup Seksyen 7 Bangi",
+    "10-inch cheesecake not made"
+   ]
   }
  ]
 }

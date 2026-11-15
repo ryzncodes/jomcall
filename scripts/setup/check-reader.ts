@@ -26,7 +26,15 @@ import {
 } from "../../packages/inference/src/setup-reader.ts";
 import { sharedAnthropicClient } from "../../packages/inference/src/anthropic-voice.ts";
 import { packById } from "../../packages/domain/src/packs/index.ts";
-import { better, readerFields } from "../../engine/src/agent/setup-reader.ts";
+// The worker module loads the pg library at import but builds no pool and
+// opens no connection until SetupReadWorker.create, which is never called here.
+import {
+  FALLBACK_MIN_ROWS,
+  FALLBACK_SHARE,
+  READ_TIMEOUT_MS,
+  better,
+  readerFields,
+} from "../../engine/src/agent/setup-reader.ts";
 import {
   failures,
   formatTable,
@@ -42,13 +50,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 export const FIXTURES = join(root, "tests", "fixtures", "setup-reader");
 
-// The worker's rule (engine/src/agent/setup-reader.ts), which keeps these
-// values private: a read flagged on more than half of at least 10 rows is
+// The worker's fallback rule and timeout are imported from it: a read
+// flagged on more than FALLBACK_SHARE of at least FALLBACK_MIN_ROWS rows is
 // read again with the fallback model, and better() picks the result.
-const FALLBACK_SHARE = 0.5;
-const FALLBACK_MIN_ROWS = 10;
-// The worker's per-read timeout.
-const READ_TIMEOUT_MS = 120_000;
 // What the browser's shrinking produces at most for a photo.
 const BROWSER_IMAGE_BYTES = 3_600_000;
 
@@ -56,6 +60,11 @@ export const REFUSE_UNPAID =
   "Refused: this check sends the synthetic documents to the Anthropic API and costs money. Run it with --paid only after the owner approves the spend (or use --dry to send nothing).";
 export const REFUSE_NO_KEY =
   "Refused: ANTHROPIC_API_KEY is not set. It is read from .env.hosted by npm run check:setup-reader.";
+// Calls counted by this check are reads. The Anthropic SDK also retries a
+// request on its own after a 429, a 5xx or a connection error (its default
+// is two retries), so the HTTP requests sent, and the spend, can be higher.
+export const RETRY_NOTE =
+  "Reads counted here are calls to readDocument; the Anthropic SDK retries a request itself after a 429, a 5xx or a connection error (default: two retries), so the requests sent can be more.";
 export const USAGE =
   "Usage: npm run check:setup-reader -- (--dry | --paid) [--only d01,d05] [--model haiku|sonnet] [--out <file>]";
 
@@ -85,6 +94,7 @@ const document = z
       })
       .strict()
       .optional(),
+    mustNotAppear: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict()
   .refine((d) => (d.kind === "image") === (d.mime !== undefined), {
@@ -361,11 +371,16 @@ async function paidRun(
       fallback,
       code: kept.ok ? null : kept.code,
       expectFit: doc.expectFit,
+      fields: fields.length,
       truthRows: score.truthRows,
       rowsRead: score.rowsRead,
       matched: score.matched,
+      matchedByTokens: score.matchedByTokens,
       missed: score.missed,
+      duplicates: score.duplicates,
+      duplicateSamePrice: score.duplicateSamePrice,
       extra: score.extra,
+      extraUnflaggedPriced: score.extraUnflaggedPriced,
       wrongUnflagged: score.wrongUnflagged,
       wrongFlagged: score.wrongFlagged,
       correctFlagged: score.correctFlagged,
@@ -380,9 +395,12 @@ async function paidRun(
         doc.injection && kept.ok
           ? injectionSignals(doc.rows, rows, facts, score, doc.injection)
           : null,
-      personal: doc.personal ? personalHits(rows, facts, doc.personal) : null,
+      personal: doc.personal
+        ? personalHits(rows, facts, doc.personal, doc.mustNotAppear)
+        : null,
     };
     results.push(result);
+    const repeated = new Set(score.repeats.map((p) => p.read));
     const matched = new Set(score.pairs.map((p) => p.read));
     const found = new Set(score.pairs.map((p) => p.truth));
     details.push({
@@ -391,6 +409,9 @@ async function paidRun(
       kind: doc.kind,
       mainPack: doc.mainPack,
       fields: fields.length,
+      model: result.model,
+      fallbackRan: fallback !== "none",
+      fallback,
       reads,
       result,
       failures: failures(result),
@@ -401,11 +422,16 @@ async function paidRun(
       })),
       wrong: score.wrong.map((w) => ({
         flagged: w.flagged,
+        duplicate: w.duplicate,
         truthRow: doc.rows[w.truth],
         readRow: rows[w.read],
       })),
       missed: doc.rows.filter((r, i) => !found.has(i) && !r.optional),
-      extra: rows.filter((_, i) => !matched.has(i)),
+      duplicates: score.repeats.map((p) => ({
+        truthRow: doc.rows[p.truth],
+        readRow: rows[p.read],
+      })),
+      extra: rows.filter((_, i) => !matched.has(i) && !repeated.has(i)),
       facts,
     });
     deps.print(
@@ -420,11 +446,23 @@ async function paidRun(
   for (const r of failing)
     deps.print(`FAIL ${r.id}: ${failures(r).join("; ")}`);
   const code = failing.length ? 1 : 0;
+  const sum = totals(results);
   deps.print(
     failing.length
       ? `${failing.length} document(s) failed the check.`
-      : "No unflagged wrong price, no obeyed instruction, no failed read.",
+      : "No unflagged wrong or unsure price, no instruction obeyed, no failed read, unmatched priced rows within the allowance.",
   );
+  if (results.some((r) => r.personal !== null))
+    deps.print(
+      `Personal data carried over (reported, not failed on): ${sum.personal} row(s) or fact(s) in ${results
+        .filter((r) => r.personal !== null)
+        .map((r) => `${r.id} ${r.personal}`)
+        .join(", ")}.`,
+    );
+  deps.print(
+    `Fallback read ran on ${sum.fallbackRan} of ${results.length} document(s); field lists of ${[...new Set(results.map((r) => r.fields))].sort((x, y) => x - y).join(", ")} fields.`,
+  );
+  deps.print(RETRY_NOTE);
 
   const out = opts.out
     ? resolve(opts.out)
@@ -444,8 +482,15 @@ async function paidRun(
         firstModel: first,
         fallbackModel: fallbackOn ? readerFallbackModel : null,
         forcedModel: opts.model,
+        fallbackRule: {
+          share: FALLBACK_SHARE,
+          minRows: FALLBACK_MIN_ROWS,
+          timeoutMs: READ_TIMEOUT_MS,
+        },
+        retries: RETRY_NOTE,
         exitCode: code,
-        totals: totals(results),
+        personalCarriedOver: sum.personal,
+        totals: sum,
         documents: details,
       },
       null,

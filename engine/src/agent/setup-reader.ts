@@ -60,11 +60,12 @@ type Claim = {
 };
 
 // A heavily flagged long list is read once more with the stronger model.
-const FALLBACK_SHARE = 0.5;
-const FALLBACK_MIN_ROWS = 10;
+// Exported for the reading check (scripts/setup/check-reader.ts).
+export const FALLBACK_SHARE = 0.5;
+export const FALLBACK_MIN_ROWS = 10;
 // A 300-row answer can take well over a minute. The lease (eight minutes,
 // set in setup_read) covers two reads plus the chunk fetch and the result.
-const READ_TIMEOUT_MS = 120_000;
+export const READ_TIMEOUT_MS = 120_000;
 const MAINTAIN_EVERY_MS = 30_000;
 // Loop pauses: after a handled upload, and after a tick that found nothing
 // (or failed).
