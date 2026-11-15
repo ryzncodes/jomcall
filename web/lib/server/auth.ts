@@ -9,7 +9,11 @@ import {
   AppError,
   type Identity,
 } from "../../../packages/contracts/src/index.ts";
-import { turnstileSettings } from "../../../packages/contracts/src/hosting.ts";
+import {
+  signupAllow,
+  signupAllowed,
+  turnstileSettings,
+} from "../../../packages/contracts/src/hosting.ts";
 import { verifyTurnstile } from "../../../packages/contracts/src/turnstile.ts";
 import { appConfig } from "./config.ts";
 import { database } from "./services.ts";
@@ -74,6 +78,20 @@ function clientAddress(request: Request) {
     request.headers.get("x-forwarded-for")?.split(",")[0] ??
     "";
   return forwarded.trim().slice(0, 64) || "unknown";
+}
+// Hosted mode with JOMCALL_SIGNUP_ALLOW set: the address must be on the list
+// or hold a pending invitation. The refusal never says which, and never shows
+// the list. A failed invitation lookup refuses too (fails closed).
+async function requireSignupAllowed(email: string) {
+  const allow = signupAllow();
+  if (!allow || signupAllowed(allow, email)) return;
+  let invited = false;
+  try {
+    invited = await database().signupInvited(email);
+  } catch {
+    console.error("SIGNUP_INVITE_CHECK_FAILED");
+  }
+  if (!invited) throw new AppError("SIGNUP_NOT_ALLOWED", 403);
 }
 export async function handleAuth(request: Request) {
   try {
@@ -146,6 +164,7 @@ export async function handleAuth(request: Request) {
     }
     if (action === "signup") {
       const value = credentials.parse(body);
+      await requireSignupAllowed(value.email);
       const result = await auth.auth.signUp(value);
       checkAuthService(result.error);
       if (result.error) throw new AppError("SIGNUP_FAILED", 422);
