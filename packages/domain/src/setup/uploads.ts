@@ -19,6 +19,7 @@ import {
 } from "../../../contracts/src/setup-upload.ts";
 import { audit, command } from "../../../db/src/receipts.ts";
 import { setupReader } from "../../../inference/src/provider.ts";
+import { SHEET_LIMITS } from "../../../inference/src/sheet-text.ts";
 import { manager, namespace } from "../authorization.ts";
 
 // Whether uploads are accepted. A malformed switch counts as off, so the
@@ -453,7 +454,10 @@ export async function setupUploadRoute(
         const head = Buffer.concat(heads).subarray(0, 16);
         const zip = isZip(head);
         let found = zip ? null : sniff(head);
-        if (!found && !zip && u.kind === "sheet") {
+        // Delimited text over the reader's limit could never be read: refused
+        // before its chunks are read into memory.
+        const long = !found && !zip && u.kind === "sheet" && u.bytes > SHEET_LIMITS.bytes;
+        if (!found && !zip && !long && u.kind === "sheet") {
           const all = (
             await tx.query(
               "select data from app.setup_upload_chunk where org_id=$1 and upload_id=$2 order by seq",
@@ -465,13 +469,13 @@ export async function setupUploadRoute(
         if (!found) {
           // Refused: the bytes are deleted. The row stays as removed, so the
           // 24-hour cap still counts it and the session slot is freed.
-          const code = zip ? "UPLOAD_XLSX" : "UPLOAD_TYPE";
+          const code = zip ? "UPLOAD_XLSX" : long ? "UPLOAD_TOO_LONG" : "UPLOAD_TYPE";
           await tx.query(
             "delete from app.setup_upload_chunk where org_id=$1 and upload_id=$2",
             [ctx.orgId, u.id],
           );
           await tx.query(
-            "update app.setup_upload set state='removed',fail_code=$3 where org_id=$1 and id=$2",
+            "update app.setup_upload set state='removed',fail_code=$3,bytes_deleted_at=now() where org_id=$1 and id=$2",
             [ctx.orgId, u.id, code],
           );
           await audit(tx, ctx, "setup.upload.refused", "setup_upload", u.id, {
@@ -503,7 +507,8 @@ export async function setupUploadRoute(
   }
 
   // remove: allowed in any session state, so the owner can delete an upload
-  // now even after applying. Items the owner confirmed stay.
+  // now even after applying. Items the owner confirmed (and applied ones)
+  // stay; pending ones and ones the owner removed one by one go with it.
   return command(
     tx,
     ctx,
@@ -526,12 +531,12 @@ export async function setupUploadRoute(
           [ctx.orgId, u.id],
         );
         const gone = await tx.query(
-          `delete from app.setup_item where org_id=$1 and session_id=$2 and state='pending'
+          `delete from app.setup_item where org_id=$1 and session_id=$2 and state in ('pending','removed')
            and kind in ('catalogue_row','fact') and payload->>'uploadId'=$3`,
           [ctx.orgId, session.id, u.id],
         );
         await tx.query(
-          "update app.setup_upload set state='removed',lease_until=null where org_id=$1 and id=$2",
+          "update app.setup_upload set state='removed',lease_until=null,bytes_deleted_at=coalesce(bytes_deleted_at,now()) where org_id=$1 and id=$2",
           [ctx.orgId, u.id],
         );
         // Items changed: the open review page must reload.

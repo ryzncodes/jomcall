@@ -534,6 +534,7 @@ test("type is checked by leading bytes, not by name", () =>
         const stored = await x.row(id);
         assert.equal(stored.state, "removed");
         assert.equal(stored.fail_code, code);
+        assert.ok(stored.bytes_deleted_at);
         assert.equal(await x.chunks(id), 0);
         assert.equal(await x.reads(id), 0);
         assert.ok(!(await x.view()).uploads.some((u: any) => u.id === id));
@@ -550,6 +551,34 @@ test("type is checked by leading bytes, not by name", () =>
           code,
         );
       }
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("delimited text over 1 MiB is refused at finish as too long, before it is read", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const line = enc("Item,Harga\n");
+      const big = cat(line, fill(MiB + 1 - line.length, 0x61));
+      const u = await x.upload([big], { kind: "sheet", name: "harga.csv", mime: "text/csv" });
+      assert.equal(u.done.status, 422, JSON.stringify(u.done.body));
+      assert.equal(u.done.body.error.code, "UPLOAD_TOO_LONG");
+      const stored = await x.row(u.id);
+      assert.equal(stored.state, "removed");
+      assert.equal(stored.fail_code, "UPLOAD_TOO_LONG");
+      assert.ok(stored.bytes_deleted_at);
+      assert.equal(await x.chunks(u.id), 0);
+      assert.equal(await x.reads(u.id), 0);
+      // Exactly 1 MiB is still accepted.
+      const ok = await x.upload([cat(line, fill(MiB - line.length, 0x61))], {
+        kind: "sheet",
+        name: "harga.csv",
+        mime: "text/csv",
+      });
+      assert.equal(ok.done.status, 200, JSON.stringify(ok.done.body));
+      assert.equal(ok.done.body.data.kind, "sheet");
     } finally {
       await x.f.close();
     }
@@ -618,7 +647,7 @@ test("another workspace gets 404", () =>
     }
   }));
 
-test("remove deletes chunks and that upload's pending items, keeps confirmed ones", () =>
+test("remove deletes chunks and that upload's pending and removed items, keeps confirmed and applied ones", () =>
   withReader("anthropic", async () => {
     const x = await fixture();
     try {
@@ -646,7 +675,9 @@ test("remove deletes chunks and that upload's pending items, keeps confirmed one
       await add("catalogue_row", `${u.id}:0`, row(u.id, "Potong rambut"));
       await add("catalogue_row", `${u.id}:1`, row(u.id, "Cuci rambut"), "confirmed");
       await add("catalogue_row", `${u.id}:2`, row(u.id, "Gaya"), "removed");
+      await add("catalogue_row", `${u.id}:3`, row(u.id, "Rawatan"), "applied");
       await add("catalogue_row", `${other.id}:0`, row(other.id, "Warna"));
+      await add("catalogue_row", `${other.id}:1`, row(other.id, "Kerinting"), "removed");
       await add("fact", "services_offered", {
         packId: "appointment",
         fieldKey: "services_offered",
@@ -655,6 +686,14 @@ test("remove deletes chunks and that upload's pending items, keeps confirmed one
         language: "mixed",
         uploadId: u.id,
       });
+      await add("fact", "business_name", {
+        packId: "every-business",
+        fieldKey: "business_name",
+        title: "Business name",
+        value: "Kedai Contoh",
+        language: "mixed",
+        uploadId: u.id,
+      }, "removed");
       await add(
         "fact",
         "address",
@@ -669,7 +708,9 @@ test("remove deletes chunks and that upload's pending items, keeps confirmed one
       assert.deepEqual(r.body.data, { removed: true });
       assert.equal(await x.chunks(u.id), 0);
       assert.equal((await x.row(u.id)).state, "removed");
+      assert.ok((await x.row(u.id)).bytes_deleted_at);
       assert.equal(await x.chunks(other.id), 1);
+      assert.equal((await x.row(other.id)).bytes_deleted_at, null);
       const items = (
         await x.q(
           "select key,state from app.setup_item where session_id=$1 order by key",
@@ -680,8 +721,9 @@ test("remove deletes chunks and that upload's pending items, keeps confirmed one
         items.sort(),
         [
           `${other.id}:0=pending`,
+          `${other.id}:1=removed`,
           `${u.id}:1=confirmed`,
-          `${u.id}:2=removed`,
+          `${u.id}:3=applied`,
           "address=pending",
         ].sort(),
       );
@@ -692,8 +734,10 @@ test("remove deletes chunks and that upload's pending items, keeps confirmed one
         [other.id],
       );
       assert.equal((await x.chunk(u.id, 0)).status, 404);
-      // Removing again is harmless.
+      // Removing again is harmless and keeps the first deletion time.
+      const deletedAt = (await x.row(u.id)).bytes_deleted_at;
       assert.equal((await x.remove(u.id)).status, 200);
+      assert.deepEqual((await x.row(u.id)).bytes_deleted_at, deletedAt);
       // An upload left half-sent can be removed too.
       const half = (await x.create({ bytes: 300 })).body.data.id;
       await x.put(half, 0, pdf(100));

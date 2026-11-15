@@ -1266,3 +1266,114 @@ test("setupQuestions skips a question that fills only opening_hours once the sch
   assert.ok(hoursText(ask([])), "asked while no schedule is saved");
   assert.ok(!hoursText(ask(["schedule"])), "not asked once schedule is filled");
 });
+
+// ---- import facts (final review) ----
+// A fact the reader drafted, written as setup_read writes it.
+async function importFact(
+  f: any,
+  sessionId: string,
+  q: any,
+  flagged: boolean,
+) {
+  const key = keyOfQ(q);
+  await f.h.cleanup.query(
+    `insert into app.setup_item(org_id,session_id,kind,key,payload,source,needs_check,check_reason,state)
+     values($1,$2,'fact',$3,$4,'import',$5,$6,'pending')`,
+    [
+      f.h.orgA.id,
+      sessionId,
+      key,
+      JSON.stringify({
+        packId: q.id.split(":")[0],
+        fieldKey: key,
+        title: key,
+        value: "Dibaca daripada fail",
+        language: "mixed",
+        uploadId: crypto.randomUUID(),
+      }),
+      flagged,
+      flagged ? "JomCall was not sure about this value." : null,
+    ],
+  );
+}
+
+test("a flagged import fact leaves its question asked and its fact missing; answering replaces it", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const q = s.questions.find(
+      (x: any) =>
+        x.kind === "fact" && s.missing.some((m: any) => m.key === keyOfQ(x)),
+    );
+    assert.ok(q, "a question for a required fact");
+    await importFact(f, s.session.id, q, true);
+    const v = await get();
+    assert.ok(v.items.some((i: any) => i.key === keyOfQ(q) && i.needsCheck));
+    assert.ok(v.questions.some((x: any) => x.id === q.id));
+    assert.ok(v.missing.some((m: any) => m.key === keyOfQ(q)));
+    const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
+      expectedRevision: v.session.revision,
+      answer: { kind: "fact", text: "Jawapan pemilik" },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const d = r.body.data;
+    const items = d.items.filter((i: any) => i.key === keyOfQ(q));
+    assert.equal(items.length, 1);
+    assert.equal(items[0].source, "interview");
+    assert.equal(items[0].needsCheck, false);
+    assert.equal(items[0].checkReason, null);
+    assert.equal(items[0].payload.value, "Jawapan pemilik");
+    assert.equal(items[0].payload.uploadId, undefined);
+    assert.ok(!d.questions.some((x: any) => x.id === q.id));
+    assert.ok(!d.missing.some((m: any) => m.key === keyOfQ(q)));
+  } finally {
+    await f.close();
+  }
+});
+
+test("an unflagged import fact hides its question and fills its fact", async () => {
+  const { f, start, get } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const q = s.questions.find(
+      (x: any) =>
+        x.kind === "fact" && s.missing.some((m: any) => m.key === keyOfQ(x)),
+    );
+    assert.ok(q, "a question for a required fact");
+    await importFact(f, s.session.id, q, false);
+    const v = await get();
+    assert.ok(!v.questions.some((x: any) => x.id === q.id));
+    assert.ok(!v.missing.some((m: any) => m.key === keyOfQ(q)));
+  } finally {
+    await f.close();
+  }
+});
+
+test("a fact edit cannot set uploadId; the stored one is kept", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const q = s.questions.find((x: any) => x.kind === "fact");
+    await importFact(f, s.session.id, q, false);
+    let v = await get();
+    const item = v.items.find((i: any) => i.key === keyOfQ(q));
+    const stored = item.payload.uploadId;
+    const bad = await f.req("PUT", `${path}/items/${item.id}`, {
+      expectedRevision: v.session.revision,
+      payload: { value: "Baru", uploadId: crypto.randomUUID() },
+    });
+    assert.equal(bad.status, 422);
+    assert.equal(bad.body.error.code, "VALIDATION_ERROR");
+    const ok = await f.req("PUT", `${path}/items/${item.id}`, {
+      expectedRevision: v.session.revision,
+      payload: { value: "Baru" },
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    v = ok.body.data;
+    const after = v.items.find((i: any) => i.id === item.id);
+    assert.equal(after.payload.value, "Baru");
+    assert.equal(after.payload.uploadId, stored);
+  } finally {
+    await f.close();
+  }
+});

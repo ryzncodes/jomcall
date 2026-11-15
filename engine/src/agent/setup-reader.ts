@@ -322,13 +322,23 @@ export class SetupReadWorker {
     let r;
     try {
       r = await this.op("result", upload, lease, payload);
-    } catch {
-      // Refused or failed: the upload must not wait in "reading" to be sent
-      // to the model again and fail the same way.
-      await this.op("fail", upload, lease, { code: "READ_FAILED" }).catch(
+    } catch (e) {
+      if ((e as Error | null)?.message === "INVALID_SETUP_READ_RESULT") {
+        // Refused by setup_read: the upload must not wait in "reading" to be
+        // sent to the model again and refused the same way.
+        await this.op("fail", upload, lease, { code: "READ_FAILED" }).catch(
+          () => undefined,
+        );
+        return log(upload, attempt, "RESULT_REFUSED");
+      }
+      // Any other error (a lost connection, a database restart) is not the
+      // reader's fault: the lease goes back with the attempt returned. If
+      // the release fails too, maintain re-queues the upload when its lease
+      // runs out.
+      await this.op("release", upload, lease, { stopped: true }).catch(
         () => undefined,
       );
-      return log(upload, attempt, "RESULT_REFUSED");
+      return log(upload, attempt, "RESULT_NOT_STORED");
     }
     log(
       upload,
@@ -377,6 +387,8 @@ export class SetupReadWorker {
       parts.push(Buffer.from(c.data, "base64"));
     }
     const data = Buffer.concat(parts);
+    // The joined copy is all that is kept.
+    parts.length = 0;
     if (claim.kind === "image") {
       const mime = IMAGE_MIMES.find((m) => m === claim.mime);
       return mime ? { kind: "image", mime, data } : "UNREADABLE";

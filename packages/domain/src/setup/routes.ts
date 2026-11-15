@@ -62,6 +62,8 @@ const catalogueEdit = setupCataloguePayload
   .omit({ uploadId: true })
   .partial()
   .strict();
+// Editable parts of a staged fact: uploadId stays as stored, as for a row.
+const factEdit = setupFactPayload.omit({ uploadId: true });
 // The stored shape after an edit; rows written in tests may lack uploadId.
 const catalogueStored = setupCataloguePayload.partial({ uploadId: true });
 // The staging slot a question fills: a fact key, "schedule" or "settings".
@@ -88,6 +90,18 @@ const owns = (q: SetupQuestion, i: ItemLike) =>
 // belong to no pack. Questions of a pack that is no longer active never show.
 const packActive = (q: SetupQuestion, active: string[]) =>
   q.kind !== "fact" || active.includes(q.id.split(":")[0]!);
+// A flagged answer read from a document that the owner has not confirmed:
+// apply skips it, so it fills nothing, answers no question and leaves its
+// fact under "still missing" until the owner answers or confirms it.
+const unchecked = (i: {
+  kind: string;
+  state: string;
+  needsCheck?: boolean;
+  needs_check?: boolean;
+}) =>
+  i.kind !== "catalogue_row" &&
+  i.state === "pending" &&
+  (i.needsCheck ?? i.needs_check) === true;
 const bytes = (v: unknown) =>
   new TextEncoder().encode(JSON.stringify(v)).length;
 // Whether applySetup could write this item: the same parse apply runs. A
@@ -383,6 +397,8 @@ export async function setupRoute(
       i.kind !== "catalogue_row" ? 0 : i.needsCheck ? 1 : 2;
     items.sort((a, b) => band(a) - band(b));
     const live = items.filter((i) => i.state !== "removed");
+    // What counts as answered: live items, minus unconfirmed flagged ones.
+    const answered = live.filter((i) => !unchecked(i));
     const confirmed = (
       await tx.query(
         "select field_key from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key is not null",
@@ -393,19 +409,19 @@ export async function setupRoute(
       i.kind === "fact" ? i.key : i.kind === "catalogue_row" ? null : i.kind;
     // Missing: only live items count as filled.
     const filled = new Set<string>(confirmed);
-    for (const i of live) if (slot(i)) filled.add(slot(i)!);
+    for (const i of answered) if (slot(i)) filled.add(slot(i)!);
     // A question can name several facts but stores one; every fact in the
     // fills of an answered frozen question counts as covered.
     const covered = new Set<string>(filled);
     for (const id of session.question_ids) {
       const q = questionById(id);
-      if (q && live.some((i) => owns(q, i)))
+      if (q && answered.some((i) => owns(q, i)))
         for (const f of q.fills)
           if (f.startsWith("facts.")) covered.add(f.slice("facts.".length));
     }
     // Hours live in the schedule, not in the opening_hours fact.
     if (
-      live.some((i) => i.kind === "schedule") ||
+      answered.some((i) => i.kind === "schedule") ||
       (await currentFor({ kind: "schedule", key: "schedule", payload: null })) !==
         undefined
     )
@@ -457,12 +473,14 @@ export async function setupRoute(
       },
       items,
       // The frozen list, minus every question that has an item in any state
-      // (answered, skipped or applied).
+      // (answered, skipped or applied), except an unconfirmed flagged one.
       questions: session.question_ids
         .map((id) => questionById(id))
         .filter(
           (q): q is SetupQuestion =>
-            !!q && packActive(q, active) && !items.some((i) => owns(q, i)),
+            !!q &&
+            packActive(q, active) &&
+            !items.some((i) => owns(q, i) && !unchecked(i)),
         ),
       missing: missingFacts({ ...input, filled: covered, prefer }),
       conflicts,
@@ -548,7 +566,7 @@ export async function setupRoute(
         ) {
           const items = (
             await tx.query(
-              "select id,kind,key,payload,state from app.setup_item where org_id=$1 and session_id=$2",
+              "select id,kind,key,payload,state,needs_check from app.setup_item where org_id=$1 and session_id=$2",
               [ctx.orgId, open.id],
             )
           ).rows;
@@ -569,14 +587,19 @@ export async function setupRoute(
             }
           const filled = new Set<string>(saved);
           for (const i of items) {
-            if (dropped.has(i.id) || i.kind === "catalogue_row") continue;
+            if (dropped.has(i.id) || i.kind === "catalogue_row" || unchecked(i))
+              continue;
             filled.add(i.kind === "fact" ? i.key : i.kind);
           }
           // Keep every id that already has an item, then fill the rest of
           // the 8 slots for the new packs.
           const kept = open.question_ids.filter((id) => {
             const q = questionById(id);
-            return q && packActive(q, active) && items.some((i) => owns(q, i));
+            return (
+              q &&
+              packActive(q, active) &&
+              items.some((i) => owns(q, i) && !unchecked(i))
+            );
           });
           const fresh = setupQuestions({
             mainPack: v.mainPack,
@@ -1040,7 +1063,7 @@ export async function setupRoute(
       if (v.payload !== undefined) {
         const stored = (item.payload ?? {}) as Record<string, unknown>;
         if (item.kind === "fact")
-          merged = { ...stored, ...setupFactPayload.parse(v.payload) };
+          merged = { ...stored, ...factEdit.parse(v.payload) };
         else if (item.kind === "schedule")
           merged = { ...stored, ...setupSchedulePayload.parse(v.payload) };
         else if (item.kind === "settings")

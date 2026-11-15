@@ -104,8 +104,10 @@ begin
     continue;
    end if;
    select * into s from app.setup_session where org_id = u.org_id and id = u.session_id;
+   -- Setup saved before this file was read: SESSION_CLOSED, never read.
    if s.state <> 'open' or u.attempts >= 2 then
-    update app.setup_upload set state = 'failed', fail_code = 'READ_FAILED', lease_token = null, lease_until = null where id = u.id;
+    update app.setup_upload set state = 'failed', fail_code = case when s.state <> 'open' then 'SESSION_CLOSED' else 'READ_FAILED' end,
+     lease_token = null, lease_until = null where id = u.id;
     update app.outbox set delivered_at = now(), lease_until = null where id = o.id;
     continue;
    end if;
@@ -172,9 +174,9 @@ begin
 
   -- result. The session closed while reading: nothing is written.
   if s.state <> 'open' then
-   update app.setup_upload set state = 'failed', fail_code = 'READ_FAILED', lease_token = null, lease_until = null where id = u.id;
+   update app.setup_upload set state = 'failed', fail_code = 'SESSION_CLOSED', lease_token = null, lease_until = null where id = u.id;
    update app.outbox set delivered_at = now(), lease_until = null where id = o.id;
-   return jsonb_build_object('state', 'failed', 'code', 'READ_FAILED');
+   return jsonb_build_object('state', 'failed', 'code', 'SESSION_CLOSED');
   end if;
   if jsonb_typeof(p_data->'rows') is distinct from 'array' or jsonb_array_length(p_data->'rows') > 300
    or jsonb_typeof(p_data->'facts') is distinct from 'array' or jsonb_array_length(p_data->'facts') > 200
@@ -236,7 +238,7 @@ begin
     case
      when d.twice and (x->>'needsCheck')::boolean and d.reason is not null then left(d.reason, 500 - char_length('; listed twice')) || '; listed twice'
      when d.twice then 'listed twice'
-     when (x->>'needsCheck')::boolean then coalesce(left(d.reason, 500), 'The reader was not sure about this row.')
+     when (x->>'needsCheck')::boolean then coalesce(left(d.reason, 500), 'JomCall was not sure about this row.')
     end,
     'pending'
    from d order by d.n
@@ -260,7 +262,7 @@ begin
     jsonb_build_object('packId', x->>'packId', 'fieldKey', x->>'fieldKey', 'title', btrim(x->>'title'), 'value', btrim(x->>'value'),
      'language', 'mixed', 'uploadId', u.id),
     'import', (x->>'needsCheck')::boolean,
-    case when (x->>'needsCheck')::boolean then coalesce(left(nullif(btrim(x->>'checkReason'), ''), 500), 'The reader was not sure about this value.') end,
+    case when (x->>'needsCheck')::boolean then coalesce(left(nullif(btrim(x->>'checkReason'), ''), 500), 'JomCall was not sure about this value.') end,
     'pending'
    from f order by f.n
    on conflict (session_id, kind, key) do update set payload = excluded.payload, source = 'import', needs_check = excluded.needs_check,

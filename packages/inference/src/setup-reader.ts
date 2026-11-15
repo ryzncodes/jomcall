@@ -417,6 +417,17 @@ function imageMatches(mime: string, data: Buffer): boolean {
 }
 
 type Content = Anthropic.ContentBlockParam[];
+// One base64 copy per document: the two concurrent reads of a photo or PDF
+// share the same Buffer, so the second finds the first's text here.
+const base64Text = new WeakMap<Buffer, string>();
+function base64Of(data: Buffer): string {
+  let text = base64Text.get(data);
+  if (text === undefined) {
+    text = data.toString("base64");
+    base64Text.set(data, text);
+  }
+  return text;
+}
 type Built =
   | { content: Content; tag: string | null; sheet: boolean }
   | { code: "UNREADABLE" | "TOO_LONG" };
@@ -428,7 +439,7 @@ async function buildContent(
   if (input.kind === "image") {
     if (input.data.length === 0 || !imageMatches(input.mime, input.data))
       return { code: "UNREADABLE" };
-    const data = input.data.toString("base64");
+    const data = base64Of(input.data);
     if (data.length > READER_LIMITS.imageBase64Bytes)
       return { code: "TOO_LONG" };
     return {
@@ -448,7 +459,7 @@ async function buildContent(
   }
   if (input.kind === "pdf") {
     if (input.data.length === 0) return { code: "UNREADABLE" };
-    const data = input.data.toString("base64");
+    const data = base64Of(input.data);
     if (data.length > READER_LIMITS.pdfBase64Bytes) return { code: "TOO_LONG" };
     return {
       tag: null,

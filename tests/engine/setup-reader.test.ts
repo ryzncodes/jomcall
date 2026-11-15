@@ -528,7 +528,7 @@ test("fallback keeps the better result: a worse or failed fallback keeps the fir
     assert.equal(c.calls.length, 1);
   }));
 
-test("a session applied while reading gets no items", () =>
+test("a session applied while reading gets no items and fails SESSION_CLOSED", () =>
   withFixture(async (x) => {
     const id = await x.paste();
     const { read } = fake(async () => {
@@ -541,7 +541,22 @@ test("a session applied while reading gets no items", () =>
     assert.deepEqual(await x.items(), []);
     const u = await x.upload(id);
     assert.equal(u.state, "failed");
-    assert.equal(u.fail_code, "READ_FAILED");
+    assert.equal(u.fail_code, "SESSION_CLOSED");
+    assert.equal(await x.outboxDone(id), true);
+  }));
+
+test("an upload still queued when the session is applied is failed SESSION_CLOSED at claim, never read", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    const v = await x.view();
+    const applied = await x.f.req("POST", `${x.base}/apply`, { expectedRevision: v.session.revision, replace: [] });
+    assert.equal(applied.status, 200, JSON.stringify(applied.body));
+    const { read, calls } = fake(ok([row("Nasi lemak")]));
+    assert.equal(await (await x.worker(read)).tick(), false);
+    assert.equal(calls.length, 0);
+    const u = await x.upload(id);
+    assert.equal(u.state, "failed");
+    assert.equal(u.fail_code, "SESSION_CLOSED");
     assert.equal(await x.outboxDone(id), true);
   }));
 
@@ -739,6 +754,58 @@ test("a result the SQL refuses ends the upload failed, not reading, after one re
     u = await x.upload(id);
     assert.equal(u.state, "failed");
     assert.deepEqual(await x.items(), []);
+  }));
+
+test("a database error on result that is not a refusal releases the lease with the attempt given back", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    const { read, calls } = fake(ok([row("Nasi lemak")]), ok([row("Nasi lemak")]));
+    const w = await x.worker(read);
+    const op = w.op.bind(w);
+    let broken = true;
+    w.op = async (action: string, upload?: string | null, lease?: string | null, data?: unknown) => {
+      if (action === "result" && broken) throw Error("Connection terminated unexpectedly");
+      return op(action, upload, lease, data);
+    };
+    const logged: string[] = [];
+    const log = console.log;
+    console.log = (m: string) => logged.push(String(m));
+    try {
+      await w.tick();
+    } finally {
+      console.log = log;
+    }
+    let u = await x.upload(id);
+    assert.equal(u.state, "queued");
+    assert.equal(u.attempts, 0);
+    assert.equal(u.lease_token, null);
+    assert.equal(u.fail_code, null);
+    assert.deepEqual(logged, [`SETUP_READ upload=${id} attempt=1 code=RESULT_NOT_STORED`]);
+    // The next tick reads it again and stores the rows.
+    broken = false;
+    await w.tick();
+    assert.equal(calls.length, 2);
+    u = await x.upload(id);
+    assert.equal(u.state, "done");
+    assert.equal((await x.items("catalogue_row")).length, 1);
+  }));
+
+test("a refusal by setup_read on result fails the upload READ_FAILED", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    const { read } = fake(ok([row("Nasi lemak")]));
+    const w = await x.worker(read);
+    const op = w.op.bind(w);
+    // The function's own refusal, as pg reports it.
+    w.op = async (action: string, upload?: string | null, lease?: string | null, data?: unknown) => {
+      if (action === "result") throw Error("INVALID_SETUP_READ_RESULT");
+      return op(action, upload, lease, data);
+    };
+    await w.tick();
+    const u = await x.upload(id);
+    assert.equal(u.state, "failed");
+    assert.equal(u.fail_code, "READ_FAILED");
+    assert.equal(u.lease_token, null);
   }));
 
 test("facts: a dropped pack mid-read, a field not in its pack, and first wins per key", () =>
