@@ -12,6 +12,7 @@ import {
   channelSave,
   conversationList,
   staffReply,
+  type ReplyOutlook,
   templateCreate,
   templateStatus,
 } from "../../../contracts/src/whatsapp.ts";
@@ -21,7 +22,12 @@ import {
   sealCredentials,
   whatsappReadiness,
 } from "../../../whatsapp/src/index.ts";
-import { windowOpen } from "./policy.ts";
+import { decideSend, windowOpen } from "./policy.ts";
+import {
+  consentMarketingSql,
+  consentServiceSql,
+  fallbackSql,
+} from "./send-facts-sql.ts";
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
@@ -79,22 +85,110 @@ async function loadConversation(
   return row;
 }
 
+// What the send rules say about a plain staff text right now, on the same
+// facts the agent process reads in send_claim (shared SQL text, the
+// database clock), read without locks. The worker decides again at send
+// time; this is the outlook, and the queue-time check for hard refusals.
+async function replyOutlook(tx: PoolClient, ctx: TenantContext, id: string) {
+  const facts = (
+    await tx.query(
+      `select coalesce(k.do_not_contact,true) as do_not_contact,coalesce(k.deletion_pending,true) as deletion_pending,
+        coalesce(h.state,'not_connected') as channel_state,c.last_inbound_at,now() as now,
+        ${consentServiceSql} as consent_service,
+        ${consentMarketingSql} as consent_marketing,
+        ${fallbackSql} as fallback,
+        -- A reply-request template already out (or about to go) since the
+        -- customer last wrote. Outside the window a queued reply becomes one.
+        exists(select 1 from app.message q left join app.whatsapp_template t on(t.org_id=q.org_id and t.id=q.template_id)
+          where q.org_id=c.org_id and q.conversation_id=c.id and q.direction='outbound'
+            and (c.last_inbound_at is null or q.created_at>c.last_inbound_at)
+            and ((q.kind='template' and t.purpose='reengage' and q.status not in('failed','blocked'))
+              or q.status in('queued','sending'))) as reply_request_out
+       from app.conversation c left join app.contact k on(k.org_id=c.org_id and k.id=c.contact_id)
+       left join app.whatsapp_channel h on(h.org_id=c.org_id and h.id=c.channel_id)
+       where c.org_id=$1 and c.id=$2`,
+      [ctx.orgId, id],
+    )
+  ).rows[0];
+  if (!facts) throw new AppError("NOT_FOUND", 404);
+  const now = new Date(facts.now).toISOString();
+  const lastInboundAt = facts.last_inbound_at
+    ? new Date(facts.last_inbound_at).toISOString()
+    : null;
+  const decision = decideSend({
+    message: { kind: "text", templateVariables: [], optOutNotice: false },
+    channel: { state: facts.channel_state },
+    contact: {
+      doNotContact: facts.do_not_contact,
+      deletionPending: facts.deletion_pending,
+    },
+    conversation: { lastInboundAt },
+    consent: {
+      service: facts.consent_service,
+      marketing: facts.consent_marketing,
+    },
+    template: null,
+    fallback: facts.fallback,
+    now,
+  });
+  const outlook: ReplyOutlook = !decision.allow
+    ? { allow: false, mode: null, fallback: false, reason: decision.reason }
+    : decision.mode === "text"
+      ? { allow: true, mode: "text", fallback: false, reason: null }
+      : facts.reply_request_out
+        ? // Sending again would only repeat the same template.
+          {
+            allow: false,
+            mode: null,
+            fallback: false,
+            reason: "REPLY_REQUEST_SENT",
+          }
+        : { allow: true, mode: "template", fallback: true, reason: null };
+  return {
+    outlook,
+    window_open: windowOpen(lastInboundAt, now),
+    compliance: {
+      do_not_contact: facts.do_not_contact,
+      deletion_pending: facts.deletion_pending,
+      consent_service: facts.consent_service,
+      consent_marketing: facts.consent_marketing,
+    },
+  };
+}
+
+// Refusals a staff reply cannot get past: refused before anything is stored
+// or taken over. Others (window, channel state) are left to the worker,
+// which stays the final gate for every send.
+export const hardRefusals = new Set([
+  "DO_NOT_CONTACT",
+  "OPTED_OUT",
+  "CONSENT_REQUIRED",
+  "CONTACT_UNAVAILABLE",
+  "REPLY_REQUEST_SENT",
+]);
+
 async function conversationDetail(
   tx: PoolClient,
   ctx: TenantContext,
   id: string,
 ) {
   const row = await loadConversation(tx, ctx, id);
-  const { last_inbound_at } = row;
+  const { outlook, window_open, compliance } = await replyOutlook(tx, ctx, id);
   return {
     ...row,
-    window_open: windowOpen(
-      last_inbound_at ? new Date(last_inbound_at).toISOString() : null,
-      new Date().toISOString(),
-    ),
+    window_open,
+    compliance,
+    reply_outlook: outlook,
     messages: (
       await tx.query(
-        "select * from (select id,direction,author,kind,body,status,error_code,created_at from app.message where org_id=$1 and conversation_id=$2 order by created_at desc,id desc limit 200) recent order by created_at,id",
+        `select * from (select m.id,m.direction,m.author,m.kind,m.body,m.status,m.error_code,m.created_at,
+           case when t.kind like 'notice\\_%' then t.kind end as notice,
+           (m.id=c.disclosure_message_id) is true as disclosure,
+           (m.kind='template' and p.purpose='reengage') is true as reply_request
+          from app.message m join app.conversation c on(c.org_id=m.org_id and c.id=m.conversation_id)
+          left join app.conversation_turn t on(t.org_id=m.org_id and t.id=m.turn_id)
+          left join app.whatsapp_template p on(p.org_id=m.org_id and p.id=m.template_id)
+          where m.org_id=$1 and m.conversation_id=$2 order by m.created_at desc,m.id desc limit 200) recent order by created_at,id`,
         [ctx.orgId, id],
       )
     ).rows,
@@ -358,6 +452,9 @@ export async function whatsappRoute(
           throw new AppError("CONFLICT", 409);
         if (row.state !== "open")
           throw new AppError("CONVERSATION_CLOSED", 409);
+        const { outlook } = await replyOutlook(tx, ctx, id);
+        if (!outlook.allow && hardRefusals.has(outlook.reason))
+          throw new AppError(outlook.reason, 409);
         // A person replying takes the conversation from the agent.
         await tx.query(
           "insert into app.message(org_id,conversation_id,direction,author,kind,body,status,actor_id)values($1,$2,'outbound','staff','text',$3,'queued',$4)",

@@ -175,6 +175,10 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Several top-ups are still waiting for payment. Finish or wait for them first.",
       "Beberapa tambah nilai masih menunggu bayaran. Selesaikan atau tunggu dahulu.",
     ],
+    CONVERSATION_CLOSED: [
+      "This chat is resolved. Replies are closed; a new customer message starts a new chat.",
+      "Perbualan ini selesai. Balasan ditutup; mesej baharu pelanggan memulakan perbualan baharu.",
+    ],
     LOCATION_IN_USE: [
       "Primary or assigned branch cannot be archived.",
       "Cawangan utama atau yang digunakan tidak boleh diarkibkan.",

@@ -41,6 +41,10 @@ Production build and TypeScript pass. Main route capture covers 13 surfaces × 3
 
 Final machine-readable results and screenshots live in `screenshots/remaining/`. Temporary browser scripts and raw outputs live in ignored `output/playwright/remaining/`.
 
+## Local and hosted app: WhatsApp inbox (2026-11-15)
+
+The local and hosted app's `/app/inbox` is no longer the "This channel comes next" placeholder. It is the WhatsApp inbox (`web/components/core/inbox.tsx`) on the real inbox commands, shown only when the `channels` command reports WhatsApp on. Still missing there: calls in the same timeline (`screens.md` defines one Inbox for both), unread tracking, acting on the agent's booking and message proposals, media and template sync. The mock preview's inbox at 4181 is unchanged.
+
 ## Remaining production and QA work
 
 No backend worker, real authentication/RBAC, tenant isolation, OAuth, provider credential checking, SIP/voice service, Meta service, payment processing, official holiday feed, notification scheduler or real recording retention exists. Privacy and terms are clearly marked preview documents; final operator identity, contacts, commercial terms and policy review remain required before launch. Pricing is illustrative and excludes numbers/provider fees/taxes.

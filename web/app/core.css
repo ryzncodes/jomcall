@@ -1372,3 +1372,293 @@
 .setup-finish [tabindex="-1"]:focus {
   outline: none;
 }
+
+/* WhatsApp inbox (local and hosted app). One column on phones: the list,
+   or the open chat with a back button. Two columns from 900px. */
+.wa-inbox {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+.wa-inbox.has-selection .wa-list,
+.wa-inbox:not(.has-selection) .wa-view {
+  display: none;
+}
+.wa-list,
+.wa-view,
+.wa-placeholder,
+.wa-empty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.wa-placeholder {
+  display: none;
+}
+.wa-empty svg,
+.wa-placeholder svg {
+  display: block;
+  color: var(--secondary);
+}
+.wa-placeholder svg {
+  margin: 0 auto 8px;
+}
+.wa-count {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 12px;
+  color: var(--secondary);
+  border-bottom: 1px solid var(--line);
+}
+.wa-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wa-list li + li {
+  border-top: 1px solid var(--line);
+}
+.wa-row {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 14px 16px;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.wa-row[aria-current="true"] {
+  background: var(--wash);
+}
+.wa-row-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.wa-row-top strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wa-row-top time {
+  flex: none;
+  font-size: 12px;
+  color: var(--secondary);
+}
+.wa-snippet {
+  font-size: 13px;
+  color: var(--secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wa-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.wa-tag {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--secondary);
+}
+.wa-tag.attention {
+  border-color: var(--ink);
+  background: var(--accent);
+  color: #23392f;
+  font-weight: 600;
+}
+.wa-view {
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+.wa-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  background: none;
+  border: 0;
+  color: var(--ink);
+  padding: 0;
+  cursor: pointer;
+}
+.wa-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+}
+.wa-head h2 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.wa-head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.wa-compliance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  align-items: center;
+  margin: 0;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--wash);
+  font-size: 12px;
+}
+.wa-compliance dt {
+  color: var(--secondary);
+}
+.wa-compliance dd {
+  margin: 0;
+  font-weight: 600;
+}
+.wa-compliance dd.warn {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.wa-compliance a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.wa-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.wa-message {
+  max-width: min(88%, 560px);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.wa-message.in {
+  justify-self: start;
+  background: var(--surface);
+}
+.wa-message.out {
+  justify-self: end;
+  background: var(--wash);
+}
+.wa-message.refused {
+  border-style: dashed;
+  border-color: var(--secondary);
+}
+.wa-message p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.wa-meta,
+.wa-status {
+  font-size: 11px;
+  color: var(--secondary);
+}
+.wa-why {
+  font-size: 12px;
+  font-weight: 600;
+}
+.wa-size {
+  display: block;
+  font-size: 12px;
+}
+.wa-size.warn {
+  font-weight: 600;
+  color: var(--danger, #b42318);
+}
+.wa-system {
+  justify-self: center;
+  text-align: center;
+  font-size: 12px;
+  color: var(--secondary);
+  max-width: 90%;
+}
+.wa-reply {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.wa-reply label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.wa-reply textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+.wa-reply small {
+  color: var(--secondary);
+  font-size: 12px;
+}
+.wa-reply .button {
+  justify-self: start;
+}
+.wa-outlook {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.wa-outlook.blocked {
+  font-weight: 600;
+}
+.wa-outlook small {
+  display: block;
+  font-weight: 400;
+}
+@media (min-width: 900px) {
+  .wa-inbox {
+    grid-template-columns: 320px minmax(0, 1fr);
+  }
+  .wa-inbox.has-selection .wa-list,
+  .wa-inbox:not(.has-selection) .wa-placeholder {
+    display: block;
+  }
+  .wa-placeholder {
+    padding: 40px;
+    text-align: center;
+    color: var(--secondary);
+  }
+  .wa-back {
+    display: none;
+  }
+}
+.wa-proposals {
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border-left: 3px solid var(--secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
