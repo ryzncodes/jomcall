@@ -16,8 +16,7 @@ import { WhatsAppWorker } from "../../engine/src/whatsapp/worker.ts";
 
 const secret = "inbox-app-secret-" + randomUUID();
 const phone = String(100000000 + Math.floor(Math.random() * 899999999));
-const customer =
-  "6011" + String(Math.floor(Math.random() * 9000000) + 1000000);
+const customer = "6011" + String(Math.floor(Math.random() * 9000000) + 1000000);
 
 async function setup() {
   Object.assign(process.env, {
