@@ -7,6 +7,20 @@ import {
   readerFallbackModel,
   READER_DATA_RULE,
   READER_PRICE_RULE,
+  READER_LINE_RULE,
+  READER_NEW_PRICE_RULE,
+  READER_CONDITION_RULE,
+  READER_DISAGREE_PREFIX,
+  READER_ONE_READ_ROW,
+  READER_FACT_DISAGREE,
+  READER_ONE_READ_FACT,
+  READER_LIMITS,
+  readDocumentChecked,
+  readerKey,
+  reconcileReads,
+  type ReadOk,
+  type ReadRow,
+  type ReadFact,
   type AnthropicLike,
   type ReaderField,
   type ReaderInput,
@@ -848,4 +862,410 @@ test("a sheet with stray quotes and mixed delimiters goes to the model as writte
       '<document-q1>\nItem,Price\n"Roti,1200\nNasi\tlemak,500\n</document-q1>',
     ),
   );
+});
+
+// ---- Double read and price rules ----
+
+test("system text carries the line, new-price and condition rules", async () => {
+  const { seen } = await read({});
+  const system: string = seen[0].body.system;
+  for (const rule of [
+    READER_LINE_RULE,
+    READER_NEW_PRICE_RULE,
+    READER_CONDITION_RULE,
+  ])
+    assert.ok(system.includes(rule));
+  // The two earlier rules are still there, unchanged.
+  assert.ok(system.includes(READER_DATA_RULE));
+  assert.ok(system.includes(READER_PRICE_RULE));
+  assert.match(READER_LINE_RULE, /same line/i);
+  assert.match(READER_NEW_PRICE_RULE, /ONE row with the new price/);
+  assert.match(READER_NEW_PRICE_RULE, /never return the old price/i);
+  for (const word of [/surcharge/i, /from/i, /condition/i, /free above/i])
+    assert.match(READER_CONDITION_RULE, word);
+});
+
+const rr = (
+  item: string,
+  priceSen: number | null,
+  over: Partial<ReadRow> = {},
+): ReadRow => ({
+  item,
+  variant: "",
+  priceSen,
+  unit: "",
+  notes: "",
+  needsCheck: priceSen === null,
+  checkReason: priceSen === null ? "No price was found for this item." : "",
+  ...over,
+});
+const ff = (
+  fieldKey: string,
+  value: string,
+  over: Partial<ReadFact> = {},
+): ReadFact => ({
+  packId: "salon",
+  fieldKey,
+  value,
+  needsCheck: false,
+  checkReason: "",
+  ...over,
+});
+const answer = (
+  rows: ReadRow[],
+  facts: ReadFact[] = [],
+  dropped = 0,
+): ReadOk => ({
+  ok: true,
+  rows,
+  facts,
+  model: readerModel,
+  flaggedShare: rows.length
+    ? rows.filter((r) => r.needsCheck).length / rows.length
+    : 0,
+  dropped,
+});
+
+test("readerKey drops separators and case", () => {
+  assert.equal(readerKey("Teh-O  Ais", ""), readerKey("teh o", "ais"));
+  assert.equal(readerKey("Ｃｕｃｉ"), "cuci");
+  assert.notEqual(readerKey("Teh S"), readerKey("Teh M"));
+});
+
+test("reconcile: identical reads come back unchanged and unflagged", () => {
+  const rows = [
+    rr("Potong rambut", 2500),
+    rr("Cuci rambut", 1250, { variant: "Panjang" }),
+  ];
+  const facts = [ff("opening_hours", "10pg-8mlm")];
+  const out = reconcileReads(
+    answer(rows, facts),
+    answer(structuredClone(rows), structuredClone(facts)),
+  );
+  assert.deepEqual(out, answer(rows, facts));
+  assert.equal(out.flaggedShare, 0);
+});
+
+test("reconcile: a price slipped one line down is flagged on every row it touches", () => {
+  // Read A: Pedicure lost its price, Threading took Pedicure's.
+  // Read B: Pedicure right, Threading took the next line's price.
+  const a = answer([
+    rr("Manicure", 3500),
+    rr("Pedicure", null),
+    rr("Threading", 800),
+  ]);
+  const b = answer([
+    rr("Manicure", 3500),
+    rr("Pedicure", 800),
+    rr("Threading", 45000),
+  ]);
+  const out = reconcileReads(a, b);
+  assert.deepEqual(
+    out.rows.map((r) => r.item),
+    ["Manicure", "Pedicure", "Threading"],
+  );
+  const [mani, pedi, thread] = out.rows;
+  assert.equal(mani!.needsCheck, false);
+  assert.equal(pedi!.needsCheck, true);
+  assert.equal(pedi!.priceSen, null);
+  assert.equal(
+    pedi!.checkReason,
+    "Two readings of this document gave different prices (no price and RM 8.00). Please check.",
+  );
+  assert.equal(thread!.needsCheck, true);
+  assert.equal(thread!.priceSen, 800);
+  assert.equal(
+    thread!.checkReason,
+    "Two readings of this document gave different prices (RM 8.00 and RM 450.00). Please check.",
+  );
+  assert.ok(thread!.checkReason.startsWith(READER_DISAGREE_PREFIX));
+  // No row is returned unflagged at a price either read disputes.
+  assert.ok(out.rows.every((r) => !r.needsCheck || r.checkReason));
+  assert.equal(out.flaggedShare, 2 / 3);
+});
+
+test("reconcile: a row only one read found is kept and flagged, placed after its neighbour's match", () => {
+  const a = answer([
+    rr("Nasi lemak", 500),
+    rr("Teh tarik", 200),
+    rr("Kopi", 180),
+  ]);
+  const b = answer([
+    rr("Roti canai", 150),
+    rr("Nasi lemak", 500),
+    rr("Mee goreng", 600),
+    rr("Mee hoon", 600),
+    rr("Kopi", 180),
+  ]);
+  const out = reconcileReads(a, b);
+  // Read A's order; B-only rows after the read-A row paired with their nearest
+  // earlier paired read-B row, or first when there is none.
+  assert.deepEqual(
+    out.rows.map((r) => r.item),
+    ["Roti canai", "Nasi lemak", "Mee goreng", "Mee hoon", "Teh tarik", "Kopi"],
+  );
+  for (const item of ["Roti canai", "Mee goreng", "Mee hoon", "Teh tarik"]) {
+    const r = out.rows.find((x) => x.item === item)!;
+    assert.equal(r.needsCheck, true, item);
+    assert.equal(r.checkReason, READER_ONE_READ_ROW, item);
+  }
+  assert.equal(
+    out.rows.find((x) => x.item === "Nasi lemak")!.needsCheck,
+    false,
+  );
+  assert.equal(out.rows.find((x) => x.item === "Mee goreng")!.priceSen, 600);
+});
+
+test("reconcile: a row flagged by one read only is flagged, with the first non-empty reason", () => {
+  const a = answer([
+    rr("Kek coklat", 9500),
+    rr("Kek pandan", 8000, { needsCheck: true, checkReason: "A" }),
+  ]);
+  const b = answer([
+    rr("Kek coklat", 9500, {
+      needsCheck: true,
+      checkReason: "The price is blurred.",
+    }),
+    rr("Kek pandan", 8000, { needsCheck: true, checkReason: "B" }),
+  ]);
+  const out = reconcileReads(a, b);
+  assert.equal(out.rows[0]!.needsCheck, true);
+  assert.equal(out.rows[0]!.checkReason, "The price is blurred.");
+  assert.equal(out.rows[1]!.checkReason, "A");
+});
+
+test("reconcile: duplicate keys within a read pair in order; separators do not matter", () => {
+  const a = answer([
+    rr("Teh tarik", 200),
+    rr("Teh tarik", 250),
+    rr("Teh-O", 150),
+  ]);
+  const b = answer([
+    rr("teh  tarik", 200),
+    rr("TEH TARIK", 300),
+    rr("Teh O", 150),
+  ]);
+  const out = reconcileReads(a, b);
+  assert.equal(out.rows.length, 3);
+  assert.equal(out.rows[0]!.needsCheck, false);
+  assert.equal(out.rows[0]!.item, "Teh tarik");
+  assert.equal(out.rows[1]!.needsCheck, true);
+  assert.match(out.rows[1]!.checkReason, /\(RM 2\.50 and RM 3\.00\)/);
+  assert.equal(out.rows[2]!.needsCheck, false);
+  assert.equal(out.rows[2]!.item, "Teh-O");
+});
+
+test("reconcile: variant is part of the key", () => {
+  const a = answer([
+    rr("Teh", 200, { variant: "S" }),
+    rr("Teh", 300, { variant: "M" }),
+  ]);
+  const b = answer([
+    rr("Teh", 300, { variant: "M" }),
+    rr("Teh", 200, { variant: "S" }),
+  ]);
+  const out = reconcileReads(a, b);
+  assert.ok(out.rows.every((r) => !r.needsCheck));
+  assert.deepEqual(
+    out.rows.map((r) => r.variant),
+    ["S", "M"],
+  );
+});
+
+test("reconcile: facts agree after spacing, disagree, or come from one read", () => {
+  const a = answer(
+    [],
+    [
+      ff("opening_hours", " Isnin-Sabtu  10pg-8mlm "),
+      ff("walk_in", "Ya"),
+      ff("deposit", "RM20", { needsCheck: true, checkReason: "Faint." }),
+    ],
+  );
+  const b = answer(
+    [],
+    [
+      ff("walk_in", "Tidak"),
+      ff("opening_hours", "Isnin-Sabtu 10pg-8mlm"),
+      ff("deposit", "RM20"),
+      ff("parking", "Ada"),
+    ],
+  );
+  const out = reconcileReads(a, b);
+  const by = (k: string) => out.facts.find((f) => f.fieldKey === k)!;
+  assert.deepEqual(
+    out.facts.map((f) => f.fieldKey),
+    ["opening_hours", "walk_in", "deposit", "parking"],
+  );
+  assert.equal(by("opening_hours").needsCheck, false);
+  assert.equal(by("opening_hours").value, " Isnin-Sabtu  10pg-8mlm ");
+  assert.equal(by("walk_in").value, "Ya");
+  assert.equal(by("walk_in").needsCheck, true);
+  assert.equal(by("walk_in").checkReason, READER_FACT_DISAGREE);
+  assert.equal(by("deposit").needsCheck, true);
+  assert.equal(by("deposit").checkReason, "Faint.");
+  assert.equal(by("parking").needsCheck, true);
+  assert.equal(by("parking").checkReason, READER_ONE_READ_FACT);
+  const onlyA = reconcileReads(answer([], [ff("walk_in", "Ya")]), answer([]));
+  assert.equal(onlyA.facts[0]!.needsCheck, true);
+  assert.equal(onlyA.facts[0]!.checkReason, READER_ONE_READ_FACT);
+});
+
+test("reconcile: flaggedShare is recomputed, dropped is the larger, the model is kept", () => {
+  const out = reconcileReads(
+    answer([rr("A", 100), rr("B", 200)], [], 3),
+    answer([rr("A", 100), rr("B", 250)], [], 5),
+  );
+  assert.equal(out.flaggedShare, 0.5);
+  assert.equal(out.dropped, 5);
+  assert.equal(out.model, readerModel);
+});
+
+test("reconcile: never more than the row cap; read-B-only rows past it count as dropped", () => {
+  const n = READER_LIMITS.rows;
+  const a = answer(
+    Array.from({ length: n - 2 }, (_, i) => rr(`A ${i}`, 100)),
+    [],
+    1,
+  );
+  const b = answer(
+    Array.from({ length: 5 }, (_, i) => rr(`B ${i}`, 100)),
+    [],
+    0,
+  );
+  const out = reconcileReads(a, b);
+  assert.equal(out.rows.length, n);
+  assert.equal(out.dropped, 1 + 3);
+  assert.deepEqual(
+    out.rows.slice(0, 2).map((r) => r.item),
+    ["B 0", "B 1"],
+  );
+});
+
+// A fake client that answers each call with the next canned reply.
+function sequence(...replies: Reply[]) {
+  const seen: {
+    body: Record<string, any>;
+    options?: { signal?: AbortSignal };
+  }[] = [];
+  let i = 0;
+  const client = {
+    messages: {
+      async create(
+        body: Record<string, any>,
+        options?: { signal?: AbortSignal },
+      ) {
+        seen.push({ body, options });
+        const reply = replies[Math.min(i++, replies.length - 1)]!;
+        return fake(reply).client.messages.create(body as never, options);
+      },
+    },
+  };
+  return { client: client as unknown as AnthropicLike, seen };
+}
+const jpeg: ReaderInput = {
+  kind: "image",
+  mime: "image/jpeg",
+  data: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]),
+};
+const pdfInput: ReaderInput = {
+  kind: "pdf",
+  data: Buffer.from("%PDF-1.4 fake"),
+};
+
+test("checked read: a photo is read twice in separate requests and the answers compared", async () => {
+  const signal = new AbortController().signal;
+  const { client, seen } = sequence(
+    {
+      json: {
+        rows: [
+          row({ item: "Pedicure", priceSen: null }),
+          row({ item: "Threading", priceSen: 800 }),
+        ],
+        facts: [],
+      },
+    },
+    {
+      json: {
+        rows: [
+          row({ item: "Pedicure", priceSen: 800 }),
+          row({ item: "Threading", priceSen: 45000 }),
+        ],
+        facts: [],
+      },
+    },
+  );
+  const out = ok(
+    await readDocumentChecked(jpeg, fields, {
+      client,
+      signal,
+      model: readerFallbackModel,
+    }),
+  );
+  assert.equal(seen.length, 2);
+  assert.notEqual(seen[0]!.body, seen[1]!.body);
+  for (const s of seen) {
+    assert.equal(s.body.model, readerFallbackModel);
+    assert.equal(s.options?.signal, signal);
+    assert.equal(s.body.messages[0].content[0].type, "image");
+  }
+  assert.ok(out.rows.every((r) => r.needsCheck));
+  assert.deepEqual(
+    out.rows.map((r) => r.priceSen),
+    [null, 800],
+  );
+});
+
+test("checked read: a PDF is read twice; identical answers come back as one unflagged read", async () => {
+  const reply = { json: { rows: [row()], facts: [fact()] } };
+  const { client, seen } = sequence(reply, reply);
+  const out = ok(await readDocumentChecked(pdfInput, fields, { client }));
+  assert.equal(seen.length, 2);
+  assert.equal(seen[0]!.body.model, readerModel);
+  assert.equal(out.rows.length, 1);
+  assert.equal(out.rows[0]!.needsCheck, false);
+  assert.equal(out.facts[0]!.needsCheck, false);
+});
+
+test("checked read: sheet and text are read once", async () => {
+  for (const input of [
+    textInput,
+    {
+      kind: "sheet",
+      data: Buffer.from("Item,Price\nKopi,1.80\n"),
+      name: "a.csv",
+    },
+  ] as ReaderInput[]) {
+    const { client, seen } = sequence({ json: { rows: [row()], facts: [] } });
+    const out = ok(await readDocumentChecked(input, fields, { client }));
+    assert.equal(seen.length, 1, input.kind);
+    assert.equal(out.rows[0]!.needsCheck, false);
+  }
+});
+
+test("checked read: either read failing fails it; both failing gives the first read's code", async () => {
+  const good = { json: { rows: [row()], facts: [] } };
+  let r = await readDocumentChecked(jpeg, fields, {
+    client: sequence(good, { stop_reason: "refusal" }).client,
+  });
+  assert.deepEqual(r, { ok: false, code: "REFUSED" });
+  r = await readDocumentChecked(jpeg, fields, {
+    client: sequence({ text: "not json" }, good).client,
+  });
+  assert.deepEqual(r, { ok: false, code: "UNREADABLE" });
+  r = await readDocumentChecked(pdfInput, fields, {
+    client: sequence(
+      { stop_reason: "max_tokens" },
+      { fail: Object.assign(Error("x"), { status: 400 }) },
+    ).client,
+  });
+  assert.deepEqual(r, { ok: false, code: "TOO_LONG" });
+  // A document refused before any request is refused once, not sent at all.
+  const { client, seen } = sequence(good);
+  r = await readDocumentChecked(
+    { kind: "image", mime: "image/png", data: Buffer.from("nope") },
+    fields,
+    { client },
+  );
+  assert.deepEqual(r, { ok: false, code: "UNREADABLE" });
+  assert.equal(seen.length, 0);
 });

@@ -12,6 +12,9 @@ import {
 } from "../../engine/src/agent/setup-reader.ts";
 import {
   readerFallbackModel,
+  readerModel,
+  READER_DISAGREE_PREFIX,
+  type AnthropicLike,
   type ReadResult,
   type ReadRow,
   type ReadFact,
@@ -76,9 +79,13 @@ async function fixture() {
   const sessionId = started.body.data.session.id as string;
   const q = (sql: string, args: unknown[] = []) => f.h.cleanup.query(sql, args);
   const workers: SetupReadWorker[] = [];
-  const worker = async (read: ReadFn, opts: { enabled?: boolean; ns?: string; timeoutMs?: number } = {}) => {
+  const worker = async (
+    read: ReadFn | undefined,
+    opts: { enabled?: boolean; ns?: string; timeoutMs?: number; client?: AnthropicLike } = {},
+  ) => {
     const w = await SetupReadWorker.create(opts.ns ?? f.h.namespace, {
-      read,
+      ...(read ? { read } : {}),
+      ...(opts.client ? { client: opts.client } : {}),
       enabled: opts.enabled ?? true,
       // Every tick runs maintain here; the process default is every 30 s.
       maintainEveryMs: 0,
@@ -91,6 +98,16 @@ async function fixture() {
     const r = await f.req("POST", `${up}/text`, { text });
     assert.equal(r.status, 200, JSON.stringify(r.body));
     return r.body.data.id as string;
+  };
+  // A PDF upload sent in one chunk and finished.
+  const pdfUpload = async (data: Buffer, name = "senarai.pdf") => {
+    const c = await f.req("POST", up, { kind: "pdf", name, mime: "application/pdf", bytes: data.length });
+    assert.equal(c.status, 200, JSON.stringify(c.body));
+    const id = c.body.data.id as string;
+    const r = await f.api.raw(f.h.alice, f.h.orgA.id, "PUT", `/api/v1${up}/${id}/chunks/0`, data);
+    assert.equal(r.status, 200);
+    assert.equal((await f.req("POST", `${up}/${id}/finish`, {})).status, 200);
+    return id;
   };
   const view = async () => (await f.req("GET", base)).body.data;
   const upload = async (id: string) =>
@@ -118,7 +135,7 @@ async function fixture() {
     for (const w of workers) await w.close();
     await f.close();
   };
-  return { f, agentId, base, up, sessionId, q, worker, paste, view, upload, chunks, outboxDone, items, close };
+  return { f, agentId, base, up, sessionId, q, worker, paste, pdfUpload, view, upload, chunks, outboxDone, items, close };
 }
 type Fx = Awaited<ReturnType<typeof fixture>>;
 async function withFixture(run: (x: Fx) => Promise<void>) {
@@ -861,3 +878,69 @@ test("the SQL's base pack id is the TypeScript basePack", async () => {
     await pool.end();
   }
 });
+
+// ---- Double read: photos and PDFs ----
+
+test("a PDF goes to the reader once (the checked read inside it) and never to the fallback", () =>
+  withFixture(async (x) => {
+    const pdf = Buffer.from("%PDF-1.4\nsenarai harga\n");
+    const id = await x.pdfUpload(pdf);
+    // Heavily flagged and long: a text upload would get the fallback.
+    const { read, calls } = fake(ok(flaggedRows(10, 8)));
+    await (await x.worker(read)).tick();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]!.input.kind, "pdf");
+    assert.equal(calls[0]!.model, undefined);
+    assert.equal((await x.upload(id)).state, "done");
+    assert.equal((await x.items("catalogue_row")).length, 10);
+  }));
+
+test("by default a PDF is read twice through the client and the reconciled rows are stored", () =>
+  withFixture(async (x) => {
+    const pdf = Buffer.from("%PDF-1.4\nsenarai harga\n");
+    const id = await x.pdfUpload(pdf);
+    // Ten rows; the second read disagrees on six prices: 60% flagged after
+    // the comparison, which would trigger a fallback on a text upload.
+    const answer = (shift: number) => ({
+      rows: Array.from({ length: 10 }, (_, i) => ({
+        item: `Servis ${i + 1}`,
+        variant: "",
+        priceSen: 1000 * (i + 1) + (i < 6 ? shift : 0),
+        unit: "",
+        notes: "",
+        needsCheck: false,
+        checkReason: "",
+      })),
+      facts: [],
+    });
+    const bodies: Record<string, any>[] = [];
+    const client = {
+      messages: {
+        async create(body: Record<string, any>) {
+          bodies.push(body);
+          return {
+            id: `msg_${bodies.length}`,
+            type: "message",
+            role: "assistant",
+            model: body.model,
+            content: [{ type: "text", text: JSON.stringify(answer(bodies.length === 1 ? 0 : 50)) }],
+            stop_reason: "end_turn",
+            stop_sequence: null,
+            usage: { input_tokens: 1, output_tokens: 1 },
+          };
+        },
+      },
+    } as unknown as AnthropicLike;
+    await (await x.worker(undefined, { client })).tick();
+    assert.equal(bodies.length, 2);
+    assert.ok(bodies.every((b) => b.model === readerModel));
+    assert.ok(bodies.every((b) => b.messages[0].content[0].type === "document"));
+    assert.equal((await x.upload(id)).state, "done");
+    const rows = await x.items("catalogue_row");
+    assert.equal(rows.length, 10);
+    const flagged = rows.filter((r) => r.needs_check);
+    assert.equal(flagged.length, 6);
+    assert.ok(flagged.every((r) => r.check_reason.startsWith(READER_DISAGREE_PREFIX)));
+    // The first read's price is kept on a disputed row.
+    assert.equal(rows.find((r) => r.payload.item === "Servis 1")!.payload.priceSen, 1000);
+  }));

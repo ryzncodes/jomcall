@@ -1,6 +1,6 @@
 // Guided setup document import, read side, in the agent process. Claims one
-// queued upload per tick, assembles its bytes, reads it with readDocument and
-// writes draft price rows and facts through app_private.setup_read, which
+// queued upload per tick, assembles its bytes, reads it with
+// readDocumentChecked (a photo or PDF twice, compared) and writes draft price rows and facts through app_private.setup_read, which
 // re-checks the lease and the session under row locks. Only the upload id,
 // the attempt and a code are ever logged: never a file name, row text, fact
 // text or key.
@@ -23,6 +23,7 @@ import {
 } from "../../../packages/domain/src/packs/index.ts";
 import {
   readDocument,
+  readDocumentChecked,
   readerFallbackModel,
   type AnthropicLike,
   type ReaderField,
@@ -31,9 +32,12 @@ import {
 } from "../../../packages/inference/src/setup-reader.ts";
 import { sharedAnthropicClient } from "../../../packages/inference/src/anthropic-voice.ts";
 
+// readDocumentChecked has this same shape.
 export type ReadFn = typeof readDocument;
 export type SetupReadDeps = {
-  // Tests always pass a fake; otherwise readDocument on the shared client.
+  // Tests pass a fake read, or a fake client with the default read;
+  // otherwise readDocumentChecked on the shared client (photos and PDFs are
+  // read twice and compared, delimited and pasted text once).
   read?: ReadFn;
   client?: AnthropicLike;
   // Defaults to JOMCALL_SETUP_READER === "anthropic". Off: maintenance still
@@ -59,12 +63,28 @@ type Claim = {
   questionIds: string[];
 };
 
-// A heavily flagged long list is read once more with the stronger model.
-// Exported for the reading check (scripts/setup/check-reader.ts).
+// A heavily flagged long delimited or pasted list is read once more with the
+// stronger model. Photos and PDFs are not: they are already read twice and
+// compared, and a disagreement flag is the answer, not a reason to read
+// again. Exported for the reading check (scripts/setup/check-reader.ts).
 export const FALLBACK_SHARE = 0.5;
 export const FALLBACK_MIN_ROWS = 10;
-// A 300-row answer can take well over a minute. The lease (eight minutes,
-// set in setup_read) covers two reads plus the chunk fetch and the result.
+export const FALLBACK_KINDS: readonly ReaderInput["kind"][] = ["sheet", "text"];
+export function wantsFallback(
+  input: ReaderInput,
+  result: ReadResult,
+): result is Ok {
+  return (
+    FALLBACK_KINDS.includes(input.kind) &&
+    result.ok &&
+    result.flaggedShare > FALLBACK_SHARE &&
+    result.rows.length >= FALLBACK_MIN_ROWS
+  );
+}
+// A 300-row answer can take well over a minute. One timeout covers a read:
+// both concurrent requests of a photo or PDF share it. The lease (eight
+// minutes, set in setup_read) covers two reads plus the chunk fetch and the
+// result.
 export const READ_TIMEOUT_MS = 120_000;
 const MAINTAIN_EVERY_MS = 30_000;
 // Loop pauses: after a handled upload, and after a tick that found nothing
@@ -183,7 +203,7 @@ export class SetupReadWorker {
       : () => deps.client ?? sharedAnthropicClient();
     return new SetupReadWorker(
       namespace,
-      deps.read ?? readDocument,
+      deps.read ?? readDocumentChecked,
       client,
       enabled,
       deps.timeoutMs ?? READ_TIMEOUT_MS,
@@ -278,13 +298,9 @@ export class SetupReadWorker {
     const fields = readerFields(claim);
     let result = await this.readOnce(input, fields);
     // Inside the same lease; not a second attempt. A failed, shorter or
-    // more heavily flagged fallback keeps the first result.
-    if (
-      result.ok &&
-      result.flaggedShare > FALLBACK_SHARE &&
-      result.rows.length >= FALLBACK_MIN_ROWS &&
-      !this.stop.signal.aborted
-    )
+    // more heavily flagged fallback keeps the first result. Delimited and
+    // pasted text only.
+    if (wantsFallback(input, result) && !this.stop.signal.aborted)
       result = better(
         result,
         await this.readOnce(input, fields, readerFallbackModel),
