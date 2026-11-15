@@ -1,5 +1,23 @@
 # Handoff
 
+## 2026-11-15 — WhatsApp inbox review fixes
+
+Branch `claude/whatsapp-inbox-341dbf`, pull request #25 (not merged). All 15 review points; list in `docs/superpowers/plans/2026-11-15-whatsapp-inbox.md` ("Review fixes").
+
+**Changed**
+- `replyConversation` refuses hard refusals before storing (`DO_NOT_CONTACT`, `OPTED_OUT`, `CONSENT_REQUIRED`, `CONTACT_UNAVAILABLE`, `REPLY_REQUEST_SENT`, 409); the worker stays the final gate. Owner may overrule.
+- Outlook SQL shared with `send_claim` (`packages/domain/src/whatsapp/send-facts-sql.ts`, drift guard), database clock; messages gain `reply_request`.
+- Screen: one idempotency key per draft, last-four masking, poll sequence counter, byte counter, header errors, caps notes, Back returns to the list, BM wording. Pure rules in `web/lib/core/inbox-rules.ts`.
+- `tests/engine/whatsapp-flow.test.ts`: the no-consent staff reply now expects a 409 `CONSENT_REQUIRED` instead of a stored blocked message.
+
+**Verified (2026-11-15)**
+- `npm run typecheck` pass; `npm run test:guards` 45 of 45; `npm run build:local`, `build:mock`, `build:hosted` pass.
+- `tests/domain/whatsapp-inbox-rules.test.ts` 6 of 6. `tests/api/whatsapp-inbox.test.ts` 10 of 12 subtests: the two failing need an agent reply and fail on the shared database's metering migration (as before).
+
+**Not verified**
+- `tests/engine/whatsapp-flow.test.ts`: its edited subtest cannot reach the edited lines on the shared database (an earlier agent-reply subtest fails on metering and leaves do-not-contact on). Covered instead by the inbox API test's `CONSENT_REQUIRED` refusal.
+- Merge step: after the metering pull request (26) merges, rebase and call `entitle()` for the inbox test's organization.
+
 ## 2026-11-15 — WhatsApp inbox screen
 
 Branch `claude/whatsapp-inbox-341dbf`, pull request #25 (not merged). Plan and deviations: `docs/superpowers/plans/2026-11-15-whatsapp-inbox.md`.
