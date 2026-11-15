@@ -176,26 +176,28 @@ export async function setupRoute(
 
   // The agent's confirmed catalogue rows a set of staged price rows could
   // match, oldest first, in one query. planRows decides the matches (same
-  // rowKey as the item or an alias); this query only narrows the rows read: a
-  // match has the same whole-name lookup key, which lookup_keys holds for
-  // names up to 60 characters. Rows whose keys may have been cut (40 keys)
-  // and, when a staged name is longer, rows with a long item or alias are
-  // read as well. Rows of other agents and organizations are never read.
+  // rowKey as the item or an alias); this query only narrows the rows read.
+  // A match has the same whole-name lookup key (normaliseCode), which
+  // lookup_keys holds when it is at most 60 UTF-16 units and was not cut by
+  // the 40-key limit, so the query reads rows sharing one of those keys plus
+  // rows with 40 keys. When any staged name is long (key over 40 code
+  // points, or a lookup key over 60 units or empty), it reads every confirmed
+  // row of the agent instead (at most 10,000). Rows of other agents and
+  // organizations are never read.
   const existingFor = async (rows: StagedInput[]): Promise<ExistingRow[]> => {
     const read = rows.map((r) => stagedRow(r.payload)).filter((r) => r.key);
-    const codes = [
-      ...new Set(read.map((r) => r.code).filter((c) => c && c.length <= 60)),
-    ];
-    const long = read.some((r) => !r.code || r.code.length > 60);
-    if (!codes.length && !long) return [];
+    if (!read.length) return [];
+    const all = read.some(
+      (r) => [...r.key].length > 40 || !r.code || r.code.length > 60,
+    );
+    const codes = [...new Set(read.map((r) => r.code))];
     return (
       await tx.query(
         `select id,item,aliases,price_sen,attributes from app.catalogue_row
          where org_id=$1 and agent_id=$2 and status='confirmed'
-          and (lookup_keys && $3::text[] or cardinality(lookup_keys) >= 40
-           or ($4 and (char_length(item) > 50 or exists(select 1 from unnest(aliases) a where char_length(a) > 50))))
+          and ($4 or lookup_keys && $3::text[] or cardinality(lookup_keys) >= 40)
          order by created_at,id`,
-        [ctx.orgId, agentId, codes, long],
+        [ctx.orgId, agentId, codes, all],
       )
     ).rows.map((f) => ({
       id: f.id,
@@ -219,19 +221,13 @@ export async function setupRoute(
 
   // What an item would replace: the confirmed value already on the agent, or
   // undefined when the target is empty. The review page's conflicts and
-  // applySetup's "kept unless named in replace" both read this (price rows
-  // go through planRows instead, in one query for all of them).
+  // applySetup's "kept unless named in replace" both read this. Price rows
+  // go through planRows instead, in one query for all of them.
   const currentFor = async (i: {
     kind: string;
     key: string;
     payload: unknown;
   }): Promise<unknown> => {
-    if (i.kind === "catalogue_row") {
-      const one = { id: "row", state: "confirmed", needsCheck: false, payload: i.payload };
-      const hit = planRows([one], await existingFor([one]), new Set()).plans[0]!
-        .target;
-      return hit ? { item: hit.item, priceSen: hit.priceSen } : undefined;
-    }
     if (i.kind === "fact") {
       const packId = (i.payload as { packId?: unknown } | null)?.packId;
       const hit = (
@@ -355,6 +351,7 @@ export async function setupRoute(
       new Set(),
     );
     const planOf = new Map(planned.plans.map((x) => [x.id, x]));
+    const position = new Map(liveRows.map((x, k) => [x.id, k]));
     const items: Setup["items"] = rows.map((r) => {
       const plan = planOf.get(r.id);
       return {
@@ -366,11 +363,14 @@ export async function setupRoute(
         needsCheck: r.needs_check,
         checkReason: r.check_reason,
         state: r.state,
-        ...(plan ? { outcome: plan.outcome } : {}),
+        ...(plan
+          ? { outcome: plan.outcome, position: position.get(r.id)! }
+          : {}),
         ...(plan?.duplicateOf ? { duplicateOf: plan.duplicateOf } : {}),
         ...(plan?.target
           ? {
               current: {
+                id: plan.target.id,
                 item: plan.target.item,
                 priceSen: plan.target.priceSen,
               },
@@ -810,21 +810,19 @@ export async function setupRoute(
         );
         written.push(...inserts.map((x) => x.id));
         // Replacing changes only the existing row's price and the unit and
-        // notes in its attributes; its item, aliases and lookup keys stay.
-        // The search text holds the attributes, so it is rebuilt from the
-        // existing item and aliases. When the merged attributes would break
-        // the column check (on the jsonb text, so tested in SQL), the
-        // attributes and search text stay as they were and only the price
-        // changes.
+        // notes in its attributes, and only those the staged row has (an
+        // empty unit or notes keeps the existing one); its item, aliases and
+        // lookup keys stay. The search text holds the attributes, so it is
+        // rebuilt from the existing item and aliases. When the merged
+        // attributes would break the column check (on the jsonb text, so
+        // tested in SQL), the attributes and search text stay as they were
+        // and only the price changes.
         for (const { id, row, target } of updates) {
-          const merged = { ...target!.attributes };
-          delete merged.unit;
-          delete merged.notes;
-          Object.assign(merged, row.attributes);
+          const merged = { ...target!.attributes, ...row.attributes };
           await tx.query(
             `update app.catalogue_row set price_sen=$1,
-              attributes=case when octet_length(((attributes-'unit'-'notes')||$2::jsonb)::text)<=4000 then (attributes-'unit'-'notes')||$2::jsonb else attributes end,
-              search_text=case when octet_length(((attributes-'unit'-'notes')||$2::jsonb)::text)<=4000 then $3 else search_text end,
+              attributes=case when octet_length((attributes||$2::jsonb)::text)<=4000 then attributes||$2::jsonb else attributes end,
+              search_text=case when octet_length((attributes||$2::jsonb)::text)<=4000 then $3 else search_text end,
               revision=revision+1,updated_at=now()
              where org_id=$4 and agent_id=$5 and id=$6`,
             [
@@ -1063,22 +1061,23 @@ export async function setupRoute(
         }
         if (bytes(merged) > 8000) throw new AppError("VALUE_TOO_LARGE", 422);
       }
-      // Editing a live price row confirms it once it has a name and a price,
-      // unless the request names a state. Other kinds keep their state.
-      // A price row is confirmed by an edit only when the request carries
-      // priceSen (the owner acted on the price) and the row is then complete,
-      // unless the request names a state. Edits to item, variant, unit or
-      // notes alone leave the state and the flag as they were. Other kinds
-      // keep their state.
+      // A price row is confirmed by an edit only when the request's priceSen
+      // differs from the stored one (the owner changed the price) and the row
+      // is then complete, unless the request names a state. Resending the
+      // stored price, or editing item, variant, unit or notes alone, leaves
+      // the state and the flag as they were. Other kinds keep their state.
       const isRow = item.kind === "catalogue_row";
       const pricedEdit =
         isRow &&
         merged !== undefined &&
         Object.prototype.hasOwnProperty.call(v.payload, "priceSen") &&
+        (merged as Record<string, unknown>).priceSen !==
+          (item.payload as Record<string, unknown> | null)?.priceSen &&
         ["pending", "confirmed"].includes(item.state) &&
         complete(item.kind, merged);
       const state = v.state ?? (pricedEdit ? "confirmed" : item.state);
-      const confirms = isRow && (v.state === "confirmed" || (!v.state && pricedEdit));
+      const confirms =
+        isRow && (v.state === "confirmed" || (!v.state && pricedEdit));
       // A pending or confirmed item must be complete for its kind, so apply
       // never fails on it later (a skipped fact has no value, for example).
       // A pending price row may lack a price: apply skips it as no_price.

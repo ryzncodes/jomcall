@@ -1,7 +1,12 @@
 // The price-row planner on its own: no database.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { builtinModules } from "node:module";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
+  planFromView,
   planRows,
   rowKey,
   stagedRow,
@@ -36,9 +41,16 @@ const existing = (id: string, item: string, aliases: string[] = []): ExistingRow
 const outcomes = (r: ReturnType<typeof planRows>) =>
   r.plans.map((p) => [p.id, p.outcome, p.duplicateOf ?? p.target?.id ?? null]);
 
-test("rowKey: punctuation, case and spacing do not matter; marks, letters and digits do", () => {
-  assert.equal(rowKey("Kopi O"), rowKey("kopi-o"));
-  assert.equal(rowKey("  KOPI   o "), "kopi o");
+test("rowKey: separators, punctuation and case do not matter; marks, letters and digits do", () => {
+  for (const [a, b] of [
+    ["Kopi O", "kopi-o"],
+    ["Kopi O", "KopiO"],
+    ["NS-40", "NS40"],
+    ["195/55R15", "195/55 R15"],
+    ["Teh O", "TehO"],
+  ])
+    assert.equal(rowKey(a!), rowKey(b!), `${a} = ${b}`);
+  assert.equal(rowKey("  KOPI   o "), "kopio");
   assert.notEqual(rowKey("பால்"), rowKey("பல்"));
   assert.equal(rowKey("😀"), "");
   assert.equal(rowKey("❤️"), "");
@@ -53,7 +65,7 @@ test("stagedRow joins item and variant, collapses whitespace and cuts to the col
   const r = stagedRow({ item: "  Syampu \t herba ", variant: " 500  ml", priceSen: 1200, unit: " botol ", notes: "" });
   assert.equal(r.item, "Syampu herba 500 ml");
   assert.deepEqual(r.attributes, { unit: "botol" });
-  assert.equal(r.key, "syampu herba 500 ml");
+  assert.equal(r.key, "syampuherba500ml");
   assert.equal(stagedRow({ item: "😀".repeat(250), priceSen: 1 }).item, "😀".repeat(200));
   assert.equal(stagedRow({ item: "x", priceSen: "12" }).priceSen, null);
   assert.equal(stagedRow({ item: "x", priceSen: 1.5 }).priceSen, null);
@@ -152,4 +164,99 @@ test("planRows: skipped rows never claim a key or show as conflicts", () => {
   assert.equal(r.totals.conflicts, 0);
   // They still show the current row.
   assert.equal(r.plans[0]!.target?.id, "e1");
+});
+
+test("planRows: a staged name with separators matches an existing code-like item", () => {
+  const ns40 = { ...existing("e", "NS40"), priceSen: 20000 };
+  const row = staged("NS-40", { priceSen: 22000 });
+  assert.deepEqual(outcomes(planRows([row], [ns40], new Set())), [[row.id, "conflict", "e"]]);
+  assert.deepEqual(outcomes(planRows([row], [ns40], new Set([row.id]))), [[row.id, "update", "e"]]);
+});
+
+test("planFromView re-plans the view's price rows with the owner's replace choice", () => {
+  const current = { id: "e1", item: "Kopi O", priceSen: 200 };
+  const item = (id: string, position: number, extra: Record<string, unknown> = {}) => ({
+    id,
+    kind: "catalogue_row" as const,
+    key: `u:${position}`,
+    payload: { item: "Kopi O", variant: "", priceSen: 250, unit: "", notes: "" },
+    source: "import" as const,
+    needsCheck: false,
+    checkReason: null,
+    state: "pending" as const,
+    outcome: "conflict" as const,
+    position,
+    current,
+    ...extra,
+  });
+  // Listed out of document order (as the view lists flagged rows first).
+  const items = [
+    item("newer", 1),
+    item("older", 0),
+    { ...item("gone", 2), state: "removed" as const, outcome: undefined },
+    { id: "f", kind: "fact" as const, key: "address", payload: {}, source: "interview" as const, needsCheck: false, checkReason: null, state: "pending" as const },
+  ];
+  const r = planFromView(items, ["newer"]);
+  assert.deepEqual(
+    r.plans.map((p) => [p.id, p.outcome, p.duplicateOf ?? p.target?.id ?? null]),
+    [
+      ["older", "duplicate", "newer"],
+      ["newer", "update", "e1"],
+    ],
+  );
+  assert.equal(r.totals.willWrite, 1);
+  assert.deepEqual(
+    planFromView(items, []).plans.map((p) => p.outcome),
+    ["conflict", "conflict"],
+  );
+});
+
+// The review page imports rows.ts in the browser: nothing it imports, at any
+// depth, may be a Node module, pg, or server code. Type-only imports are
+// erased and are not followed.
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const nodeModules = new Set(builtinModules.flatMap((m) => [m, "node:" + m]));
+function forbiddenImports(start: string) {
+  const seen = new Set<string>();
+  const bad: string[] = [];
+  const walk = (file: string) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const src = readFileSync(file, "utf8");
+    const specs = [
+      ...src.matchAll(/^\s*(?:import|export)\s+(?!type\b)(?:[^'";]*?\sfrom\s+)?["']([^"']+)["']/gm),
+    ].map((m) => m[1]!);
+    for (const spec of specs) {
+      if (spec.startsWith(".")) {
+        const target = resolve(dirname(file), spec);
+        if (/[\\/](db|server|engine)[\\/]/.test(target.slice(root.length)))
+          bad.push(`${file}: ${spec}`);
+        walk(target);
+      } else if (
+        nodeModules.has(spec) ||
+        spec.startsWith("node:") ||
+        spec === "pg" ||
+        spec.startsWith("pg/") ||
+        spec === "server-only"
+      )
+        bad.push(`${file}: ${spec}`);
+    }
+  };
+  walk(resolve(root, start));
+  return { seen, bad };
+}
+
+test("rows.ts and its imports use no Node-only or server modules", () => {
+  const { seen, bad } = forbiddenImports("packages/domain/src/setup/rows.ts");
+  assert.ok(seen.size >= 2, "follows rows.ts's imports");
+  assert.deepEqual(bad, []);
+  // The same walk flags a module that does import Node code.
+  assert.ok(
+    forbiddenImports("packages/domain/src/knowledge/text.ts").bad.some((b) =>
+      b.endsWith("node:crypto"),
+    ),
+  );
+  assert.ok(
+    forbiddenImports("packages/domain/src/setup/routes.ts").bad.length > 0,
+  );
 });

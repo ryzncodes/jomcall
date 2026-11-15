@@ -142,9 +142,13 @@ export type SetupItem = {
   outcome?: SetupRowOutcome;
   // outcome "duplicate": the staged row that is written instead.
   duplicateOf?: string;
+  // With outcome: 0-based document order among those price rows (upload
+  // creation time, then row number). Items are listed flagged first, so the
+  // browser uses this to re-plan (planFromView in domain/src/setup/rows.ts).
+  position?: number;
   // Price rows only: the existing confirmed catalogue row with the same name
-  // (item or alias), whatever the outcome.
-  current?: { item: string; priceSen: number | null };
+  // (item or alias), whatever the outcome; id is that catalogue row's id.
+  current?: { id: string; item: string; priceSen: number | null };
 };
 // write: a new catalogue row. update: replaces the price (and unit, notes) of
 // the matching row; only when the item is named in replace, so the view never

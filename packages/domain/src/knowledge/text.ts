@@ -1,15 +1,11 @@
 import { createHash } from "node:crypto";
+// normaliseCode lives in codes.ts (no Node modules, so browser code can use
+// it); re-exported here so existing imports keep working.
+import { normaliseCode } from "./codes.ts";
+export { normaliseCode };
 
 export const sha256 = (text: string) =>
   createHash("sha256").update(text).digest("hex");
-
-// A lookup key is a code in upper case with letters and digits only:
-// "ns-60 l" and "NS60L" both become "NS60L".
-export const normaliseCode = (text: string) =>
-  text
-    .normalize("NFKC")
-    .toUpperCase()
-    .replace(/[^\p{L}\p{N}]+/gu, "");
 
 // Keys come from every alias and from tokens of the item name that look like
 // codes (contain a digit), plus the whole item name squashed.

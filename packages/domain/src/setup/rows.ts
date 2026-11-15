@@ -2,26 +2,32 @@
 // is matched against other staged rows and existing catalogue rows, and what
 // apply will do with it. The setup view and applySetup both call planRows, so
 // the review page shows exactly what apply then does.
-import type { SetupRowOutcome } from "../../../contracts/src/setup.ts";
-import { normaliseCode } from "../knowledge/text.ts";
+//
+// No Node-only imports here or in anything this file imports: the browser
+// recomputes outcomes with planFromView once the owner names rows to replace
+// (tests/api/setup-rows.test.ts guards this).
+import type {
+  SetupItem,
+  SetupRowOutcome,
+} from "../../../contracts/src/setup.ts";
+import { normaliseCode } from "../knowledge/codes.ts";
 
 const cut = (text: string, max: number) =>
   Array.from(text).slice(0, max).join("").trim();
 const collapse = (text: string) => text.replace(/\s+/g, " ").trim();
 
-// The match key of a whole name: NFKC, lower case, every run of characters
-// that are not letters, digits or combining marks (punctuation, symbols,
-// spaces) turned into one space. "Kopi O" and "kopi-o" share a key; Tamil
-// "பால்" and "பல்" do not, because their vowel signs are kept. No length cap.
-// A name with no letters or digits (an emoji, for example) has the empty key,
-// which never matches anything. Lookup keys the agent uses (normaliseCode)
-// are a separate thing and are not changed.
+// The match key of a whole name: NFKC, lower case, and every character that
+// is not a letter, digit or combining mark removed (spaces, punctuation,
+// symbols). "Kopi O", "kopi-o" and "KopiO" share a key, as do "NS-40" and
+// "NS40"; Tamil "பால்" and "பல்" do not, because their vowel signs are kept.
+// No length cap. A name with no letters or digits (an emoji, for example) has
+// the empty key, which never matches or de-duplicates anything. Lookup keys
+// the agent uses (normaliseCode) are a separate thing and are not changed.
 export const rowKey = (text: string) => {
   const key = text
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\p{M}]+/gu, " ")
-    .trim();
+    .replace(/[^\p{L}\p{N}\p{M}]+/gu, "");
   // Marks alone (an emoji's variation selector, U+FE0F) are not a name.
   return /[\p{L}\p{N}]/u.test(key) ? key : "";
 };
@@ -74,6 +80,8 @@ export type StagedInput = {
   needsCheck: boolean;
   payload: unknown;
 };
+// A staged row whose existing match is already known (planFromView).
+export type MatchedInput = StagedInput & { target?: ExistingRow };
 export type ExistingRow = {
   id: string;
   item: string;
@@ -137,9 +145,23 @@ export function planRows(
   replace: ReadonlySet<string>,
 ): { plans: RowPlan[]; totals: RowTotals } {
   const match = matcher(existing);
+  return planMatched(
+    staged.map((s) => {
+      const target = match(stagedRow(s.payload).key);
+      return target ? { ...s, target } : s;
+    }),
+    replace,
+  );
+}
+
+// The same plan, with each row's existing match given.
+export function planMatched(
+  staged: MatchedInput[],
+  replace: ReadonlySet<string>,
+): { plans: RowPlan[]; totals: RowTotals } {
   const plans: RowPlan[] = staged.map((s) => {
     const row = stagedRow(s.payload);
-    const target = match(row.key);
+    const target = s.target;
     const outcome: RowOutcome =
       row.priceSen === null
         ? "no_price"
@@ -195,4 +217,44 @@ export function planRows(
       conflicts: count("conflict"),
     },
   };
+}
+
+// For the review page: the planner input from the setup view's items (price
+// rows that carry an outcome, put back in document order by position; the
+// existing match from current) and the ids the owner names in replace.
+export function viewInput(
+  items: readonly SetupItem[],
+  replace: readonly string[],
+): { staged: MatchedInput[]; replace: ReadonlySet<string> } {
+  const staged = items
+    .filter((i) => i.kind === "catalogue_row" && i.outcome !== undefined)
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+    .map((i) => ({
+      id: i.id,
+      state: i.state,
+      needsCheck: i.needsCheck,
+      payload: i.payload,
+      ...(i.current
+        ? {
+            target: {
+              id: i.current.id,
+              item: i.current.item,
+              aliases: [],
+              priceSen: i.current.priceSen,
+              attributes: {},
+            },
+          }
+        : {}),
+    }));
+  return { staged, replace: new Set(replace) };
+}
+
+// Outcomes and totals for the view's price rows with the owner's replace
+// choice: what apply will do, unless the rows change on the server first.
+export function planFromView(
+  items: readonly SetupItem[],
+  replace: readonly string[],
+): { plans: RowPlan[]; totals: RowTotals } {
+  const input = viewInput(items, replace);
+  return planMatched(input.staged, input.replace);
 }
