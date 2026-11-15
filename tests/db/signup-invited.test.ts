@@ -69,12 +69,17 @@ test("only a pending, unexpired invitation lets an address sign up", async () =>
       )
     ).rows[0];
     assert.deepEqual(grants, { app: true, anon: false, authed: false });
-    // The owner must bypass the forced row-level security on app.invitation.
+    // Owned by jomcall_members (bypassrls), like accept_invitation, and the
+    // temporary CREATE on app_private is taken back.
     const owner = (
       await client.query(
-        "select r.rolsuper or r.rolbypassrls as bypass from pg_proc p join pg_roles r on r.oid=p.proowner where p.oid='app_private.signup_invited(text)'::regprocedure",
+        "select r.rolname as name, r.rolbypassrls as bypass, has_schema_privilege('jomcall_members','app_private','create') as can_create from pg_proc p join pg_roles r on r.oid=p.proowner where p.oid='app_private.signup_invited(text)'::regprocedure",
       )
-    ).rows[0].bypass;
-    assert.equal(owner, true);
+    ).rows[0];
+    assert.deepEqual(owner, {
+      name: "jomcall_members",
+      bypass: true,
+      can_create: false,
+    });
   });
 });

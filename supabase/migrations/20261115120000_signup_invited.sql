@@ -4,19 +4,18 @@
 -- invitations before sign-in, so this narrow function answers yes or no for
 -- one address. It lists nothing and returns no invitation detail.
 --
--- app.invitation forces row-level security, so the function's owner (the
--- login that runs migrations) must bypass it, or the function would answer
--- "no" for every address. Stop here, with a named code, if it cannot.
-do $$ begin
- if not exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls)) then
-  raise exception 'SIGNUP_INVITED_OWNER_NEEDS_BYPASSRLS';
- end if;
-end $$;
+-- app.invitation forces row-level security, so the function is owned by
+-- jomcall_members (bypassrls, select on app.invitation), the same owner as
+-- app_private.accept_invitation. Ownership needs CREATE on app_private for a
+-- moment; it is granted and taken back here, as in the members migration.
 create function app_private.signup_invited(p_email text) returns boolean
 language sql stable security definer set search_path='' as $$
  select p_email is not null and exists(
   select 1 from app.invitation i
   where lower(i.email)=lower(trim(p_email)) and i.state='pending' and i.expires_at>now())
 $$;
+grant create on schema app_private to jomcall_members;
+alter function app_private.signup_invited(text) owner to jomcall_members;
+revoke create on schema app_private from jomcall_members;
 revoke all on function app_private.signup_invited(text) from public;
 grant execute on function app_private.signup_invited(text) to jomcall_app;
