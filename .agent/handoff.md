@@ -36,27 +36,28 @@ Branch `feat/setup-import` (pull request not yet open; the controller opens it).
 
 **Changed**
 - Migrations `20261116110000_setup_uploads.sql` and `20261116110100_setup_read_worker.sql` (re-runnable).
-- Upload commands (create, chunk put and get, finish, paste text, remove); uploads kept in Postgres in chunks; file bytes deleted 30 days after upload.
+- Upload commands (create, chunk put and get, finish, paste text, remove); uploads kept in Postgres in chunks. A file's bytes are deleted 30 days after it was added, or at once with Remove; Remove on a file also deletes its unconfirmed and removed rows. Rows and details read from a file stay in the setup's staging table after the setup is saved: confirmed ones become catalogue rows, and the staged copies remain until the agent or organization is deleted.
 - The reader (`packages/inference/src/setup-reader.ts`): photos and PDFs read twice, disagreements flagged; CSV and pasted text read once; no .xlsx (owner decision).
 - The read worker in the agent process (`engine/src/agent/setup-reader.ts`), behind the new switch `JOMCALL_SETUP_READER` (`disabled` default, `anthropic`).
 - Price rows through the review page and apply (one planner, `packages/domain/src/setup/rows.ts`); the bring stage and price table in `web/components/core/setup/`.
 - `npm run check:setup-reader` (needs `--paid` for any model call) with 15 made-up documents.
+- Final review fixes (2026-11-16): main merged in; the two migrations renamed to sort after `20261116100000`; an import fact flagged for checking no longer hides its interview question or fills its fact; a fact edit cannot set `uploadId`; Remove on a file deletes that file's unconfirmed and removed rows; a delimited file over 1 MiB is refused at finish (`UPLOAD_TOO_LONG`) before it is read; uploads still queued or being read when setup is saved fail `SESSION_CLOSED`; a database error on storing a read releases the upload for another try (only a refusal fails it). Screen: senders stop when setup is saved; the save question is asked again when a named file finishes or more prices would be saved; this window's own Remove is not "changed in another window"; the reader's fixed reasons are shown in Bahasa Melayu; refusals after leaving the bring stage are named on the interview and review pages; `check:setup-reader --out` must point inside `output/setup-reader/`.
 
 **Verified (2026-11-15)**
 - `npm run typecheck` pass; `npm run test:guards` 69 of 69; `npm run check:core` 743 of 744 (the one failure, `tests/db/signup-invited.test.ts`, is the known local quirk "function signup_invited already exists"); `npm run db:verify-migrations` 58 tables with row-level security; `npm run build:mock` and `npm run build:hosted` pass.
-- Browser check, local app, 390 px, English, reader on, fake workspace: a photo, a CSV and pasted text read in about 30 seconds each; review page, double tap, price edit, Remove and Undo, apply question; a draft test answered a price from the new rows.
-- Three paid reading runs on 15 made-up documents, 57 model calls. Run 3 was clean: no wrong or unsure price unflagged; 34 of 250 rows flagged.
+- Browser check, local app, 390 px, English, reader on, fake workspace: three documents (a photo, a CSV and pasted text) were all read within about 30 seconds; review page, double tap, price edit, Remove and Undo, apply question; a draft test answered a price from the new rows.
+- Three paid reading runs on 15 made-up documents, 57 model calls. In run 1, two documents had real wrong prices with no flag (three rows); the script counted four. Run 3 was clean: no wrong or unsure price unflagged; 34 of 250 rows flagged.
 
 **Not verified**
 - No person has used it. No real phone photo, handwriting or blur. Each paid run was done once, so how often a wrong price recurs is unknown. The double read's catch of a slipped line is shown by unit test only. Two reads that slip the same way are not caught. CSV and pasted text are read once.
-- Bahasa Melayu and dark theme on the new pages, View file, bulk remove, file-group remove, conflicts, duplicates, a real phone, upload interruption.
+- Bahasa Melayu and dark theme on the new pages, View file, bulk remove, file-group remove, conflicts, duplicates, a real phone, upload interruption and retry, the feel of the half-second tap guard.
 - Nothing ran on hosted staging. The 48-case gates were not re-run.
-- Whether uploads must be covered by PDPA export and delete (a lawyer's question). No way to remove uploads after setup is applied.
+- Whether uploads must be covered by PDPA export and delete (a lawyer's question). No screen removes uploads after setup is applied (the server allows it).
 
 **Next (owner steps; never run by us)**
 1. Apply the two new migrations to staging from the clean release folder: `npm run hosted:migrate` (see `infra/hosted/RUNBOOK.md` step 12).
 2. Confirm in the SQL editor, with the runbook's role query, that `jomcall_agent_jobs` has `rolbypassrls = true` before relying on the reader there.
-3. Set `JOMCALL_SETUP_READER=anthropic` for the web service in Vercel staging and for the agent on the server (the Anthropic key is already there), then rebuild.
+3. Set `JOMCALL_SETUP_READER=anthropic` for the web service in Vercel staging and for the agent on the server; if `ANTHROPIC_API_KEY` is not already set for the agent, add it. Then rebuild.
 4. Try the bring stage on staging with made-up documents only.
 5. Decide about the deferred items in the ledger (see the design note), for example a prompt line "each quantity tier is its own row", and a real-photo check.
 

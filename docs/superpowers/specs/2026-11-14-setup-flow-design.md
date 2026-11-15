@@ -177,7 +177,7 @@ Written after the import door was built on branch `feat/setup-import`. Plan: `do
 
 **The five decisions at the top of the plan (approved by the owner on 2026-11-15).**
 
-1. Uploads are stored in Postgres, not in a Storage bucket (this differs from section 7). Per setup, up to 5 files of 10 MB. The file bytes are deleted 30 days after upload. Object storage is a later piece.
+1. Uploads are stored in Postgres, not in a Storage bucket (this differs from section 7). Per setup, up to 5 files of 10 MB. As built, a file's bytes are deleted 30 days after the file was added (or at once with Remove). The plan said 30 days after apply; the built rule is stricter. For the owner to confirm. Object storage is a later piece.
 2. Images are shrunk in the browser before upload (longest side 2,400 px, JPEG). The stored original is the shrunk copy.
 3. The reading prompt changes from the spike: the model also fills the fact fields of the chosen packs, so the interview asks only what is still missing. The spike's "0 wrong prices in 212 rows" does not prove this prompt; the paid runs in the QA note measure it.
 4. A new opt-in outbound switch, `JOMCALL_SETUP_READER=disabled|anthropic`, default `disabled`. With `anthropic`, the agent process sends the owner's document to Anthropic (`claude-haiku-5-5`; `claude-sonnet-5-5` only as a fallback for text and CSV) and needs `ANTHROPIC_API_KEY` even when voice is off. The web service holds no key.
@@ -186,27 +186,29 @@ Written after the import door was built on branch `feat/setup-import`. Plan: `do
 **Later owner decisions (2026-11-15).**
 
 - No .xlsx file in the first release. The inputs are a photo, a PDF, a CSV file and pasted text; cells copied from a spreadsheet arrive as pasted text. "Spreadsheet" in sections 3 to 7 means CSV or pasted cells. A zip-signature upload is refused with a message that says to paste the cells or save as CSV or PDF.
-- After the first paid reading run found two wrong prices with no flag, the owner chose: read photos and PDFs twice and flag any row the two reads disagree on; an old and a new price give the new one, flagged; surcharges, add-ons, "from", conditional and "free above" amounts are flagged. Then re-run. The third run was clean.
+- After the first paid reading run, in which two documents had real wrong prices with no flag (three rows; the script counted four), the owner chose: read photos and PDFs twice and flag any row the two reads disagree on; an old and a new price give the new one, flagged; surcharges, add-ons, "from", conditional and "free above" amounts are flagged. Then re-run. The third run was clean.
 
 **Build-time rulings that change what this design describes.**
 
 - Uploads go to the web service in chunks of at most 3 MiB, are stored in Postgres, and are read by the agent process through one allow-listed database function with a lease. A read is tried at most twice (counted by leases); the stronger-model fallback happens inside the same lease.
 - Images are shrunk in the browser. A picture whose long side is more than four times its short side is refused with a message to crop it into parts.
-- CSV and pasted text are passed to the model without parsing in our code. Files over 1 MiB or with more than 300 rows are refused as too long.
+- CSV and pasted text are passed to the model without parsing in our code. Files over 1 MiB or with more than 300 rows are refused as too long (a delimited file over 1 MiB at finish, before it is read).
 - The review page and apply use one planner (`packages/domain/src/setup/rows.ts`). The screen shows the planned outcome of each row and the count that will be saved before the one-shot apply.
 - "Replace" keeps the owner's item name and changes only price, unit and notes of the existing row. A staged row matches an existing one on the whole normalised name, with no separators.
 - A row is confirmed only by an edit that changes its price, or by an explicit confirm. A notes-only edit or a resent unchanged price does not confirm it. A row with no price is never applied.
 - Rows stay in place on the review page for the whole visit, and every confirming or removing control ignores taps for half a second after the page changes, so a moving list cannot confirm the wrong row. A removed row stays folded with Undo.
-- "Remove file" removes the file's unconfirmed rows and facts. Rows the owner already confirmed stay.
-- A minimum order or minimum quantity is not a condition: such a price is not flagged and the minimum goes in the notes.
-- Facts found in a document fill the text facts of the packs; hours found fill the `opening_hours` text fact only. The hours grid is still asked in the interview when no schedule is saved.
+- Removing a file ("Remove everything from this file" once it is read) deletes the file and its unconfirmed and removed rows and facts. Rows the owner already confirmed stay.
+- A minimum order or minimum quantity is not a condition: such a price is not flagged and the minimum goes in the notes. This narrows the owner's decision that conditional amounts are flagged, and is for him to confirm.
+- Facts found in a document fill the text facts of the packs; hours found fill the `opening_hours` text fact only. The hours grid is still asked in the interview when no schedule is saved. A fact the reader flagged for checking does not count as answered: its interview question is still asked.
+- With the reader on, setup opens on the bring stage, so an owner with nothing to upload sees one extra screen and one extra tap ("Answer questions instead"). The owner may overrule this.
 
 **What stays open.**
 
 - Whether uploads and drafts must be covered by PDPA export and delete is a question for a lawyer. Today they are not listed there.
-- There is no way to remove uploads after setup is applied.
+- The server allows removing a file after the setup is saved, but no screen offers it.
 - Real phone photos, handwriting and blur have not been read. The reading check used 15 made-up documents and each paid run was done once.
 - If both reads of a photo make the same mistake, nothing flags it. CSV and pasted text are read once.
-- Deferred items an owner might care about: a hard crash can leave an upload showing "reading" for up to about 8 minutes; a transient database error while saving a read result fails the upload and wastes the read; file bytes are deleted 30 days after upload even while the setup is still open; retention sweeps are not scoped to one hosted namespace; an import fact replaces a skipped interview row, and the skip is lost if the upload is later removed; the prompt does not force one row per quantity tier (a suggested line was left out so the measured prompt stays the one in the QA note); the review page's "settling" guard refuses taps silently; the reader's reason is shown in English in the Bahasa Melayu view; a few Bahasa Melayu strings were written by the build and not checked by a person.
+- Deferred items an owner might care about: a hard crash can leave an upload showing "reading" for up to about 8 minutes; file bytes are deleted 30 days after upload even while the setup is still open; retention sweeps are not scoped to one hosted namespace; an import fact replaces a skipped interview row, and if the file is later removed that row is deleted with it, so the question is asked again; the prompt does not force one row per quantity tier (a suggested line was left out so the measured prompt stays the one in the QA note); the review page's "settling" guard refuses taps silently; the model's own words in a reason stay in English in the Bahasa Melayu view (our fixed reason sentences are translated); a few Bahasa Melayu strings were written by the build and not checked by a person.
+- Before public sign-up: reading is not metered or capped, reads run one at a time across all organizations, and uploads are stored in the database. An upload can take up to four model calls (two calls per try: the double read, or a read and its fallback; at most two tries). In the worst case one organization's 5 slow uploads queue everyone else's reads for about 20 to 30 minutes. One account could fill a 500 MB database in under 3 days (up to 20 files of 10 MB in 24 hours, about 200 MB a day, kept 30 days).
 - Not built, from the plan's "Not in this plan": a website or Google Maps link as a source; answering the interview by voice; splitting long documents; object storage for originals; rules-only and catalogue-only interview questions; the mock preview's version of this flow; structured opening hours read from a document.
 - The hosted steps are the owner's: apply the two migrations to staging, check that the agent's role bypasses row-level security, set the switch for both services, rebuild (`infra/hosted/RUNBOOK.md` step 12). Nothing has run on hosted staging.
