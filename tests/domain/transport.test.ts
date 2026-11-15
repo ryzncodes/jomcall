@@ -4,7 +4,15 @@ import {
   CoreError,
   HttpCoreClient,
   MockCoreClient,
+  ProxyError,
+  failureOf,
+  isResourceUnavailable,
 } from "../../web/lib/core/client.ts";
+import { statusKey, statusText } from "../../web/components/core/error-copy.ts";
+import { retryOffered, sendFailureText } from "../../web/components/core/setup/rules.ts";
+
+const en = (e: string) => e;
+const ms = (_e: string, m: string) => m;
 import {
   parseMode,
   capabilitiesFor,
@@ -118,30 +126,116 @@ test("a setup upload chunk is read back as bytes; an error stays a CoreError", a
     (e: unknown) => e instanceof CoreError && e.code === "NOT_FOUND" && e.status === 404,
   );
 });
-test("a non-JSON error body (a proxy's HTML page) is a failed request with its status, not offline", async () => {
-  for (const status of [413, 502]) {
-    const client = new HttpCoreClient({
-      orgId: "org-1",
-      fetch: async (url) =>
-        String(url) === "/api/auth/csrf"
-          ? Response.json({ ok: true, data: { token: "csrf-1" } })
-          : new Response("<html><body>Bad gateway</body></html>", {
-              status,
-              headers: { "content-type": "text/html" },
-            }),
-    });
-    const input = { id: agent, uploadId: upload, seq: 0 };
-    for (const call of [
-      () => client.putChunk(input, new Blob([new Uint8Array([1])])),
-      () => client.getChunk(input),
-      () => client.execute("setup", { id: agent }),
-    ])
-      await assert.rejects(
-        call(),
-        (e: unknown) =>
-          e instanceof CoreError && e.code === "REQUEST_FAILED" && e.status === status,
-      );
+const htmlClient = (status: number) =>
+  new HttpCoreClient({
+    orgId: "org-1",
+    fetch: async (url) =>
+      String(url) === "/api/auth/csrf"
+        ? Response.json({ ok: true, data: { token: "csrf-1" } })
+        : new Response("<html><body>Error</body></html>", {
+            status,
+            headers: { "content-type": "text/html" },
+          }),
+  });
+const callsOf = (client: HttpCoreClient) => {
+  const input = { id: agent, uploadId: upload, seq: 0 };
+  return [
+    () => client.putChunk(input, new Blob([new Uint8Array([1])])),
+    () => client.getChunk(input),
+    () => client.execute("setup", { id: agent }),
+    () => client.execute("removeSetupUpload", { id: agent, uploadId: upload }),
+  ];
+};
+test("a non-JSON error body (a proxy's HTML page) is a ProxyError: never a CoreError, never a record that is gone", async () => {
+  for (const status of [502, 403, 413, 401, 404, 410]) {
+    for (const call of callsOf(htmlClient(status)))
+      await assert.rejects(call(), (e: unknown) => {
+        assert.ok(e instanceof ProxyError, String(status));
+        assert.ok(!(e instanceof CoreError), "not an app error");
+        assert.equal(e.status, status);
+        assert.equal(isResourceUnavailable(e), false, "records are kept");
+        assert.deepEqual(failureOf(e), { status, code: "PROXY" });
+        return true;
+      });
   }
+  // A JSON error from the app itself still may say a record is gone.
+  assert.equal(isResourceUnavailable(new CoreError("NOT_FOUND", 404)), true);
+});
+test("a proxy's HTML 502 reads as the old connection sentence, retryable, in both languages", () => {
+  const e = new ProxyError(502);
+  assert.equal(statusKey(e.status, true), "OFFLINE");
+  for (const status of [0, 200, 408, 429, 500, 503, 504])
+    assert.equal(statusKey(status, true), "OFFLINE", String(status));
+  assert.equal(retryOffered(502, failureOf(e).code), true);
+  assert.equal(
+    sendFailureText(502, "PROXY", "chunk", en),
+    "Sending stopped. Check your connection, then try again.",
+  );
+  assert.equal(
+    sendFailureText(502, "PROXY", "chunk", ms),
+    "Penghantaran terhenti. Semak sambungan anda, kemudian cuba lagi.",
+  );
+});
+test("a proxy's HTML 403 is not 'signed out' or 'record gone': a plain sentence, no Retry", () => {
+  assert.equal(statusKey(403, true), "REQUEST_BLOCKED");
+  assert.equal(statusKey(401, true), "REQUEST_BLOCKED");
+  assert.equal(statusKey(404, true), "REQUEST_BLOCKED");
+  const [enText, msText] = statusText("REQUEST_BLOCKED")!;
+  assert.match(enText, /did not go through/);
+  assert.match(msText, /Permintaan tidak sampai/);
+  assert.equal(retryOffered(403, "PROXY"), false);
+  assert.equal(
+    sendFailureText(403, "PROXY", "chunk", en),
+    "Something went wrong sending this file. Remove it and add it again.",
+  );
+});
+test("a proxy's HTML 413 on an upload says the file is too large; elsewhere a plain sentence", () => {
+  assert.equal(
+    sendFailureText(413, "PROXY", "chunk", en),
+    "This file is larger than 10 MB. Split it into smaller files and add them one at a time.",
+  );
+  assert.equal(
+    sendFailureText(413, "PROXY", "create", ms),
+    "Fail ini lebih besar daripada 10 MB. Bahagikan kepada fail yang lebih kecil dan tambah satu demi satu.",
+  );
+  assert.equal(retryOffered(413, "PROXY"), false);
+  assert.equal(statusKey(413, true), "REQUEST_TOO_LARGE");
+  assert.ok(statusText("REQUEST_TOO_LARGE"));
+});
+test("an app code no table names is worded by its status, never shown raw", () => {
+  const cases: [number | null, string][] = [
+    [null, "OFFLINE"],
+    [401, "UNAUTHORIZED"],
+    [403, "FORBIDDEN"],
+    [404, "NOT_FOUND"],
+    [410, "NOT_FOUND"],
+    [409, "CONFLICT"],
+    [422, "VALIDATION_ERROR"],
+    [413, "REQUEST_TOO_LARGE"],
+    [429, "TRY_LATER"],
+    [500, "SERVICE_ERROR"],
+    [418, "REQUEST_REFUSED"],
+  ];
+  for (const [status, key] of cases) assert.equal(statusKey(status, false), key, String(status));
+  for (const key of ["REQUEST_BLOCKED", "REQUEST_TOO_LARGE", "TRY_LATER", "SERVICE_ERROR", "REQUEST_REFUSED"]) {
+    const copy = statusText(key);
+    assert.ok(copy, key);
+    for (const text of copy) assert.doesNotMatch(text, /[A-Z]{2,}_[A-Z]/, "no raw code");
+  }
+});
+test("create and finish pass their abort signal to the request and the CSRF read", async () => {
+  const controller = new AbortController();
+  const seen: (AbortSignal | null | undefined)[] = [];
+  const client = new HttpCoreClient({
+    fetch: async (url, init) => {
+      seen.push(init?.signal);
+      if (String(url) === "/api/auth/csrf")
+        return Response.json({ ok: true, data: { token: "csrf-1" } });
+      return Response.json({ ok: true, data: { id: upload } });
+    },
+  });
+  await client.execute("finishSetupUpload", { id: agent, uploadId: upload }, undefined, controller.signal);
+  assert.deepEqual(seen, [controller.signal, controller.signal]);
 });
 test("a chunk PUT passes its abort signal to the request", async () => {
   const controller = new AbortController();

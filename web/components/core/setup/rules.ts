@@ -6,6 +6,7 @@ import {
   type SetupUpload,
 } from "../../../../packages/contracts/src/setup-upload";
 import type { Setup, SetupItem } from "../../../../packages/contracts/src/setup";
+import { proxyRetryable } from "../error-copy";
 
 type TestLike = {
   id: string;
@@ -255,8 +256,8 @@ export function refusalText(r: Refusal, w: Words): string {
 export function noRoomText(names: readonly string[], w: Words): string {
   const list = names.join(", ");
   return w(
-    `Not added, because this setup has room for 5 files: ${list}. Remove a file to make room.`,
-    `Tidak ditambah kerana persediaan ini hanya ada ruang untuk 5 fail: ${list}. Buang satu fail untuk memberi ruang.`,
+    `Not added: ${list}. A setup holds up to 5 files; remove one to make room.`,
+    `Tidak ditambah: ${list}. Satu persediaan boleh ada sehingga 5 fail; buang satu untuk memberi ruang.`,
   );
 }
 
@@ -290,7 +291,7 @@ export function requestErrorText(
           )
         : w(
             "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.",
-            "Ruang kerja anda sudah menambah 20 fail dalam 24 jam lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
+            "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
           );
     case "READER_OFF":
       return failText("READER_OFF", w);
@@ -299,28 +300,74 @@ export function requestErrorText(
   }
 }
 
-// The sentence for a failed upload request; never a raw code. `status` is
-// null when no answer came (offline, timeout). Any other refusal (CONFLICT,
-// UPLOAD_INCOMPLETE, UPLOAD_SIZE_MISMATCH, EMPTY_CHUNK, PAYLOAD_TOO_LARGE,
-// OCTET_STREAM_REQUIRED, NOT_FOUND, a proxy's REQUEST_FAILED) means this
-// send cannot be fixed by Retry. Null only for signed-out or not-allowed
-// answers, which the shared error text explains.
+// The sentence for a failed upload request; never a raw code. `status` and
+// `code` come from failureOf: both null when no answer came (offline,
+// timeout), code "PROXY" for an error page that is not JSON from the app.
+// - Removing and pasting have their own sentences, never the sending ones.
+// - 401/403 from the app: signed out, or a role that may not add documents.
+// - A proxy's page: 413 is "too large", a page a later try may pass is the
+//   connection sentence, any other the general one.
+// - Any other refusal (CONFLICT, UPLOAD_INCOMPLETE, UPLOAD_SIZE_MISMATCH,
+//   EMPTY_CHUNK, PAYLOAD_TOO_LARGE, OCTET_STREAM_REQUIRED, NOT_FOUND) means
+//   this send cannot be fixed by Retry.
 export function sendFailureText(
   status: number | null,
   code: string | null,
   step: UploadStep,
   w: Words,
-): string | null {
-  const own = code ? requestErrorText(code, step, w) : null;
+): string {
+  const app = code !== "PROXY";
+  if (app && status === 401)
+    return step === "remove"
+      ? w(
+          "You are signed out. Sign in again, then remove the file.",
+          "Anda sudah log keluar. Log masuk semula, kemudian buang fail itu.",
+        )
+      : step === "paste"
+        ? w(
+            "You are signed out. Sign in again, then paste the text again.",
+            "Anda sudah log keluar. Log masuk semula, kemudian tampal teks itu sekali lagi.",
+          )
+        : w(
+            "You are signed out. Sign in again, then add the file.",
+            "Anda sudah log keluar. Log masuk semula, kemudian tambah fail itu.",
+          );
+  if (app && status === 403)
+    return step === "remove"
+      ? w(
+          "Only an owner or admin can remove documents.",
+          "Hanya pemilik atau pentadbir boleh membuang dokumen.",
+        )
+      : w(
+          "Only an owner or admin can add documents.",
+          "Hanya pemilik atau pentadbir boleh menambah dokumen.",
+        );
+  if (step === "remove") return removeFailedText(w);
+  const own = code && app ? requestErrorText(code, step, w) : null;
   if (own) return own;
-  if (status === 401 || status === 403) return null;
-  if (status === null || retryable(status))
+  if (step === "paste")
     return w(
-      "Sending stopped. Check your connection, then try again.",
-      "Penghantaran terhenti. Semak sambungan anda, kemudian cuba lagi.",
+      "Could not add the pasted text. Try again.",
+      "Teks yang ditampal tidak dapat ditambah. Cuba lagi.",
     );
-  return sendBrokenText(w);
+  if (!app) {
+    if (status === 413) return refusalText("SPLIT", w);
+    return proxyRetryable(status) ? connectionText(w) : sendBrokenText(w);
+  }
+  return status === null || retryable(status)
+    ? connectionText(w)
+    : sendBrokenText(w);
 }
+const connectionText = (w: Words) =>
+  w(
+    "Sending stopped. Check your connection, then try again.",
+    "Penghantaran terhenti. Semak sambungan anda, kemudian cuba lagi.",
+  );
+export const removeFailedText = (w: Words) =>
+  w(
+    "Could not remove this file. Try again.",
+    "Fail ini tidak dapat dibuang. Cuba lagi.",
+  );
 export const sendBrokenText = (w: Words) =>
   w(
     "Something went wrong sending this file. Remove it and add it again.",
@@ -328,9 +375,13 @@ export const sendBrokenText = (w: Words) =>
   );
 
 // Retry is offered only when sending the same thing again can work: no
-// answer, a timeout or a server error, and never after the write cap.
-export const retryOffered = (status: number | null, code: string | null) =>
-  code !== "UPLOAD_RATE" && retryable(status);
+// answer, a timeout or a server error (or a proxy's page a later try may
+// pass), and never after the write cap.
+export function retryOffered(status: number | null, code: string | null) {
+  if (code === "UPLOAD_RATE") return false;
+  if (code === "PROXY") return proxyRetryable(status);
+  return retryable(status);
+}
 
 // One plain sentence per reason a read failed.
 export function failText(code: string | null, w: Words): string {
@@ -376,21 +427,44 @@ const plural = (n: number, one: string, many: string) =>
 type UploadView = Pick<
   SetupUpload,
   "state" | "failCode" | "rowCount" | "factCount" | "droppedCount"
-> &
-  Partial<Pick<SetupUpload, "createdAt">>;
+>;
 
-// An upload queued for longer than QUEUE_PATIENCE_MS: the screen stops
-// polling for it and says the owner can come back later.
-export const stalled = (u: Pick<SetupUpload, "state"> & Partial<Pick<SetupUpload, "createdAt">>, now: number) =>
+// An upload this browser has seen queued for longer than QUEUE_PATIENCE_MS:
+// the screen stops polling for it and says the owner can come back later.
+// `since` is when this browser first saw it queued, on its own clock (the
+// server's createdAt is not compared with a phone clock that may be off).
+export const stalled = (
+  u: Pick<SetupUpload, "state">,
+  now: number,
+  since: number | undefined,
+) =>
   u.state === "queued" &&
-  !!u.createdAt &&
-  now - Date.parse(u.createdAt) > QUEUE_PATIENCE_MS;
+  since !== undefined &&
+  now - since > QUEUE_PATIENCE_MS;
+
+// When this browser first saw each upload queued: earlier times are kept,
+// newly queued uploads get `now`.
+export function firstSeenQueued(
+  seen: ReadonlyMap<string, number>,
+  uploads: readonly Pick<SetupUpload, "id" | "state">[],
+  now: number,
+): Map<string, number> {
+  const next = new Map(seen);
+  for (const u of uploads)
+    if (u.state === "queued" && !next.has(u.id)) next.set(u.id, now);
+  return next;
+}
 
 // The state line under one upload, from the server's record alone. While
 // this browser is sending it, the screen shows sendingLabel instead; an
 // upload still "uploading" without a sender here was cut off (a reload or a
 // closed tab) and cannot be resumed.
-export function uploadLabel(u: UploadView, w: Words, now?: number): string {
+export function uploadLabel(
+  u: UploadView,
+  w: Words,
+  now?: number,
+  since?: number,
+): string {
   switch (u.state) {
     case "uploading":
       return w(
@@ -398,7 +472,7 @@ export function uploadLabel(u: UploadView, w: Words, now?: number): string {
         "Muat naik ini terputus. Buang dan tambah fail itu semula.",
       );
     case "queued":
-      return now !== undefined && stalled(u, now)
+      return now !== undefined && stalled(u, now, since)
         ? w(
             "Still waiting to be read. You can go on and come back later.",
             "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
@@ -471,7 +545,7 @@ export const senderShown = (upload: Pick<SetupUpload, "state"> | undefined) =>
 
 // The pasted-text upload's stored name is English; the screen names it.
 export const uploadName = (u: Pick<SetupUpload, "kind" | "name">, w: Words) =>
-  u.kind === "text" ? w("Pasted text", "Teks ditampal") : u.name;
+  u.kind === "text" ? w("Pasted text", "Teks yang ditampal") : u.name;
 
 // A file name the server accepts: no control or direction-override
 // characters, at most 200 UTF-16 units, never empty.
@@ -514,12 +588,14 @@ export const slotsLeft = (used: number) =>
 // The view is polled while any upload is being read, or waits for the
 // reader and has not waited longer than QUEUE_PATIENCE_MS.
 export const readingNow = (
-  uploads: readonly (Pick<SetupUpload, "state"> &
-    Partial<Pick<SetupUpload, "createdAt">>)[],
+  uploads: readonly Pick<SetupUpload, "id" | "state">[],
   now: number,
+  seen: ReadonlyMap<string, number>,
 ) =>
   uploads.some(
-    (u) => u.state === "reading" || (u.state === "queued" && !stalled(u, now)),
+    (u) =>
+      u.state === "reading" ||
+      (u.state === "queued" && !stalled(u, now, seen.get(u.id))),
   );
 
 // Whether the "bring a document" stage opens by itself after the business
@@ -643,4 +719,19 @@ export function onlyReadProgress(
   }
   const old = new Set(before.items.map((i) => i.id));
   return after.items.every((i) => old.has(i.id) || i.source === "import");
+}
+
+// After a save is refused as stale: may it go once more, quietly? `base` is
+// the view the save was built on, taken just before it was sent, and
+// `sentRevision` the revision it carried; `fresh` is the view read after
+// the refusal. Only when the base matches what was sent and the only change
+// since is a document being read. Comparing with a view that landed while
+// the save was in flight (a poll showing another tab's edit) would let the
+// retry overwrite that edit.
+export function quietRetry(
+  base: Pick<Setup, "session" | "uploads" | "items">,
+  sentRevision: number,
+  fresh: Pick<Setup, "session" | "uploads" | "items">,
+): boolean {
+  return base.session?.revision === sentRevision && onlyReadProgress(base, fresh);
 }

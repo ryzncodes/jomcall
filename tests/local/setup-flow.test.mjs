@@ -266,8 +266,15 @@ test("the flow opens the bring stage only with reading on, and links to it from 
   assert.match(flow, /setBringing\(bringFirst\(v\)\)/);
   assert.match(flow, /bringing && readerOn/);
   assert.match(flow, /const openBring = readerOn/);
-  assert.match(flow, /readingNow\(view\.uploads, now\)/);
-  assert.match(flow, /onlyReadProgress\(before, latestView\.current\)/);
+  assert.match(flow, /readingNow\(view\.uploads, now, queuedSince\.current\)/);
+  // The conflict check uses the save's own baseline, taken just before it
+  // is sent, and the revision it carried; never a view read afterwards.
+  assert.match(
+    flow,
+    /base = latestView\.current;\s*sent = revision\.current;\s*setView\(await fn\(sent\), at\)/,
+  );
+  assert.match(flow, /quietRetry\(base, sent, latestView\.current\)/);
+  assert.doesNotMatch(flow, /onlyReadProgress\(before/);
   assert.match(flow, /bringVia === "link" \? leaveBring/);
   assert.match(flow, /document\.visibilityState === "visible"/);
   assert.match(flow, /pollDelay\(/);
@@ -276,4 +283,20 @@ test("the flow opens the bring stage only with reading on, and links to it from 
     assert.match(text, /\{onBring && \(/, f);
     assert.ok(text.includes('w("Add a document", "Tambah dokumen")'), f);
   }
+});
+
+test("leaving the screen empties the upload queue, and a failed Remove never resends", () => {
+  const upload = readFileSync(join(dir, "upload.ts"), "utf8");
+  // Cleanup: queue emptied and every job marked removed, not only aborted.
+  assert.match(upload, /waiting\.current = \[\];\s*for \(const j of all\.values\(\)\) \{\s*j\.removed = true;\s*j\.controller\.abort\(\);/);
+  // Nothing is created after the screen closed or the row was removed.
+  assert.match(upload, /if \(job\.removed \|\| job\.controller\.signal\.aborted\) return;/);
+  // Create and finish have a timeout and the job's signal.
+  assert.match(upload, /within\(CREATE_MS,/);
+  assert.match(upload, /within\(FINISH_MS, job\.controller\.signal,/);
+  // A failed Remove keeps the job stopped.
+  assert.doesNotMatch(upload, /job\.removed = false/);
+  assert.doesNotMatch(upload, /job\.controller = new AbortController\(\)/);
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  assert.match(bring, /removeAgain\s*\?\s*void removeRow\(r\)\s*:\s*manager\.retry\(s\.key\)/);
 });

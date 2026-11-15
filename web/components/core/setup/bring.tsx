@@ -6,10 +6,9 @@
 // after the owner moves on.
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Camera, Info, UploadSimple } from "@phosphor-icons/react";
-import { CoreError } from "@/lib/core/client";
+import { CoreError, failureOf } from "@/lib/core/client";
 import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
-import { useWords, errorText } from "../state";
-import { useExperience } from "../../experience";
+import { useWords } from "../state";
 import { useLanding, useSetup } from "./flow";
 import {
   ACCEPT,
@@ -44,11 +43,9 @@ export function BringStage({
   onContinue: () => void;
 }) {
   const w = useWords(),
-    { locale } = useExperience(),
     store = useSetup(),
     id = useId();
-  const ms = locale === "ms";
-  const { uploads: manager, view, now } = store;
+  const { uploads: manager, view, now, queuedSince } = store;
   const heading = useLanding<HTMLHeadingElement>("bring");
   const photoRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLHeadingElement>(null);
@@ -102,13 +99,15 @@ export function BringStage({
   ];
   const left = slotsLeft(rows.length);
   const busy =
-    readingNow(view.uploads, now) ||
+    readingNow(view.uploads, now, queuedSince) ||
     manager.senders.some((s) => s.phase !== "failed");
   const labelOf = (r: Row) =>
     r.sender
-      ? sendingLabel(r.sender, w)
+      ? r.sender.phase === "failed" && r.sender.step === "remove"
+        ? w("Not removed", "Belum dibuang")
+        : sendingLabel(r.sender, w)
       : r.upload
-        ? uploadLabel(r.upload, w, now)
+        ? uploadLabel(r.upload, w, now, queuedSince.get(r.upload.id))
         : "";
 
   // One status line announces what changed (a file added, read or failed),
@@ -166,7 +165,7 @@ export function BringStage({
         <p className="setup-lead">
           {w(
             "Add a photo, PDF or CSV file, or paste text. JomCall reads it and fills in your prices and details for you to check. Or just answer the questions.",
-            "Tambah foto, PDF atau fail CSV, atau tampal teks. JomCall membacanya dan mengisi harga serta butiran anda untuk anda semak. Atau jawab soalan sahaja.",
+            "Tambah foto, PDF atau fail CSV, atau tampal teks. JomCall membacanya dan mengisi harga dan butiran untuk anda semak. Atau jawab soalan sahaja.",
           )}
         </p>
       </header>
@@ -225,7 +224,7 @@ export function BringStage({
           <div className="storage-warning" role="alert">
             <ul className="setup-problems">
               {problems.map((p, i) => (
-                <li key={i}>{noticeText(p, w, ms)}</li>
+                <li key={i}>{noticeText(p, w)}</li>
               ))}
             </ul>
           </div>
@@ -303,8 +302,11 @@ export function BringStage({
             {rows.map((r) => {
               const s = r.sender;
               const failed = s?.phase === "failed";
-              const detail = s && failed ? failDetail(s, w, ms) : null;
+              const detail = s && failed ? failDetail(s, w) : null;
               const canRetry = !!s && failed && retryAllowed(s);
+              // A failed Remove stays stopped; its action removes again,
+              // never resends the file.
+              const removeAgain = s?.step === "remove";
               const bad =
                 failed ||
                 (!s &&
@@ -330,11 +332,20 @@ export function BringStage({
                         <button
                           type="button"
                           className="button button-small secondary-button"
-                          aria-label={w(
-                            `Retry ${r.name}`,
-                            `Cuba lagi ${r.name}`,
-                          )}
-                          onClick={() => manager.retry(s.key)}
+                          aria-label={
+                            removeAgain
+                              ? w(
+                                  `Try removing ${r.name} again`,
+                                  `Cuba buang ${r.name} sekali lagi`,
+                                )
+                              : w(`Retry ${r.name}`, `Cuba lagi ${r.name}`)
+                          }
+                          disabled={removing}
+                          onClick={() =>
+                            removeAgain
+                              ? void removeRow(r)
+                              : manager.retry(s.key)
+                          }
                         >
                           {w("Retry", "Cuba lagi")}
                         </button>
@@ -428,29 +439,29 @@ function kindOf(r: Row): string {
 }
 
 // The sentence for one refusal or failed request, with the file name.
-function noticeText(n: UploadNotice, w: Words, ms: boolean): string {
+function noticeText(n: UploadNotice, w: Words): string {
   if (n.refusal === "NO_ROOM") return noRoomText(n.names ?? [], w);
+  const f = failureOf(n.error);
   const reason = n.refusal
     ? refusalText(n.refusal, w)
-    : n.error instanceof CoreError
-      ? (sendFailureText(n.error.status, n.error.code, n.step ?? "create", w) ??
-        errorText(n.error, ms))
-      : (sendFailureText(null, null, n.step ?? "create", w) ?? "");
+    : sendFailureText(f.status, f.code, n.step ?? "create", w);
   return n.name ? `${n.name}: ${reason}` : reason;
 }
 
 // Why a send stopped, under "Sending failed". A failure while preparing
 // the file (no request step) gets the general sentence.
-function failDetail(s: Sender, w: Words, ms: boolean): string {
+function failDetail(s: Sender, w: Words): string {
   if (!s.step) return sendBrokenText(w);
-  return s.error instanceof CoreError
-    ? (sendFailureText(s.error.status, s.error.code, s.step, w) ??
-        errorText(s.error, ms))
-    : (sendFailureText(null, null, s.step, w) ?? sendBrokenText(w));
+  const f = failureOf(s.error);
+  return sendFailureText(f.status, f.code, s.step, w);
 }
 
-const retryAllowed = (s: Sender) =>
-  !!s.step &&
-  (s.error instanceof CoreError
-    ? retryOffered(s.error.status, s.error.code)
-    : retryOffered(null, null));
+// A failed Remove can always be tried again (unless signed out or refused
+// by role); a failed send only when sending the same thing can work.
+function retryAllowed(s: Sender) {
+  if (!s.step) return false;
+  const f = failureOf(s.error);
+  if (s.step === "remove")
+    return !(f.code !== "PROXY" && (f.status === 401 || f.status === 403));
+  return retryOffered(f.status, f.code);
+}

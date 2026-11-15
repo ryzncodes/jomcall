@@ -21,6 +21,8 @@ import {
   senderShown,
   sniffKind,
   stalled,
+  firstSeenQueued,
+  quietRetry,
   tooLong,
   pollDelay,
   readingNow,
@@ -37,11 +39,11 @@ import {
   uploadLabel,
   uploadName,
 } from "../../web/components/core/setup/rules.ts";
-import { sendChunks } from "../../web/components/core/setup/upload.ts";
+import { sendChunks, untilAborted, within } from "../../web/components/core/setup/upload.ts";
 import type { SetupUploadState } from "../../packages/contracts/src/setup-upload.ts";
 import type { Setup, SetupItem } from "../../packages/contracts/src/setup.ts";
 import type { KnownUpload } from "../../web/components/core/setup/rules.ts";
-import { CoreError } from "../../web/lib/core/client.ts";
+import { CoreError, ProxyError, failureOf } from "../../web/lib/core/client.ts";
 
 const done = [{ state: "completed" }];
 
@@ -334,7 +336,7 @@ test("sending labels count chunks from 1", () => {
 });
 
 test("pasted text is named on screen; other uploads keep their file name", () => {
-  assert.equal(uploadName({ kind: "text", name: "Pasted text" }, ms), "Teks ditampal");
+  assert.equal(uploadName({ kind: "text", name: "Pasted text" }, ms), "Teks yang ditampal");
   assert.equal(uploadName({ kind: "text", name: "Pasted text" }, en), "Pasted text");
   assert.equal(uploadName({ kind: "pdf", name: "menu.pdf" }, ms), "menu.pdf");
 });
@@ -345,32 +347,53 @@ test("five places per setup; polling only while a read is waiting or running", (
   assert.equal(slotsLeft(5), 0);
   assert.equal(slotsLeft(7), 0);
   const now = Date.parse("2026-11-15T00:05:00Z");
-  const at = "2026-11-15T00:00:00Z";
-  assert.equal(readingNow([{ state: "done" }, { state: "failed" }], now), false);
-  assert.equal(readingNow([{ state: "uploading" }], now), false);
-  assert.equal(readingNow([{ state: "done" }, { state: "queued", createdAt: at }], now), true);
-  assert.equal(readingNow([{ state: "reading", createdAt: at }], now), true);
+  const seen = new Map([["q", now - 60_000]]);
+  assert.equal(readingNow([{ id: "d", state: "done" }, { id: "f", state: "failed" }], now, seen), false);
+  assert.equal(readingNow([{ id: "u", state: "uploading" }], now, seen), false);
+  assert.equal(readingNow([{ id: "d", state: "done" }, { id: "q", state: "queued" }], now, seen), true);
+  assert.equal(readingNow([{ id: "r", state: "reading" }], now, seen), true);
+  // A queued upload not yet noted is polled for.
+  assert.equal(readingNow([{ id: "new", state: "queued" }], now, new Map()), true);
 });
 
-test("an upload queued for more than 10 minutes is not polled for and says to come back later", () => {
-  const at = "2026-11-15T00:00:00Z";
-  const t = Date.parse(at);
-  const queued = { ...upload, state: "queued" as const, createdAt: at };
-  assert.equal(stalled(queued, t + 10 * 60_000), false);
-  assert.equal(stalled(queued, t + 10 * 60_000 + 1), true);
-  assert.equal(stalled({ ...queued, state: "reading" }, t + 3_600_000), false);
-  assert.equal(readingNow([queued], t + 11 * 60_000), false);
+test("an upload queued for more than 10 minutes, by this browser's clock, is not polled for", () => {
+  const t = Date.parse("2026-11-15T00:00:00Z");
+  const queued = { ...upload, id: "q1", state: "queued" as const };
+  assert.equal(stalled(queued, t + 10 * 60_000, t), false);
+  assert.equal(stalled(queued, t + 10 * 60_000 + 1, t), true);
+  assert.equal(stalled(queued, t + 3_600_000, undefined), false);
+  assert.equal(stalled({ ...queued, state: "reading" }, t + 3_600_000, t), false);
+  const seen = new Map([[queued.id, t]]);
+  assert.equal(readingNow([queued], t + 11 * 60_000, seen), false);
   // Still being read: polled for however long it takes.
-  assert.equal(readingNow([{ ...queued, state: "reading" }], t + 11 * 60_000), true);
-  assert.equal(uploadLabel(queued, en, t + 60_000), "Waiting to be read");
+  assert.equal(readingNow([{ ...queued, state: "reading" }], t + 11 * 60_000, seen), true);
+  assert.equal(uploadLabel(queued, en, t + 60_000, t), "Waiting to be read");
   assert.equal(
-    uploadLabel(queued, en, t + 11 * 60_000),
+    uploadLabel(queued, en, t + 11 * 60_000, t),
     "Still waiting to be read. You can go on and come back later.",
   );
   assert.equal(
-    uploadLabel(queued, ms, t + 11 * 60_000),
+    uploadLabel(queued, ms, t + 11 * 60_000, t),
     "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
   );
+});
+
+test("a phone clock 15 minutes fast does not stop polling for a fresh upload", () => {
+  // The server created it at 00:00; the phone reads 00:15 when it first
+  // sees it queued. Only the phone's own clock is compared.
+  const server = Date.parse("2026-11-15T00:00:00Z");
+  const phone = server + 15 * 60_000;
+  const queued = { ...upload, id: "q1", state: "queued" as const, createdAt: new Date(server).toISOString() };
+  let seen = firstSeenQueued(new Map(), [queued], phone);
+  assert.equal(seen.get(queued.id), phone);
+  assert.equal(readingNow([queued], phone + 1000, seen), true);
+  assert.equal(uploadLabel(queued, en, phone + 1000, seen.get(queued.id)), "Waiting to be read");
+  // Seeing it again later keeps the first time.
+  seen = firstSeenQueued(seen, [queued], phone + 5 * 60_000);
+  assert.equal(seen.get(queued.id), phone);
+  assert.equal(readingNow([queued], phone + 10 * 60_000 + 1, seen), false);
+  // Only queued uploads are noted.
+  assert.equal(firstSeenQueued(new Map(), [{ id: "r", state: "reading" }], phone).size, 0);
 });
 
 test("the bring stage opens by itself only for an untouched session with reading on", () => {
@@ -407,6 +430,12 @@ test("Retry is offered only for a failure that sending again can fix", () => {
     assert.equal(retryOffered(code === "CONFLICT" ? 409 : 422, code), false, code);
   assert.equal(retryOffered(413, "PAYLOAD_TOO_LARGE"), false);
   assert.equal(retryOffered(413, "REQUEST_FAILED"), false);
+  // A proxy's page (not JSON): only when a later try may pass.
+  assert.equal(retryOffered(502, "PROXY"), true);
+  assert.equal(retryOffered(429, "PROXY"), true);
+  assert.equal(retryOffered(408, "PROXY"), true);
+  assert.equal(retryOffered(413, "PROXY"), false);
+  assert.equal(retryOffered(403, "PROXY"), false);
 });
 
 test("every send failure has a plain sentence, never a raw code", () => {
@@ -437,19 +466,59 @@ test("every send failure has a plain sentence, never a raw code", () => {
   );
   assert.equal(sendFailureText(429, "UPLOAD_RATE", "chunk", en), requestErrorText("UPLOAD_RATE", "chunk", en));
   assert.equal(sendFailureText(422, "UPLOAD_XLSX", "finish", en), refusalText("EXCEL", en));
-  // Signed out or not allowed: the shared error text explains.
-  assert.equal(sendFailureText(401, "UNAUTHENTICATED", "create", en), null);
-  assert.equal(sendFailureText(403, "FORBIDDEN", "create", en), null);
+  // Signed out or not allowed, from the app itself.
+  assert.equal(
+    sendFailureText(401, "UNAUTHORIZED", "create", en),
+    "You are signed out. Sign in again, then add the file.",
+  );
+  assert.equal(
+    sendFailureText(401, "UNAUTHORIZED", "chunk", ms),
+    "Anda sudah log keluar. Log masuk semula, kemudian tambah fail itu.",
+  );
+  assert.equal(sendFailureText(403, "FORBIDDEN", "finish", en), "Only an owner or admin can add documents.");
+  assert.equal(sendFailureText(403, "FORBIDDEN", "create", ms), "Hanya pemilik atau pentadbir boleh menambah dokumen.");
+  // A proxy's page: 413 is "too large", a server error the connection
+  // sentence, any other 4xx (also 401/403) the general one.
+  assert.equal(sendFailureText(413, "PROXY", "chunk", en), refusalText("SPLIT", en));
+  assert.equal(sendFailureText(413, "PROXY", "create", ms), refusalText("SPLIT", ms));
+  assert.equal(sendFailureText(502, "PROXY", "chunk", en), offline);
+  assert.equal(sendFailureText(429, "PROXY", "finish", en), offline);
+  assert.equal(sendFailureText(403, "PROXY", "chunk", en), broken);
+  assert.equal(sendFailureText(401, "PROXY", "create", en), broken);
+});
+
+test("a failed Remove and a failed paste have their own sentences, never the sending ones", () => {
+  const removeEn = "Could not remove this file. Try again.";
+  const removeMs = "Fail ini tidak dapat dibuang. Cuba lagi.";
+  for (const [status, code] of [[null, null], [502, "PROXY"], [500, "INTERNAL"], [409, "CONFLICT"]] as const) {
+    assert.equal(sendFailureText(status, code, "remove", en), removeEn);
+    assert.equal(sendFailureText(status, code, "remove", ms), removeMs);
+  }
+  assert.equal(
+    sendFailureText(401, "UNAUTHORIZED", "remove", en),
+    "You are signed out. Sign in again, then remove the file.",
+  );
+  assert.equal(sendFailureText(403, "FORBIDDEN", "remove", en), "Only an owner or admin can remove documents.");
+  const pasteEn = "Could not add the pasted text. Try again.";
+  for (const [status, code] of [[null, null], [502, "PROXY"], [413, "PROXY"], [500, "INTERNAL"]] as const)
+    assert.equal(sendFailureText(status, code, "paste", en), pasteEn);
+  assert.equal(sendFailureText(null, null, "paste", ms), "Teks yang ditampal tidak dapat ditambah. Cuba lagi.");
+  // The paste's own refusals keep their sentences.
+  assert.equal(sendFailureText(409, "UPLOAD_LIMIT", "paste", en), requestErrorText("UPLOAD_LIMIT", "paste", en));
+  assert.equal(
+    sendFailureText(401, "UNAUTHORIZED", "paste", en),
+    "You are signed out. Sign in again, then paste the text again.",
+  );
 });
 
 test("files beyond the places left are named in one sentence", () => {
   assert.equal(
     noRoomText(["a.jpg", "b.pdf"], en),
-    "Not added, because this setup has room for 5 files: a.jpg, b.pdf. Remove a file to make room.",
+    "Not added: a.jpg, b.pdf. A setup holds up to 5 files; remove one to make room.",
   );
   assert.equal(
     noRoomText(["a.jpg"], ms),
-    "Tidak ditambah kerana persediaan ini hanya ada ruang untuk 5 fail: a.jpg. Buang satu fail untuk memberi ruang.",
+    "Tidak ditambah: a.jpg. Satu persediaan boleh ada sehingga 5 fail; buang satu untuk memberi ruang.",
   );
 });
 
@@ -801,4 +870,101 @@ test("a save conflict is retried quietly only when a document's read is all that
   assert.equal(onlyReadProgress(before, viewOf({ session: { ...session, extraPacks: ["retail"] } })), false, "packs changed");
   assert.equal(onlyReadProgress(before, viewOf({ session: { ...session, state: "applied" } })), false, "applied");
   assert.equal(onlyReadProgress(before, viewOf({ session: null })), false, "no session");
+});
+
+test("a quiet retry compares with the save's own baseline, so a poll landing mid-write cannot hide another tab's edit", () => {
+  // The save was built on revision 4 and sent with 4.
+  const base = viewOf();
+  // While it was in flight, a poll landed showing another tab's edit (and a
+  // read finishing): revision 6. The save is refused; the reload shows the
+  // same.
+  const otherTab = viewOf({
+    session: { ...session, revision: 6 },
+    uploads: [up("u", "done")],
+    items: [item("i1", { payload: { value: "Jalan Tab Lain 9" } })],
+  });
+  // The old check compared the poll's view with the reload: no difference.
+  assert.equal(onlyReadProgress(otherTab, otherTab), true);
+  // Against the save's own baseline, the other tab's edit shows: no retry.
+  assert.equal(quietRetry(base, 4, otherTab), false);
+  // Only a read finished since the baseline: retried once, quietly.
+  const read = viewOf({
+    session: { ...session, revision: 5 },
+    uploads: [up("u", "done")],
+    items: [item("i1"), item("r1", { kind: "catalogue_row", key: "row", source: "import" })],
+  });
+  assert.equal(quietRetry(base, 4, read), true);
+  // A baseline that does not match the revision sent is never trusted.
+  assert.equal(quietRetry(base, 3, read), false);
+  assert.equal(quietRetry(viewOf({ session: null }), 4, read), false);
+});
+
+test("a create or finish that hangs times out as no answer; the job's abort stops it at once", async () => {
+  let seen: AbortSignal | undefined;
+  await assert.rejects(
+    within(5, undefined, (signal) => {
+      seen = signal;
+      return new Promise(() => {});
+    }),
+    /TIMEOUT/,
+  );
+  assert.equal(seen?.aborted, true, "the hung request is aborted");
+  assert.equal(failureOf(new Error("TIMEOUT")).status, null);
+  assert.equal(retryOffered(null, null), true, "a timeout offers Retry");
+  const job = new AbortController();
+  const p = within(60_000, job.signal, () => new Promise(() => {}));
+  job.abort();
+  await assert.rejects(p, /ABORTED/);
+  await assert.rejects(within(10, job.signal, async () => 1), /ABORTED/);
+  assert.equal(await within(1000, undefined, async () => 7), 7);
+});
+
+test("a create still in flight when the row is removed stops the wait, and a late success is handed back to delete", async () => {
+  const job = new AbortController();
+  let land!: (v: { id: string }) => void;
+  const request = new Promise<{ id: string }>((done) => (land = done));
+  const late: string[] = [];
+  const waiting = untilAborted(request, job.signal, (u) => late.push(u.id));
+  job.abort();
+  await assert.rejects(waiting, /ABORTED/);
+  land({ id: "orphan-1" });
+  await request;
+  await new Promise((r) => setTimeout(r, 0));
+  assert.deepEqual(late, ["orphan-1"]);
+  // Not aborted: the answer passes through and nothing is deleted.
+  const fine = new AbortController();
+  assert.deepEqual(await untilAborted(Promise.resolve({ id: "u" }), fine.signal, (u) => late.push(u.id)), { id: "u" });
+  assert.deepEqual(late, ["orphan-1"]);
+});
+
+test("a proxy's 502 page is retried like a server error; its 413 page is not", async () => {
+  let calls = 0;
+  const r = await sendChunks({
+    blob: blobOf(4),
+    sizes: [4],
+    from: 0,
+    writes: 0,
+    put: async () => {
+      calls++;
+      throw new ProxyError(502);
+    },
+    wait: noWait,
+  });
+  assert.equal(calls, 3);
+  assert.ok(r.error instanceof ProxyError);
+  calls = 0;
+  const big = await sendChunks({
+    blob: blobOf(4),
+    sizes: [4],
+    from: 0,
+    writes: 0,
+    put: async () => {
+      calls++;
+      throw new ProxyError(413);
+    },
+    wait: noWait,
+  });
+  assert.equal(calls, 1);
+  const f = failureOf(big.error);
+  assert.equal(sendFailureText(f.status, f.code, "chunk", en), refusalText("SPLIT", en));
 });

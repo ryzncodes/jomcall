@@ -2,7 +2,11 @@
 // chunks one after another. The decisions (which file, how many chunks,
 // which words) live in rules.ts; this file only does the work.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CoreError, type HttpCoreClient } from "../../../lib/core/client";
+import {
+  CoreError,
+  failureOf,
+  type HttpCoreClient,
+} from "../../../lib/core/client";
 import {
   UPLOAD_LIMITS,
   type SetupUpload,
@@ -14,7 +18,7 @@ import {
   fitSize,
   jpegName,
   needsSniff,
-  retryable,
+  retryOffered,
   safeName,
   senderShown,
   sizeProblem,
@@ -33,6 +37,11 @@ import {
 export const CHUNK_RETRIES = 2;
 export const RETRY_WAITS = [1000, 4000] as const;
 export const ATTEMPT_MS = 120_000;
+// Creating an upload gives up after 30 s, finishing one after 60 s. Either
+// then fails as no answer (Retry offered); the client keeps the request's
+// idempotency key, so sending it again is safe.
+export const CREATE_MS = 30_000;
+export const FINISH_MS = 60_000;
 
 export type SendResult = {
   // The first chunk not yet stored; equal to the chunk count when all are.
@@ -57,6 +66,43 @@ function pause(ms: number, signal?: AbortSignal) {
       { once: true },
     );
   });
+}
+
+// Runs one request with its own abort signal, which `signal` (the job's)
+// and a `ms` timer both abort. The timer rejects as "TIMEOUT" (no answer,
+// worth retrying), the job's signal as "ABORTED". The race moves on even if
+// the request ignores its signal.
+export async function within<T>(
+  ms: number,
+  signal: AbortSignal | undefined,
+  run: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  if (signal?.aborted) throw new Error("ABORTED");
+  const attempt = new AbortController();
+  const stop = () => attempt.abort();
+  signal?.addEventListener("abort", stop, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      run(attempt.signal),
+      new Promise<never>((_, fail) => {
+        timer = setTimeout(() => {
+          // Rejects as a timeout first; the abort then only stops the
+          // request.
+          fail(new Error("TIMEOUT"));
+          attempt.abort();
+        }, ms);
+        attempt.signal.addEventListener(
+          "abort",
+          () => fail(new Error("ABORTED")),
+          { once: true },
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", stop);
+  }
 }
 
 // Sends chunks `from` onwards, in order. A failed chunk is sent again (same
@@ -90,42 +136,21 @@ export async function sendChunks(o: {
         return { next: seq, writes, error: new CoreError("UPLOAD_RATE", 429) };
       o.onChunk?.(seq);
       writes++;
-      const attempt = new AbortController();
-      const stop = () => attempt.abort();
-      o.signal?.addEventListener("abort", stop, { once: true });
-      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        // The race moves on even if a request ignores its abort signal.
-        await Promise.race([
-          o.put(seq, bytes, attempt.signal),
-          new Promise((_, fail) => {
-            timer = setTimeout(() => {
-              // Rejects as a timeout first; the abort then only stops the
-              // request.
-              fail(new Error("TIMEOUT"));
-              attempt.abort();
-            }, attemptMs);
-            attempt.signal.addEventListener(
-              "abort",
-              () => fail(new Error("ABORTED")),
-              { once: true },
-            );
-          }),
-        ]);
+        await within(attemptMs, o.signal, (signal) =>
+          o.put(seq, bytes, signal),
+        );
         break;
       } catch (error) {
         if (o.signal?.aborted) return { next: seq, writes, stopped: true };
-        const status = error instanceof CoreError ? error.status : null;
-        if (!retryable(status) || tries >= CHUNK_RETRIES)
+        const f = failureOf(error);
+        if (!retryOffered(f.status, f.code) || tries >= CHUNK_RETRIES)
           return { next: seq, writes, error };
         try {
           await wait(RETRY_WAITS[tries] ?? 4000, o.signal);
         } catch {
           return { next: seq, writes, stopped: true };
         }
-      } finally {
-        clearTimeout(timer);
-        o.signal?.removeEventListener("abort", stop);
       }
     }
     offset += o.sizes[seq];
@@ -274,11 +299,44 @@ type Job = {
   uploadId: string | null;
   blob: Blob | null;
   sizes: number[];
+  // The prepared file (a shrunk photo), kept so a Retry after a failed
+  // create sends the same bytes with the same idempotency key.
+  prepared: { blob: Blob; name: string; mime: string } | null;
   next: number;
   writes: number;
   controller: AbortController;
   removed: boolean;
 };
+
+// Waits for `request` until `signal` aborts; then rejects at once with
+// "ABORTED", and a request that still succeeds is handed to `late`.
+export function untilAborted<T>(
+  request: Promise<T>,
+  signal: AbortSignal,
+  late: (value: T) => void,
+): Promise<T> {
+  if (signal.aborted) {
+    request.then(late, () => undefined);
+    return Promise.reject(new Error("ABORTED"));
+  }
+  return new Promise<T>((done, fail) => {
+    const stop = () => {
+      request.then(late, () => undefined);
+      fail(new Error("ABORTED"));
+    };
+    signal.addEventListener("abort", stop, { once: true });
+    request.then(
+      (v) => {
+        signal.removeEventListener("abort", stop);
+        done(v);
+      },
+      (e) => {
+        signal.removeEventListener("abort", stop);
+        fail(e);
+      },
+    );
+  });
+}
 
 class Refused extends Error {
   constructor(readonly refusal: Refusal) {
@@ -341,12 +399,19 @@ export function useUploadManager(o: {
     });
   }, [uploads]);
 
-  // Leaving the screen stops every send; leaving the page while a file is
+  // Leaving the screen stops every send and empties the queue, so no file
+  // waiting its turn is prepared or created afterwards (a create already in
+  // flight is deleted when it lands). Leaving the page while a file is
   // still being prepared or sent asks first.
   useEffect(() => {
     const all = jobs.current;
+    const waiting = queue;
     return () => {
-      for (const j of all.values()) j.controller.abort();
+      waiting.current = [];
+      for (const j of all.values()) {
+        j.removed = true;
+        j.controller.abort();
+      }
     };
   }, []);
   const busy = senders.some((s) =>
@@ -387,10 +452,14 @@ export function useUploadManager(o: {
       }
       let finished: SetupUpload;
       try {
-        finished = await client.execute("finishSetupUpload", {
-          id: agentId,
-          uploadId,
-        });
+        finished = await within(FINISH_MS, job.controller.signal, (signal) =>
+          client.execute(
+            "finishSetupUpload",
+            { id: agentId, uploadId },
+            undefined,
+            signal,
+          ),
+        );
       } catch (e) {
         if (job.removed) return;
         // A refused file is removed on the server: its row goes, and the
@@ -425,50 +494,61 @@ export function useUploadManager(o: {
       try {
         if (!job.uploadId) {
           update(job.key, { phase: "preparing", error: null, step: null });
-          let blob: Blob = job.file,
-            name = job.name;
-          let mime =
-            job.file.type ||
-            (job.kind === "pdf"
-              ? "application/pdf"
-              : job.kind === "image"
-                ? "image/jpeg"
-                : "text/csv");
-          if (job.kind === "image") {
-            const small = await shrinkImage(job.file);
-            if (typeof small === "string")
-              throw new Refused(
-                small === "unsupported"
-                  ? "PHOTO_FORMAT"
-                  : small === "too_long"
-                    ? "PHOTO_TOO_LONG"
-                    : "PHOTO_TOO_BIG",
-              );
-            blob = small;
-            name = jpegName(job.file.name);
-            mime = "image/jpeg";
+          if (!job.prepared) {
+            let blob: Blob = job.file,
+              name = job.name;
+            let mime =
+              job.file.type ||
+              (job.kind === "pdf"
+                ? "application/pdf"
+                : job.kind === "image"
+                  ? "image/jpeg"
+                  : "text/csv");
+            if (job.kind === "image") {
+              const small = await shrinkImage(job.file);
+              if (typeof small === "string")
+                throw new Refused(
+                  small === "unsupported"
+                    ? "PHOTO_FORMAT"
+                    : small === "too_long"
+                      ? "PHOTO_TOO_LONG"
+                      : "PHOTO_TOO_BIG",
+                );
+              blob = small;
+              name = jpegName(job.file.name);
+              mime = "image/jpeg";
+            }
+            job.prepared = { blob, name, mime: mime.slice(0, 100) };
           }
+          const { blob, name, mime } = job.prepared;
           const sizes = splitPlan(blob.size);
           if (!sizes.length) throw new Refused(blob.size ? "SPLIT" : "EMPTY");
-          if (job.removed) return;
-          const input = {
-            id: agentId,
-            kind: job.kind,
-            name,
-            mime: mime.slice(0, 100),
-            bytes: blob.size,
-          };
+          // Removed, or the screen closed, while it was being prepared.
+          if (job.removed || job.controller.signal.aborted) return;
+          const input = { id: agentId, kind: job.kind, name, mime, bytes: blob.size };
+          // Only the timer stops the create request itself: a removal (or
+          // the screen closing) stops waiting at once, and a create that
+          // still lands is deleted, so no orphan "uploading" row keeps a
+          // place.
+          const orphan = (u: SetupUpload) =>
+            void client
+              .execute("removeSetupUpload", { id: agentId, uploadId: u.id })
+              .catch(() => undefined);
+          const create = (key?: string) =>
+            untilAborted(
+              within(CREATE_MS, undefined, (signal) =>
+                client.execute("createSetupUpload", input, key, signal),
+              ),
+              job.controller.signal,
+              orphan,
+            );
           let created: SetupUpload;
           try {
-            created = await client.execute("createSetupUpload", input);
+            created = await create();
             // A replayed create (same file, same key after a lost answer)
             // can return an upload that was removed since: make a new one.
             if (created.state !== "uploading")
-              created = await client.execute(
-                "createSetupUpload",
-                input,
-                crypto.randomUUID(),
-              );
+              created = await create(crypto.randomUUID());
           } catch (e) {
             if (job.removed) return;
             update(job.key, { phase: "failed", error: e, step: "create" });
@@ -477,9 +557,7 @@ export function useUploadManager(o: {
           keys.current.set(created.id, job.key);
           if (job.removed) {
             // Removed while it was being created.
-            void client
-              .execute("removeSetupUpload", { id: agentId, uploadId: created.id })
-              .catch(() => undefined);
+            orphan(created);
             return;
           }
           Object.assign(job, { uploadId: created.id, blob, sizes });
@@ -556,6 +634,7 @@ export function useUploadManager(o: {
           uploadId: null,
           blob: null,
           sizes: [],
+          prepared: null,
           next: 0,
           writes: 0,
           controller: new AbortController(),
@@ -590,6 +669,12 @@ export function useUploadManager(o: {
     [update, pump],
   );
 
+  // The screen's name of a listed upload, for a notice about it.
+  const nameOf = (uploadId: string) => {
+    const u = opts.current.uploads.find((x) => x.id === uploadId);
+    return u ? (u.kind === "text" ? undefined : u.name) : undefined;
+  };
+
   const remove = useCallback(
     async (row: { key: string; uploadId: string | null }) => {
       const { client, agentId } = opts.current;
@@ -607,12 +692,11 @@ export function useUploadManager(o: {
         } catch (e) {
           // Already gone is what the owner asked for.
           if (!(e instanceof CoreError && e.status === 404)) {
-            if (job) {
-              job.removed = false;
-              job.controller = new AbortController();
+            // The send stays stopped: the row offers to remove again,
+            // never to send the file the owner asked to remove.
+            if (job)
               update(row.key, { phase: "failed", error: e, step: "remove" });
-            }
-            problem({ error: e, step: "remove" });
+            else problem({ name: nameOf(uploadId), error: e, step: "remove" });
             return false;
           }
         }

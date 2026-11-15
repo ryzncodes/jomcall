@@ -27,9 +27,10 @@ import { BringStage } from "./bring";
 import { useUploadManager, type UploadManager } from "./upload";
 import {
   bringFirst,
+  firstSeenQueued,
   mergeUploads,
-  onlyReadProgress,
   pollDelay,
+  quietRetry,
   readingNow,
   type KnownUpload,
 } from "./rules";
@@ -110,6 +111,8 @@ type Store = {
   uploads: UploadManager;
   // The clock the upload labels read (moved on by each poll).
   now: number;
+  // When this browser first saw each upload queued, on its own clock.
+  queuedSince: ReadonlyMap<string, number>;
 };
 const StoreContext = createContext<Store>({} as never);
 export const useSetup = () => useContext(StoreContext);
@@ -337,6 +340,8 @@ function SetupStages({
     session: string | null;
     uploads: Map<string, KnownUpload>;
   }>({ session: null, uploads: new Map() });
+  // When this browser first saw each upload queued (see stalled).
+  const queuedSince = useRef<Map<string, number>>(new Map());
   const show = useCallback((next: Setup, at: number) => {
     let v = next;
     if (v.session) {
@@ -345,6 +350,11 @@ function SetupStages({
       const merged = mergeUploads(v.uploads, at, known.current.uploads);
       known.current.uploads = merged.known;
       v = { ...v, uploads: merged.uploads };
+      queuedSince.current = firstSeenQueued(
+        queuedSince.current,
+        v.uploads,
+        Date.now(),
+      );
     }
     latestView.current = v;
     setViewState(v);
@@ -386,9 +396,16 @@ function SetupStages({
       const next = chain.current.then(async () => {
         setInFlight((n) => n + 1);
         setError(undefined);
+        // The view this try is built on and the revision it carries, taken
+        // just before sending: a poll landing while it is in flight must
+        // not become the baseline of the conflict check.
+        let base = latestView.current,
+          sent = revision.current;
         const attempt = async () => {
           const at = ++requests.current;
-          setView(await fn(revision.current), at);
+          base = latestView.current;
+          sent = revision.current;
+          setView(await fn(sent), at);
           setSaved(true);
           return true;
         };
@@ -399,11 +416,10 @@ function SetupStages({
           let failure = e;
           if (e instanceof CoreError && e.code === "CONFLICT") {
             // A document finishing its read raises the revision too. When
-            // that is all that changed, the save goes again once, quietly,
-            // with the fresh revision.
-            const before = latestView.current;
+            // that is all that changed since this save's own baseline, the
+            // save goes again once, quietly, with the fresh revision.
             const fresh = await reload();
-            if (fresh && onlyReadProgress(before, latestView.current)) {
+            if (fresh && quietRetry(base, sent, latestView.current)) {
               try {
                 return await attempt();
               } catch (again) {
@@ -448,7 +464,8 @@ function SetupStages({
   // page is visible. A finished read adds items and raises the revision.
   // An upload queued for more than 10 minutes is no longer polled for.
   const [now, setNow] = useState(() => Date.now());
-  const reading = !!view.session && readingNow(view.uploads, now);
+  const reading =
+    !!view.session && readingNow(view.uploads, now, queuedSince.current);
   useEffect(() => {
     if (!reading) return;
     const started = Date.now();
@@ -544,6 +561,7 @@ function SetupStages({
     error,
     uploads,
     now,
+    queuedSince: queuedSince.current,
   };
   // "Add a document" on the interview and review pages: answers typed so
   // far are sent first.

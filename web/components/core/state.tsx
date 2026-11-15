@@ -5,11 +5,17 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   HttpCoreClient,
   CoreError,
+  ProxyError,
   isResourceUnavailable,
 } from "@/lib/core/client";
 import type { Bootstrap, Session } from "../../../packages/contracts/src/core";
 import { useExperience } from "../experience";
-import { contextCopy, type ErrorContext } from "./error-copy";
+import {
+  contextCopy,
+  statusKey,
+  statusText,
+  type ErrorContext,
+} from "./error-copy";
 export const CoreContext = createContext<{
   client: HttpCoreClient;
   workspace: Bootstrap;
@@ -24,12 +30,16 @@ export function useWords() {
   return (en: string, ms: string) => (locale === "ms" ? ms : en);
 }
 export function errorText(error: unknown, ms = false, context?: ErrorContext) {
+  // A proxy's page (not JSON) is worded by its status, as the connection
+  // sentence whenever a later try may pass.
   const code =
     error instanceof CoreError
       ? error.code
-      : error instanceof ZodError
-        ? "VALIDATION_ERROR"
-        : "OFFLINE";
+      : error instanceof ProxyError
+        ? statusKey(error.status, true)
+        : error instanceof ZodError
+          ? "VALIDATION_ERROR"
+          : "OFFLINE";
   const messages: Record<string, [string, string]> = {
     VERIFICATION_FAILED: [
       "We could not confirm you are human. Complete the check and try again.",
@@ -184,10 +194,18 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Cawangan utama atau yang digunakan tidak boleh diarkibkan.",
     ],
   };
+  // A code no table names is worded by its status; never shown raw.
+  const byStatus = () => {
+    const key = statusKey(
+      error instanceof CoreError ? error.status : null,
+      false,
+    );
+    return messages[key] ?? statusText(key)!;
+  };
   return (contextCopy(code, context) ??
-    messages[code] ?? [code.replaceAll("_", " "), code.replaceAll("_", " ")])[
-    ms ? 1 : 0
-  ];
+    messages[code] ??
+    statusText(code) ??
+    byStatus())[ms ? 1 : 0];
 }
 export function useResource<T>(load: () => Promise<T>, key: string) {
   const { epoch } = useCore();
