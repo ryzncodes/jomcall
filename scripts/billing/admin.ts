@@ -2,6 +2,12 @@
 // and the operator's name, and leaves an audit record.
 //   npm run billing:admin -- adjust <org id> <sen, may be negative> "<reason>" "<operator>"
 //   npm run billing:admin -- refund <org id> <top-up id> <sen> "<reason>" "<operator>"
+//   npm run billing:admin -- plan <org id> <starter|growth|payg> "<operator>"
+// `plan` stands in for the plan picker the wallet screen does not have yet.
+// With no period running it starts the plan now (anchored on today in Kuala
+// Lumpur); otherwise it takes effect next period, like choose_plan. Then it
+// starts or retries the current period, which debits the fee when the
+// balance covers it. The phone line and the WhatsApp agent need a plan.
 // With a payment provider configured, a refund is sent to the provider first
 // (Curlec: POST /payments/:id/refund, paid from the Curlec balance, RM0.50
 // each) and the wallet is debited once the provider reports it processed;
@@ -49,8 +55,27 @@ try {
       console.log(JSON.stringify({ refund: refund.status, outcome: out.outcome }));
     } else
       result = (await db.query("select app_private.admin_refund($1,$2,$3,$4,$5,$6) v", [org, topupId, sen, reason, operator, "cli-" + randomUUID()])).rows[0].v;
+  } else if (action === "plan" && args.length === 3 && uuid.test(args[0]) && ["starter", "growth", "payg"].includes(args[1]) && args[2].trim().length >= 2) {
+    const [org, code, operator] = args;
+    await db.query("begin");
+    const running = (
+      await db.query("select 1 from app.plan_period where org_id=$1 and starts_at<=now() and ends_at>now()", [org])
+    ).rowCount;
+    await db.query(
+      `insert into app.org_plan(org_id,plan_code,anchor_date)values($1,$2,(now() at time zone 'Asia/Kuala_Lumpur')::date)
+       on conflict(org_id)do update set plan_code=case when $3 then app.org_plan.plan_code else excluded.plan_code end,
+        pending_plan_code=case when $3 then nullif(excluded.plan_code,app.org_plan.plan_code) end,updated_at=now()`,
+      [org, code, running === 1],
+    );
+    await db.query(
+      "insert into app.audit_log(org_id,action,target_type,target_id,metadata)values($1,'billing.plan_set_by_operator','organization',$1,$2)",
+      [org, JSON.stringify({ plan: code, operator: operator.trim(), effective: running === 1 ? "next_period" : "now" })],
+    );
+    const v = (await db.query("select app_private.charge_plan_period($1,now()) v", [org])).rows[0].v;
+    await db.query("commit");
+    console.log(JSON.stringify({ plan: v.plan, periodState: v.periodState, balanceSen: v.balanceSen, effective: running === 1 ? "next_period" : "now" }));
   } else {
-    console.error('Usage: adjust <org> <sen> "<reason>" "<operator>" | refund <org> <top-up> <sen> "<reason>" "<operator>"');
+    console.error('Usage: plan <org> <starter|growth|payg> "<operator>" | adjust <org> <sen> "<reason>" "<operator>" | refund <org> <top-up> <sen> "<reason>" "<operator>"');
     process.exitCode = 2;
   }
   if (result) console.log(JSON.stringify({ balanceSen: result.balanceSen, state: result.state, duplicate: result.duplicate }));
