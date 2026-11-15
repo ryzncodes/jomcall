@@ -3,6 +3,11 @@
 //   npm run billing:admin -- adjust <org id> <sen, may be negative> "<reason>" "<operator>"
 //   npm run billing:admin -- refund <org id> <top-up id> <sen> "<reason>" "<operator>"
 //   npm run billing:admin -- plan <org id> <starter|growth|payg> "<operator>"
+//   npm run billing:admin -- usage-pending
+//   npm run billing:admin -- usage-retry <call or conversation id>
+// `usage-pending` lists calls and conversations whose bill has not landed
+// (stuck: maintenance stopped after 20 attempts); `usage-retry` tries one
+// bill once more now and counts a failure (scripts/billing/usage-admin.ts).
 // `plan` stands in for the plan picker the wallet screen does not have yet.
 // With no period running it starts the plan now (anchored on today in Kuala
 // Lumpur); otherwise it takes effect next period, like choose_plan. Then it
@@ -17,6 +22,7 @@ import pg from "pg";
 import { randomUUID } from "node:crypto";
 import { createProvider, paymentReadiness } from "../../packages/billing/src/provider.ts";
 import { settleRefund } from "../../packages/billing/src/settle.ts";
+import { listPendingUsage, retryUsage } from "./usage-admin.ts";
 
 const [action, ...args] = process.argv.slice(2);
 const url = new URL(process.env.LOCAL_ADMIN_DATABASE_URL ?? "");
@@ -76,8 +82,12 @@ try {
     const v = (await db.query("select app_private.charge_plan_period($1,now()) v", [org])).rows[0].v;
     await db.query("commit");
     console.log(JSON.stringify({ plan: v.plan, periodState: v.periodState, balanceSen: v.balanceSen, effective: running === 1 ? "next_period" : "now" }));
+  } else if (action === "usage-pending" && args.length === 0) {
+    for (const row of await listPendingUsage(db)) console.log(JSON.stringify(row));
+  } else if (action === "usage-retry" && args.length === 1 && uuid.test(args[0])) {
+    console.log(JSON.stringify(await retryUsage(db, args[0])));
   } else {
-    console.error('Usage: plan <org> <starter|growth|payg> "<operator>" | adjust <org> <sen> "<reason>" "<operator>" | refund <org> <top-up> <sen> "<reason>" "<operator>"');
+    console.error('Usage: usage-pending | usage-retry <id> | plan <org> <starter|growth|payg> "<operator>" | adjust <org> <sen> "<reason>" "<operator>" | refund <org> <top-up> <sen> "<reason>" "<operator>"');
     process.exitCode = 2;
   }
   if (result) console.log(JSON.stringify({ balanceSen: result.balanceSen, state: result.state, duplicate: result.duplicate }));
