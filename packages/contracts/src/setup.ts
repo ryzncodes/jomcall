@@ -108,7 +108,16 @@ export type SetupApplyResult = {
   applied: number;
   skipped: {
     itemId: string;
-    reason: "conflict" | "removed" | "unconfirmed";
+    reason:
+      | "conflict"
+      | "removed"
+      | "unconfirmed"
+      // A price row without a price.
+      | "no_price"
+      // A price row whose name matches an earlier row of the same apply.
+      | "duplicate"
+      // A fact whose field does not belong to its pack.
+      | "unknown_field";
   }[];
 };
 
@@ -121,6 +130,9 @@ export type SetupItem = {
   needsCheck: boolean;
   checkReason: string | null;
   state: "pending" | "confirmed" | "removed" | "applied";
+  // Price rows only: the confirmed catalogue row with the same name, which
+  // apply keeps unless the item is named in replace.
+  current?: { item: string; priceSen: number | null };
 };
 export type SetupQuestionView = {
   id: string;
@@ -148,4 +160,8 @@ export type Setup = {
   uploads: SetupUpload[];
   // "off" when JOMCALL_SETUP_READER is not "anthropic": uploading is refused.
   reader: "ready" | "off";
+  // Price rows that are pending or confirmed (total); of those, pending rows
+  // still flagged for a check (flagged) and rows with no price (noPrice). A
+  // row can count in both flagged and noPrice.
+  rows: { total: number; flagged: number; noPrice: number };
 };

@@ -1,9 +1,11 @@
 // Knowledge core commands: packs, facts, rules, catalogue rows, confirmation
 // and the gap log. Every change bumps the agent revision like knowledge items.
 import type { PoolClient } from "pg";
+import type { z } from "zod";
 import { AppError, uuid, type TenantContext } from "../../../contracts/src/index.ts";
 import {
   catalogueInput,
+  catalogueRowInput,
   confirmInput,
   factInput,
   gapIgnore,
@@ -28,7 +30,7 @@ export async function savePackFact(
   orgId: string,
   agentId: string,
   v: { packId: string; fieldKey: string; title: string; value: unknown; language: string },
-  source: "owner" | "interview" | null = null,
+  source: "owner" | "interview" | "import" | null = null,
 ) {
   await tx.query(
     `insert into app.knowledge_fact(org_id,agent_id,pack_id,field_key,title,value,language,source)values($1,$2,$3,$4,$5,$6,$7,coalesce($8::text,'owner'))
@@ -36,6 +38,44 @@ export async function savePackFact(
      do update set title=excluded.title,value=excluded.value,language=excluded.language,status='confirmed',source=coalesce($8::text,app.knowledge_fact.source),revision=app.knowledge_fact.revision+1,updated_at=now()`,
     [orgId, agentId, v.packId, v.fieldKey, v.title, JSON.stringify(v.value), v.language, source],
   );
+}
+
+// One catalogue row to insert: a parsed catalogue row plus its pack and status.
+export type CatalogueInsert = z.infer<typeof catalogueRowInput> & {
+  packId: string | null;
+  status: "draft" | "confirmed";
+};
+
+// Inserts rows one by one, with lookup keys and search text built from the
+// row. The catalogue POST passes "owner"; guided setup's apply passes "import".
+// The caller checks the limits and bumps the agent revision.
+export async function insertCatalogueRows(
+  tx: PoolClient,
+  ctx: TenantContext,
+  agentId: string,
+  rows: CatalogueInsert[],
+  source: "owner" | "import",
+) {
+  for (const row of rows)
+    await tx.query(
+      `insert into app.catalogue_row(org_id,agent_id,pack_id,item,aliases,lookup_keys,search_text,price_sen,stock_note,attributes,language,status,source)
+       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [
+        ctx.orgId,
+        agentId,
+        row.packId,
+        row.item,
+        row.aliases,
+        lookupKeys(row.item, row.aliases),
+        catalogueSearchText(row.item, row.aliases, row.attributes),
+        row.priceSen,
+        row.stockNote,
+        JSON.stringify(row.attributes),
+        row.language,
+        row.status,
+        source,
+      ],
+    );
 }
 
 export async function knowledgeRoute(
@@ -236,25 +276,13 @@ export async function knowledgeRoute(
           ]);
       } else if (action === "catalogue") {
         const v = catalogueInput.parse(value);
-        for (const row of v.rows)
-          await tx.query(
-            `insert into app.catalogue_row(org_id,agent_id,pack_id,item,aliases,lookup_keys,search_text,price_sen,stock_note,attributes,language,status,source)
-             values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'owner')`,
-            [
-              ctx.orgId,
-              agentId,
-              v.packId ?? null,
-              row.item,
-              row.aliases,
-              lookupKeys(row.item, row.aliases),
-              catalogueSearchText(row.item, row.aliases, row.attributes),
-              row.priceSen,
-              row.stockNote,
-              JSON.stringify(row.attributes),
-              row.language,
-              v.status,
-            ],
-          );
+        await insertCatalogueRows(
+          tx,
+          ctx,
+          agentId,
+          v.rows.map((row) => ({ ...row, packId: v.packId ?? null, status: v.status })),
+          "owner",
+        );
       } else if (action === "confirm") {
         // D2: drafted or pasted items go live only after the owner confirms.
         for (const t of ["knowledge_fact", "knowledge_rule", "catalogue_row"])
