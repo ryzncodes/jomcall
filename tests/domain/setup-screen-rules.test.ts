@@ -39,6 +39,36 @@ import {
   uploadLabel,
   uploadName,
 } from "../../web/components/core/setup/rules.ts";
+import {
+  APPLY_ROW_LIMIT,
+  amountText,
+  applyButtonText,
+  applyConfirmText,
+  applySummary,
+  checkReasonText,
+  chooseRow,
+  conflictText,
+  duplicateText,
+  factFlagged,
+  groupRows,
+  leftOutText,
+  needCheckIds,
+  overLimit,
+  overLimitText,
+  parsePrice,
+  priceReplace,
+  priceText,
+  readPrice,
+  rowActions,
+  rowChanges,
+  rowName,
+  rowOrder,
+  rowPayload,
+  rowSection,
+  rowStatusText,
+  useThisSteps,
+} from "../../web/components/core/setup/rules.ts";
+import { planFromView } from "../../packages/domain/src/setup/rows.ts";
 import { sendChunks, untilAborted, within } from "../../web/components/core/setup/upload.ts";
 import type { SetupUploadState } from "../../packages/contracts/src/setup-upload.ts";
 import type { Setup, SetupItem } from "../../packages/contracts/src/setup.ts";
@@ -967,4 +997,349 @@ test("a proxy's 502 page is retried like a server error; its 413 page is not", a
   assert.equal(calls, 1);
   const f = failureOf(big.error);
   assert.equal(sendFailureText(f.status, f.code, "chunk", en), refusalText("SPLIT", en));
+});
+
+// ---- Review: price rows -----------------------------------------------------
+
+const FILE_A = "00000000-0000-4000-8000-00000000000a";
+const FILE_B = "00000000-0000-4000-8000-00000000000b";
+let rowN = 0;
+const priceRow = (
+  item: string,
+  o: {
+    id?: string;
+    priceSen?: number | null;
+    state?: SetupItem["state"];
+    flag?: boolean;
+    reason?: string | null;
+    outcome?: SetupItem["outcome"];
+    position?: number;
+    current?: { id: string; item: string; priceSen: number | null };
+    upload?: string;
+    variant?: string;
+  } = {},
+): SetupItem => {
+  const n = ++rowN;
+  return {
+    id: o.id ?? `r${n}`,
+    kind: "catalogue_row",
+    key: `row:${n}`,
+    payload: {
+      uploadId: o.upload ?? FILE_A,
+      item,
+      variant: o.variant ?? "",
+      priceSen: o.priceSen === undefined ? 8000 : o.priceSen,
+      unit: "",
+      notes: "",
+    },
+    source: "import",
+    needsCheck: !!o.flag,
+    checkReason: o.reason ?? (o.flag ? "the price is partly covered" : null),
+    state: o.state ?? "pending",
+    outcome: o.outcome ?? "write",
+    position: o.position ?? n,
+    ...(o.current ? { current: o.current } : {}),
+  };
+};
+const factItem = (
+  id: string,
+  o: { state?: SetupItem["state"]; flag?: boolean; source?: SetupItem["source"]; kind?: SetupItem["kind"] } = {},
+): SetupItem => ({
+  id,
+  kind: o.kind ?? "fact",
+  key: id,
+  payload: { packId: "every-business", fieldKey: id, value: "x" },
+  source: o.source ?? "interview",
+  needsCheck: !!o.flag,
+  checkReason: null,
+  state: o.state ?? "pending",
+});
+
+test("priceText shows RM with two decimals and groups thousands; amountText is the field's text", () => {
+  assert.equal(priceText(8000), "RM 80.00");
+  assert.equal(priceText(8050), "RM 80.50");
+  assert.equal(priceText(5), "RM 0.05");
+  assert.equal(priceText(0), "RM 0.00");
+  assert.equal(priceText(120000), "RM 1,200.00");
+  assert.equal(priceText(123456789), "RM 1,234,567.89");
+  assert.equal(priceText(null), "");
+  assert.equal(amountText(8000), "80.00");
+  assert.equal(amountText(120000), "1200.00");
+  assert.equal(amountText(null), "");
+  // The field's text reads back as the same price.
+  for (const sen of [0, 5, 8050, 120000, 99999999999])
+    assert.equal(parsePrice(amountText(sen)), sen);
+});
+
+test("parsePrice accepts plain and RM prices and refuses anything else", () => {
+  assert.equal(parsePrice("80"), 8000);
+  assert.equal(parsePrice("80.5"), 8050);
+  assert.equal(parsePrice("80.50"), 8050);
+  assert.equal(parsePrice("RM 80.50"), 8050);
+  assert.equal(parsePrice("rm80"), 8000);
+  assert.equal(parsePrice("Rm 0.05"), 5);
+  assert.equal(parsePrice("  12  "), 1200);
+  assert.equal(parsePrice("1,200.50"), 120050);
+  assert.equal(parsePrice("0"), 0);
+  for (const bad of ["-5", "-0.50", "80.505", "1.234", "abc", "80,5", "12,34", ".5", "80.", "RM", "1 200", "8o", "1e3", "$80"])
+    assert.equal(parsePrice(bad), null, bad);
+  // Above the server's ceiling.
+  assert.equal(parsePrice("1000000001"), null);
+  assert.equal(parsePrice("1000000000"), 100000000000);
+  // readPrice tells an empty field from text that is not a price.
+  assert.equal(readPrice(""), null);
+  assert.equal(readPrice("   "), null);
+  assert.equal(readPrice("abc"), "invalid");
+  assert.equal(readPrice("80"), 8000);
+});
+
+test("rowOrder puts flagged pending rows first, then document order", () => {
+  const a = priceRow("A", { position: 0 });
+  const b = priceRow("B", { position: 1, flag: true });
+  const c = priceRow("C", { position: 2, flag: true, state: "confirmed" });
+  const d = priceRow("D", { position: 3, flag: true });
+  assert.deepEqual(rowOrder([a, b, c, d]).map((i) => i.payload && (i.payload as { item: string }).item), ["B", "D", "A", "C"]);
+});
+
+test("rows are grouped: need checking, then conflicts, then duplicates, then by file in document order", () => {
+  const saved = { id: "cat1", item: "Kopi O", priceSen: 7000 };
+  const items = [
+    priceRow("Teh", { id: "t", position: 4, upload: FILE_B }),
+    priceRow("Kopi O", { id: "k1", position: 0, outcome: "conflict", current: saved }),
+    priceRow("Milo", { id: "m", position: 1, flag: true, outcome: "unconfirmed" }),
+    priceRow("Roti", { id: "r", position: 2, priceSen: null, outcome: "no_price" }),
+    priceRow("Teh", { id: "t2", position: 5, upload: FILE_B, outcome: "duplicate" }),
+    priceRow("Nasi", { id: "n", position: 3 }),
+    priceRow("Mee", { id: "gone", position: 6, upload: "00000000-0000-4000-8000-0000000000ff", state: "confirmed" }),
+    { ...priceRow("Old", { id: "x", position: 7 }), state: "removed" as const, outcome: undefined },
+    factItem("f1"),
+  ];
+  const { plans } = planFromView(items, []);
+  const g = groupRows(items, plans, [FILE_A, FILE_B]);
+  assert.deepEqual(g.check.map((i) => i.id), ["m", "r"]);
+  assert.deepEqual(g.conflict.map((i) => i.id), ["k1"]);
+  assert.deepEqual(g.duplicate.map((i) => i.id), ["t2"]);
+  assert.deepEqual(
+    g.files.map((f) => [f.uploadId, f.rows.map((i) => i.id)]),
+    [
+      [FILE_A, ["n"]],
+      [FILE_B, ["t"]],
+      // A confirmed row whose file was removed.
+      [null, ["gone"]],
+    ],
+  );
+  // "Use new" on the conflict keeps it in the conflict section.
+  const live = planFromView(items, ["k1"]).plans;
+  assert.equal(live.find((p) => p.id === "k1")?.outcome, "update");
+  assert.deepEqual(groupRows(items, live, [FILE_A, FILE_B]).conflict.map((i) => i.id), ["k1"]);
+  // While the owner is in the list, a row keeps its section.
+  const held = new Map([["m", "check" as const]]);
+  const confirmed = items.map((i) => (i.id === "m" ? { ...i, state: "confirmed" as const, needsCheck: false } : i));
+  const after = planFromView(confirmed, []).plans;
+  assert.deepEqual(groupRows(confirmed, after, [FILE_A, FILE_B], held).check.map((i) => i.id), ["m", "r"]);
+  assert.deepEqual(groupRows(confirmed, after, [FILE_A, FILE_B]).check.map((i) => i.id), ["r"]);
+  assert.equal(rowSection("conflict", "update"), "conflict");
+  assert.equal(rowSection("write", "duplicate"), "duplicate");
+  assert.equal(rowSection("unconfirmed", undefined), "check");
+  assert.equal(rowSection("write", "update"), "ready");
+});
+
+test("what a row offers follows its outcome and state", () => {
+  assert.deepEqual(rowActions("unconfirmed", "unconfirmed", "pending"), {
+    status: "check", confirm: true, choice: false, useThis: false, confirmed: false,
+  });
+  assert.deepEqual(rowActions("no_price", "no_price", "pending"), {
+    status: "no_price", confirm: false, choice: false, useThis: false, confirmed: false,
+  });
+  // A confirmed row whose price was cleared: no price, still marked.
+  assert.equal(rowActions("no_price", "no_price", "confirmed").confirmed, true);
+  assert.deepEqual(rowActions("conflict", "conflict", "pending"), {
+    status: "conflict", confirm: false, choice: true, useThis: false, confirmed: false,
+  });
+  // The choice stays after "Use new" (the live plan says update).
+  assert.equal(rowActions("conflict", "update", "pending").choice, true);
+  assert.deepEqual(rowActions("write", "duplicate", "pending"), {
+    status: "duplicate", confirm: false, choice: false, useThis: true, confirmed: false,
+  });
+  assert.deepEqual(rowActions("write", "write", "confirmed"), {
+    status: "ready", confirm: false, choice: false, useThis: false, confirmed: true,
+  });
+  assert.equal(rowActions("write", "update", "pending").status, "update");
+});
+
+test("a row edit sends only the fields that changed", () => {
+  const stored = rowPayload({ uploadId: FILE_A, item: "Kopi O", variant: "Ais", priceSen: 8000, unit: "cawan", notes: "" });
+  assert.equal(rowChanges(stored, "pending", {}), null);
+  assert.equal(rowChanges(stored, "pending", { item: " Kopi O ", priceSen: 8000 }), null);
+  assert.deepEqual(rowChanges(stored, "pending", { priceSen: 9000 }), { payload: { priceSen: 9000 } });
+  assert.deepEqual(rowChanges(stored, "pending", { item: "Kopi O", variant: "Panas", unit: "cawan", notes: "" }), {
+    payload: { variant: "Panas" },
+  });
+  assert.deepEqual(rowChanges(stored, "pending", { notes: "  kurang manis " }), { payload: { notes: "kurang manis" } });
+  // Clearing the price: a confirmed row goes back to pending in the same request.
+  assert.deepEqual(rowChanges(stored, "confirmed", { priceSen: null }), {
+    payload: { priceSen: null },
+    state: "pending",
+  });
+  assert.deepEqual(rowChanges(stored, "pending", { priceSen: null }), { payload: { priceSen: null } });
+  assert.equal(rowChanges(stored, "pending", { item: "   " }), "NAME_REQUIRED");
+});
+
+test("Use new is exclusive among rows matching the same saved price", () => {
+  const saved = { id: "cat1", item: "Kopi O", priceSen: 7000 };
+  const items = [
+    priceRow("Kopi O", { id: "a", outcome: "conflict", current: saved }),
+    priceRow("kopi-o", { id: "b", outcome: "conflict", current: saved }),
+    priceRow("Teh", { id: "c", outcome: "conflict", current: { id: "cat2", item: "Teh", priceSen: 300 } }),
+  ];
+  assert.deepEqual(chooseRow(items, "a", "new"), [["a", "new"], ["b", "keep"]]);
+  assert.deepEqual(chooseRow(items, "b", "keep"), [["b", "keep"]]);
+  assert.deepEqual(chooseRow(items, "c", "new"), [["c", "new"]]);
+  // Only conflicts set to new are replaced; others, and rows no longer in
+  // conflict, are not.
+  const more = [...items, priceRow("Milo", { id: "d", outcome: "no_price", priceSen: null, current: { id: "cat3", item: "Milo", priceSen: 1 } })];
+  assert.deepEqual(priceReplace(more, { a: "new", b: "keep", c: "new", d: "new" }), ["a", "c"]);
+  // With both set to new (an older choice), the planner lets one win.
+  const plan = planFromView(items, ["a", "b"]).plans;
+  assert.deepEqual(plan.map((p) => p.outcome), ["update", "duplicate", "conflict"]);
+});
+
+test("Use this one instead confirms a pending duplicate, or removes the row that wins", () => {
+  // Two untouched rows: confirming the later one is enough.
+  const a = priceRow("Nasi Lemak", { id: "a", position: 0 });
+  const b = priceRow("nasi lemak", { id: "b", position: 1, outcome: "duplicate" });
+  assert.deepEqual(useThisSteps([a, b], [], "b"), [{ id: "b", state: "confirmed" }]);
+  // Both confirmed: the earlier one wins, so it is removed.
+  const ca = { ...a, state: "confirmed" as const };
+  const cb = { ...b, state: "confirmed" as const };
+  assert.deepEqual(useThisSteps([ca, cb], [], "b"), [{ id: "a", state: "removed" }]);
+  // The winner confirmed, this one pending: confirming does not beat it.
+  assert.deepEqual(useThisSteps([ca, b], [], "b"), [{ id: "a", state: "removed" }]);
+  // Not a duplicate: nothing to do.
+  assert.deepEqual(useThisSteps([ca, cb], [], "a"), []);
+});
+
+test("rows still needing the owner are flagged pending rows and rows with no price", () => {
+  const items = [
+    priceRow("A", { id: "a", flag: true, outcome: "unconfirmed" }),
+    priceRow("B", { id: "b", priceSen: null, outcome: "no_price" }),
+    priceRow("C", { id: "c" }),
+    priceRow("D", { id: "d", flag: true, state: "confirmed" }),
+  ];
+  assert.deepEqual(needCheckIds(planFromView(items, []).plans), ["a", "b"]);
+});
+
+test("the apply summary counts what apply will write and what is left out", () => {
+  const saved = { id: "cat1", item: "Kopi O", priceSen: 7000 };
+  const items = [
+    priceRow("Kopi O", { id: "k", outcome: "conflict", current: saved }),
+    priceRow("Teh", { id: "t" }),
+    priceRow("teh", { id: "t2", outcome: "duplicate" }),
+    priceRow("Milo", { id: "m", flag: true, outcome: "unconfirmed" }),
+    priceRow("Roti", { id: "r", priceSen: null, outcome: "no_price" }),
+    factItem("hours", { kind: "schedule" }),
+    factItem("f1"),
+    factItem("f2", { flag: true, source: "import" }),
+    factItem("f3", { flag: true, state: "confirmed", source: "import" }),
+    factItem("f4", { state: "removed" }),
+    factItem("f5"),
+  ];
+  const uploads = [
+    { id: FILE_A, kind: "image", name: "menu.jpg", bytes: 1, state: "done", failCode: null, rowCount: 5, factCount: 2, droppedCount: 0, bytesDeletedAt: null, createdAt: "" },
+    { id: FILE_B, kind: "pdf", name: "prices.pdf", bytes: 1, state: "reading", failCode: null, rowCount: 0, factCount: 0, droppedCount: 0, bytesDeletedAt: null, createdAt: "" },
+  ] as Setup["uploads"];
+  const view = { items, conflicts: [{ itemId: "f5", current: "old" }], uploads };
+  const keep = applySummary(view, {}, en);
+  assert.deepEqual(keep.replace, []);
+  assert.deepEqual(keep.counts, {
+    prices: 1,
+    answers: 3,
+    checkPrices: 2,
+    checkAnswers: 1,
+    duplicates: 1,
+    reading: ["prices.pdf"],
+  });
+  const fresh = applySummary(view, { k: "new", f5: "new" }, en);
+  assert.deepEqual(fresh.replace.sort(), ["f5", "k"]);
+  assert.equal(fresh.counts.prices, 2);
+  assert.equal(fresh.counts.answers, 4);
+  assert.equal(overLimit(fresh.totals), false);
+  assert.equal(overLimit({ willWrite: APPLY_ROW_LIMIT }), false);
+  assert.equal(overLimit({ willWrite: APPLY_ROW_LIMIT + 1 }), true);
+  assert.equal(APPLY_ROW_LIMIT, 500);
+});
+
+test("the apply button and the left-out line say what will happen, in both languages", () => {
+  const c = { prices: 14, answers: 6, checkPrices: 3, checkAnswers: 0, duplicates: 2, reading: [] };
+  assert.equal(applyButtonText(c, en), "Save 14 prices and 6 answers, try a call");
+  assert.equal(applyButtonText(c, ms), "Simpan 14 harga dan 6 jawapan, cuba buat panggilan");
+  assert.equal(applyButtonText({ ...c, prices: 1, answers: 1 }, en), "Save 1 price and 1 answer, try a call");
+  assert.equal(applyButtonText({ ...c, answers: 0 }, en), "Save 14 prices, try a call");
+  assert.equal(applyButtonText({ ...c, answers: 0 }, ms), "Simpan 14 harga, cuba buat panggilan");
+  assert.equal(applyButtonText({ ...c, prices: 0 }, en), "Save 6 answers, try a call");
+  assert.equal(applyButtonText({ ...c, prices: 0, answers: 0 }, en), "Looks right, try a call");
+  assert.equal(applyButtonText({ ...c, prices: 0, answers: 0 }, ms), "Semua betul, cuba buat panggilan");
+  assert.equal(
+    leftOutText(c, en),
+    "3 prices still need checking and will not be saved. 2 duplicates are left out.",
+  );
+  assert.equal(
+    leftOutText(c, ms),
+    "3 harga masih perlu disemak dan tidak akan disimpan. 2 pendua tidak dimasukkan.",
+  );
+  assert.equal(
+    leftOutText({ ...c, checkPrices: 1, checkAnswers: 1, duplicates: 1 }, en),
+    "1 price still needs checking and will not be saved. 1 answer still needs checking and will not be saved. 1 duplicate is left out.",
+  );
+  assert.equal(leftOutText({ ...c, checkPrices: 0, duplicates: 0 }, en), "");
+});
+
+test("apply asks once before leaving rows out or while a file is still being read", () => {
+  const c = { prices: 14, answers: 6, checkPrices: 3, checkAnswers: 0, duplicates: 2, reading: [] as string[] };
+  assert.equal(
+    applyConfirmText(c, en),
+    "3 prices will not be saved. You cannot come back to them after this. Save the rest?",
+  );
+  assert.equal(
+    applyConfirmText(c, ms),
+    "3 harga tidak akan disimpan. Anda tidak boleh kembali kepadanya selepas ini. Simpan yang selebihnya?",
+  );
+  assert.equal(
+    applyConfirmText({ ...c, checkPrices: 0, reading: ["menu.jpg"] }, en),
+    "menu.jpg is still being read. Prices from it will not be included if you save now. Save now?",
+  );
+  assert.equal(
+    applyConfirmText({ ...c, checkPrices: 0, reading: ["menu.jpg"] }, ms),
+    "menu.jpg masih sedang dibaca. Harga daripadanya tidak akan dimasukkan jika anda simpan sekarang. Simpan sekarang?",
+  );
+  assert.equal(
+    applyConfirmText({ ...c, checkPrices: 1, checkAnswers: 2 }, en),
+    "1 price will not be saved. 2 answers will not be saved. You cannot come back to them after this. Save the rest?",
+  );
+  // Duplicates alone do not ask: the same item is saved.
+  assert.equal(applyConfirmText({ ...c, checkPrices: 0 }, en), null);
+  assert.match(overLimitText(en), /More than 500 prices/);
+  assert.match(overLimitText(ms), /Lebih daripada 500 harga/);
+});
+
+test("row words: status, reason, now-and-new, duplicate, in both languages", () => {
+  assert.equal(rowStatusText({ status: "check" }, en), "Please check");
+  assert.equal(rowStatusText({ status: "check" }, ms), "Sila semak");
+  assert.equal(rowStatusText({ status: "no_price" }, en), "No price found");
+  assert.equal(rowStatusText({ status: "no_price" }, ms), "Harga tidak ditemui");
+  assert.equal(rowStatusText({ status: "ready" }, en), "Will be saved");
+  assert.equal(rowStatusText({ status: "ready" }, ms), "Akan disimpan");
+  assert.equal(checkReasonText("the price is partly covered", ms), "the price is partly covered");
+  assert.equal(checkReasonText(null, en), "JomCall was not sure about this one.");
+  assert.equal(checkReasonText("  ", ms), "JomCall tidak pasti tentang yang ini.");
+  const cur = { item: "Kopi-O", priceSen: 7000 };
+  assert.equal(conflictText(cur, 8000, en), "Now: Kopi-O RM 70.00. New: RM 80.00");
+  assert.equal(conflictText(cur, 8000, ms), "Sekarang: Kopi-O RM 70.00. Baharu: RM 80.00");
+  assert.equal(conflictText({ item: "Kopi-O", priceSen: null }, 8000, en), "Now: Kopi-O no price. New: RM 80.00");
+  const win = rowPayload({ item: "Nasi Lemak", variant: "Biasa", priceSen: 650 });
+  assert.equal(duplicateText(win, en), "Same as Nasi Lemak Biasa RM 6.50; this one will not be saved.");
+  assert.equal(duplicateText(win, ms), "Sama seperti Nasi Lemak Biasa RM 6.50; yang ini tidak akan disimpan.");
+  assert.equal(rowName({ item: " Kopi ", variant: "" }), "Kopi");
+  assert.equal(factFlagged({ needsCheck: true, state: "pending" }), true);
+  assert.equal(factFlagged({ needsCheck: true, state: "confirmed" }), false);
 });

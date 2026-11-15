@@ -300,3 +300,71 @@ test("leaving the screen empties the upload queue, and a failed Remove never res
   const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
   assert.match(bring, /removeAgain\s*\?\s*void removeRow\(r\)\s*:\s*manager\.retry\(s\.key\)/);
 });
+
+test("the review page shows price rows and uses the reader's check flag", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  // The catalogue_row filter and the needsCheck rules live in rules.ts;
+  // review.tsx renders through them (liveRows, groupRows, factFlagged) and
+  // reads each row's checkReason.
+  const rules = readFileSync(join(dir, "rules.ts"), "utf8");
+  assert.match(rules, /export const liveRows[^]*?i\.kind === "catalogue_row"/);
+  assert.match(rules, /i\.needsCheck && i\.state === "pending"/);
+  assert.match(rules, /export const factFlagged[^]*?i\.needsCheck && i\.state === "pending"/);
+  assert.match(review, /liveRows\(view\.items\)/);
+  assert.match(review, /groupRows\(/);
+  assert.match(review, /factFlagged\(item\)/);
+  assert.match(review, /checkReasonText\(item\.checkReason, w\)/);
+  assert.match(review, /w\("Prices and services", "Harga dan perkhidmatan"\)/);
+  // The price field: decimal keyboard, a label naming the item, sent on
+  // leave or Enter only (a changed price confirms the row).
+  assert.match(review, /inputMode="decimal"/);
+  assert.match(review, /w\(`Price of \$\{name\}`, `Harga \$\{name\}`\)/);
+  assert.match(review, /\{ debounce: false \}/);
+  assert.match(review, /e\.key === "Enter"/);
+  // Actions carry the item name.
+  for (const s of ["`Confirm ${name}`", "`Remove ${name}`", "`Edit ${name}`", "`Use ${name} instead`"])
+    assert.ok(review.includes(s), s);
+  // One polite status line for the page.
+  assert.equal([...review.matchAll(/aria-live="polite"/g)].length, 1);
+  // The photo preview is a modal dialog, freed on close.
+  assert.match(review, /showModal\(\)/);
+  assert.match(review, /URL\.revokeObjectURL\(url\)/);
+  assert.match(review, /type: "image\/jpeg"/);
+  assert.match(review, /upload\.kind === "image"/);
+  assert.match(review, /upload\.bytesDeletedAt/);
+  // Removing a file reuses the bring stage's confirmation.
+  assert.match(review, /import \{ RemoveFileConfirm \} from "\.\/bring"/);
+  assert.match(readFileSync(join(dir, "bring.tsx"), "utf8"), /export function RemoveFileConfirm/);
+  // Apply sends the replace and counts from the planner, decided after the
+  // last write, and is disabled over the limit.
+  assert.match(review, /base = store\.latest\(\);\s*const sent = store\.revision\(\);\s*const now = applySummary\(base, choices, w\)/);
+  assert.match(review, /onlyReadProgress\(base, fresh\)/);
+  assert.match(review, /replace: now\.replace/);
+  assert.match(review, /disabled=\{busy \|\| blocked\}/);
+});
+
+test("the review page and its rules import only the price planner from domain", () => {
+  for (const f of ["review.tsx", "rules.ts"]) {
+    const text = readFileSync(join(dir, f), "utf8");
+    const domain = [...text.matchAll(/from\s+"([^"]*packages\/domain[^"]*)"/g)].map((m) => m[1]);
+    for (const path of domain)
+      assert.match(path, /packages\/domain\/src\/setup\/rows(\.ts)?$/, `${f}: ${path}`);
+  }
+  const rules = readFileSync(join(dir, "rules.ts"), "utf8");
+  assert.match(rules, /import \{\s*planFromView,[^}]*\} from "\.\.\/\.\.\/\.\.\/\.\.\/packages\/domain\/src\/setup\/rows\.ts"/);
+  // The mock preview never loads the setup screens (and so never the planner).
+  for (const f of readdirSync("web/components/product"))
+    assert.doesNotMatch(readFileSync(join("web/components/product", f), "utf8"), /packages\/domain\/src\/setup\/rows/, f);
+});
+
+test("the review page keeps choices, offers Use new only on conflicts, and never offers confirm-all", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  assert.match(review, /chooseRow\(store\.latest\(\)\.items, id, c\)/);
+  assert.match(review, /a\.choice && item\.current/);
+  assert.doesNotMatch(review, /Confirm all/i);
+  assert.ok(review.includes("`Remove all ${unsure.length} that still need checking`"));
+  assert.ok(review.includes('w("Remove everything from this file", "Buang semua daripada fail ini")'));
+  // A conflict or limit refusal reloads the rows.
+  assert.match(review, /e\.code === "CONFLICT" \|\| e\.code === "KNOWLEDGE_LIMIT"/);
+  assert.match(review, /await store\.reload\(\)/);
+});

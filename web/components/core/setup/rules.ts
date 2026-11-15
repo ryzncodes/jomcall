@@ -6,6 +6,14 @@ import {
   type SetupUpload,
 } from "../../../../packages/contracts/src/setup-upload";
 import type { Setup, SetupItem } from "../../../../packages/contracts/src/setup";
+import { LIMITS } from "../../../../packages/contracts/src/knowledge";
+// The one domain module the setup screens use: the price-row planner, which
+// has no server imports (tests/api/setup-rows.test.ts guards that).
+import {
+  planFromView,
+  type RowPlan,
+  type RowTotals,
+} from "../../../../packages/domain/src/setup/rows.ts";
 import { proxyRetryable } from "../error-copy";
 
 type TestLike = {
@@ -735,3 +743,531 @@ export function quietRetry(
 ): boolean {
   return base.session?.revision === sentRevision && onlyReadProgress(base, fresh);
 }
+
+// ---- Review: price rows ----------------------------------------------------
+
+// The most a price may be, in sen (the server's own ceiling).
+export const MAX_PRICE_SEN = 100_000_000_000;
+// One apply writes or updates at most this many price rows; more refuses the
+// whole setup (KNOWLEDGE_LIMIT).
+export const APPLY_ROW_LIMIT = LIMITS.catalogueBatch;
+
+const grouped = (whole: number) =>
+  String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+// "RM 80.00" (thousands grouped: "RM 1,200.00"); "" for no price.
+export function priceText(sen: number | null): string {
+  if (sen === null || !Number.isInteger(sen) || sen < 0) return "";
+  return `RM ${grouped(Math.floor(sen / 100))}.${String(sen % 100).padStart(2, "0")}`;
+}
+
+// What the price field shows: "80.00", never grouped, so it reads back the
+// same; "" for no price.
+export function amountText(sen: number | null): string {
+  if (sen === null || !Number.isInteger(sen) || sen < 0) return "";
+  return `${Math.floor(sen / 100)}.${String(sen % 100).padStart(2, "0")}`;
+}
+
+// The price field's text: empty (no price), a price in sen, or "invalid".
+// Accepts "80", "80.5", "80.50", "RM 80.50", "rm80", "1,200.50" (commas
+// only in groups of three); refuses negatives, more than two decimals, a
+// price above MAX_PRICE_SEN and anything else.
+export function readPrice(text: string): number | null | "invalid" {
+  const t = text.trim();
+  if (!t) return null;
+  const m = /^(?:rm\s*)?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?$/i.exec(t);
+  if (!m) return "invalid";
+  const whole = Number(m[1]!.replace(/,/g, ""));
+  const sen = whole * 100 + Number((m[2] ?? "").padEnd(2, "0"));
+  return Number.isSafeInteger(sen) && sen <= MAX_PRICE_SEN ? sen : "invalid";
+}
+
+// A price in sen, or null for empty or invalid text.
+export function parsePrice(text: string): number | null {
+  const v = readPrice(text);
+  return v === "invalid" ? null : v;
+}
+
+export type RowPayload = {
+  item: string;
+  variant: string;
+  priceSen: number | null;
+  unit: string;
+  notes: string;
+  uploadId: string | null;
+};
+// A price row's stored payload, read without trusting it.
+export function rowPayload(payload: unknown): RowPayload {
+  const p = (payload ?? {}) as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === "string" ? v : "");
+  return {
+    item: text(p.item),
+    variant: text(p.variant),
+    priceSen:
+      typeof p.priceSen === "number" && Number.isInteger(p.priceSen)
+        ? p.priceSen
+        : null,
+    unit: text(p.unit),
+    notes: text(p.notes),
+    uploadId: typeof p.uploadId === "string" ? p.uploadId : null,
+  };
+}
+// The name a sentence or a label uses: item, then variant.
+export const rowName = (p: Pick<RowPayload, "item" | "variant">) =>
+  [p.item.trim(), p.variant.trim()].filter(Boolean).join(" ");
+
+// Live price rows of the view (pending or confirmed, with an outcome).
+export const liveRows = (items: readonly SetupItem[]) =>
+  items.filter(
+    (i) =>
+      i.kind === "catalogue_row" &&
+      i.outcome !== undefined &&
+      (i.state === "pending" || i.state === "confirmed"),
+  );
+
+// The brief's order: flagged rows first, then document order.
+export function rowOrder<T extends Pick<SetupItem, "needsCheck" | "state" | "position">>(
+  items: readonly T[],
+): T[] {
+  const flagged = (i: T) => (i.needsCheck && i.state === "pending" ? 0 : 1);
+  return [...items].sort(
+    (a, b) => flagged(a) - flagged(b) || (a.position ?? 0) - (b.position ?? 0),
+  );
+}
+
+// "Use new" price rows to send with applySetup: live rows that match a saved
+// price (a conflict in the view) and that the owner set to "new". A row that
+// no longer conflicts (its price was cleared, it was renamed) is left out;
+// its choice is kept, so it counts again if the row conflicts again.
+export function priceReplace(
+  items: readonly SetupItem[],
+  choices: Readonly<Record<string, "keep" | "new">>,
+): string[] {
+  return liveRows(items)
+    .filter((i) => i.outcome === "conflict" && i.current && choices[i.id] === "new")
+    .map((i) => i.id);
+}
+
+// Choosing for one conflicting price row. "Use new" is exclusive among rows
+// that match the same saved price: choosing it on one sets the others back
+// to "keep" (only one can replace it). Returns every choice to set.
+export function chooseRow(
+  items: readonly SetupItem[],
+  id: string,
+  choice: "keep" | "new",
+): [string, "keep" | "new"][] {
+  const out: [string, "keep" | "new"][] = [[id, choice]];
+  if (choice !== "new") return out;
+  const target = items.find((i) => i.id === id)?.current?.id;
+  if (!target) return out;
+  for (const i of liveRows(items))
+    if (i.id !== id && i.current?.id === target) out.push([i.id, "keep"]);
+  return out;
+}
+
+export type RowSection = "check" | "conflict" | "duplicate" | "ready";
+// Where a row is listed: rows that need the owner (flagged, no price), then
+// rows that match a saved price, then duplicates, then the rest by file. The
+// view's outcome (nothing replaced) decides the conflict section, so a row
+// keeps its Keep/Use new choice after the owner picks "Use new"; the live
+// plan decides the rest.
+export function rowSection(
+  viewOutcome: SetupItem["outcome"],
+  live: RowPlan["outcome"] | undefined,
+): RowSection {
+  if (viewOutcome === "conflict") return "conflict";
+  const o = live ?? viewOutcome;
+  if (o === "unconfirmed" || o === "no_price") return "check";
+  if (o === "duplicate") return "duplicate";
+  return "ready";
+}
+
+export type RowGroups<T> = {
+  check: T[];
+  conflict: T[];
+  duplicate: T[];
+  // One group per upload (oldest first), then rows whose upload is gone
+  // (uploadId null): confirmed rows stay after their file is removed.
+  files: { uploadId: string | null; rows: T[] }[];
+};
+// The display grouping, each group in document order. `held` keeps rows in
+// the section they had while the owner is editing in the list, so nothing
+// moves under their finger; it is cleared when they leave it.
+export function groupRows<T extends SetupItem>(
+  items: readonly T[],
+  plans: readonly Pick<RowPlan, "id" | "outcome">[],
+  uploadIds: readonly string[],
+  held?: ReadonlyMap<string, RowSection> | null,
+): RowGroups<T> {
+  const live = new Map(plans.map((p) => [p.id, p.outcome]));
+  const groups: RowGroups<T> = {
+    check: [],
+    conflict: [],
+    duplicate: [],
+    files: uploadIds.map((uploadId) => ({ uploadId, rows: [] })),
+  };
+  const orphans: T[] = [];
+  const rows = (liveRows(items) as T[]).sort(
+    (a, b) => (a.position ?? 0) - (b.position ?? 0),
+  );
+  for (const i of rows) {
+    const s = held?.get(i.id) ?? rowSection(i.outcome, live.get(i.id));
+    if (s !== "ready") {
+      groups[s].push(i);
+      continue;
+    }
+    const upload = rowPayload(i.payload).uploadId;
+    const file = groups.files.find((f) => f.uploadId === upload);
+    if (file) file.rows.push(i);
+    else orphans.push(i);
+  }
+  if (orphans.length) groups.files.push({ uploadId: null, rows: orphans });
+  return groups;
+}
+
+export type RowStatus = "check" | "no_price" | "conflict" | "duplicate" | "ready" | "update";
+export type RowActions = {
+  status: RowStatus;
+  // Confirm as it is (a flagged row with a price, still pending).
+  confirm: boolean;
+  // Keep current / Use new.
+  choice: boolean;
+  // "Use this one instead" (a duplicate that does not match a saved price).
+  useThis: boolean;
+  // The small "Confirmed" mark.
+  confirmed: boolean;
+};
+// What one row offers, from the view's outcome, the live plan's outcome and
+// its state. Edit (the price field included) and Remove are always offered.
+export function rowActions(
+  viewOutcome: SetupItem["outcome"],
+  live: RowPlan["outcome"] | undefined,
+  state: SetupItem["state"],
+): RowActions {
+  const o = live ?? viewOutcome;
+  const choice = viewOutcome === "conflict";
+  const status: RowStatus = choice
+    ? "conflict"
+    : o === "unconfirmed"
+      ? "check"
+      : o === "no_price"
+        ? "no_price"
+        : o === "duplicate"
+          ? "duplicate"
+          : o === "update"
+            ? "update"
+            : "ready";
+  return {
+    status,
+    confirm: status === "check" && state === "pending",
+    choice,
+    useThis: status === "duplicate",
+    confirmed: state === "confirmed",
+  };
+}
+
+export type RowEditValues = Partial<
+  Pick<RowPayload, "item" | "variant" | "unit" | "notes" | "priceSen">
+>;
+export type RowChange = {
+  payload: RowEditValues;
+  state?: "pending";
+};
+// The request for an edit of a price row: only the fields that changed
+// (text compared trimmed). Clearing the price of a confirmed row also sends
+// state "pending" (a confirmed row must have a price). null when nothing
+// changed; "NAME_REQUIRED" when the name would be empty (never sent).
+export function rowChanges(
+  stored: RowPayload,
+  state: SetupItem["state"],
+  next: RowEditValues,
+): RowChange | null | "NAME_REQUIRED" {
+  const payload: RowEditValues = {};
+  for (const k of ["item", "variant", "unit", "notes"] as const) {
+    const v = next[k];
+    if (v === undefined) continue;
+    const t = v.trim();
+    if (k === "item" && !t) return "NAME_REQUIRED";
+    if (t !== stored[k].trim()) payload[k] = t;
+  }
+  if (next.priceSen !== undefined && next.priceSen !== stored.priceSen)
+    payload.priceSen = next.priceSen;
+  if (!Object.keys(payload).length) return null;
+  return payload.priceSen === null && state === "confirmed"
+    ? { payload, state: "pending" }
+    : { payload };
+}
+
+// "Use this one instead" on a duplicate: the writes that make this row the
+// one saved, worked out with the planner. Confirming it is enough when it is
+// pending (a confirmed row beats an untouched one); otherwise the row that
+// wins is removed, and the next one if that still does not do it.
+export function useThisSteps(
+  items: readonly SetupItem[],
+  replace: readonly string[],
+  id: string,
+): { id: string; state: "confirmed" | "removed" }[] {
+  const outcome = (list: readonly SetupItem[]) =>
+    planFromView(list, replace).plans.find((p) => p.id === id);
+  const me = items.find((i) => i.id === id);
+  if (!me) return [];
+  if (me.state === "pending") {
+    const confirmed = items.map((i) =>
+      i.id === id ? { ...i, state: "confirmed" as const, needsCheck: false } : i,
+    );
+    if (outcome(confirmed)?.outcome !== "duplicate")
+      return [{ id, state: "confirmed" }];
+  }
+  const steps: { id: string; state: "removed" }[] = [];
+  let list = items;
+  for (let n = 0; n < items.length; n++) {
+    const p = outcome(list);
+    if (!p || p.outcome !== "duplicate" || !p.duplicateOf) break;
+    const winner = p.duplicateOf;
+    steps.push({ id: winner, state: "removed" });
+    list = list.map((i) =>
+      i.id === winner ? { ...i, state: "removed" as const, outcome: undefined } : i,
+    );
+  }
+  return steps;
+}
+
+// Price rows that still need the owner (flagged, or no price): what
+// "Remove all N that still need checking" removes.
+export const needCheckIds = (plans: readonly Pick<RowPlan, "id" | "outcome">[]) =>
+  plans
+    .filter((p) => p.outcome === "unconfirmed" || p.outcome === "no_price")
+    .map((p) => p.id);
+
+export type ApplySummary = {
+  // Every id for applySetup's replace: answers and prices set to "Use new".
+  replace: string[];
+  plans: RowPlan[];
+  totals: RowTotals;
+  counts: {
+    prices: number;
+    answers: number;
+    checkPrices: number;
+    checkAnswers: number;
+    duplicates: number;
+    // Uploads still waiting for the reader or being read, by screen name.
+    reading: string[];
+  };
+};
+// What the apply button will do with the view as it is and the owner's
+// choices, following apply's own skip rules: price rows from the planner;
+// answers (facts, hours, first words) unless removed, flagged and pending,
+// or matching a saved answer the owner keeps.
+export function applySummary(
+  view: Pick<Setup, "items" | "conflicts" | "uploads">,
+  choices: Readonly<Record<string, "keep" | "new">>,
+  w: Words,
+): ApplySummary {
+  const answerIds = replaceIds(view.conflicts, view.items, choices);
+  const prices = priceReplace(view.items, choices);
+  const { plans, totals } = planFromView(view.items, prices);
+  const kept = new Set(
+    view.conflicts.map((c) => c.itemId).filter((id) => !answerIds.includes(id)),
+  );
+  const answers = view.items.filter(
+    (i) =>
+      i.kind !== "catalogue_row" &&
+      (i.state === "pending" || i.state === "confirmed"),
+  );
+  const flagged = (i: SetupItem) => i.needsCheck && i.state === "pending";
+  return {
+    replace: [...answerIds, ...prices],
+    plans,
+    totals,
+    counts: {
+      prices: totals.willWrite,
+      answers: answers.filter((i) => !flagged(i) && !kept.has(i.id)).length,
+      checkPrices: plans.filter(
+        (p) => p.outcome === "unconfirmed" || p.outcome === "no_price",
+      ).length,
+      checkAnswers: answers.filter(flagged).length,
+      duplicates: totals.duplicates,
+      reading: view.uploads
+        .filter((u) => u.state === "queued" || u.state === "reading")
+        .map((u) => uploadName(u, w)),
+    },
+  };
+}
+
+// More price rows than one apply may write: the button is disabled.
+export const overLimit = (totals: Pick<RowTotals, "willWrite">) =>
+  totals.willWrite > APPLY_ROW_LIMIT;
+export const overLimitText = (w: Words) =>
+  w(
+    `More than ${APPLY_ROW_LIMIT} prices would be saved at once, the most one setup allows. Remove a file or some rows first.`,
+    `Lebih daripada ${APPLY_ROW_LIMIT} harga akan disimpan sekali gus, melebihi had satu persediaan. Buang satu fail atau beberapa baris dahulu.`,
+  );
+
+type Counts = ApplySummary["counts"];
+
+// The apply button: what it will save. With nothing to save, the old text.
+export function applyButtonText(c: Counts, w: Words): string {
+  const prices = w(
+    c.prices === 1 ? "1 price" : `${c.prices} prices`,
+    `${c.prices} harga`,
+  );
+  const answers = w(
+    c.answers === 1 ? "1 answer" : `${c.answers} answers`,
+    `${c.answers} jawapan`,
+  );
+  if (c.prices && c.answers)
+    return w(
+      `Save ${prices} and ${answers}, try a call`,
+      `Simpan ${prices} dan ${answers}, cuba buat panggilan`,
+    );
+  if (c.prices || c.answers) {
+    const what = c.prices ? prices : answers;
+    return w(`Save ${what}, try a call`, `Simpan ${what}, cuba buat panggilan`);
+  }
+  return w("Looks right, try a call", "Semua betul, cuba buat panggilan");
+}
+
+// The line under the button: what will be left out. "" when nothing is.
+export function leftOutText(c: Counts, w: Words): string {
+  const parts: string[] = [];
+  if (c.checkPrices)
+    parts.push(
+      c.checkPrices === 1
+        ? w(
+            "1 price still needs checking and will not be saved.",
+            "1 harga masih perlu disemak dan tidak akan disimpan.",
+          )
+        : w(
+            `${c.checkPrices} prices still need checking and will not be saved.`,
+            `${c.checkPrices} harga masih perlu disemak dan tidak akan disimpan.`,
+          ),
+    );
+  if (c.checkAnswers)
+    parts.push(
+      c.checkAnswers === 1
+        ? w(
+            "1 answer still needs checking and will not be saved.",
+            "1 jawapan masih perlu disemak dan tidak akan disimpan.",
+          )
+        : w(
+            `${c.checkAnswers} answers still need checking and will not be saved.`,
+            `${c.checkAnswers} jawapan masih perlu disemak dan tidak akan disimpan.`,
+          ),
+    );
+  if (c.duplicates)
+    parts.push(
+      c.duplicates === 1
+        ? w("1 duplicate is left out.", "1 pendua tidak dimasukkan.")
+        : w(
+            `${c.duplicates} duplicates are left out.`,
+            `${c.duplicates} pendua tidak dimasukkan.`,
+          ),
+    );
+  return parts.join(" ");
+}
+
+// The question asked once before applying, when anything that still needs
+// checking would be lost or a file is still being read; null when there is
+// nothing to ask. Duplicates alone do not ask: the same item is saved.
+export function applyConfirmText(c: Counts, w: Words): string | null {
+  const parts: string[] = [];
+  if (c.checkPrices)
+    parts.push(
+      c.checkPrices === 1
+        ? w("1 price will not be saved.", "1 harga tidak akan disimpan.")
+        : w(
+            `${c.checkPrices} prices will not be saved.`,
+            `${c.checkPrices} harga tidak akan disimpan.`,
+          ),
+    );
+  if (c.checkAnswers)
+    parts.push(
+      c.checkAnswers === 1
+        ? w("1 answer will not be saved.", "1 jawapan tidak akan disimpan.")
+        : w(
+            `${c.checkAnswers} answers will not be saved.`,
+            `${c.checkAnswers} jawapan tidak akan disimpan.`,
+          ),
+    );
+  const lost = parts.length > 0;
+  if (lost)
+    parts.push(
+      w(
+        "You cannot come back to them after this.",
+        "Anda tidak boleh kembali kepadanya selepas ini.",
+      ),
+    );
+  for (const name of c.reading)
+    parts.push(
+      w(
+        `${name} is still being read. Prices from it will not be included if you save now.`,
+        `${name} masih sedang dibaca. Harga daripadanya tidak akan dimasukkan jika anda simpan sekarang.`,
+      ),
+    );
+  if (!parts.length) return null;
+  parts.push(lost ? w("Save the rest?", "Simpan yang selebihnya?") : w("Save now?", "Simpan sekarang?"));
+  return parts.join(" ");
+}
+
+// The status words of one row.
+export function rowStatusText(
+  a: Pick<RowActions, "status">,
+  w: Words,
+): string {
+  switch (a.status) {
+    case "check":
+      return w("Please check", "Sila semak");
+    case "no_price":
+      return w("No price found", "Harga tidak ditemui");
+    case "conflict":
+      return w("Matches a saved price", "Sama dengan harga yang disimpan");
+    case "duplicate":
+      return w("Duplicate", "Pendua");
+    case "update":
+      return w("Will replace the current price", "Akan menggantikan harga semasa");
+    case "ready":
+      return w("Will be saved", "Akan disimpan");
+  }
+}
+
+// The reader's reason for a flagged row, as it wrote it; a plain sentence
+// when it gave none.
+export const checkReasonText = (reason: string | null, w: Words) =>
+  reason?.trim() ||
+  w(
+    "JomCall was not sure about this one.",
+    "JomCall tidak pasti tentang yang ini.",
+  );
+
+// "Now: Kopi O RM 70.00. New: RM 80.00" for a row matching a saved price.
+export function conflictText(
+  current: { item: string; priceSen: number | null },
+  priceSen: number | null,
+  w: Words,
+): string {
+  const none = w("no price", "tiada harga");
+  const now = priceText(current.priceSen) || none;
+  const next = priceText(priceSen) || none;
+  return w(
+    `Now: ${current.item} ${now}. New: ${next}`,
+    `Sekarang: ${current.item} ${now}. Baharu: ${next}`,
+  );
+}
+
+// "Same as Kopi O RM 80.00; this one will not be saved."
+export function duplicateText(
+  winner: Pick<RowPayload, "item" | "variant" | "priceSen"> | null,
+  w: Words,
+): string {
+  const name = winner
+    ? [rowName(winner), priceText(winner.priceSen)].filter(Boolean).join(" ")
+    : w("another row", "baris lain");
+  return w(
+    `Same as ${name}; this one will not be saved.`,
+    `Sama seperti ${name}; yang ini tidak akan disimpan.`,
+  );
+}
+
+// The answer card's mark and check state for a fact read from a document.
+export const factFlagged = (i: Pick<SetupItem, "needsCheck" | "state">) =>
+  i.needsCheck && i.state === "pending";

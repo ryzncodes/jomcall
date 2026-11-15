@@ -364,39 +364,13 @@ export function BringStage({
                     </div>
                   </div>
                   {confirming === r.key && (
-                    <div
-                      className="setup-confirm"
-                      role="group"
-                      aria-labelledby={`${id}-confirm`}
-                    >
-                      <p id={`${id}-confirm`} className="setup-hint">
-                        {w(
-                          "Remove this file? Prices and details read from it are removed too, except ones you confirmed. A price you edited counts as confirmed and stays.",
-                          "Buang fail ini? Harga dan butiran yang dibaca daripadanya turut dibuang, kecuali yang sudah anda sahkan. Harga yang anda ubah dikira sudah disahkan dan kekal.",
-                        )}
-                      </p>
-                      <div className="setup-card-actions">
-                        <button
-                          type="button"
-                          className="button button-small button-dark"
-                          disabled={removing}
-                          onClick={() => void removeRow(r)}
-                        >
-                          {removing
-                            ? w("Removing…", "Membuang…")
-                            : w("Remove", "Buang")}
-                        </button>
-                        <button
-                          type="button"
-                          ref={keepRef}
-                          className="button button-small secondary-button"
-                          disabled={removing}
-                          onClick={() => keep(r)}
-                        >
-                          {w("Keep", "Kekalkan")}
-                        </button>
-                      </div>
-                    </div>
+                    <RemoveFileConfirm
+                      id={`${id}-confirm`}
+                      removing={removing}
+                      keepRef={keepRef}
+                      onRemove={() => void removeRow(r)}
+                      onKeep={() => keep(r)}
+                    />
                   )}
                 </li>
               );
@@ -424,6 +398,53 @@ export function BringStage({
           {rows.length
             ? w("Continue", "Teruskan")
             : w("Answer questions instead", "Jawab soalan sahaja")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Asks before removing a file; also used by the review page's "Remove
+// everything from this file". The caller focuses Keep when it opens.
+export function RemoveFileConfirm({
+  id,
+  removing,
+  keepRef,
+  onRemove,
+  onKeep,
+}: {
+  id: string;
+  removing: boolean;
+  keepRef?: React.Ref<HTMLButtonElement>;
+  onRemove: () => void;
+  onKeep: () => void;
+}) {
+  const w = useWords();
+  return (
+    <div className="setup-confirm" role="group" aria-labelledby={id}>
+      <p id={id} className="setup-hint">
+        {w(
+          "Remove this file? Prices and details read from it are removed too, except ones you confirmed. A price you edited counts as confirmed and stays.",
+          "Buang fail ini? Harga dan butiran yang dibaca daripadanya turut dibuang, kecuali yang sudah anda sahkan. Harga yang anda ubah dikira sudah disahkan dan kekal.",
+        )}
+      </p>
+      <div className="setup-card-actions">
+        <button
+          type="button"
+          className="button button-small button-dark"
+          disabled={removing}
+          onClick={onRemove}
+        >
+          {removing ? w("Removing…", "Membuang…") : w("Remove", "Buang")}
+        </button>
+        <button
+          type="button"
+          ref={keepRef}
+          className="button button-small secondary-button"
+          disabled={removing}
+          onClick={onKeep}
+        >
+          {w("Keep", "Kekalkan")}
         </button>
       </div>
     </div>

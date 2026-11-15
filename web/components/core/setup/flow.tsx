@@ -118,8 +118,13 @@ const StoreContext = createContext<Store>({} as never);
 export const useSetup = () => useContext(StoreContext);
 
 // A field's value is sent 600 ms after the last change, or at once when the
-// field is left or the owner moves on.
-export function useAutosave<T>(save: (value: T) => Promise<boolean>) {
+// field is left or the owner moves on. With `debounce: false` a change is
+// only held until flush (the field is left, Enter, the owner moves on): a
+// price edit confirms its row, so a pause in typing must not send it.
+export function useAutosave<T>(
+  save: (value: T) => Promise<boolean>,
+  { debounce = true }: { debounce?: boolean } = {},
+) {
   const store = useSetup();
   const saveRef = useRef(save);
   saveRef.current = save;
@@ -156,7 +161,7 @@ export function useAutosave<T>(save: (value: T) => Promise<boolean>) {
     change: (value: T) => {
       pending.current = { value };
       clearTimeout(timer.current);
-      timer.current = setTimeout(() => void flush(), 600);
+      if (debounce) timer.current = setTimeout(() => void flush(), 600);
     },
     flush,
     cancel: () => {
