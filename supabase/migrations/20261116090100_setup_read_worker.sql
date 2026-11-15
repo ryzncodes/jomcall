@@ -26,7 +26,13 @@ alter table app.setup_upload add constraint setup_upload_dropped_count_min check
 create index if not exists setup_upload_leased on app.setup_upload(lease_until) where state = 'reading';
 create index if not exists setup_upload_open on app.setup_upload(created_at) where state = 'uploading';
 create index if not exists setup_upload_unswept on app.setup_upload(created_at) where delete_after is null;
-create index if not exists setup_upload_delete_after on app.setup_upload(delete_after);
+-- Set when the 30-day sweep has run for an upload, so the sweep's index holds
+-- only uploads it has not reached yet.
+alter table app.setup_upload add column if not exists bytes_deleted_at timestamptz;
+drop index if exists app.setup_upload_delete_after;
+create index if not exists setup_upload_due on app.setup_upload(delete_after) where bytes_deleted_at is null;
+-- The read actions find an upload's setup.read row by resource id.
+create index if not exists outbox_setup_read on app.outbox(resource_id) where kind = 'setup.read';
 
 grant select, update on app.setup_upload to jomcall_agent_jobs;
 grant select, delete on app.setup_upload_chunk to jomcall_agent_jobs;
@@ -64,7 +70,7 @@ begin
    where u2.state = 'uploading' and u2.created_at < now() - interval '24 hours'
    order by u2.created_at limit 100 for update skip locked),
   gone as (delete from app.setup_upload_chunk k using x where k.upload_id = x.id)
-  update app.setup_upload t set state = 'removed', fail_code = 'ABANDONED', lease_token = null, lease_until = null from x where t.id = x.id;
+  update app.setup_upload t set state = 'removed', fail_code = 'ABANDONED', lease_token = null, lease_until = null, bytes_deleted_at = now() from x where t.id = x.id;
   get diagnostics v_abandoned = row_count;
   -- Every upload's bytes go 30 days after it was created, whatever happens
   -- to its session.
@@ -73,12 +79,13 @@ begin
    order by u2.created_at limit 100 for update skip locked)
   update app.setup_upload t set delete_after = t.created_at + interval '30 days' from x where t.id = x.id;
   get diagnostics v_marked = row_count;
-  -- The upload row and its items stay.
+  -- The upload row and its items stay. Each upload is swept once.
   with x as (
    select u2.id from app.setup_upload u2
-   where u2.delete_after < now() and exists(select 1 from app.setup_upload_chunk k where k.upload_id = u2.id)
-   order by u2.delete_after limit 100)
-  delete from app.setup_upload_chunk k using x where k.upload_id = x.id;
+   where u2.delete_after < now() and u2.bytes_deleted_at is null
+   order by u2.delete_after limit 100 for update skip locked),
+  gone as (delete from app.setup_upload_chunk k using x where k.upload_id = x.id)
+  update app.setup_upload t set bytes_deleted_at = now() from x where t.id = x.id;
   get diagnostics v_swept = row_count;
   return jsonb_build_object('requeued', v_requeued, 'abandoned', v_abandoned, 'marked', v_marked, 'swept', v_swept);
 

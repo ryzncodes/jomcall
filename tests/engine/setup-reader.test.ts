@@ -568,9 +568,12 @@ test("delete_after is set for uploads of sessions that never get applied; chunks
       "update app.setup_upload set created_at=now()-interval '31 days',delete_after=null where id=$1",
       [id],
     );
+    // Still open: not swept yet.
+    assert.equal((await x.upload(id)).bytes_deleted_at, null);
     await w.tick();
     assert.equal(await x.chunks(id), 0);
-    assert.ok(await x.upload(id));
+    // Swept once: the sweep's index no longer holds it.
+    assert.ok((await x.upload(id)).bytes_deleted_at);
     assert.equal((await x.items("catalogue_row")).length, 1);
   }));
 
