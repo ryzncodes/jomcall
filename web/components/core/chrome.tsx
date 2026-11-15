@@ -63,7 +63,7 @@ export function WorkspaceChrome({
     p = t.product;
   const hosted = runMode === "hosted";
   // Local and hosted modes hide channel pages that are not connected. While
-  // the read is loading or failed the three entries stay out (fail closed).
+  // the read is loading or failed those entries stay out (fail closed).
   // Mock mode shows every entry, as before.
   const [channels, setChannels] = useState<Channels>();
   const channelClient = useMemo(
@@ -166,6 +166,9 @@ export function WorkspaceChrome({
       ? [
           ...(channels?.phone ? [] : ["phones"]),
           ...(channels?.whatsapp ? [] : ["whatsapp"]),
+          // The inbox holds WhatsApp chats only for now, so it follows the
+          // WhatsApp switch.
+          ...(channels?.whatsapp ? [] : ["inbox"]),
           ...(channels?.integrations ? [] : ["integrations"]),
           ...(workspace.complete && active !== "setup" ? ["setup"] : []),
         ]
