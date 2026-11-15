@@ -14,6 +14,7 @@ import {
   injectionSignals,
   matchRows,
   nameKey,
+  oldPriceOf,
   personalHits,
   scoreRows,
   tokens,
@@ -35,6 +36,8 @@ import {
 import {
   READER_DISAGREE_PREFIX,
   READER_ONE_READ_ROW,
+  READER_READ_ONCE,
+  READER_RENAMED_ROW,
   readerFallbackModel,
   readerModel,
   type ReadResult,
@@ -289,11 +292,11 @@ test("an old and a new price: the new price passes flagged or not; the old one u
   ]);
   assert.equal(oldFlagged.wrongFlagged, 1);
   assert.equal(oldFlagged.wrongUnflagged, 0);
-  // An extra row carrying the old price under a name that matches nothing:
-  // unflagged it fails, flagged it is reported.
+  // An extra row carrying the old price under a name too loose to match but
+  // sharing a word with the item: unflagged it fails, flagged it is reported.
   const stray = scoreRows(truth, [
     pandan(9500, { needsCheck: true }),
-    row("Harga asal (Okt)", 9000),
+    row("Pandan harga lama", 9000),
     velvet,
   ]);
   assert.equal(stray.wrongUnflagged, 1);
@@ -304,15 +307,58 @@ test("an old and a new price: the new price passes flagged or not; the old one u
   ]);
   const strayFlagged = scoreRows(truth, [
     pandan(9500),
-    row("Harga asal (Okt)", 9000, { needsCheck: true }),
+    row("Pandan harga lama", 9000, { needsCheck: true }),
     velvet,
   ]);
   assert.equal(strayFlagged.wrongUnflagged, 0);
   assert.equal(strayFlagged.wrongFlagged, 1);
-  // An unmatched row at some other price is still an extra.
-  const other = scoreRows(truth, [pandan(9500), row("Harga asal (Okt)", 8800)]);
-  assert.equal(other.extra, 1);
-  assert.equal(other.wrongUnflagged, 0);
+  // An unmatched row at some other price, or sharing no word with the item,
+  // is an extra.
+  for (const r of [
+    row("Pandan harga lama", 8800),
+    row("Harga asal (Okt)", 9000),
+  ]) {
+    const other = scoreRows(truth, [pandan(9500), r]);
+    assert.equal(other.extra, 1);
+    assert.equal(other.wrongUnflagged, 0);
+  }
+});
+
+test("the old-price rule stays with its item: a right price under a loose name is not another item's old price", () => {
+  // d08: Kek Coklat Moist 8 inci's new price (RM 90) is Kek Pandan Gula
+  // Melaka 8 inci's old one.
+  const truth: TruthRow[] = [
+    {
+      item: "Kek Coklat Moist",
+      variant: "8 inci",
+      priceSen: 9000,
+      trap: "corrected",
+      oldPriceSen: 8500,
+    },
+    {
+      item: "Kek Pandan Gula Melaka",
+      variant: "8 inci",
+      priceSen: 9500,
+      trap: "corrected",
+      oldPriceSen: 9000,
+    },
+  ];
+  const pandan = row("Kek Pandan Gula Melaka", 9500, { variant: "8 inci" });
+  const coklat = row("Kek Coklat Moist", 9000, { variant: "8 inci" });
+  // Coklat read right twice, once under a name too loose to match, unflagged.
+  const loose = row("Kek Coklat 8 inch (baru)", 9000);
+  const s = scoreRows(truth, [coklat, pandan, loose]);
+  assert.equal(s.wrongUnflagged, 0);
+  assert.equal(s.wrongFlagged, 0);
+  assert.equal(oldPriceOf(truth, loose), null);
+  // Coklat missing; its right price under a loose name is still not Pandan's
+  // old price.
+  const alone = scoreRows(truth, [pandan, row("Coklat moist kek", 9000)]);
+  assert.equal(alone.wrongUnflagged, 0);
+  // Pandan's old price under a Pandan-like name is.
+  const old = row("Pandan gula melaka lama", 9000);
+  assert.equal(oldPriceOf(truth, old), 1);
+  assert.equal(scoreRows(truth, [coklat, pandan, old]).wrongUnflagged, 1);
 });
 
 test("another amount of the same item (free above an amount): flagged it is fine, as one row or two", () => {
@@ -520,6 +566,9 @@ const doc = (more: Partial<DocResult> = {}): DocResult => ({
   dropped: 0,
   disagree: 0,
   oneRead: 0,
+  renamed: 0,
+  once: 0,
+  reworded: null,
   facts: 3,
   flaggedRows: 1,
   flaggedShare: 0.1,
@@ -593,7 +642,7 @@ test("the summary table has counts and a total line", () => {
     /^total\s+72\s+20\s+40\s+20\s+2\s+0\s+0\s+0\s+0\s+0\s+1\s/,
   );
   assert.match(lines.at(-1)!, /1 ran/);
-  assert.match(lines[0]!, /\sdisagree\s+one-read\s/);
+  assert.match(lines[0]!, /\sdisagree\s+one-read\s+renamed\s+once\s/);
   assert.match(lines[0]!, /\scalls\s+sec\s/);
   assert.equal(lines.length, 6);
 });
@@ -695,23 +744,44 @@ test("the fixtures are 15 synthetic documents the reader accepts as built", () =
   assert.equal(trapOf("d10", "Potong die-cut"), "ambiguous");
   assert.equal(trapOf("d11", "Below 50 pax surcharge"), "ambiguous");
   assert.equal(trapOf("d02", "Bungkus"), "ambiguous");
-  // Surcharges, add-ons, conditional and "free above" amounts are unsure too.
+  // Surcharges, add-ons and amounts that change under a condition are
+  // unsure too, and so are the prices d06's stamp covers.
   for (const [id, item] of [
     ["d02", "Tambah telur"],
     ["d03", "Inspection"],
     ["d04", "Denda lewat"],
-    ["d06", "Cuci + Kering + Lipat"],
-    ["d08", "Karipap ayam"],
+    ["d06", "Kasut (cuci)"],
     ["d10", "Design fee"],
-    ["d10", "Jersi microfiber sublimation full print"],
-    ["d11", "Package B"],
-    ["d11", "Satay ayam"],
     ["d11", "Transport"],
-    ["d12", "Towing / angkut motor rosak dlm 5km"],
     ["d12", "Caj simpan motor"],
-    ["d15", "Tart telur"],
   ])
     assert.equal(trapOf(id!, item!), "ambiguous", `${id} ${item}`);
+  assert.equal(
+    docs
+      .find((d) => d.id === "d06")!
+      .rows.find((r) => r.item === "Comforter" && r.variant === "Queen")!.trap,
+    "ambiguous",
+  );
+  // A minimum order, a distance limit or a quantity tier on its own is a
+  // plain price.
+  for (const [id, item] of [
+    ["d06", "Cuci + Kering + Lipat"],
+    ["d08", "Karipap ayam"],
+    ["d08", "Donut gula"],
+    ["d08", "Roti sosej"],
+    ["d08", "Tart telur"],
+    ["d10", "Jersi microfiber sublimation full print"],
+    ["d11", "Package A 经济套餐"],
+    ["d11", "Package B"],
+    ["d11", "Package C 豪华"],
+    ["d11", "Satay ayam"],
+    ["d12", "Towing / angkut motor rosak dlm 5km"],
+    ["d15", "Karipap ayam"],
+    ["d15", "Donut gula"],
+    ["d15", "Roti sosej"],
+    ["d15", "Tart telur"],
+  ])
+    assert.equal(trapOf(id!, item!), undefined, `${id} ${item}`);
   const rowOf = (id: string, item: string) =>
     docs.find((d) => d.id === id)!.rows.find((r) => r.item === item)!;
   assert.deepEqual(rowOf("d11", "Transport").alsoSen, [0]);
@@ -960,7 +1030,44 @@ test("the paid path, driven by a local read function: fallback rule, scoring, ex
     );
     assert.match(
       e.lines.join("\n"),
-      /2 model call\(s\) in all; 1 row\(s\) flagged because two reads gave different prices, 1 found by only one read\./,
+      /2 model call\(s\) in all; 1 row\(s\) flagged because two reads gave different prices, 1 found by only one read, 0 named differently, 0 from a document read only once\./,
+    );
+    assert.equal(d05.result.reworded, null);
+
+    // Reconcile's counts reach the summary: reworded per document, renamed
+    // and read-once rows as columns. The model's own reason may follow.
+    const readPaired: Deps["read"] = async (_input, _fields, opts) => {
+      const rows = exact("d05", true).map((r, i) =>
+        i < 2
+          ? { ...r, checkReason: `${READER_RENAMED_ROW} Faint.` }
+          : i < 5
+            ? { ...r, checkReason: READER_READ_ONCE }
+            : i === 5
+              ? { ...r, checkReason: `${READER_ONE_READ_ROW} Faint.` }
+              : r,
+      );
+      return {
+        ...(ok(rows, opts.model!) as Extract<ReadResult, { ok: true }>),
+        pairing: { exact: 4, reworded: 30, renamed: 2 },
+      };
+    };
+    const g = deps({
+      env: { ANTHROPIC_API_KEY: "not-a-real-key" },
+      makeClient: () => client,
+      read: readPaired,
+    });
+    assert.equal(
+      await run(["--paid", "--only", "d05", "--out", out], g.deps),
+      0,
+    );
+    const paired = JSON.parse(readFileSync(out, "utf8")).documents[0].result;
+    assert.equal(paired.reworded, 30);
+    assert.equal(paired.renamed, 2);
+    assert.equal(paired.once, 3);
+    assert.equal(paired.oneRead, 1);
+    assert.match(
+      g.lines.join("\n"),
+      /^d05 read in [\d.]+ s \(2 model calls; 30 reworded\)$/m,
     );
   } finally {
     rmSync(dir, { recursive: true, force: true });

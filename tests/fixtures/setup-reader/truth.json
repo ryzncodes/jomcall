@@ -1,5 +1,5 @@
 {
- "note": "Synthetic documents for npm run check:setup-reader. Every business, person, address and number is invented. d01-d12 and their rows come from the knowledge-intake spike (2026-11-14); d07-d09 were workbooks there and are delimited text here; d13, d14 and d15 are new (d15 is d08's content as pasted text). mustNotAppear: phrases from lines that are not price rows (d14's debt book). priceSen is the price in sen (null: the document gives no readable price). trap marks a price the document itself makes unsure: unreadable (physically covered), no-price ('call', 'TBA', 'tanya boss'), ambiguous (a smudged or half-covered digit; an add-on or surcharge such as '+15', 'tambah RM2' or a late fee; a price that holds only under a condition, such as a minimum order, a distance or 'free above' an amount; a quantity tier named by the variant, such as 'Borong (≥10)', is a plain price), corrected (an old price replaced; truth is the new one, oldPriceSen the old one, which must never come back unflagged), approx ('about', 'dari'), range (two prices). An unsure price (unreadable, no-price, ambiguous, approx, range) must come back flagged or without a price. optional: fine to read or to leave out. alsoSen: other amounts the document gives for the same unsure item (such as 0 above an order total); the item may come back as one flagged row or as several flagged rows. variantAlt: other acceptable wordings of the variant. factLabels are for people only and are not scored.",
+ "note": "Synthetic documents for npm run check:setup-reader. Every business, person, address and number is invented. d01-d12 and their rows come from the knowledge-intake spike (2026-11-14); d07-d09 were workbooks there and are delimited text here; d13, d14 and d15 are new (d15 is d08's content as pasted text). mustNotAppear: phrases from lines that are not price rows (d14's debt book). priceSen is the price in sen (null: the document gives no readable price). trap marks a price the document itself makes unsure: unreadable (physically covered), no-price ('call', 'TBA', 'tanya boss'), ambiguous (a smudged or half-covered digit, such as d06's stamp over Comforter Queen and Kasut; an add-on or surcharge such as '+15', 'tambah RM2' or a late fee; an amount that changes or falls away under a condition, such as 'free if repaired' or 'free above' an amount; a minimum order, a distance limit or a quantity tier on its own, such as 'min order 30' or 'Borong (≥10)', is a plain price), corrected (an old price replaced; truth is the new one, oldPriceSen the old one, which must never come back unflagged), approx ('about', 'dari'), range (two prices). An unsure price (unreadable, no-price, ambiguous, approx, range) must come back flagged or without a price. optional: fine to read or to leave out. alsoSen: other amounts the document gives for the same unsure item (such as 0 above an order total); the item may come back as one flagged row or as several flagged rows. variantAlt: other acceptable wordings of the variant. factLabels are for people only and are not scored.",
  "documents": [
   {
    "id": "d01",
@@ -807,8 +807,7 @@
    "rows": [
     {
      "item": "Cuci + Kering + Lipat",
-     "priceSen": 450,
-     "trap": "ambiguous"
+     "priceSen": 450
     },
     {
      "item": "Cuci sahaja",
@@ -838,7 +837,8 @@
     {
      "item": "Comforter",
      "variant": "Queen",
-     "priceSen": 2000
+     "priceSen": 2000,
+     "trap": "ambiguous"
     },
     {
      "item": "Comforter",
@@ -852,7 +852,8 @@
     },
     {
      "item": "Kasut (cuci)",
-     "priceSen": 2000
+     "priceSen": 2000,
+     "trap": "ambiguous"
     }
    ],
    "factLabels": [
@@ -1270,23 +1271,19 @@
     },
     {
      "item": "Karipap ayam",
-     "priceSen": 90,
-     "trap": "ambiguous"
+     "priceSen": 90
     },
     {
      "item": "Donut gula",
-     "priceSen": 120,
-     "trap": "ambiguous"
+     "priceSen": 120
     },
     {
      "item": "Roti sosej",
-     "priceSen": 250,
-     "trap": "ambiguous"
+     "priceSen": 250
     },
     {
      "item": "Tart telur",
-     "priceSen": 200,
-     "trap": "ambiguous"
+     "priceSen": 200
     },
     {
      "item": "Brownies (box of 9)",
@@ -1458,8 +1455,7 @@
     },
     {
      "item": "Jersi microfiber sublimation full print",
-     "priceSen": 3500,
-     "trap": "ambiguous"
+     "priceSen": 3500
     },
     {
      "item": "Tote bag canvas print 1 side",
@@ -1523,18 +1519,15 @@
    "rows": [
     {
      "item": "Package A 经济套餐",
-     "priceSen": 1200,
-     "trap": "ambiguous"
+     "priceSen": 1200
     },
     {
      "item": "Package B",
-     "priceSen": 1600,
-     "trap": "ambiguous"
+     "priceSen": 1600
     },
     {
      "item": "Package C 豪华",
-     "priceSen": 2200,
-     "trap": "ambiguous"
+     "priceSen": 2200
     },
     {
      "item": "Below 50 pax surcharge",
@@ -1544,8 +1537,7 @@
     },
     {
      "item": "Satay ayam",
-     "priceSen": 120,
-     "trap": "ambiguous"
+     "priceSen": 120
     },
     {
      "item": "Satay daging 沙爹牛肉",
@@ -1616,8 +1608,7 @@
     },
     {
      "item": "Towing / angkut motor rosak dlm 5km",
-     "priceSen": 3000,
-     "trap": "ambiguous"
+     "priceSen": 3000
     },
     {
      "item": "Caj simpan motor",
@@ -1898,23 +1889,19 @@
     },
     {
      "item": "Karipap ayam",
-     "priceSen": 90,
-     "trap": "ambiguous"
+     "priceSen": 90
     },
     {
      "item": "Donut gula",
-     "priceSen": 120,
-     "trap": "ambiguous"
+     "priceSen": 120
     },
     {
      "item": "Roti sosej",
-     "priceSen": 250,
-     "trap": "ambiguous"
+     "priceSen": 250
     },
     {
      "item": "Tart telur",
-     "priceSen": 200,
-     "trap": "ambiguous"
+     "priceSen": 200
     },
     {
      "item": "Brownies (box of 9)",

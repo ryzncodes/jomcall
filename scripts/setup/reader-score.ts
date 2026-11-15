@@ -25,8 +25,9 @@ const UNSURE: readonly Trap[] = [
 ];
 
 // oldPriceSen: on a corrected row, the price the document replaced. A read
-// row carrying it is wrong (flagged or not), even under a name that matches
-// no truth item. alsoSen: on an unsure row, other amounts the document gives
+// row carrying it is wrong (flagged or not), even under a name too loose to
+// match, when that name is closer to this item than to any truth row whose
+// own price it is (see oldPriceOf). alsoSen: on an unsure row, other amounts the document gives
 // for the same item (an amount that drops to 0 above an order total, say);
 // a flagged read row at one of them is as good as one at priceSen, so the
 // item may come back as one flagged row or as several.
@@ -246,8 +247,8 @@ export type RowScore = {
   // Required truth rows with no read row.
   missed: number;
   // Unmatched read rows that repeat a truth item (already matched to
-  // another read row), or carry a corrected row's old price. Their prices
-  // are checked like matched rows.
+  // another read row), or carry a corrected row's old price (oldPriceOf).
+  // Their prices are checked like matched rows.
   duplicates: number;
   duplicateSamePrice: number;
   // Unmatched read rows that repeat no truth item.
@@ -282,6 +283,40 @@ export type RowScore = {
 
 const isUnsure = (t: TruthRow) =>
   t.trap !== undefined && UNSURE.includes(t.trap);
+
+// Read-name tokens found in a truth row's names, at most over its wordings.
+function shared(t: TruthRow, r: ScoredRow): number {
+  const have = new Set(tokens(readName(r)));
+  return Math.max(
+    ...truthNames(t).map(
+      (n) => new Set(tokens(n).filter((x) => have.has(x))).size,
+    ),
+  );
+}
+
+// The corrected truth row whose old price an unmatched read row carries:
+// the read name shares a word with that item, and no truth row whose own
+// price this is shares as many. In d08, Kek Coklat Moist 8 inci's price is
+// Kek Pandan Gula Melaka 8 inci's old one: a Coklat row read right under a
+// loose name stays Coklat's. Null when there is none.
+export function oldPriceOf(truth: TruthRow[], r: ScoredRow): number | null {
+  if (r.priceSen === null) return null;
+  const own = Math.max(
+    0,
+    ...truth.filter((u) => u.priceSen === r.priceSen).map((u) => shared(u, r)),
+  );
+  let best: number | null = null;
+  let bestShared = own;
+  truth.forEach((t, ti) => {
+    if (t.oldPriceSen !== r.priceSen) return;
+    const n = shared(t, r);
+    if (n > bestShared) {
+      best = ti;
+      bestShared = n;
+    }
+  });
+  return best;
+}
 
 export function scoreRows(truth: TruthRow[], read: ScoredRow[]): RowScore {
   const pairs = matchRows(truth, read);
@@ -340,14 +375,8 @@ export function scoreRows(truth: TruthRow[], read: ScoredRow[]): RowScore {
   read.forEach((r, ri) => {
     if (matchedRead.has(ri)) return;
     // A row repeating no truth item by name, but carrying a corrected row's
-    // old price, is that item's old price.
-    const ti =
-      duplicateOf(truth, r) ??
-      (r.priceSen === null
-        ? null
-        : ((i) => (i < 0 ? null : i))(
-            truth.findIndex((t) => t.oldPriceSen === r.priceSen),
-          ));
+    // old price under a name closer to that item, is that item's old price.
+    const ti = duplicateOf(truth, r) ?? oldPriceOf(truth, r);
     if (ti === null) {
       s.extra += 1;
       if (r.priceSen !== null && !r.needsCheck) s.extraUnflaggedPriced += 1;
@@ -462,6 +491,13 @@ export type DocResult = {
   // gave different prices, or only one read found the row.
   disagree: number;
   oneRead: number;
+  // Rows the comparison paired but flagged as named differently, and rows
+  // flagged because only one of the two reads worked.
+  renamed: number;
+  once: number;
+  // Rows the comparison paired as the same row worded differently (not
+  // flagged for it); null when the document was not read twice.
+  reworded: number | null;
   facts: number;
   flaggedRows: number;
   flaggedShare: number;
@@ -516,6 +552,8 @@ const COLUMNS: [string, (d: DocResult) => string][] = [
   ["drop", (d) => String(d.dropped)],
   ["disagree", (d) => String(d.disagree)],
   ["one-read", (d) => String(d.oneRead)],
+  ["renamed", (d) => String(d.renamed)],
+  ["once", (d) => String(d.once)],
   ["facts", (d) => String(d.facts)],
   ["flag%", (d) => `${Math.round(d.flaggedShare * 100)}`],
   ["calls", (d) => String(d.calls)],
@@ -546,6 +584,8 @@ const SUMMED = [
   "dropped",
   "disagree",
   "oneRead",
+  "renamed",
+  "once",
   "facts",
   "flaggedRows",
   "calls",
@@ -582,6 +622,7 @@ export function formatTable(docs: DocResult[]): string {
     code: null,
     expectFit: true,
     flaggedShare: t.rowsRead ? t.flaggedRows / t.rowsRead : 0,
+    reworded: null,
     injection: null,
     ...t,
   };

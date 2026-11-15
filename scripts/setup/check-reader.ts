@@ -19,6 +19,8 @@ import {
   READER_DISAGREE_PREFIX,
   READER_LIMITS,
   READER_ONE_READ_ROW,
+  READER_READ_ONCE,
+  READER_RENAMED_ROW,
   isDoubleRead,
   readDocument,
   readDocumentChecked,
@@ -404,8 +406,15 @@ async function paidRun(
         (r) => r.needsCheck && r.checkReason.startsWith(READER_DISAGREE_PREFIX),
       ).length,
       oneRead: rows.filter(
-        (r) => r.needsCheck && r.checkReason === READER_ONE_READ_ROW,
+        (r) => r.needsCheck && r.checkReason.startsWith(READER_ONE_READ_ROW),
       ).length,
+      renamed: rows.filter(
+        (r) => r.needsCheck && r.checkReason.startsWith(READER_RENAMED_ROW),
+      ).length,
+      once: rows.filter(
+        (r) => r.needsCheck && r.checkReason.startsWith(READER_READ_ONCE),
+      ).length,
+      reworded: kept.ok && kept.pairing ? kept.pairing.reworded : null,
       facts: facts.length,
       flaggedRows: score.flaggedRows,
       flaggedShare: kept.ok ? kept.flaggedShare : 0,
@@ -455,7 +464,7 @@ async function paidRun(
       facts,
     });
     deps.print(
-      `${doc.id} read in ${seconds.toFixed(1)} s (${calls} model call${calls > 1 ? "s" : ""})`,
+      `${doc.id} read in ${seconds.toFixed(1)} s (${calls} model call${calls > 1 ? "s" : ""}${result.reworded === null ? "" : `; ${result.reworded} reworded`})`,
     );
   }
 
@@ -480,7 +489,7 @@ async function paidRun(
         .join(", ")}.`,
     );
   deps.print(
-    `${sum.calls} model call(s) in all; ${sum.disagree} row(s) flagged because two reads gave different prices, ${sum.oneRead} found by only one read.`,
+    `${sum.calls} model call(s) in all; ${sum.disagree} row(s) flagged because two reads gave different prices, ${sum.oneRead} found by only one read, ${sum.renamed} named differently, ${sum.once} from a document read only once.`,
   );
   deps.print(
     `Fallback read ran on ${sum.fallbackRan} of ${results.length} document(s); field lists of ${[...new Set(results.map((r) => r.fields))].sort((x, y) => x - y).join(", ")} fields.`,
