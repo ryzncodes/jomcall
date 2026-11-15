@@ -18040,7 +18040,7 @@
                     "maximum": 9007199254740991
                   },
                   "replace": {
-                    "maxItems": 100,
+                    "maxItems": 600,
                     "type": "array",
                     "items": {
                       "type": "string",
