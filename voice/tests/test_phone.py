@@ -309,6 +309,105 @@ async def test_a_failure_after_the_start_still_ends_the_call_and_hangs_up(monkey
     assert ctx.deleted == 1 and ctx.shutdowns == ["worker_failed"]
 
 
+async def test_a_quick_hang_up_cancels_the_answer_report_and_ends_at_once(monkeypatch):
+    """The end report must not wait for the answer report's retries: that
+    would bill a quick hang-up for up to about 10 s more."""
+    import asyncio
+    import time
+
+    from jomcall_voice import worker
+
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "not-a-real-key")
+    monkeypatch.setenv("GOOGLE_CLOUD_API_KEY", "not-a-real-key")
+    ended: list[tuple] = []
+    report = {"started": False, "cancelled": False}
+
+    class FakeClient:
+        def __init__(self, *_):
+            pass
+
+        async def start(self, room, identity):
+            return {"refused": False, "callId": "c1", "token": "t1", "voice": "Kore",
+                    "opening": "AI here.", "capSeconds": 600.0}
+
+        async def answered(self, call_id, token):
+            report["started"] = True
+            try:
+                await asyncio.sleep(30)  # a server that never answers
+            except asyncio.CancelledError:
+                report["cancelled"] = True
+                raise
+            return True
+
+        async def end(self, call_id, token, reason, language):
+            ended.append((call_id, token, reason, language))
+
+        async def aclose(self):
+            pass
+
+    class FakeCall:
+        language = "ms"
+
+        def __init__(self, **kw):
+            self.on_opened = kw["on_opened"]
+
+        def hangup(self):
+            pass
+
+        async def run(self):
+            await self.on_opened()
+            await asyncio.sleep(0)  # the report has started; the caller hangs up
+            return type("Result", (), {"end_reason": "hangup"})()
+
+    class Participant:
+        identity = "sip_+60123456789"
+
+    class Room:
+        name = "call-+60312345678_ab"
+
+        def on(self, *_):
+            pass
+
+    class Ctx:
+        job = type("Job", (), {"metadata": '{"channel":"phone"}'})()
+        room = Room()
+        deleted = 0
+        shutdowns: list[str] = []
+
+        async def wait_for_participant(self, **_):
+            return Participant()
+
+        async def delete_room(self):
+            self.deleted += 1
+
+        def shutdown(self, reason=""):
+            self.shutdowns.append(reason)
+
+    async def audio(ctx, participant):
+        return object()
+
+    async def publish(ctx):
+        return object()
+
+    monkeypatch.setattr(worker.phone, "PhoneClient", FakeClient)
+    monkeypatch.setattr(worker, "_caller_audio", audio)
+    monkeypatch.setattr(worker, "_publish_voice", publish)
+    monkeypatch.setattr(worker, "RoomSink", lambda source: object())
+    monkeypatch.setattr(worker, "Call", FakeCall)
+    monkeypatch.setattr(worker, "DeepgramEars", lambda track: object())
+    monkeypatch.setattr(worker, "Voice", lambda name: object())
+    monkeypatch.setattr(worker, "StageWriter", lambda name: object())
+    monkeypatch.setattr(worker, "RealClock", lambda: object())
+    monkeypatch.setattr(worker.brain_client, "BrainClient", lambda *a, **k: object())
+    ctx = Ctx()
+    t = time.monotonic()
+    await asyncio.wait_for(worker.entrypoint(ctx), 5)
+    assert time.monotonic() - t < 1
+    assert report == {"started": True, "cancelled": True}
+    assert ended == [("c1", "t1", "hangup", "ms")]
+    assert ctx.deleted == 1
+
+
 def test_the_phone_url_follows_the_turn_url_rules(monkeypatch):
     import pytest
 

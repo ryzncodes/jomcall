@@ -1,5 +1,35 @@
 # Handoff
 
+## 2026-11-16 — billing follow-ups after the channel metering review
+
+Branch `claude/billing-followups`, pull request open (not merged). Pull request #26 is merged (`99b9b43`) and its migration is on staging, so `20261115123000_channel_metering.sql` must not be edited.
+
+**Changed**
+- Migration `20261116100000_channel_admission_timeout.sql` (re-runnable, guarded on the function's `lock_timeout` setting): `channel_admission` gets `lock_timeout = 500ms`, scoped to the function. A held `wallet:` lock now costs other organizations' call starts at most about 500 ms; the waiting call is answered as `BILLING_CHECK_FAILED` (owner decision A) when its period is due, or normally when the charged period can still be read.
+- Voice worker: the background answer report is cancelled at call end, not awaited (it could add about 10 s to a quick hang-up's bill and keep the line busy).
+- `tests/db/signup-invited.test.ts` checks for the function itself, not only a migration record.
+- Billing design §4 and §13: WhatsApp re-check after the window (awaiting the owner), what staff can and cannot see, new known limits with bounds.
+
+**Every organization needs a plan.** Since pull request #26, an organization without a plan is refused on the phone line (`NO_PHONE_ENTITLEMENT`) and gets no WhatsApp agent replies (`NO_WHATSAPP_ENTITLEMENT`), and its owners get one email a day per reason, until an operator sets a plan: locally `npm run billing:admin -- plan <org id> <starter|growth|payg> "<operator>"`; on staging the owner runs the equivalent SQL from pull request #26 as the database owner (the script refuses any database but the local one).
+
+**Verified (2026-11-16, local database and fakes only)**
+- typecheck: pass.
+- guards: 55 of 55 (after merging main at 71b2bb2).
+- check:billing: 63 of 63 (3 new in `admission-timeout.test.ts`).
+- check:core: 569 of 569 (after merging main at 71b2bb2).
+- verify-migrations: pass (scratch replay, 56 RLS tables).
+- build:hosted: pass.
+- voice pytest: 295 passed (1 new).
+- The new migration is applied to the shared local database with psql (no `schema_migrations` row) and was run twice to check it is re-runnable. Without it, the new timeout tests fail (call starts take about 6.7 s).
+
+**Not verified**
+- Not applied to hosted staging (owner step: `npm run hosted:migrate`).
+- No carrier or real call; the worker change is covered by a fake call only.
+
+**Awaiting the owner**
+- WhatsApp thread unanswered after its window ends on an exhausted wallet or removed entitlement.
+- Allowance not reserved for calls in progress (bound RM3.20 at one line and 600 s); period-boundary calls billed as overage; window-edge WhatsApp send opens a 15 sen window unchecked.
+
 ## 2026-11-15 — WhatsApp inbox review fixes
 
 Branch `claude/whatsapp-inbox-341dbf`, pull request #25 (not merged). All 15 review points; list in `docs/superpowers/plans/2026-11-15-whatsapp-inbox.md` ("Review fixes").
