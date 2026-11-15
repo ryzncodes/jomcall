@@ -4,6 +4,9 @@ import { randomUUID } from "node:crypto";
 import { createPhase2Harness } from "../helpers/phase2.ts";
 import { setupReader } from "../../packages/inference/src/provider.ts";
 import { readRaw } from "../../web/lib/server/http.ts";
+import { handleAuth } from "../../web/lib/server/auth.ts";
+import { createDispatch } from "../../web/lib/server/api.ts";
+import { setupUploadCreate } from "../../packages/contracts/src/setup-upload.ts";
 
 // The web process only reads the reader switch; no model is called here.
 async function withReader<T>(value: string | undefined, run: () => Promise<T>) {
@@ -142,30 +145,67 @@ test("setupReader reads the switch and fails closed on any other value", () => {
   );
 });
 
-test("the raw body reader stops at the cap without a content-length", async () => {
-  // A streamed body with no declared length: 1 MiB pieces, four available.
-  let pulled = 0;
-  const stream = () =>
-    new ReadableStream<Uint8Array>({
+const rawReq = (
+  body: ReadableStream<Uint8Array>,
+  headers: Record<string, string> = {},
+) =>
+  new Request("http://127.0.0.1/x", {
+    method: "PUT",
+    headers: { "content-type": "application/octet-stream", ...headers },
+    body,
+    duplex: "half",
+  } as RequestInit);
+// Pull-only stream (no read-ahead): `pulled` counts the pieces actually read.
+function pieces(count: number, size = MiB) {
+  const s = { pulled: 0, stream: null as unknown as ReadableStream<Uint8Array> };
+  s.stream = new ReadableStream<Uint8Array>(
+    {
       pull(c) {
-        if (pulled++ < 4) c.enqueue(fill(MiB));
+        if (s.pulled++ < count) c.enqueue(fill(size));
         else c.close();
       },
-    });
-  const req = (body: ReadableStream<Uint8Array>, type = "application/octet-stream") =>
-    new Request("http://127.0.0.1/x", {
-      method: "PUT",
-      headers: { "content-type": type },
-      body,
-      duplex: "half",
-    } as RequestInit);
-  await assert.rejects(readRaw(req(stream()), 3 * MiB), (e: any) => e.code === "PAYLOAD_TOO_LARGE" && e.status === 413);
-  // Stopped after the fourth piece crossed the cap, not at the end of the body.
-  assert.ok(pulled <= 5, String(pulled));
-  pulled = 0;
-  assert.equal((await readRaw(req(stream()), 4 * MiB)).length, 4 * MiB);
-  pulled = 0;
-  await assert.rejects(readRaw(req(stream(), "application/json"), 4 * MiB), (e: any) => e.status === 415);
+    },
+    { highWaterMark: 0 },
+  );
+  return s;
+}
+
+test("the raw body reader cuts off a body that streams past the cap without a content-length", async () => {
+  const over = pieces(10);
+  await assert.rejects(
+    readRaw(rawReq(over.stream), 3 * MiB),
+    (e: any) => e.code === "PAYLOAD_TOO_LARGE" && e.status === 413,
+  );
+  // Stopped at the fourth piece, the one that crossed the cap, not at ten.
+  assert.equal(over.pulled, 4);
+  const fits = pieces(4);
+  const out = await readRaw(rawReq(fits.stream), 4 * MiB);
+  assert.ok(Buffer.isBuffer(out));
+  assert.equal(out.length, 4 * MiB);
+  const json = pieces(1);
+  await assert.rejects(
+    readRaw(rawReq(json.stream, { "content-type": "application/json" }), 4 * MiB),
+    (e: any) => e.status === 415,
+  );
+  assert.equal(json.pulled, 0);
+});
+
+test("the raw body reader refuses a content-length over the cap without reading the body", async () => {
+  let read = false;
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull() {
+        read = true;
+        throw Error("BODY_READ");
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  await assert.rejects(
+    readRaw(rawReq(stream, { "content-length": String(3 * MiB + 1) }), 3 * MiB),
+    (e: any) => e.code === "PAYLOAD_TOO_LARGE" && e.status === 413,
+  );
+  assert.equal(read, false);
 });
 
 test("create, three chunks, finish queues one read", () =>
@@ -764,3 +804,206 @@ test("an account whose email is not confirmed is refused", () =>
       await x.f.close();
     }
   }));
+
+test("chunk writes per upload are capped at 30; a replayed request does not count twice", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const id = (await x.create({ bytes: 50 })).body.data.id;
+      const path = `${x.up}/${id}/chunks/0`;
+      const key = randomUUID();
+      for (let i = 0; i < 3; i++)
+        assert.equal(
+          (await x.owner.raw("PUT", path, pdf(50), { "idempotency-key": key })).status,
+          200,
+        );
+      assert.equal((await x.row(id)).writes, 1);
+      for (let i = 1; i < 30; i++)
+        assert.equal((await x.put(id, 0, pdf(50))).status, 200, String(i));
+      assert.equal((await x.row(id)).writes, 30);
+      const last = cat(enc("%PDF-"), fill(45, 0x4c));
+      const refused = await x.put(id, 0, last);
+      assert.equal(refused.status, 429);
+      assert.equal(
+        JSON.parse(Buffer.from(refused.bytes).toString()).error.code,
+        "UPLOAD_RATE",
+      );
+      // Nothing stored: the chunk still holds the earlier bytes.
+      assert.deepEqual((await x.chunk(id, 0)).bytes, pdf(50));
+      assert.equal((await x.row(id)).writes, 30);
+      // The upload can still be finished with what it has.
+      assert.equal((await x.finish(id)).status, 200);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("two concurrent creates at the session cap: exactly one succeeds", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      for (let i = 0; i < 4; i++) assert.equal((await x.create()).status, 200);
+      const both = await Promise.all([x.create(), x.create()]);
+      assert.deepEqual(
+        both.map((r) => r.status).sort(),
+        [200, 422],
+        JSON.stringify(both.map((r) => r.body)),
+      );
+      assert.equal(
+        both.find((r) => r.status === 422)!.body.error.code,
+        "UPLOAD_LIMIT",
+      );
+      assert.equal(
+        Number(
+          (
+            await x.q(
+              "select count(*) from app.setup_upload where session_id=$1 and state<>'removed'",
+              [x.sessionId],
+            )
+          ).rows[0].count,
+        ),
+        5,
+      );
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("put and finish after remove give 409, replays included", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      // Fresh requests on a removed upload.
+      const a = (await x.create({ bytes: 50 })).body.data.id;
+      await x.put(a, 0, pdf(50));
+      assert.equal((await x.remove(a)).status, 200);
+      assert.equal((await x.put(a, 0, pdf(50))).status, 409);
+      assert.equal((await x.finish(a)).status, 409);
+      // A chunk PUT replayed (same key) after remove.
+      const b = (await x.create({ bytes: 50 })).body.data.id;
+      const putKey = randomUUID();
+      const path = `${x.up}/${b}/chunks/0`;
+      assert.equal(
+        (await x.owner.raw("PUT", path, pdf(50), { "idempotency-key": putKey })).status,
+        200,
+      );
+      // A finish replayed (same key) after remove.
+      const finishKey = randomUUID();
+      const finish = () =>
+        x.owner.raw("POST", `${x.up}/${b}/finish`, enc("{}"), {
+          "content-type": "application/json",
+          "idempotency-key": finishKey,
+        });
+      assert.equal((await finish()).status, 200);
+      assert.equal((await x.remove(b)).status, 200);
+      assert.equal(
+        (await x.owner.raw("PUT", path, pdf(50), { "idempotency-key": putKey })).status,
+        409,
+      );
+      assert.equal((await finish()).status, 409);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("a tiny first chunk is sniffed across chunks", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const file = pdf(40);
+      const u = await x.upload([file.slice(0, 2), file.slice(2, 3), file.slice(3)], {
+        kind: "image",
+        name: "a.jpg",
+      });
+      assert.equal(u.done.status, 200, JSON.stringify(u.done.body));
+      assert.equal(u.done.body.data.kind, "pdf");
+      const w = await x.upload([webp.slice(0, 5), webp.slice(5, 9), webp.slice(9)]);
+      assert.equal(w.done.body.data.kind, "image");
+      assert.equal((await x.row(w.id)).mime, "image/webp");
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("upload names and mime types refuse control and bidi override characters; names are trimmed", () => {
+  const base = { kind: "pdf", name: "harga.pdf", mime: "application/pdf", bytes: 10 };
+  assert.equal(
+    setupUploadCreate.parse({ ...base, name: "  harga.pdf  " }).name,
+    "harga.pdf",
+  );
+  for (const bad of [
+    { name: "har\u0000ga.pdf" },
+    { name: "har\u0007ga.pdf" },
+    { name: "har\u0085ga.pdf" },
+    { name: "fdp.\u202eexe" },
+    { name: "a\u2066b.pdf" },
+    { name: "a\u2069b.pdf" },
+    { mime: "application/pdf\u000d\u000ax" },
+    { mime: "application/\u202dpdf" },
+    { mime: "image/\u2068png" },
+  ])
+    assert.equal(setupUploadCreate.safeParse({ ...base, ...bad }).success, false, JSON.stringify(bad));
+  assert.equal(setupUploadCreate.safeParse({ ...base, name: "剪发 价目表.pdf" }).success, true);
+});
+
+test("a chunk PUT from staff, a stranger or for a closed upload is refused before its body is read", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const dispatch = createDispatch({});
+      const live = (await x.create({ bytes: 50 })).body.data.id;
+      const gone = (await x.create({ bytes: 50 })).body.data.id;
+      assert.equal((await x.remove(gone)).status, 200);
+      const send = async (
+        actor: typeof x.f.h.alice,
+        orgId: string,
+        uploadId: string,
+      ) => {
+        const csrf = await handleAuth(new Request("http://127.0.0.1:4182/api/auth/csrf"));
+        const token = (await csrf.json()).data.token;
+        const challenge = csrf.headers
+          .getSetCookie()
+          .map((c) => c.split(";")[0])
+          .join("; ");
+        let read = false;
+        const body = new ReadableStream<Uint8Array>(
+          {
+            pull() {
+              read = true;
+              throw Error("BODY_READ");
+            },
+          },
+          { highWaterMark: 0 },
+        );
+        const response = await dispatch(
+          new Request(
+            `http://127.0.0.1:4182/api/v1${x.up}/${uploadId}/chunks/0`,
+            {
+              method: "PUT",
+              headers: {
+                "content-type": "application/octet-stream",
+                cookie: `${challenge}; ca_local_access=${actor.token}; ca_local_refresh=${actor.refreshToken}`,
+                origin: "http://127.0.0.1:4182",
+                "x-csrf-token": token,
+                "x-organization-id": orgId,
+                "idempotency-key": randomUUID(),
+              },
+              body,
+              duplex: "half",
+            } as RequestInit,
+          ),
+        );
+        return { status: response.status, read };
+      };
+      assert.deepEqual(await send(x.f.h.staff, x.f.h.orgA.id, live), { status: 403, read: false });
+      assert.deepEqual(await send(x.f.h.bob, x.f.h.orgA.id, live), { status: 404, read: false });
+      assert.deepEqual(await send(x.f.h.bob, x.f.h.orgB.id, live), { status: 404, read: false });
+      assert.deepEqual(await send(x.f.h.alice, x.f.h.orgA.id, gone), { status: 409, read: false });
+      // The owner's PUT on a live upload does read the body (and fails on it).
+      const owner = await send(x.f.h.alice, x.f.h.orgA.id, live);
+      assert.equal(owner.read, true);
+    } finally {
+      await x.f.close();
+    }
+  }));
+

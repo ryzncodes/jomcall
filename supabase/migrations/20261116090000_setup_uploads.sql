@@ -31,6 +31,11 @@ create table if not exists app.setup_upload(
  delete_after timestamptz,
  unique (org_id, id),
  foreign key (org_id, session_id) references app.setup_session(org_id, id) on delete cascade);
+-- Chunk writes per upload (first sends and re-sends), so a looped re-send
+-- cannot rewrite megabytes without end. 10 chunks leave room for 20 retries.
+alter table app.setup_upload add column if not exists writes int not null default 0;
+alter table app.setup_upload drop constraint if exists setup_upload_writes_max;
+alter table app.setup_upload add constraint setup_upload_writes_max check (writes >= 0 and writes <= 30);
 create index if not exists setup_upload_session on app.setup_upload(org_id, session_id);
 create index if not exists setup_upload_recent on app.setup_upload(org_id, created_at);
 

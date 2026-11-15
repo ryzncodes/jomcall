@@ -9,25 +9,25 @@ export const UPLOAD_LIMITS = {
   chunks: 10,
   // 10 chunks of 3 MiB would be 30 MiB; the declared size caps it at 10 MiB.
   uploadBytes: 10 * 1024 * 1024,
+  // Chunk writes per upload, re-sends included.
+  chunkWrites: 30,
   perSession: 5,
   perOrgPerDay: 20,
   textChars: 20000,
 } as const;
 
 const codePoints = (s: string) => [...s].length;
+// No control characters (C0, DEL, C1) and no bidirectional override or
+// isolate characters, which could make a file name display as another.
+const plain = /^[^\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]*$/;
 
 // The declared kind, name and mime are hints only: the stored kind and mime
 // come from the leading bytes at finish. Pasted text has its own command.
 export const setupUploadCreate = z
   .object({
     kind: z.enum(["image", "pdf", "sheet"]),
-    name: z
-      .string()
-      .trim()
-      .min(1)
-      .max(200)
-      .regex(/^[^\u0000-\u001f\u007f]*$/),
-    mime: z.string().trim().max(100),
+    name: z.string().trim().min(1).max(200).regex(plain),
+    mime: z.string().trim().max(100).regex(plain),
     // Checked against the limit in the domain, so the refusal has its own code.
     bytes: z.number().int().positive(),
   })

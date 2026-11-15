@@ -12,7 +12,10 @@ import "server-only";
 import { contactsRoute } from "../../../packages/domain/src/contacts.ts";
 import { agentsRoute } from "../../../packages/domain/src/agents.ts";
 import { setupRoute } from "../../../packages/domain/src/setup/routes.ts";
-import { setupUploadRoute } from "../../../packages/domain/src/setup/uploads.ts";
+import {
+  precheckChunkPut,
+  setupUploadRoute,
+} from "../../../packages/domain/src/setup/uploads.ts";
 import { UPLOAD_LIMITS } from "../../../packages/contracts/src/setup-upload.ts";
 import { knowledgeRoute } from "../../../packages/domain/src/knowledge/routes.ts";
 import { workspaceRoute } from "../../../packages/domain/src/workspace.ts";
@@ -87,7 +90,16 @@ async function dispatch(request: Request, deps: CoreDeps) {
     const body = !mutation
       ? {}
       : chunkPut
-        ? await readRaw(request, UPLOAD_LIMITS.chunkBytes)
+        ? await (async () => {
+            // Refuse staff, strangers and late chunks before reading up to
+            // 3 MiB; the command checks again under its locks.
+            await db.withUserTransaction(
+              identity,
+              uuid.parse(request.headers.get("x-organization-id")),
+              (tx, context) => precheckChunkPut(tx, context, path),
+            );
+            return readRaw(request, UPLOAD_LIMITS.chunkBytes);
+          })()
         : await readBody(request);
     if (path === "/organizations" && method === "POST") {
       // Second layer behind the sign-up gate: an account made some other way

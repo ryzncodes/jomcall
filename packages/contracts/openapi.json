@@ -18343,11 +18343,12 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200,
-                    "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
+                    "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$"
                   },
                   "mime": {
                     "type": "string",
-                    "maxLength": 100
+                    "maxLength": 100,
+                    "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$"
                   },
                   "bytes": {
                     "type": "integer",

@@ -43,6 +43,7 @@ type UploadRow = {
   fail_code: string | null;
   row_count: number;
   fact_count: number;
+  writes: number;
   created_at: Date;
 };
 const publicUpload = (r: UploadRow): SetupUpload => ({
@@ -89,16 +90,60 @@ function sniff(head: Uint8Array): { kind: SetupUpload["kind"]; mime: string } | 
     };
   return null;
 }
-// CSV: the whole file is valid UTF-8 text with no NUL byte. Checked on the
-// joined chunks, so a character split across two chunks is not refused.
-function isText(bytes: Uint8Array): boolean {
-  if (bytes.includes(0)) return false;
+// CSV: the whole file is valid UTF-8 text with no NUL byte. One streaming
+// decoder runs over the chunks in order (no joined copy), so a character
+// split across two chunks is not refused.
+function isText(parts: Uint8Array[]): boolean {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   try {
-    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    for (const p of parts) {
+      if (p.includes(0)) return false;
+      decoder.decode(p, { stream: true });
+    }
+    decoder.decode();
     return true;
   } catch {
     return false;
   }
+}
+// A Buffer over the same memory, for pg parameters (no copy).
+const asBuffer = (b: Uint8Array) =>
+  Buffer.isBuffer(b) ? b : Buffer.from(b.buffer, b.byteOffset, b.byteLength);
+
+const pathPattern =
+  /^\/agents\/([^/]+)\/setup\/uploads(?:\/(text)|\/([^/]+)(?:\/(finish)|\/chunks\/([^/]+))?)?$/;
+
+// Before a chunk body is read: a cheap check, in its own short transaction,
+// that the caller is an owner or admin and the upload exists here, is still
+// uploading in the open session and has writes left. Staff, strangers and
+// late chunks are refused without the server buffering up to 3 MiB. The
+// command repeats every check under its locks.
+export async function precheckChunkPut(
+  tx: PoolClient,
+  ctx: TenantContext,
+  path: string,
+) {
+  const m = path.match(pathPattern);
+  if (!m?.[3] || m[5] === undefined) throw new AppError("NOT_FOUND", 404);
+  manager(ctx);
+  const agentId = uuid.parse(m[1]);
+  const uploadId = uuid.parse(m[3]);
+  uploadSeq.parse(m[5]);
+  const u = (
+    await tx.query(
+      `select u.state,u.writes,s.state as session_state from app.setup_upload u
+       join app.setup_session s on s.org_id=u.org_id and s.id=u.session_id
+       where u.org_id=$1 and s.agent_id=$2 and u.id=$3`,
+      [ctx.orgId, agentId, uploadId],
+    )
+  ).rows[0] as
+    | { state: string; writes: number; session_state: string }
+    | undefined;
+  if (!u) throw new AppError("NOT_FOUND", 404);
+  if (u.state !== "uploading" || u.session_state !== "open")
+    throw new AppError("CONFLICT", 409);
+  if (u.writes >= UPLOAD_LIMITS.chunkWrites)
+    throw new AppError("UPLOAD_RATE", 429);
 }
 
 type Result = SetupUpload | { received: number } | { removed: true } | Response | AppError;
@@ -114,9 +159,7 @@ export async function setupUploadRoute(
   body: unknown,
   key: string,
 ): Promise<Result | undefined> {
-  const m = path.match(
-    /^\/agents\/([^/]+)\/setup\/uploads(?:\/(text)|\/([^/]+)(?:\/(finish)|\/chunks\/([^/]+))?)?$/,
-  );
+  const m = path.match(pathPattern);
   if (!m) return;
   const op =
     m[2] && method === "POST"
@@ -138,10 +181,12 @@ export async function setupUploadRoute(
   const uploadId = m[3] ? uuid.parse(m[3]) : null;
   const seq = m[5] !== undefined ? uploadSeq.parse(m[5]) : null;
 
-  // The agent row lock comes first, as in every other setup command.
+  // The agent row lock comes first, as in every other setup command. "No key
+  // update" still queues behind (and holds off) their "for update", but does
+  // not block rows that reference the agent (test sessions, calls, turns).
   const lockAgent = async () => {
     const hit = await tx.query(
-      "select id from app.agent where org_id=$1 and id=$2 for update",
+      "select id from app.agent where org_id=$1 and id=$2 for no key update",
       [ctx.orgId, agentId],
     );
     if (!hit.rowCount) throw new AppError("NOT_FOUND", 404);
@@ -182,6 +227,17 @@ export async function setupUploadRoute(
     if (u.session_id !== sessionId || u.state !== "uploading")
       throw new AppError("CONFLICT", 409);
     return u;
+  };
+  // A replay after the upload was removed is a conflict, not a stale success.
+  const notRemoved = async (id: unknown) => {
+    const u = (
+      await tx.query("select state from app.setup_upload where org_id=$1 and id=$2", [
+        ctx.orgId,
+        id,
+      ])
+    ).rows[0] as { state: string } | undefined;
+    if (!u) throw new AppError("NOT_FOUND", 404);
+    if (u.state === "removed") throw new AppError("CONFLICT", 409);
   };
   const loadUpload = async (id: unknown) => {
     const u = (
@@ -232,7 +288,7 @@ export async function setupUploadRoute(
     ).rows[0] as { data: Buffer } | undefined;
     if (!hit) throw new AppError("NOT_FOUND", 404);
     // Never served as an image or a page: raw bytes for the preview only.
-    return new Response(new Uint8Array(hit.data), {
+    return new Response(hit.data as unknown as BodyInit, {
       status: 200,
       headers: {
         "content-type": "application/octet-stream",
@@ -327,6 +383,10 @@ export async function setupUploadRoute(
         await lockAgent();
         const s = await openSession();
         const u = await uploadingIn(s.id);
+        // Every write counts, re-sends included; a receipt replay never gets
+        // here, so it does not count twice.
+        if (u.writes >= UPLOAD_LIMITS.chunkWrites)
+          throw new AppError("UPLOAD_RATE", 429);
         const others = (
           await tx.query(
             "select coalesce(sum(octet_length(data)),0)::int as n from app.setup_upload_chunk where org_id=$1 and upload_id=$2 and seq<>$3",
@@ -340,12 +400,19 @@ export async function setupUploadRoute(
         await tx.query(
           `insert into app.setup_upload_chunk(org_id,upload_id,seq,data) values($1,$2,$3,$4)
            on conflict(upload_id,seq) do update set data=excluded.data`,
-          [ctx.orgId, u.id, seq, Buffer.from(body)],
+          [ctx.orgId, u.id, seq, asBuffer(body)],
+        );
+        await tx.query(
+          "update app.setup_upload set writes=writes+1 where org_id=$1 and id=$2",
+          [ctx.orgId, u.id],
         );
         const received = others + body.length;
         return { ref: { id: u.id, seq, received }, data: { received } };
       },
-      async (ref) => ({ received: ref.received as number }),
+      async (ref) => {
+        await notRemoved(ref.id);
+        return { received: ref.received as number };
+      },
     );
   }
 
@@ -371,13 +438,15 @@ export async function setupUploadRoute(
           throw new AppError("UPLOAD_INCOMPLETE", 409);
         if (parts.reduce((t, p) => t + p.n, 0) !== u.bytes)
           throw new AppError("UPLOAD_SIZE_MISMATCH", 422);
-        const head = (
+        // The first 16 bytes of the file, across chunks in seq order, so a
+        // tiny first chunk is sniffed correctly.
+        const heads = (
           await tx.query(
-            "select substring(data from 1 for 16) as head from app.setup_upload_chunk where org_id=$1 and upload_id=$2 and seq=0",
+            "select substring(data from 1 for 16) as head from app.setup_upload_chunk where org_id=$1 and upload_id=$2 order by seq",
             [ctx.orgId, u.id],
           )
-        ).rows[0].head as Buffer;
-        let found = sniff(new Uint8Array(head));
+        ).rows.map((r) => r.head as Buffer);
+        let found = sniff(Buffer.concat(heads).subarray(0, 16));
         if (!found && u.kind === "sheet") {
           const all = (
             await tx.query(
@@ -385,8 +454,7 @@ export async function setupUploadRoute(
               [ctx.orgId, u.id],
             )
           ).rows.map((r) => r.data as Buffer);
-          if (isText(new Uint8Array(Buffer.concat(all))))
-            found = { kind: "sheet", mime: "text/csv" };
+          if (isText(all)) found = { kind: "sheet", mime: "text/csv" };
         }
         if (!found) {
           // Refused: the bytes are deleted. The row stays as removed, so the
@@ -419,10 +487,11 @@ export async function setupUploadRoute(
         });
         return { ref: { id: row.id }, data: publicUpload(row) };
       },
-      async (ref) =>
-        typeof ref.refused === "string"
-          ? new AppError(ref.refused, 422)
-          : loadUpload(ref.id),
+      async (ref) => {
+        if (typeof ref.refused === "string") return new AppError(ref.refused, 422);
+        await notRemoved(ref.id);
+        return loadUpload(ref.id);
+      },
     );
   }
 

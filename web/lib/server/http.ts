@@ -109,8 +109,10 @@ export async function readBody(request: Request, limit = 2 * 1024 * 1024) {
   }
 }
 // A binary body (setup upload chunks). Only application/octet-stream is read;
-// reading stops at the cap, so a larger body is never held in memory.
-export async function readRaw(request: Request, limit: number) {
+// a declared length over the cap is refused unread, and reading stops at the
+// cap, so a larger body is never held in memory. One piece is returned as a
+// view; several are joined once.
+export async function readRaw(request: Request, limit: number): Promise<Buffer> {
   if (
     request.headers.get("content-type")?.split(";")[0]?.trim() !==
     "application/octet-stream"
@@ -135,7 +137,9 @@ export async function readRaw(request: Request, limit: number) {
       }
       chunks.push(value);
     }
-  return new Uint8Array(Buffer.concat(chunks));
+  if (chunks.length === 1)
+    return Buffer.from(chunks[0].buffer, chunks[0].byteOffset, chunks[0].byteLength);
+  return Buffer.concat(chunks, size);
 }
 export function cookie(request: Request, key: string) {
   return (
