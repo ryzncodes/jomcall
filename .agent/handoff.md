@@ -1,5 +1,47 @@
 # Handoff
 
+## 2026-11-15 — usage metering and plan entitlements on the real channels
+
+Branch `claude/usage-metering-e13eb4`, pull request #26 (not merged). Design: billing design section 13. Revised after review, then for four owner decisions (A-D), the same day.
+
+**Changed**
+- Migration `20261115123000_channel_metering.sql` (re-runnable). It patches `app_private.agent_call`, `app_private.whatsapp_work` and `app_private.claim_outbox`, and adds `channel_admission`, `call_bill`, `whatsapp_window_bill`, `queue_billing_notice`, `billing_notice_payload`, `ack_billing_notice` and the tables `app.whatsapp_usage_window` and `app.billing_notice`.
+- **Phone:** bills `voice_second` once per call (`call:<id>`) when it ends, through `call_end` or `maintain`, priced at the answer.
+  - A lost answer report is covered: the first turn sets `answered_at`, and the voice worker retries the report three times in the background.
+  - A crashed call stops at the end of its last turn (`call_turn.completed_at`).
+- **WhatsApp (decision D):** bills `whatsapp_conversation` once per customer (contact and channel) per 24 hours. The window starts when an agent message's `sent` is recorded while none is open; key `wa:<channel>:<contact>:<start seconds>`; resolve and reopen inside it does not bill again.
+- **Admission** runs after every other refusal and never raises.
+  - Refusals: no entitlement, then wallet unfunded or exhausted. Phone: refused silently. WhatsApp: turn skipped, conversation flagged, nothing sent.
+  - **Decision A:** a failed check admits; `BILLING_CHECK_FAILED` goes on `app.call.billing_check` or `app.conversation_turn.billing_check` and in a database warning; still metered.
+  - **Decision B:** phone is admitted while a charged period has unused included minutes, whatever the wallet. WhatsApp unchanged.
+  - **Decision C:** the four plan or wallet refusals queue one owner email per org, reason and KL day through the engine outbox (kind `billing.refusal_notice`; `engine/src/billing-notice.ts`). The agent process never sends mail and its login role gained nothing.
+- **Roles:** the agent login role lost `record_usage`, `wallet_state` and `plan_entitlements`. The web role lost the billing columns on `app.call` (column grants) and has no access to the two new tables. `app.conversation` grants are unchanged.
+- **Operator commands:** `npm run billing:admin -- plan <org> <code> "<operator>"` (the only way to give a workspace a plan today); `usage-pending` (owed calls and windows, plus check-failed calls and turns of 7 days) and `usage-retry <call or window id>`. All local only; on staging the owner uses the SQL in the pull request body.
+
+**Verified (2026-11-15, fakes, local engine, local mail catcher and local database only)**
+- typecheck: pass.
+- guards: 34 of 34.
+- check:core: 506 of 506.
+- check:billing: 59 of 59 (phone-metering 21, whatsapp-metering 12).
+- verify-migrations: pass (scratch replay, 56 RLS tables).
+- build:hosted: pass.
+- voice pytest: 287 passed.
+- The migration is applied to the shared local database with psql, with no `schema_migrations` row. The earlier version was reverted by text first.
+
+**Not verified**
+- No carrier, Meta, payment provider or real mail service was called.
+- Not applied to hosted staging (owner step: `npm run hosted:migrate`).
+  - If this lands there before `20261115120000_signup_invited.sql`, that one needs `supabase db push --include-all`.
+- No UI copy for the new refusals or the `BILLING_CHECK_FAILED` mark.
+- Paid model gates were not re-run; no prompt or tool list changed.
+
+**Next**
+- Plan picker on the wallet screen.
+- Specific call-log and inbox text for the new codes.
+- Schedule `charge_due_plans`.
+- Move admission out of the global call-start lock.
+- Reconcile lost `billing.refusal_notice` jobs (today only invitations are reconciled).
+
 ## 2026-11-15 — voice picker in the Agent builder
 
 Branch `claude/voice-picker-ec26d4`.

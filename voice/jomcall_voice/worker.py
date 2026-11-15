@@ -161,6 +161,15 @@ async def phone_entrypoint(ctx: JobContext) -> None:
         # happens from here, tell it the call ended and hang up, so a failure
         # never keeps the only line busy until the token expires.
         reason, language = "worker_failed", None
+        # The answer report retries in the background, so the caller is heard
+        # meanwhile; it is awaited before the end report, which must come last.
+        answering: set[asyncio.Task] = set()
+
+        async def opened() -> None:
+            task = asyncio.create_task(client.answered(start["callId"], start["token"]))
+            answering.add(task)
+            task.add_done_callback(answering.discard)
+
         try:
             track = await _caller_audio(ctx, participant)
             call = Call(
@@ -177,7 +186,7 @@ async def phone_entrypoint(ctx: JobContext) -> None:
                 sink=sink,
                 stage_log=StageWriter(ctx.room.name),
                 cap_s=start["capSeconds"],
-                on_opened=lambda: client.answered(start["callId"], start["token"]),
+                on_opened=opened,
             )
             ctx.room.on(
                 "participant_disconnected",
@@ -189,6 +198,8 @@ async def phone_entrypoint(ctx: JobContext) -> None:
         except Exception as error:  # class name only
             log.error("phone call failed: %s", type(error).__name__)
         finally:
+            if answering:
+                await asyncio.gather(*answering, return_exceptions=True)
             try:
                 await client.end(start["callId"], start["token"], reason, language)
             except Exception as error:  # the server's maintain pass closes it later

@@ -11,7 +11,11 @@ import type pg from "pg";
 // Voice seconds draw from a paid plan allowance first (plans.ts).
 // Never refuses for low credit: usage that happened is always recorded.
 // The connection must be a role granted app_private.record_usage
-// (jomcall_worker or jomcall_agent).
+// (jomcall_worker). The phone line and the WhatsApp agent do not call this
+// wrapper: they bill inside app_private.agent_call and
+// app_private.whatsapp_work, in the same transaction as the call end or the
+// send (migration 20261115123000_channel_metering.sql), and the agent login
+// role has no direct access to the billing functions.
 export type UsageKind = "voice_second" | "whatsapp_conversation" | "typed_turn";
 export type UsageInput = {
   orgId: string;
@@ -62,6 +66,7 @@ export async function recordUsage(
 
 // Ask before starting a new call or conversation. A call already in
 // progress is never cut off; it finishes and is billed into grace.
+// (The phone line and WhatsApp ask through app_private.channel_admission.)
 export async function walletState(
   db: Pick<pg.Pool | pg.PoolClient, "query">,
   orgId: string,

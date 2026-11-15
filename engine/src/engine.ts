@@ -7,11 +7,16 @@ import {
 } from "../../packages/contracts/src/hosting.ts";
 import { createMailSender, type MailSender } from "./mail.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
+import { billingNoticeMail } from "./billing-notice.ts";
 const payload = z
   .object({
     outboxId: z.uuid(),
     resourceId: z.uuid(),
-    kind: z.enum(["privacy.process", "invitation.deliver"]),
+    kind: z.enum([
+      "privacy.process",
+      "invitation.deliver",
+      "billing.refusal_notice",
+    ]),
   })
   .strict();
 function dsn(name: "WORKER_DATABASE_URL" | "QUEUE_DATABASE_URL") {
@@ -128,6 +133,28 @@ export class Engine {
             } finally {
               tx.release();
             }
+          } else if (parsed.kind === "billing.refusal_notice") {
+            // Owner email for a plan or wallet refusal (billing design §13).
+            const p = (
+              await this.pool.query(
+                "select app_private.billing_notice_payload($1,$2) as value",
+                [parsed.outboxId, this.namespace],
+              )
+            ).rows[0].value;
+            if (p) {
+              const mail = billingNoticeMail(p, this.mail.inviteBase);
+              for (const [i, to] of (p.emails as string[]).entries())
+                await this.mail.send({
+                  to,
+                  subject: mail.subject,
+                  text: mail.text,
+                  operationId: `${p.operationId}:${i}`,
+                });
+              await this.pool.query(
+                "select app_private.ack_billing_notice($1,$2,false)",
+                [parsed.outboxId, this.namespace],
+              );
+            }
           } else {
             const p = (
               await this.pool.query(
@@ -165,6 +192,11 @@ export class Engine {
               parsed.resourceId,
               this.namespace,
             ]);
+          if (parsed?.kind === "billing.refusal_notice" && job.retryCount >= 4)
+            await this.pool.query(
+              "select app_private.ack_billing_notice($1,$2,true)",
+              [parsed.outboxId, this.namespace],
+            );
           if (parsed?.kind === "invitation.deliver" && job.retryCount >= 4)
             await this.pool.query(
               "select app_private.ack_invitation($1,$2,true)",

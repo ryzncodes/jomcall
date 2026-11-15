@@ -23,8 +23,9 @@ export type PlanEntitlements = {
 
 type Db = Pick<pg.Pool | pg.PoolClient, "query">;
 
-// For other services (phone line, WhatsApp worker). Not yet wired into the
-// phone line: that is a listed follow-up.
+// For the worker role and operator scripts. The phone line and the WhatsApp
+// agent read entitlements inside the database at admission
+// (app_private.channel_admission); the agent login role cannot call this.
 export async function planEntitlements(
   db: Db,
   orgId: string,
