@@ -224,10 +224,16 @@ test("sheet and text go as text inside a tag with a per-request random name, nam
   assert.equal(sheetBlocks.length, 1);
   assert.ok(
     sheetBlocks[0].text.includes(
-      "<document-abc123>\ncsv!A1: Kopi O\ncsv!B1: 1.80\ncsv!A2: Teh\ncsv!B2: 2\n</document-abc123>",
+      "<document-abc123>\nKopi O\t1.80\nTeh\t2\n</document-abc123>",
     ),
   );
   assert.ok(sheet.seen[0].body.system.includes("<document-abc123>"));
+  // Only a sheet's system text says the document is delimited text.
+  assert.match(
+    sheet.seen[0].body.system,
+    /comma-, tab- or semicolon-separated/,
+  );
+  assert.doesNotMatch(text.seen[0].body.system, /semicolon-separated/);
   // Image and PDF carry no tag, and the system text names none.
   const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const image = await read({}, { kind: "image", mime: "image/png", data: png });
@@ -402,7 +408,8 @@ test("empty or unreadable input is UNREADABLE without a model call", async () =>
       data: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0]),
       name: "a.xls",
     },
-    { kind: "sheet", data: Buffer.from(",,\n,,\n"), name: "a.csv" },
+    { kind: "sheet", data: Buffer.from(" \r\n\t\n"), name: "a.csv" },
+    { kind: "sheet", data: Buffer.from("a,b\n\0"), name: "a.csv" },
     { kind: "text", text: "   \n " },
   ] as ReaderInput[]) {
     const { result, seen } = await read({}, input);
@@ -742,7 +749,8 @@ test("pasted text over 200,000 characters is TOO_LONG without a model call", asy
 });
 
 test("a sheet over its row cap is TOO_LONG through readDocument, without a model call", async () => {
-  const csv = Array.from({ length: 301 }, (_, i) => `Item ${i},${i}`).join(
+  // A header plus 301 rows: one line over the cap.
+  const csv = Array.from({ length: 302 }, (_, i) => `Item ${i},${i}`).join(
     "\n",
   );
   const { result, seen } = await read(
@@ -825,4 +833,19 @@ test("the image limit is 5,000,000 bytes of base64, at the edge", async () => {
   );
   assert.deepEqual(over.result, { ok: false, code: "TOO_LONG" });
   assert.equal(over.seen.length, 0);
+});
+
+test("a sheet with stray quotes and mixed delimiters goes to the model as written", async () => {
+  const data = Buffer.from('Item,Price\r\n"Roti,1200\r\nNasi\tlemak,500\r\n');
+  const { result, seen } = await read(
+    { json: { rows: [row({ item: "Roti", priceSen: 120000 })], facts: [] } },
+    { kind: "sheet", data, name: "harga.csv" },
+    { tagSuffix: () => "q1" },
+  );
+  assert.equal(ok(result).rows.length, 1);
+  assert.ok(
+    seen[0].body.messages[0].content[0].text.includes(
+      '<document-q1>\nItem,Price\n"Roti,1200\nNasi\tlemak,500\n</document-q1>',
+    ),
+  );
 });
