@@ -8,13 +8,19 @@
 -- through app_private.record_usage (the function recordUsage wraps) inside the
 -- agent's own security-definer functions.
 --
+-- A bill is priced, and voice seconds drawn from a plan allowance, at the
+-- moment the usage started: a call's answer, a conversation's first accepted
+-- agent message. A call that runs across a plan period or price change is
+-- billed under the period and price in force when it was answered.
+--
 -- A new call or a new WhatsApp conversation is admitted only when the plan
 -- covers the channel and the wallet allows service (billing design section 4).
 -- A call or conversation already under way is never cut off.
 --
 -- The agent login role loses direct access to the billing functions: it can
 -- no longer bill an organization or read its balance. It sees only a refusal
--- code for the number that was dialled.
+-- code for the number that was dialled. The web role (owners, admins and
+-- staff alike) cannot read the new billing columns on calls and conversations.
 --
 -- Re-runnable: columns and constraints are guarded, helpers are replaced, and
 -- each function rewrite is skipped once applied. Design and decisions:
@@ -28,11 +34,18 @@ alter table app.call add column if not exists billed_seconds integer;
 alter table app.call add column if not exists usage_event_id uuid;
 alter table app.conversation add column if not exists usage_state text;
 alter table app.conversation add column if not exists usage_event_id uuid;
+-- When the conversation became billable (its first accepted agent message):
+-- the bill is priced at this moment, even when a retry lands later.
+alter table app.conversation add column if not exists usage_at timestamptz;
 -- Failed billing attempts. Maintenance retries the least-tried first and stops
 -- after 20, so a bill that can never land (a missing price, a key conflict)
--- cannot hold up the others; it stays 'pending' for an operator.
+-- cannot hold up the others; it stays 'pending' for an operator
+-- (`npm run billing:admin -- usage-pending`, `usage-retry <id>`).
 alter table app.call add column if not exists usage_attempts integer not null default 0;
 alter table app.conversation add column if not exists usage_attempts integer not null default 0;
+-- When a turn finished (completed or failed). After a worker crash this is
+-- the latest sign that the call was alive.
+alter table app.call_turn add column if not exists completed_at timestamptz;
 do $$ begin
  if not exists(select 1 from pg_constraint where conrelid='app.call'::regclass and conname='call_usage_state_check') then
   alter table app.call add constraint call_usage_state_check check(
@@ -50,6 +63,20 @@ end $$;
 create index if not exists call_usage_pending on app.call(namespace,ended_at)where usage_state='pending';
 create index if not exists conversation_usage_pending on app.conversation(org_id,last_message_at)where usage_state='pending';
 
+-- Billing data stays out of the web role's reach (billing design section 7):
+-- the web role reads calls and conversations column by column, without the
+-- billing columns. Owners and admins see what was billed through the wallet.
+-- A later migration that adds a column to either table must grant it here.
+do $$declare cols text;begin
+ revoke select on app.call,app.conversation from jomcall_app;
+ select string_agg(quote_ident(column_name),',' order by ordinal_position) into cols from information_schema.columns
+  where table_schema='app' and table_name='call' and column_name not in('usage_state','billed_seconds','usage_event_id','usage_attempts');
+ execute format('grant select(%s) on app.call to jomcall_app',cols);
+ select string_agg(quote_ident(column_name),',' order by ordinal_position) into cols from information_schema.columns
+  where table_schema='app' and table_name='conversation' and column_name not in('usage_state','usage_event_id','usage_attempts','usage_at');
+ execute format('grant select(%s) on app.conversation to jomcall_app',cols);
+end$$;
+
 -- The owner of agent_call and whatsapp_work calls the billing functions.
 grant execute on function app_private.record_usage(uuid,text,integer,text,timestamptz,jsonb),
  app_private.wallet_state(uuid),app_private.plan_entitlements(uuid,timestamptz),
@@ -64,50 +91,69 @@ grant create on schema app_private to jomcall_agent_jobs;
 -- WhatsApp conversation ('whatsapp'); otherwise the refusal code. The current
 -- plan period is started or retried first, because nothing else schedules it
 -- yet: without a period the plan reports no entitlements. Callers pass the
--- database clock. Grace (down to
--- -RM4.99) is still served; unfunded and exhausted are not.
+-- database clock. Grace (down to -RM4.99) is still served; unfunded and
+-- exhausted are not.
+-- Any error while checking gives BILLING_CHECK_FAILED, never an exception:
+-- one organization's billing fault must not stop calls or chats for others.
+-- That code refuses for now; whether a failed check should admit instead is
+-- an open owner decision (billing design section 13).
 create or replace function app_private.channel_admission(p_org uuid,p_need text,p_at timestamptz)returns text language plpgsql security definer set search_path='' as $$
-declare e jsonb;w jsonb;begin
+declare e jsonb;w jsonb;v_charge_failed boolean:=false;begin
  if p_need not in('phone','whatsapp') or p_org is null or p_at is null then raise exception 'INVALID_ADMISSION';end if;
  begin
-  perform app_private.charge_plan_period(p_org,p_at);
+  begin
+   perform app_private.charge_plan_period(p_org,p_at);
+  exception when others then
+   -- A failed charge leaves the period as it was. If that leaves no
+   -- entitlement, the cause is the failure, not the plan.
+   v_charge_failed:=true;
+   raise warning 'PLAN_PERIOD_DEFERRED';
+  end;
+  e=app_private.plan_entitlements(p_org,p_at);
+  if p_need='phone' and coalesce((e->>'phoneNumbers')::int,0)<1 then
+   return case when v_charge_failed then 'BILLING_CHECK_FAILED' else 'NO_PHONE_ENTITLEMENT' end;
+  end if;
+  if p_need='whatsapp' and not coalesce((e->>'whatsappAgent')::boolean,false) then
+   return case when v_charge_failed then 'BILLING_CHECK_FAILED' else 'NO_WHATSAPP_ENTITLEMENT' end;
+  end if;
+  w=app_private.wallet_state(p_org);
+  if not coalesce((w->>'serviceAllowed')::boolean,false) then
+   return case w->>'state' when 'unfunded' then 'WALLET_UNFUNDED' else 'WALLET_EXHAUSTED' end;
+  end if;
  exception when others then
-  -- A failed charge leaves the period as it was; the entitlements below decide.
-  raise warning 'PLAN_PERIOD_DEFERRED';
+  raise warning 'BILLING_CHECK_FAILED';
+  return 'BILLING_CHECK_FAILED';
  end;
- e=app_private.plan_entitlements(p_org,p_at);
- if p_need='phone' and coalesce((e->>'phoneNumbers')::int,0)<1 then return 'NO_PHONE_ENTITLEMENT';end if;
- if p_need='whatsapp' and not coalesce((e->>'whatsappAgent')::boolean,false) then return 'NO_WHATSAPP_ENTITLEMENT';end if;
- w=app_private.wallet_state(p_org);
- if not coalesce((w->>'serviceAllowed')::boolean,false) then
-  return case w->>'state' when 'unfunded' then 'WALLET_UNFUNDED' else 'WALLET_EXHAUSTED' end;
- end if;
  return null;
 end$$;
 
 -- Internal. Bills one ended call that is still owed. The seconds are the call
 -- row's own duration (from the answer to the end), so the bill and the call
--- log always agree. The idempotency key makes a repeat a no-op.
+-- log always agree. A call with a caller turn counts as answered even if the
+-- worker's answer report was lost. Priced at the answer. The idempotency key
+-- makes a repeat a no-op.
 create or replace function app_private.call_bill(p_call uuid)returns text language plpgsql security definer set search_path='' as $$
 declare c app.call;r jsonb;begin
  select * into c from app.call where id=p_call for update;
  if not found or c.state<>'ended' or c.usage_state is distinct from 'pending' then return coalesce(c.usage_state,'none');end if;
- if c.answered_at is null or coalesce(c.duration_seconds,0)<=0 then
+ if coalesce(c.duration_seconds,0)<=0
+  or(c.answered_at is null and not exists(select 1 from app.call_turn q where q.org_id=c.org_id and q.call_id=c.id))then
   update app.call set usage_state='free' where id=c.id;
   return 'free';
  end if;
- r=app_private.record_usage(c.org_id,'voice_second',c.duration_seconds,'call:'||c.id::text,coalesce(c.ended_at,now()),
+ r=app_private.record_usage(c.org_id,'voice_second',c.duration_seconds,'call:'||c.id::text,coalesce(c.answered_at,c.started_at),
   jsonb_build_object('callId',c.id::text));
  update app.call set usage_state='billed',usage_event_id=(r->>'usageEventId')::uuid,billed_seconds=c.duration_seconds where id=c.id;
  return 'billed';
 end$$;
 
--- Internal. Bills one WhatsApp conversation the agent answered.
+-- Internal. Bills one WhatsApp conversation the agent answered, priced at the
+-- moment its first agent message was accepted.
 create or replace function app_private.conversation_bill(p_conversation uuid)returns text language plpgsql security definer set search_path='' as $$
 declare c app.conversation;r jsonb;begin
  select * into c from app.conversation where id=p_conversation for update;
  if not found or c.usage_state is distinct from 'pending' then return coalesce(c.usage_state,'none');end if;
- r=app_private.record_usage(c.org_id,'whatsapp_conversation',1,'wa:'||c.id::text,now(),
+ r=app_private.record_usage(c.org_id,'whatsapp_conversation',1,'wa:'||c.id::text,coalesce(c.usage_at,now()),
   jsonb_build_object('conversationId',c.id::text));
  update app.conversation set usage_state='billed',usage_event_id=(r->>'usageEventId')::uuid where id=c.id;
  return 'billed';
@@ -126,31 +172,40 @@ revoke create on schema app_private from jomcall_agent_jobs;
 do $migration$
 declare body text;hits int;i int;
  olds text[]:=array[
-  -- 1. A variable for the admission result.
-  $o$v_prev uuid;v_caller text;begin$o$,
-  -- 2. Admission runs inside the call-start lock, before the refusal chain.
-  $o$  if(select calls_suspended_at from app.organization where id=n.org_id)is not null then v_refusal='CALLS_SUSPENDED';$o$,
-  -- 3. Plan and wallet refusals come after the configuration refusals.
-  $o$  elsif v_caller is not null and(select count(*)from app.call x where x.org_id=n.org_id and x.caller_e164=v_caller$o$,
-  -- 4. A crashed call's seconds stop at the last sign it was alive.
+  -- 1. Plan and wallet come last, after every other refusal: a call refused
+  --    for its configuration, the caller limit or a busy line never starts
+  --    or charges a plan period.
+  $o$  select * into v_sched from app.location_schedule where org_id=n.org_id and location_id=n.location_id;$o$,
+  -- 2. A crashed call's seconds stop at the last sign it was alive.
   $o$   duration_seconds=greatest(0,extract(epoch from now()-coalesce(answered_at,started_at))::int),token_hash=null,revision=revision+1$o$,
-  -- 5. Maintenance bills every call still owed (crash recovery).
+  -- 3. Maintenance bills every call still owed (crash recovery).
   $o$   where id in(select id from app.call where namespace=p_namespace and state='active' and token_expires_at<=now()limit 100);
   return '{}';$o$,
-  -- 6. A normal end bills in the same transaction.
+  -- 4. A normal end bills in the same transaction.
   $o$    when answered_at is null then 'abandoned' else 'answered' end
    where id=c.id;
-  return '{}';$o$];
+  return '{}';$o$,
+  -- 5. A caller who speaks was answered, even if the answer report was lost.
+  $o$  insert into app.call_turn(org_id,call_id,client_turn_id,input,state,lease_token,lease_until)$o$,
+  -- 6-8. When each turn finished.
+  $o$update app.call_turn set state='completed',answer=p_data->>'answer',$o$,
+  $o$update app.call_turn set state='failed',revision=revision+1,error_code=case$o$,
+  $o$update app.call_turn set state='cancelled',revision=revision+1,lease_token=null,lease_until=null where id=t.id;$o$];
  news text[]:=array[
-  $n$v_prev uuid;v_caller text;v_admission text;begin$n$,
-  $n$  -- The database clock, never the agent's `at`: the agent process must not
-  -- choose which plan period is charged or checked.
-  v_admission=app_private.channel_admission(n.org_id,'phone',now());
-  if(select calls_suspended_at from app.organization where id=n.org_id)is not null then v_refusal='CALLS_SUSPENDED';$n$,
-  $n$  elsif v_admission is not null then v_refusal=v_admission;
-  elsif v_caller is not null and(select count(*)from app.call x where x.org_id=n.org_id and x.caller_e164=v_caller$n$,
+  $n$  if v_refusal is null then
+   -- The database clock, never the agent's `at`: the agent process must not
+   -- choose which plan period is charged or checked. channel_admission never
+   -- raises; this guard keeps any fault inside this call's own refused row.
+   begin
+    v_refusal=app_private.channel_admission(n.org_id,'phone',now());
+   exception when others then
+    raise warning 'BILLING_CHECK_FAILED';
+    v_refusal='BILLING_CHECK_FAILED';
+   end;
+  end if;
+  select * into v_sched from app.location_schedule where org_id=n.org_id and location_id=n.location_id;$n$,
   $n$   duration_seconds=case when answered_at is null then greatest(0,extract(epoch from now()-started_at)::int)
-    else greatest(0,extract(epoch from coalesce((select max(q.created_at)from app.call_turn q where q.org_id=app.call.org_id and q.call_id=app.call.id),answered_at)-answered_at)::int)end,
+    else greatest(0,extract(epoch from coalesce((select max(coalesce(q.completed_at,q.created_at))from app.call_turn q where q.org_id=app.call.org_id and q.call_id=app.call.id),answered_at)-answered_at)::int)end,
    usage_state='pending',token_hash=null,revision=revision+1$n$,
   $n$   where id in(select id from app.call where namespace=p_namespace and state='active' and token_expires_at<=now()limit 100);
   -- Each owed call on its own: one that cannot be billed stays owed and is
@@ -175,7 +230,15 @@ declare body text;hits int;i int;
    update app.call set usage_attempts=usage_attempts+1 where id=c.id;
    raise warning 'CALL_BILLING_DEFERRED';
   end;
-  return '{}';$n$];
+  return '{}';$n$,
+  $n$  -- The caller spoke, so the call was answered: if the worker's answer
+  -- report was lost, the first turn stands in for it (billing counts from it).
+  -- The disclosure time is left alone: it records what was played.
+  update app.call set answered_at=now(),revision=revision+1 where id=c.id and answered_at is null;
+  insert into app.call_turn(org_id,call_id,client_turn_id,input,state,lease_token,lease_until)$n$,
+  $n$update app.call_turn set state='completed',completed_at=now(),answer=p_data->>'answer',$n$,
+  $n$update app.call_turn set state='failed',completed_at=now(),revision=revision+1,error_code=case$n$,
+  $n$update app.call_turn set state='cancelled',completed_at=now(),revision=revision+1,lease_token=null,lease_until=null where id=t.id;$n$];
 begin
  select pg_get_functiondef('app_private.agent_call(text,text,uuid,text,uuid,uuid,jsonb)'::regprocedure) into body;
  if position('app_private.channel_admission' in body)>0 then return;end if;
@@ -207,9 +270,18 @@ declare body text;hits int;i int;
    end if;
    -- A conversation already answered (and so billed) in this window keeps
    -- its agent. A new one needs the plan's WhatsApp agent and a wallet that
-   -- allows service; otherwise it goes to the human inbox and nothing is sent.
+   -- allows service; otherwise the turn is skipped, the conversation is
+   -- flagged for staff and nothing is sent. A skipped turn is not answered
+   -- later (after a top-up, say) unless the customer writes again.
+   -- channel_admission never raises; the guard keeps any fault on this turn,
+   -- so the oldest-first claim moves on to other organizations.
    if c.usage_state is null then
-    v_kind:=app_private.channel_admission(c.org_id,'whatsapp',now());
+    begin
+     v_kind:=app_private.channel_admission(c.org_id,'whatsapp',now());
+    exception when others then
+     raise warning 'BILLING_CHECK_FAILED';
+     v_kind:='BILLING_CHECK_FAILED';
+    end;
     if v_kind is not null then
      update app.conversation_turn set state='skipped',error_code=v_kind,completed_at=now() where id=t.id;
      update app.conversation set needs_attention=true,attention_reason=v_kind,revision=revision+1 where id=c.id;return jsonb_build_object('skipped',true);
@@ -218,7 +290,7 @@ declare body text;hits int;i int;
   end if;$n$,
   $n$   update app.conversation set last_message_at=now() where id=c.id;
    if m.author='agent' and c.usage_state is null then
-    update app.conversation set usage_state='pending' where id=c.id;
+    update app.conversation set usage_state='pending',usage_at=now() where id=c.id;
     begin
      perform app_private.conversation_bill(c.id);
     exception when others then

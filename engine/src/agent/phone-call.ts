@@ -38,7 +38,8 @@ export type PhoneStart =
 
 // Refusals the caller hears the busy line for; the others end the call silently,
 // including the plan and wallet refusals (NO_PHONE_ENTITLEMENT,
-// WALLET_UNFUNDED, WALLET_EXHAUSTED) decided by agent_call's call_start.
+// WALLET_UNFUNDED, WALLET_EXHAUSTED, and BILLING_CHECK_FAILED when the check
+// itself failed) decided by agent_call's call_start.
 const BUSY_LINE = new Set(["LINES_BUSY", "CALLER_LIMIT"]);
 
 // The server-side call start. The worker supplies only the room and the

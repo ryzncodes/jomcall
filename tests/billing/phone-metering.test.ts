@@ -2,12 +2,14 @@
 // against the local database, the fake telephony and a scripted model.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import pg from "pg";
 import { phoneFixture } from "../helpers/phone.ts";
 import { end, sentence } from "../helpers/voice-turn.ts";
-import { balanceSen, entitle, setBalance, usageEvents } from "../helpers/billing.ts";
+import { adjustWallet, balanceSen, entitle, setBalance, usageEvents } from "../helpers/billing.ts";
 import { recordUsage } from "../../packages/billing/src/usage.ts";
+import { CallRepository } from "../../engine/src/agent/call-repository.ts";
+import { listPendingUsage, retryUsage } from "../../scripts/billing/usage-admin.ts";
 
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
 type F = Awaited<ReturnType<typeof phoneFixture>>;
@@ -121,9 +123,10 @@ test("a crashed worker: maintenance ends the call and bills it once, up to the l
     await f.publish();
     const call = await answeredCall(f, await f.addNumber(), 600);
     await f.turn(call, "Hello", f.scripted([sentence("Hello."), end("Hello.")]).model);
-    // The caller's last words were 60 s after the answer; then nothing.
+    // The caller's last turn started 60 s after the answer and finished
+    // 70 s after it; then nothing. The bill stops at the end of that turn.
     await f.h.cleanup.query(
-      "update app.call_turn set created_at=now()-interval '540 seconds' where call_id=$1",
+      "update app.call_turn set created_at=now()-interval '540 seconds',completed_at=now()-interval '530 seconds' where call_id=$1",
       [call.callId],
     );
     await f.h.cleanup.query("update app.call set token_expires_at=now()-interval '1 second' where id=$1", [call.callId]);
@@ -133,7 +136,7 @@ test("a crashed worker: maintenance ends the call and bills it once, up to the l
     assert.equal(row.state, "ended");
     assert.equal(row.end_reason, "expired");
     assert.equal(row.usage_state, "billed");
-    assert.ok(Math.abs(row.duration_seconds - 60) <= 2, String(row.duration_seconds));
+    assert.ok(Math.abs(row.duration_seconds - 70) <= 2, String(row.duration_seconds));
     const events = await voiceEvents(f);
     assert.equal(events.length, 1);
     assert.equal(events[0].quantity, row.duration_seconds);
@@ -306,5 +309,250 @@ test("maintenance: an unanswered expired call and an answered call with no turns
     assert.equal((await voiceEvents(f)).length, 0);
   } finally {
     await f.close();
+  }
+});
+
+// A plan with wallet credit but no period started yet: admission starts it.
+async function planWithoutPeriod(f: F, org: string, plan = "growth") {
+  await f.h.cleanup.query(
+    "insert into app.org_plan(org_id,plan_code,anchor_date)values($1,$2,(now() at time zone 'Asia/Kuala_Lumpur')::date)",
+    [org, plan],
+  );
+  await adjustWallet(f.h.cleanup, org, 100_000);
+}
+const periodCount = (f: F, org: string) =>
+  f.h.cleanup.query("select count(*)::int n from app.plan_period where org_id=$1", [org]).then((r) => r.rows[0].n);
+// Marks an answered call as ended and owed with chosen times, as a call_end
+// whose bill did not land would leave it, then bills it the way maintenance does.
+async function billCall(f: F, callId: string, answeredAt: string, seconds: number) {
+  await f.h.cleanup.query(
+    `update app.call set state='ended',end_reason='hangup',outcome='answered',token_hash=null,usage_state='pending',
+      answered_at=$2::timestamptz,duration_seconds=$3::int,ended_at=$2::timestamptz+$3::int*interval '1 second' where id=$1`,
+    [callId, answeredAt, seconds],
+  );
+  return (await f.h.cleanup.query("select app_private.call_bill($1) s", [callId])).rows[0].s;
+}
+
+test("a lost answer report: the caller's first turn counts as the answer, and the call is billed", async () => {
+  const f = await phoneFixture();
+  try {
+    await f.publish();
+    await noAllowance(f, f.h.orgA.id);
+    const { result } = await f.ring(await f.addNumber());
+    const call = result as Live;
+    // The worker's /answered request never arrived; the caller speaks.
+    await f.turn(call, "Hello", f.scripted([sentence("Hello."), end("Hello.")]).model);
+    let row = await f.row(call.callId);
+    assert.ok(row.answered_at, "set by the first turn");
+    assert.equal(row.disclosure_played_at, null, "the disclosure record is left alone");
+    const turn = (await f.h.cleanup.query("select created_at from app.call_turn where call_id=$1", [call.callId])).rows[0];
+    assert.ok(Math.abs(row.answered_at - turn.created_at) < 1000);
+    // 50 s of conversation later the caller hangs up.
+    await f.h.cleanup.query("update app.call set answered_at=answered_at-interval '50 seconds' where id=$1", [call.callId]);
+    await f.calls.end(call.callId, sha(call.token), { reason: "hangup" });
+    row = await f.row(call.callId);
+    assert.deepEqual([row.outcome, row.usage_state], ["answered", "billed"]);
+    assert.ok(row.billed_seconds >= 50 && row.billed_seconds <= 52, String(row.billed_seconds));
+    assert.equal((await voiceEvents(f))[0].amount_sen, Math.ceil((row.billed_seconds * 32) / 60));
+
+    // An older row with turns but no answer time is still billed.
+    const legacy = (await f.ring(await f.addNumber())).result as Live;
+    await f.turn(legacy, "Hai", f.scripted([sentence("Hai."), end("Hai.")]).model);
+    await f.h.cleanup.query(
+      `update app.call set state='ended',token_hash=null,usage_state='pending',answered_at=null,duration_seconds=30,ended_at=now() where id=$1`,
+      [legacy.callId],
+    );
+    assert.equal((await f.h.cleanup.query("select app_private.call_bill($1) s", [legacy.callId])).rows[0].s, "billed");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a call refused for its configuration starts no plan period and debits nothing", async () => {
+  const f = await phoneFixture({ entitled: false });
+  try {
+    const org = f.h.orgA.id;
+    await planWithoutPeriod(f, org);
+    const before = await balanceSen(f.h.cleanup, org);
+    const dialled = await f.addNumber();
+    assert.equal((await f.ring(dialled)).result.refusal, "AGENT_UNPUBLISHED");
+    assert.equal(await periodCount(f, org), 0, "no period started");
+    assert.equal(await balanceSen(f.h.cleanup, org), before, "no fee debited");
+    // Configured: the first admitted call starts the period and pays the fee.
+    await f.publish();
+    assert.equal((await f.ring(dialled)).result.refusal, null);
+    assert.equal(await periodCount(f, org), 1);
+    assert.equal(await balanceSen(f.h.cleanup, org), before - 12_900);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a billing fault refuses only that call, with its own row and code", async () => {
+  const f = await phoneFixture({ entitled: false });
+  const trigger = "test_fail_period_" + randomUUID().replaceAll("-", "");
+  try {
+    const org = f.h.orgA.id;
+    await f.publish();
+    await planWithoutPeriod(f, org);
+    // Starting this organization's plan period fails (as a database fault would).
+    await f.h.cleanup.query(
+      `create function public.${trigger}()returns trigger language plpgsql as $$begin
+        if new.org_id='${org}'::uuid then raise exception 'INJECTED_FAULT';end if;return new;end$$`,
+    );
+    await f.h.cleanup.query(`create trigger ${trigger} before insert on app.plan_period for each row execute function public.${trigger}()`);
+    const dialled = await f.addNumber();
+    const refused = (await f.ring(dialled)).result;
+    assert.equal(refused.refusal, "BILLING_CHECK_FAILED", "not reported as a missing plan");
+    const row = await f.row(refused.callId!);
+    assert.deepEqual([row.state, row.refusal, row.outcome], ["refused", "BILLING_CHECK_FAILED", "refused"]);
+    await f.h.cleanup.query(`drop trigger ${trigger} on app.plan_period`);
+    assert.equal((await f.ring(dialled)).result.refusal, null, "admitted once the fault clears");
+  } finally {
+    await f.h.cleanup.query(`drop trigger if exists ${trigger} on app.plan_period`);
+    await f.h.cleanup.query(`drop function if exists public.${trigger}()`);
+    await f.close();
+  }
+});
+
+test("a call that runs across a plan period boundary uses the period it was answered in", async () => {
+  const f = await phoneFixture();
+  try {
+    const org = f.h.orgA.id;
+    await f.publish();
+    const call = await answeredCall(f, await f.addNumber(), 10);
+    const current = (await f.h.cleanup.query("select * from app.plan_period where org_id=$1", [org])).rows[0];
+    // The previous period was paid; the current one has no allowance left.
+    await f.h.cleanup.query("select app_private.charge_plan_period($1,$2::timestamptz-interval '1 day')", [org, current.starts_at]);
+    const previous = (
+      await f.h.cleanup.query("select * from app.plan_period where org_id=$1 and ends_at=$2", [org, current.starts_at])
+    ).rows[0];
+    assert.equal(previous.state, "charged");
+    await f.h.cleanup.query("update app.plan_period set included_voice_seconds=0 where id=$1", [current.id]);
+    // Answered at 23:55, ended at 00:05 Kuala Lumpur time on the anchor day.
+    const answered = new Date(current.starts_at.getTime() - 300_000).toISOString();
+    assert.equal(await billCall(f, call.callId, answered, 600), "billed");
+    const [event] = await voiceEvents(f);
+    assert.equal(event.period_id, previous.id);
+    assert.deepEqual([event.included_seconds, event.amount_sen], [600, 0]);
+    assert.equal(new Date(event.occurred_at).toISOString(), answered);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a call answered before a price change is priced at the price in force at the answer", async () => {
+  const f = await phoneFixture();
+  try {
+    await f.publish();
+    const call = await answeredCall(f, await f.addNumber(), 10);
+    const prices = (
+      await f.h.cleanup.query("select id,version,effective_from from app.billing_price where kind='voice_second' order by version")
+    ).rows;
+    assert.ok(prices.length >= 2, "two price versions");
+    const [older, newer] = prices.slice(-2);
+    // Answered a minute before the newer price took effect, ended after it.
+    const answered = new Date(newer.effective_from.getTime() - 60_000).toISOString();
+    assert.equal(await billCall(f, call.callId, answered, 600), "billed");
+    const [event] = await voiceEvents(f);
+    assert.equal(event.price_id, older.id);
+  } finally {
+    await f.close();
+  }
+});
+
+test("races: two ends, or an end and maintenance, bill a call once", async () => {
+  const f = await phoneFixture();
+  const other = new CallRepository(f.h.namespace);
+  try {
+    await f.publish();
+    await noAllowance(f, f.h.orgA.id);
+    const dialled = await f.addNumber();
+    // Two end reports at once, on separate connections.
+    const a = await answeredCall(f, dialled, 30);
+    const ends = await Promise.allSettled([
+      f.calls.end(a.callId, sha(a.token), { reason: "hangup" }),
+      other.end(a.callId, sha(a.token), { reason: "hangup" }),
+    ]);
+    assert.deepEqual(ends.map((r) => r.status).sort(), ["fulfilled", "rejected"]);
+    // An end and a maintenance pass at once.
+    const b = await answeredCall(f, dialled, 30);
+    await Promise.all([f.calls.end(b.callId, sha(b.token), { reason: "hangup" }), other.maintain()]);
+    // An expired call: the late end and maintenance at once.
+    const c = await answeredCall(f, dialled, 30);
+    await f.turn(c, "Hello", f.scripted([sentence("Hello."), end("Hello.")]).model);
+    await f.h.cleanup.query("update app.call set token_expires_at=now()-interval '1 second' where id=$1", [c.callId]);
+    await Promise.allSettled([f.calls.end(c.callId, sha(c.token), { reason: "hangup" }), other.maintain()]);
+    for (const call of [a, b, c]) {
+      const row = await f.row(call.callId);
+      assert.deepEqual([row.state, row.usage_state], ["ended", "billed"], call.callId);
+      const events = (await voiceEvents(f)).filter((e) => e.idempotency_key === "call:" + call.callId);
+      assert.equal(events.length, 1, call.callId);
+    }
+  } finally {
+    await other.close();
+    await f.close();
+  }
+});
+
+test("operators list stuck bills and retry one past the 20-attempt cap", async () => {
+  const f = await phoneFixture();
+  const db = await f.h.cleanup.connect();
+  try {
+    await f.publish();
+    const dialled = await f.addNumber();
+    // A bill that cannot land: its key is taken with another quantity.
+    const stuck = await answeredCall(f, dialled, 30);
+    const worker = new pg.Pool({ connectionString: process.env.WORKER_DATABASE_URL, max: 1 });
+    try {
+      await recordUsage(worker, { orgId: f.h.orgA.id, kind: "voice_second", quantity: 1, idempotencyKey: "call:" + stuck.callId });
+    } finally {
+      await worker.end();
+    }
+    await f.calls.end(stuck.callId, sha(stuck.token), { reason: "hangup" });
+    await f.h.cleanup.query("update app.call set usage_attempts=20 where id=$1", [stuck.callId]);
+    await f.calls.maintain();
+    assert.equal((await f.row(stuck.callId)).usage_attempts, 20, "maintenance has stopped retrying it");
+    const listed = (await listPendingUsage(db, 10_000)).find((r) => r.id === stuck.callId);
+    assert.deepEqual(
+      listed && { kind: listed.kind, orgId: listed.orgId, attempts: listed.attempts, stuck: listed.stuck },
+      { kind: "call", orgId: f.h.orgA.id, attempts: 20, stuck: true },
+    );
+    assert.deepEqual(Object.keys(listed!).sort(), ["attempts", "id", "kind", "namespace", "orgId", "since", "stuck"]);
+    assert.deepEqual(await retryUsage(db, stuck.callId), { kind: "call", state: "pending", error: "CONFLICT" });
+    assert.equal((await f.row(stuck.callId)).usage_attempts, 21, "the failed retry is counted");
+
+    // A stuck bill whose cause is gone lands on retry.
+    const owed = await answeredCall(f, dialled, 30);
+    await f.h.cleanup.query(
+      `update app.call set state='ended',end_reason='hangup',outcome='answered',ended_at=now(),token_hash=null,
+        duration_seconds=30,usage_state='pending',usage_attempts=20 where id=$1`,
+      [owed.callId],
+    );
+    assert.deepEqual(await retryUsage(db, owed.callId), { kind: "call", state: "billed" });
+    assert.equal((await f.row(owed.callId)).billed_seconds, 30);
+    await assert.rejects(retryUsage(db, owed.callId), /NOT_PENDING/);
+  } finally {
+    db.release();
+    await f.close();
+  }
+});
+
+test("the web role cannot read the billing columns on calls and conversations", async () => {
+  const web = new pg.Pool({ connectionString: process.env.APP_DATABASE_URL, max: 1 });
+  try {
+    for (const sql of [
+      "select usage_state from app.call",
+      "select billed_seconds from app.call",
+      "select usage_event_id from app.call",
+      "select * from app.call",
+      "select usage_state from app.conversation",
+      "select usage_at from app.conversation",
+    ])
+      await assert.rejects(web.query(sql + " limit 0"), /permission denied/, sql);
+    await web.query("select id,state,outcome,duration_seconds,refusal from app.call limit 0");
+    await web.query("select id,state,owner,needs_attention,last_message_at from app.conversation limit 0");
+  } finally {
+    await web.end();
   }
 });
