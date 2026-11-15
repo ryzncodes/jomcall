@@ -162,7 +162,10 @@ async def phone_entrypoint(ctx: JobContext) -> None:
         # never keeps the only line busy until the token expires.
         reason, language = "worker_failed", None
         # The answer report retries in the background, so the caller is heard
-        # meanwhile; it is awaited before the end report, which must come last.
+        # meanwhile. At the end of the call it is cancelled, not awaited: its
+        # retries can take about 10 s, which would bill a quick hang-up for
+        # that long and keep the line busy. A lost report is covered on the
+        # server, where the caller's first turn counts as the answer.
         answering: set[asyncio.Task] = set()
 
         async def opened() -> None:
@@ -198,6 +201,8 @@ async def phone_entrypoint(ctx: JobContext) -> None:
         except Exception as error:  # class name only
             log.error("phone call failed: %s", type(error).__name__)
         finally:
+            for task in list(answering):
+                task.cancel()
             if answering:
                 await asyncio.gather(*answering, return_exceptions=True)
             try:
