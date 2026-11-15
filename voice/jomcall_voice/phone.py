@@ -9,6 +9,7 @@ per-call token. Nothing here logs a token, a phone number or a transcript.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 
@@ -94,12 +95,31 @@ class PhoneClient:
         except ValueError:
             return None
 
-    async def answered(self, call_id: str, token: str) -> None:
-        await self._client.post(
-            f"{self._base}/phone/calls/{call_id}/answered",
-            headers={**self._service, "authorization": "Bearer " + token},
-            json={},
-        )
+    async def answered(
+        self, call_id: str, token: str, attempts: int = 3, delay_s: float = 0.3
+    ) -> bool:
+        """Reports the answer. Billing counts the call's seconds from it, so a
+        lost report is retried a few times, each with a short timeout. A 4xx
+        other than 429 is final: the call has ended or the token is gone.
+        Never raises. True once the server recorded it. (If every attempt
+        fails, the server treats the caller's first turn as the answer.)"""
+        for attempt in range(attempts):
+            try:
+                response = await self._client.post(
+                    f"{self._base}/phone/calls/{call_id}/answered",
+                    headers={**self._service, "authorization": "Bearer " + token},
+                    json={},
+                    timeout=3.0,
+                )
+                if 200 <= response.status_code < 300:
+                    return True
+                if 400 <= response.status_code < 500 and response.status_code != 429:
+                    return False
+            except httpx.HTTPError:
+                pass
+            if attempt + 1 < attempts:
+                await asyncio.sleep(delay_s * (attempt + 1))
+        return False
 
     async def end(self, call_id: str, token: str, reason: str, language: str | None) -> None:
         body: dict = {"reason": reason if reason.replace("_", "").isalpha() else "ended"}
