@@ -1647,3 +1647,10 @@
     display: none;
   }
 }
+.wa-proposals {
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border-left: 3px solid var(--secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
