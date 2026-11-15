@@ -43,13 +43,14 @@ Branch `feat/setup-import` (pull request not yet open; the controller opens it).
 - `npm run check:setup-reader` (needs `--paid` for any model call) with 15 made-up documents.
 - Final review fixes (2026-11-16): main merged in; the two migrations renamed to sort after `20261116100000`; an import fact flagged for checking no longer hides its interview question or fills its fact; a fact edit cannot set `uploadId`; Remove on a file deletes that file's unconfirmed and removed rows; a delimited file over 1 MiB is refused at finish (`UPLOAD_TOO_LONG`) before it is read; uploads still queued or being read when setup is saved fail `SESSION_CLOSED`; a database error on storing a read releases the upload for another try (only a refusal fails it). Screen: senders stop when setup is saved; the save question is asked again when a named file finishes or more prices would be saved; this window's own Remove is not "changed in another window"; the reader's fixed reasons are shown in Bahasa Melayu; refusals after leaving the bring stage are named on the interview and review pages; `check:setup-reader --out` must point inside `output/setup-reader/`.
 
-**Verified (2026-11-15)**
-- `npm run typecheck` pass; `npm run test:guards` 69 of 69; `npm run check:core` 743 of 744 (the one failure, `tests/db/signup-invited.test.ts`, is the known local quirk "function signup_invited already exists"); `npm run db:verify-migrations` 58 tables with row-level security; `npm run build:mock` and `npm run build:hosted` pass.
+**Verified (2026-11-15; commands re-run 2026-11-16)**
+- Verified on 2026-11-16 after merging `main`: `npm run typecheck`, `npm run test:guards` (69 of 69), `npm run check:core` (762 of 762), `npm run db:verify-migrations` (58 tables with row-level security), `npm run build:local`, `npm run build:mock`, `npm run build:hosted`.
 - Browser check, local app, 390 px, English, reader on, fake workspace: three documents (a photo, a CSV and pasted text) were all read within about 30 seconds; review page, double tap, price edit, Remove and Undo, apply question; a draft test answered a price from the new rows.
 - Three paid reading runs on 15 made-up documents, 57 model calls. In run 1, two documents had real wrong prices with no flag (three rows); the script counted four. Run 3 was clean: no wrong or unsure price unflagged; 34 of 250 rows flagged.
 
 **Not verified**
 - No person has used it. No real phone photo, handwriting or blur. Each paid run was done once, so how often a wrong price recurs is unknown. The double read's catch of a slipped line is shown by unit test only. Two reads that slip the same way are not caught. CSV and pasted text are read once.
+- None of the fix-wave screen changes (Bahasa Melayu reasons, notices after leaving the bring stage, "Back to your answers", stopping uploads at save) was checked in a browser.
 - Bahasa Melayu and dark theme on the new pages, View file, bulk remove, file-group remove, conflicts, duplicates, a real phone, upload interruption and retry, the feel of the half-second tap guard.
 - Nothing ran on hosted staging. The 48-case gates were not re-run.
 - Whether uploads must be covered by PDPA export and delete (a lawyer's question). No screen removes uploads after setup is applied (the server allows it).

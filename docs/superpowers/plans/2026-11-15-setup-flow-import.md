@@ -34,7 +34,7 @@
 - No customer documents in git. Test fixtures are the spike's synthetic documents or new clearly fake ones.
 - Model ids: `claude-haiku-5-5` and `claude-sonnet-5-5`. Confirm ids and the structured-output call shape against the `claude-api` skill before coding; the spike's call (`spikes/knowledge-intake/extraction/run.ts:94-100`) is the starting reference, not an authority. Do not import from `spikes/`.
 - Mock mode never calls these commands.
-- New migrations use timestamps from `20261116090000` upward (other branches use `202611151xxxxx`). Never edit a migration already on `main`. Migrations are re-runnable.
+- New migrations use timestamps from `20261116090000` upward (renamed, see note below) (other branches use `202611151xxxxx`). Never edit a migration already on `main`. Migrations are re-runnable.
   - Note (2026-11-15, final review): the two migrations were renamed to `20261116110000_setup_uploads.sql` and `20261116110100_setup_read_worker.sql`, because hosted staging already has `20261116100000` (from `main`) applied and `supabase db push` refuses a local migration dated before the newest applied one.
 - After adding commands run `npm run contracts:generate`.
 - Never run `check:hosted-model`, `check:voice-model` or anything `hosted:*`. The paid step in Task 8 is run only on the owner's go.
