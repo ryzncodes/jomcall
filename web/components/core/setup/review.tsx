@@ -290,13 +290,20 @@ export function Review({
         setAsked(now.counts);
         return;
       }
-      // More would be left out than when the owner answered, or prices
-      // came in since (a file named as still being read finished, or more
-      // prices would be saved): ask again, so nothing is saved unseen.
+      // More would be left out than when the owner answered, more prices
+      // would be saved, or a file named as still being read is no longer
+      // being read: ask again, so nothing is saved unseen.
       const why = sure && asked ? askAgainWhy(asked, now.counts) : null;
       if (why) {
         setAsked(now.counts);
         if (why === "arrived") setArrived(true);
+        else if (why === "changed")
+          announce(
+            w(
+              "Your files changed since the question was asked. Check it again.",
+              "Fail anda berubah sejak soalan ini ditanya. Sila semaknya sekali lagi.",
+            ),
+          );
         else
           announce(
             w(
@@ -1523,7 +1530,7 @@ function PriceSection({
               <FileHead
                 upload={upload}
                 label={fileLabel(upload)}
-                failure={s?.phase === "failed" ? failDetail(s, w) : null}
+                failure={s?.phase === "failed" ? failDetail(s, w, true) : null}
                 onBring={onBring}
                 sending={!!s && s.phase !== "failed"}
                 locked={locked}

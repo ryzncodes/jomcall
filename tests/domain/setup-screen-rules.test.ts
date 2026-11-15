@@ -321,6 +321,17 @@ test("upload labels for every state in both languages", () => {
 });
 
 test("on the review page, file lines drop the bring stage's offers; a CSV or text file is not a photo", () => {
+  // The 24-hour limit, when a create still in flight is refused after the
+  // owner left the bring stage.
+  assert.match(sendFailureText(429, "UPLOAD_RATE", "create", en), /or answer the questions instead\.$/);
+  assert.equal(
+    sendFailureText(429, "UPLOAD_RATE", "create", en, true),
+    "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later.",
+  );
+  assert.equal(
+    sendFailureText(429, "UPLOAD_RATE", "create", ms, true),
+    "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
+  );
   const t = Date.UTC(2026, 10, 15, 9);
   const queued = { ...upload, state: "queued" as const };
   assert.equal(uploadLabel(queued, en, t + 11 * 60_000, t, true), "Still waiting to be read.");
@@ -1605,10 +1616,14 @@ test("apply asks again when more would be left out than the question said", () =
   // Fewer left out: no need to ask again.
   assert.equal(askAgain(c, { ...c, checkPrices: 1 }), false);
   assert.equal(askAgainWhy(c, { ...c, checkPrices: 1, prices: 13 }), null);
-  // A file named as still being read has finished, or more prices would be
-  // saved: asked again, so no price is saved unseen.
-  assert.equal(askAgainWhy(c, { ...c, reading: [] }), "arrived");
+  // More prices would be saved: asked again, said as "new prices came in".
+  assert.equal(askAgainWhy(c, { ...c, reading: [], prices: 16 }), "arrived");
   assert.equal(askAgainWhy(c, { ...c, prices: 15 }), "arrived");
+  // A file named as still being read is no longer being read but brought no
+  // new price (it failed, was removed, or found nothing): asked again, but
+  // never said as new prices.
+  assert.equal(askAgainWhy(c, { ...c, reading: [] }), "changed");
+  assert.equal(askAgainWhy({ ...c, reading: ["a.pdf", "gone.pdf"] }, c), "changed");
   assert.equal(askAgainWhy(c, { ...c, checkPrices: 4, reading: [] }), "left_out");
   assert.equal(askAgain(c, { ...c, checkPrices: 4 }), true);
   assert.equal(askAgain(c, { ...c, checkAnswers: 1 }), true);

@@ -300,6 +300,12 @@ test("leaving the screen empties the upload queue, and a failed Remove never res
   assert.doesNotMatch(upload, /job\.controller = new AbortController\(\)/);
   const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
   assert.match(bring, /removeAgain\s*\?\s*void removeRow\(r\)\s*:\s*manager\.retry\(s\.key\)/);
+  // Saving setup stops every sender: the queue is emptied, each job is
+  // marked removed and aborted, and its upload removed, before the finish
+  // view replaces the setup.
+  assert.match(upload, /const stopAll = useCallback\(\(\) => \{[^]*?queue\.current = \[\];\s*for \(const j of jobs\.current\.values\(\)\) \{\s*j\.removed = true;[^]*?j\.controller\.abort\(\);[^]*?"removeSetupUpload"[^]*?jobs\.current\.clear\(\);/);
+  const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
+  assert.match(flow, /onApplied=\{\(\) => \{[^}]*?uploads\.stopAll\(\);\s*setView\(\{ \.\.\.view, session: null/);
 });
 
 test("the review page shows price rows and uses the reader's check flag", () => {

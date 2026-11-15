@@ -298,6 +298,7 @@ export function requestErrorText(
   code: string,
   step: UploadStep,
   w: Words,
+  review = false,
 ): string | null {
   switch (code) {
     case "UPLOAD_XLSX":
@@ -320,10 +321,15 @@ export function requestErrorText(
             "This file was sent too many times. Remove it and add it again.",
             "Fail ini sudah dihantar terlalu banyak kali. Buang dan tambah semula.",
           )
-        : w(
-            "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.",
-            "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
-          );
+        : review
+          ? w(
+              "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later.",
+              "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
+            )
+          : w(
+              "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.",
+              "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
+            );
     case "READER_OFF":
       return failText("READER_OFF", w);
     default:
@@ -343,11 +349,14 @@ export function requestErrorText(
 // - Any other refusal (CONFLICT, UPLOAD_INCOMPLETE, UPLOAD_SIZE_MISMATCH,
 //   EMPTY_CHUNK, PAYLOAD_TOO_LARGE, OCTET_STREAM_REQUIRED, NOT_FOUND) means
 //   this send cannot be fixed by Retry.
+// On the review page (review) the bring stage's offer to answer the
+// questions instead is left out.
 export function sendFailureText(
   status: number | null,
   code: string | null,
   step: UploadStep,
   w: Words,
+  review = false,
 ): string {
   const app = code !== "PROXY";
   if (app && status === 401)
@@ -376,7 +385,7 @@ export function sendFailureText(
           "Hanya pemilik atau pentadbir boleh menambah dokumen.",
         );
   if (step === "remove") return removeFailedText(w);
-  const own = code && app ? requestErrorText(code, step, w) : null;
+  const own = code && app ? requestErrorText(code, step, w, review) : null;
   if (own) return own;
   if (step === "paste")
     return w(
@@ -1515,13 +1524,14 @@ export function applyConfirmText(c: Counts, w: Words): string | null {
 // After the owner answers the question: ask again (with the new counts)
 // when more would now be left out than when it was asked ("left_out": more
 // prices or answers that still need checking, or a file not in yet that was
-// not named), or when prices came in since ("arrived": a file named as still
-// being read has finished, or more prices would be saved), so none is saved
-// unseen. Null: apply as answered.
+// not named), when more prices would be saved ("arrived"), or when a file
+// named as still being read is no longer being read ("changed": it finished,
+// failed or was removed, so the question's words are out of date), so
+// nothing is saved unseen. Null: apply as answered.
 export function askAgainWhy(
   asked: Counts,
   now: Counts,
-): "left_out" | "arrived" | null {
+): "left_out" | "arrived" | "changed" | null {
   const named = new Set([...asked.reading, ...asked.sending]);
   if (
     now.checkPrices > asked.checkPrices ||
@@ -1529,11 +1539,8 @@ export function askAgainWhy(
     [...now.reading, ...now.sending].some((n) => !named.has(n))
   )
     return "left_out";
-  if (
-    asked.reading.some((n) => !now.reading.includes(n)) ||
-    now.prices > asked.prices
-  )
-    return "arrived";
+  if (now.prices > asked.prices) return "arrived";
+  if (asked.reading.some((n) => !now.reading.includes(n))) return "changed";
   return null;
 }
 export const askAgain = (asked: Counts, now: Counts) =>

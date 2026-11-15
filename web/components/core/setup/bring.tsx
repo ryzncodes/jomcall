@@ -477,7 +477,7 @@ export function UploadProblems() {
     <div className="storage-warning" role="alert">
       <ul className="setup-problems">
         {late.map((p, i) => (
-          <li key={i}>{noticeText(p, w)}</li>
+          <li key={i}>{noticeText(p, w, true)}</li>
         ))}
       </ul>
     </div>
@@ -485,21 +485,24 @@ export function UploadProblems() {
 }
 
 // The sentence for one refusal or failed request, with the file name.
-function noticeText(n: UploadNotice, w: Words): string {
+// away: shown after the owner left the bring stage (UploadProblems), so
+// without the bring stage's offers.
+function noticeText(n: UploadNotice, w: Words, away = false): string {
   if (n.refusal === "NO_ROOM") return noRoomText(n.names ?? [], w);
   const f = failureOf(n.error);
   const reason = n.refusal
     ? refusalText(n.refusal, w)
-    : sendFailureText(f.status, f.code, n.step ?? "create", w);
+    : sendFailureText(f.status, f.code, n.step ?? "create", w, away);
   return n.name ? `${n.name}: ${reason}` : reason;
 }
 
 // Why a send stopped, under "Sending failed". A failure while preparing
 // the file (no request step) gets the general sentence.
-export function failDetail(s: Sender, w: Words): string {
+// review: shown on the review page, without the bring stage's offers.
+export function failDetail(s: Sender, w: Words, review = false): string {
   if (!s.step) return sendBrokenText(w);
   const f = failureOf(s.error);
-  return sendFailureText(f.status, f.code, s.step, w);
+  return sendFailureText(f.status, f.code, s.step, w, review);
 }
 
 // A failed Remove can always be tried again (unless signed out or refused
