@@ -13,6 +13,7 @@ import {
 } from "../../packages/whatsapp/src/index.ts";
 import { createFakeProvider } from "../../packages/whatsapp/src/fake.ts";
 import { WhatsAppWorker } from "../../engine/src/whatsapp/worker.ts";
+import { displayName } from "../../web/lib/core/inbox-rules.ts";
 
 const secret = "inbox-app-secret-" + randomUUID();
 const phone = String(100000000 + Math.floor(Math.random() * 899999999));
@@ -64,12 +65,12 @@ async function setup() {
     },
   });
   await worker.tick(); // pending -> connected
-  const say = (text: string) => {
+  const say = (text: string, from = customer, name = "Siti Contoh") => {
     const raw = JSON.stringify(
       buildInboundText({
         phoneNumberId: phone,
-        from: customer,
-        name: "Siti Contoh",
+        from,
+        name,
         id: "wamid.IN" + randomUUID(),
         text,
       }),
@@ -91,6 +92,22 @@ async function setup() {
     (await f.req("GET", "/conversations")).body.data[0];
   const detail = async (id: string) =>
     (await f.req("GET", `/conversations/${id}`)).body.data;
+  // Queues a staff reply and expects the server to refuse it before storing.
+  const refused = async (text: string, code: string) => {
+    const c = await latest();
+    const before = await detail(c.id);
+    const r = await f.req("POST", `/conversations/${c.id}/messages`, {
+      text,
+      expectedRevision: c.revision,
+    });
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.equal(r.body.error.code, code);
+    const after = await detail(c.id);
+    assert.equal(after.messages.length, before.messages.length);
+    assert.equal(after.owner, before.owner);
+    assert.equal(after.needs_attention, before.needs_attention);
+    assert.equal(after.revision, before.revision);
+  };
   const reply = async (text: string) => {
     const c = await latest();
     const r = await f.req("POST", `/conversations/${c.id}/messages`, {
@@ -106,6 +123,7 @@ async function setup() {
     ...f,
     worker,
     say,
+    refused,
     staffReq,
     latest,
     detail,
@@ -152,6 +170,20 @@ test("WhatsApp inbox read and staff replies", async (t) => {
           d.messages.find((m: any) => m.direction === "inbound").disclosure,
           false,
         );
+      },
+    );
+
+    await t.test(
+      "another organization cannot read the conversation",
+      async () => {
+        const c = await f.latest();
+        const r = await f.api.request(
+          f.h.bob,
+          f.h.orgB.id,
+          "GET",
+          `/api/v1/conversations/${c.id}`,
+        );
+        assert.equal(r.status, 404);
       },
     );
 
@@ -220,7 +252,7 @@ test("WhatsApp inbox read and staff replies", async (t) => {
     );
 
     await t.test(
-      "do-not-contact shows in the outlook and the worker blocks the reply",
+      "do-not-contact shows in the outlook and a reply is refused before it is stored",
       async () => {
         const c = await f.latest();
         const contact = (await f.req("GET", `/contacts/${c.contact_id}`)).body
@@ -243,9 +275,8 @@ test("WhatsApp inbox read and staff replies", async (t) => {
           fallback: false,
           reason: "DO_NOT_CONTACT",
         });
-        const m = await f.reply("Ini tidak patut dihantar");
-        assert.equal(m.status, "blocked");
-        assert.equal(m.error_code, "DO_NOT_CONTACT");
+        // Refused before anything is stored or taken over.
+        await f.refused("Ini tidak patut dihantar", "DO_NOT_CONTACT");
         const after = (await f.req("GET", `/contacts/${c.contact_id}`)).body
           .data;
         const off = await f.req(
@@ -294,6 +325,7 @@ test("WhatsApp inbox read and staff replies", async (t) => {
         // A template still needs a recorded yes.
         d = await f.detail(c.id);
         assert.equal(d.reply_outlook.reason, "CONSENT_REQUIRED");
+        await f.refused("Tanpa persetujuan", "CONSENT_REQUIRED");
 
         const contact = (await f.req("GET", `/contacts/${c.contact_id}`)).body
           .data;
@@ -317,11 +349,16 @@ test("WhatsApp inbox read and staff replies", async (t) => {
         m = await f.reply("Kami sudah ada jawapan");
         assert.equal(m.status, "sent");
         assert.equal(m.kind, "template");
+        assert.equal(m.reply_request, true);
+        // One reply-request per silence: another Send would repeat it.
+        d = await f.detail(c.id);
+        assert.equal(d.reply_outlook.reason, "REPLY_REQUEST_SENT");
+        await f.refused("Satu lagi", "REPLY_REQUEST_SENT");
       },
     );
 
     await t.test(
-      "STOP shows an opt-out notice and the worker blocks a later reply",
+      "STOP shows an opt-out notice and a later reply is refused before it is stored",
       async () => {
         await f.say("STOP");
         await f.worker.tick();
@@ -335,9 +372,7 @@ test("WhatsApp inbox read and staff replies", async (t) => {
         assert.ok(notice, "no opt-out notice");
         assert.equal(notice.author, "system");
         assert.equal(notice.status, "sent");
-        const m = await f.reply("Satu lagi soalan");
-        assert.equal(m.status, "blocked");
-        assert.equal(m.error_code, "OPTED_OUT");
+        await f.refused("Satu lagi soalan", "OPTED_OUT");
       },
     );
 
@@ -355,6 +390,25 @@ test("WhatsApp inbox read and staff replies", async (t) => {
       assert.equal(r.status, 409);
       assert.equal(r.body.error.code, "CONVERSATION_CLOSED");
     });
+
+    await t.test(
+      "a customer with no profile name is shown masked, never by number",
+      async () => {
+        const other =
+          "6012" + String(Math.floor(Math.random() * 9000000) + 1000000);
+        assert.equal((await f.say("Hai", other, "")).status, 200);
+        await f.worker.tick();
+        const c = (await f.req("GET", "/conversations")).body.data.find(
+          (x: any) => x.wa_id === other,
+        );
+        assert.ok(c, "no conversation for the nameless customer");
+        assert.equal(c.contact_name, "+" + other);
+        assert.equal(
+          displayName(c.contact_name, c.wa_id),
+          "•••• " + other.slice(-4),
+        );
+      },
+    );
   } finally {
     await f.close();
   }

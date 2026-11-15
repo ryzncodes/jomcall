@@ -90,11 +90,51 @@ test("the inbox has the four states and a retry", () => {
 test("the reply box shows the server's outlook and keeps the draft on refusal", () => {
   assert.match(code, /detail\.reply_outlook\.allow/);
   assert.match(code, /outlookWords\(detail\.reply_outlook\)/);
-  assert.match(code, /expectedRevision: detail\.revision/);
   // The draft is cleared only after the server accepted the reply.
   const send = code.slice(code.indexOf("const send = async"), code.indexOf("const forbidden"));
   assert.match(send, /if \(done\) \{[^}]*setDraft\(""\)/);
   assert.equal((send.match(/setDraft\(""\)/g) ?? []).length, 1);
+  // One idempotency key per draft: the exact first request is resent.
+  assert.match(send, /nextAttempt\(attempt\.current, draft, detail\.revision/);
+  assert.match(send, /expectedRevision: request\.expectedRevision/);
+  assert.match(send, /request\.key,?\s*\)/);
+  assert.match(send, /keepAttempt\(failure\)/);
+  // Refused sending disables Send only; the draft stays editable.
+  assert.doesNotMatch(code, /<textarea[^>]*\bdisabled=/);
+  assert.doesNotMatch(code, /maxLength=/);
+  assert.match(code, /utf8Bytes\(draft\)/);
+});
+
+test("the inbox never shows a full phone number", () => {
+  assert.doesNotMatch(text, /contact_name \|\|/);
+  assert.match(text, /displayName\(c\.contact_name, c\.wa_id\)/);
+  assert.match(text, /displayName\(detail\.contact_name, detail\.wa_id\)/);
+  assert.doesNotMatch(text, /\{(c|detail)\.wa_id\}/);
+});
+
+test("a slow poll cannot overwrite newer data", () => {
+  assert.match(code, /at < shown\.current\) return/);
+  assert.match(code, /if \(poll && loading\.current\) return/);
+});
+
+test("the inbox outlook reads the same SQL text as the agent process's send_claim", () => {
+  const sql = readFileSync("packages/domain/src/whatsapp/send-facts-sql.ts", "utf8");
+  const migration = readFileSync(
+    "supabase/migrations/20261114120100_whatsapp_worker.sql",
+    "utf8",
+  );
+  const claim = migration.slice(
+    migration.indexOf("p_action='send_claim'"),
+    migration.indexOf("p_action='send_result'"),
+  );
+  const squash = (t) => t.replace(/\s+/g, "");
+  const parts = [...sql.matchAll(/export const (\w+Sql) =\s*`([^`]*)`/g)];
+  assert.equal(parts.length, 3);
+  for (const [, name, body] of parts)
+    assert.ok(squash(claim).includes(squash(body)), `${name} drifted from send_claim`);
+  const routes = readFileSync("packages/domain/src/whatsapp/routes.ts", "utf8");
+  assert.match(routes, /now\(\) as now/);
+  assert.doesNotMatch(routes, /new Date\(\)\.toISOString\(\)/);
 });
 
 test("hosted users see no local wording and no simulator hint", () => {
