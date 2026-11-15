@@ -254,13 +254,6 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 6. Plan change takes effect next period (from `payg` and between paid plans), and a pending change can be cancelled.
 7. Tenant and role isolation: another organization's allowance is untouched, rows are not visible across organizations, staff and outsiders cannot choose a plan, and the app role cannot write plan rows or charge.
 
-### Known limits (found in review, not fixed here)
-
-- **WhatsApp: an agent answer whose send result was lost is not billed.** If the worker dies after Meta accepted the message, maintenance marks it `unknown`, and the status webhook does not move `unknown` forward. The customer got the answer; the conversation is billed only if a later agent message is sent. Under-billing, not double billing.
-- **Admission runs inside the global call-start lock.** A long transaction that holds one organization's wallet lock delays every call start until it ends.
-- **Maintenance takes several organizations' wallet locks in one transaction.** A deadlock with `charge_due_plans` is possible. Inside maintenance it only defers that bill; a `charge_due_plans` run would abort and must be retried.
-- **Billing a crashed call shortens `duration_seconds`**, which the call log shows. An answered call with no turns becomes 0 seconds and is free.
-
 ### Open owner decisions
 
 - **First subscription timing.** Under the next-period rule, an organization that moves from `payg` to Starter waits until its next anchor date for the number and minutes. Two alternatives: start the first paid period immediately with a full or pro-rated fee, or re-anchor on the day of the first subscription.
@@ -275,7 +268,7 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 
 ## 13. Metering and admission on the real channels (2026-11-15)
 
-Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `supabase/migrations/20261115123000_channel_metering.sql`; tests `tests/billing/phone-metering.test.ts` (10) and `tests/billing/whatsapp-metering.test.ts` (5). Everything was tested against the fake telephony, the fake WhatsApp provider and the local database only.
+Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `supabase/migrations/20261115123000_channel_metering.sql`; tests `tests/billing/phone-metering.test.ts` (18), `tests/billing/whatsapp-metering.test.ts` (9) and `voice/tests/test_phone.py` (3 new). Everything was tested against the fake telephony, the fake WhatsApp provider and the local database only. Revised the same day after review (items numbered as in that review where it helps).
 
 ### What was built
 
@@ -284,48 +277,59 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
   - `agent_call('maintain')`: a worker crash, through token expiry.
 
   The quantity is the call row's `duration_seconds`, counted from `answered_at`. It is copied to `billed_seconds`, and `usage_event_id` links the bill. Never billed: a call never answered, a call of 0 seconds (`usage_state='free'`), a refused call, and browser test calls (section 4).
-- **A failed bill never blocks the end of a call.** The call ends with `usage_state='pending'`, and every `maintain` pass retries each owed call on its own, least-tried first. `usage_attempts` counts failures; after 20 the call is left `pending` for an operator, so one that can never be billed does not hold up the rest. A duplicate or late end gets 401 because the token is already cleared. The idempotency key is a second guard.
+- **What counts as answered.** The voice worker reports the answer (`/answered`) once the opening has played. That report now checks the status and retries up to three times (3 s timeout each, short back-off), in the background so the caller is heard meanwhile; a 4xx other than 429 is final. If every attempt is lost, the caller's first turn sets `answered_at` (`turn_begin`), so a call in which the caller spoke is never free. `disclosure_played_at` is not backfilled: it records what was played. `call_bill` also treats a call with turns as answered if `answered_at` is somehow empty.
+- **Priced at the start.** A call is billed under the price version and the plan period in force at `answered_at` (the usage event's `occurred_at` is the answer time, not the end). A call answered at 23:55 on the last day of a period and ended at 00:05 draws on the period it was answered in; a call answered before a price change pays the old price.
+- **Crash cut-off.** After a worker crash, `maintain` ends the call at token expiry and sets its duration from `answered_at` to the latest sign it was alive: the latest `call_turn.completed_at` (new column, set when a turn completes, fails or is cancelled), or that turn's `created_at` if it never finished. No turns: 0 seconds, free. A late `/end` from the worker after `token_expires_at` is refused (`VOICE_EXPIRED`), so the call takes this duration from `maintain`.
+- **A failed bill never blocks the end of a call.** The call ends with `usage_state='pending'`, and every `maintain` pass retries each owed call on its own, least-tried first. `usage_attempts` counts failures; after 20 `maintain` stops trying it, so one that can never be billed does not hold up the rest. A duplicate or late end gets 401 because the token is already cleared. The idempotency key is a second guard; two concurrent ends, or an end racing `maintain`, bill once (tested).
+- **Stuck bills.** `npm run billing:admin -- usage-pending` lists every owed call and conversation (ids, organization, namespace, kind, attempts, since; `stuck` at 20 attempts; never a phone number or WhatsApp id). `npm run billing:admin -- usage-retry <id>` tries one bill once more past the cap and counts a failure. Code: `scripts/billing/usage-admin.ts`. Local database only, like the rest of `billing:admin`.
 - **WhatsApp.**
   - **Window:** one `app.conversation` row. A new one starts after 24 hours without a customer message (WhatsApp design §5).
-  - **Billing:** `whatsapp_conversation`, quantity 1, key `wa:<conversation id>`, when the first agent-authored message in the conversation reaches `sent` in `whatsapp_work('send_result')`. This includes the template that replaces it outside the 24-hour window, and a late `unknown` that becomes `sent`.
+  - **Billing:** `whatsapp_conversation`, quantity 1, key `wa:<conversation id>`, when the first agent-authored message in the conversation reaches `sent` in `whatsapp_work('send_result')`. This includes the template that replaces it outside the 24-hour window, and a late send result that turns `unknown` into `sent` (both tested). The moment is stored in `usage_at`, and the bill is priced at it even when a retry lands later.
   - **Not billed:** notices (opt-out, handoff, unsupported message), staff replies, and conversations the agent never answered.
-  - **A failed bill** leaves `usage_state='pending'` for `maintain` to retry.
+  - **A failed bill** never undoes the send: the message stays `sent`, the conversation stays `usage_state='pending'` for `maintain` to retry (tested with a real failure inside `send_result`).
 - **Admission.** `app_private.channel_admission(org, 'phone'|'whatsapp', at)` is internal, owned by `jomcall_agent_jobs` and granted to no role. It does three things in order:
-  1. starts or retries the current plan period (`charge_plan_period`; a failure is ignored);
+  1. starts or retries the current plan period (`charge_plan_period`);
   2. reads `plan_entitlements`;
   3. reads `wallet_state`.
 
-  It returns `NO_PHONE_ENTITLEMENT` or `NO_WHATSAPP_ENTITLEMENT`, then `WALLET_UNFUNDED` or `WALLET_EXHAUSTED`, or null. Grace is admitted.
-  - **Phone:** it runs inside `call_start`'s lock, after the configuration refusals (suspended, unpublished, disclosure) and before the caller limit and the busy-line guard. The plan period is read at the **database** clock, never the agent's `at` (which still decides opening hours), so the agent process cannot choose which period is charged or checked.
-  - **WhatsApp:** it runs in `turn_claim` for agent turns, and only while the conversation has not been billed.
+  It returns `NO_PHONE_ENTITLEMENT` or `NO_WHATSAPP_ENTITLEMENT`, then `WALLET_UNFUNDED` or `WALLET_EXHAUSTED`, or null. Grace is admitted. It never raises: any error gives `BILLING_CHECK_FAILED`, and so does a failed period charge that leaves no entitlement (it is not reported as a missing plan). `BILLING_CHECK_FAILED` refuses for now; whether it should admit instead is an open owner decision.
+  - **Phone:** it runs inside `call_start`'s lock, **after every other refusal** (suspended, unpublished, disclosure, caller limit, busy line), so a call refused for any other reason never starts or charges a plan period. The plan period is read at the **database** clock, never the agent's `at` (which still decides opening hours), so the agent process cannot choose which period is charged or checked. A fault refuses that call with its own refused row and code; it never turns into a bare `CALL_START_FAILED`.
+  - **WhatsApp:** it runs in `turn_claim` for agent turns, and only while the conversation has not been billed. A refusal (or a fault) skips that turn with the code, sets `needs_attention` with the code as `attention_reason`, and sends nothing; the claim moves on to the next queued turn, so one organization's fault never stalls the others. The inbox screen that shows the flag is on another pull request. A skipped turn is not answered later, after a top-up say, unless the customer writes again.
 - **Never cut off.** Nothing re-checks the plan or the wallet during a call, or in a conversation already answered in its window. Those keep going and are billed into grace or below.
 - **Roles.**
   - `jomcall_agent_jobs`, the owner of `agent_call` and `whatsapp_work`, gained EXECUTE on `record_usage`, `wallet_state`, `plan_entitlements` and `charge_plan_period`.
   - The login role `jomcall_agent` lost EXECUTE on `record_usage`, `wallet_state` and `plan_entitlements`. It can no longer bill an organization or read any balance; it learns only a refusal code for the number dialled.
+  - The web role `jomcall_app` now reads `app.call` and `app.conversation` column by column, without the billing columns (`usage_state`, `billed_seconds`, `usage_event_id`, `usage_attempts`, `usage_at`), so staff see no billing data (section 7).
   - `jomcall_worker` is unchanged.
 - **Operator plan command.** `npm run billing:admin -- plan <org> <starter|growth|payg> "<operator>"` stands in for the missing plan picker:
   - with no period running, it starts the plan now; otherwise the change takes effect next period;
   - it records `billing.plan_set_by_operator` in the audit log, then starts or retries the period.
+- **Every organization needs a plan.** After this migration, an organization without a plan is refused on the phone line (`NO_PHONE_ENTITLEMENT`) and gets no WhatsApp agent replies (`NO_WHATSAPP_ENTITLEMENT`) until an operator gives it one, because there is no plan picker. Browser test calls and typed tests are unaffected. `billing:admin` refuses any database but the local one, so on hosted staging the owner runs the equivalent SQL as the database owner (see the pull request).
 
 ### Deviations from this design and the channel designs
 
 1. **Metering runs in SQL, not through the TypeScript `recordUsage`.** Section 3 says the phone and WhatsApp sessions call `recordUsage` as `jomcall_agent`. They call the same `app_private.record_usage` from inside their own security-definer functions instead. This makes the bill atomic with the end or the send, so no ended-but-unbilled window exists outside a failed bill. It also lets the agent login role lose its direct grant.
-2. **What is measured.** Section 3 says to bill only after the provider confirms the event. No provider call-end record exists: phone design §11 lists "billing per provider-confirmed minute" as not built. Voice seconds are therefore measured by JomCall, from the worker's answer to the end the worker reports. After a crash they run to the last turn.
+2. **What is measured.** Section 3 says to bill only after the provider confirms the event. No provider call-end record exists: phone design §11 lists "billing per provider-confirmed minute" as not built. Voice seconds are therefore measured by JomCall, from the answer (or the first turn) to the end the worker reports. After a crash they run to the end of the last turn.
 3. **Refused calls are silent.** Section 4 says a refused call rings through to the business and the owner is told. Neither exists (phone design open decision 4). These refusals are silent like the other configuration refusals: the room is deleted and a refused row stays in the call log.
 4. **The WhatsApp unit.** WhatsApp design O7 says to bill per delivered message from Meta's `pricing` status. This follows section 12 instead: JomCall's own fee per conversation.
-5. **Lazy period start.** Section 12 expects `charge_due_plans` to start periods, but nothing schedules it. Admission starts or retries the period itself, so the first call or chat of a period can debit the monthly fee.
+5. **Lazy period start.** Section 12 expects `charge_due_plans` to start periods, but nothing schedules it. Admission starts or retries the period itself, so the first admitted call or chat of a period can debit the monthly fee.
+6. **Owners and admins cannot read the billing columns either.** Section 7 is about staff, but every member connects as the same web role, so the column grant hides `usage_state` and the rest from owners and admins too. They see what was billed through the wallet and usage events.
 
 ### Known limits (found in review, not fixed here)
 
-- **WhatsApp: an agent answer whose send result was lost is not billed.** If the worker dies after Meta accepted the message, maintenance marks it `unknown`, and the status webhook does not move `unknown` forward. The customer got the answer; the conversation is billed only if a later agent message is sent. Under-billing, not double billing.
+- **WhatsApp: a send whose result never arrives is not billed.** If the worker dies after Meta accepted the message and no late send result comes, maintenance marks it `unknown`, and the status webhook does not move `unknown` forward. The customer got the answer; the conversation is billed only if a later agent message is sent. Under-billing, not double billing.
+- **WhatsApp: a Meta `failed` status after `sent` does not reverse the bill.** The 15 sen stays charged; no reversal is built.
 - **Admission runs inside the global call-start lock.** A long transaction that holds one organization's wallet lock delays every call start until it ends.
 - **Maintenance takes several organizations' wallet locks in one transaction.** A deadlock with `charge_due_plans` is possible. Inside maintenance it only defers that bill; a `charge_due_plans` run would abort and must be retried.
-- **Billing a crashed call shortens `duration_seconds`**, which the call log shows. An answered call with no turns becomes 0 seconds and is free.
+- **Billing a crashed call shortens `duration_seconds`**, which the call log shows, to the end of the last turn. An answered call with no turns becomes 0 seconds and is free.
+- **New columns need a grant.** A later migration that adds a column to `app.call` or `app.conversation` must grant it to `jomcall_app`, or the web role cannot read it. A migration that grants the whole table again would expose the billing columns.
 
 ### Open owner decisions
 
-- Silent refusal versus ringing the owner's own number when the plan or wallet does not allow a call (phone open decision 4).
-- Whether WhatsApp conversations longer than 24 hours of continuous activity should bill again per 24 hours. Today one conversation is one bill however long it stays active.
-- Whether the crash cut-off (the last turn) is acceptable, or whether a provider call-end time is required before real callers.
+- **When the billing check itself fails:** refuse (today, `BILLING_CHECK_FAILED`) or admit.
+- **An exhausted wallet with unused paid allowance:** whether a paid plan's remaining minutes should still be served when the wallet is exhausted. Today the wallet decides.
+- **On a plan or wallet refusal:** silent (today) or a notice; on the phone, ringing the owner's own number (phone open decision 4).
+- **After staff resolve a flagged conversation:** whether the agent answering it again in the same window should bill again. Today one conversation is one bill.
+- Whether WhatsApp conversations longer than 24 hours of continuous activity should bill again per 24 hours.
+- Whether the crash cut-off (the end of the last turn) is acceptable, or whether a provider call-end time is required before real callers.
 - A plan picker on the wallet screen, and specific call-log text for the new refusals (currently "Not answered").
-
