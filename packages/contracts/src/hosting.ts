@@ -400,6 +400,10 @@ export function signupAllow(env: Env = process.env): SignupAllow | null {
 }
 
 export function signupAllowed(allow: SignupAllow, email: string): boolean {
+  // The list itself is ASCII only. Lower-casing maps some look-alike
+  // characters to ASCII (U+212A KELVIN SIGN becomes "k"), so a non-ASCII
+  // address never matches.
+  if (/[^\x00-\x7f]/.test(email)) return false;
   const address = email.trim().toLowerCase();
   const at = address.lastIndexOf("@");
   if (at <= 0) return false;

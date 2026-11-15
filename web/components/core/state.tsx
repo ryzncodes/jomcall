@@ -40,8 +40,8 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Pendaftaran kini hanya melalui jemputan. Minta jemputan daripada pasukan JomCall atau pemilik ruang kerja anda.",
     ],
     WORKSPACE_NOT_ALLOWED: [
-      "New workspaces are by invitation only for now. Ask the JomCall team for access.",
-      "Ruang kerja baharu kini hanya melalui jemputan. Minta akses daripada pasukan JomCall.",
+      "New workspaces are by invitation only for now. Ask the JomCall team for access, or open your invitation link.",
+      "Ruang kerja baharu kini hanya melalui jemputan. Minta akses daripada pasukan JomCall, atau buka pautan jemputan anda.",
     ],
     SLOT_UNAVAILABLE: [
       "Someone booked this time. Choose another slot.",

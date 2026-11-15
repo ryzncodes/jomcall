@@ -104,14 +104,16 @@ C5. **R2 bucket and token.** Cloudflare, R2: create `jomcall-backups-staging` an
 - Vercel Deployment Protection was removed for the staging domain so Curlec's webhook can reach it. Staging is therefore **public**: anyone can open it and, without step 4d, sign up.
 - Production approval of Curlec (D2 for production) is still pending.
 
-Because of the last three points, live keys on staging need two extra settings, or `npm run hosted:readiness -- --service web` fails:
+Because of the last three points, live keys on staging need two extra settings. Without them `npm run hosted:readiness -- --service web` fails, **and the running web app refuses payments**: the wallet shows payments as not connected, top-ups cannot start, and the Curlec webhook is refused (reason `LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED` or `SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING`). The rule applies in hosted mode with `JOMCALL_QUEUE_NAMESPACE=staging` and a live key or `CURLEC_ENVIRONMENT=live`:
 - `CURLEC_LIVE_ON_STAGING=1` — says in writing that live keys on staging are intended.
 - `JOMCALL_SIGNUP_ALLOW` — the sign-up allow-list (step 4d).
 
-The readiness check also fails when the key does not match `CURLEC_ENVIRONMENT` (a key starting `rzp_live_` needs `CURLEC_ENVIRONMENT=live`; `rzp_test_` needs `test` or empty). Curlec's documentation does not state these prefixes; they are the ones seen on the owner's accounts, so a key with another prefix is reported as `CURLEC_KEY_MODE_UNKNOWN`.
+The readiness check also fails when the key does not match `CURLEC_ENVIRONMENT` (a key starting `rzp_live_` needs `CURLEC_ENVIRONMENT=live`; `rzp_test_` needs `test` or empty). Curlec's documentation does not state these prefixes; they are the ones seen on the owner's accounts, so a key with another prefix is reported as `CURLEC_KEY_MODE_UNKNOWN`. The running app uses the same rules: a mismatched or unknown key leaves payments not connected.
+
+**When this change is deployed to staging, the staging wallet stops taking payments until `CURLEC_LIVE_ON_STAGING=1` and `JOMCALL_SIGNUP_ALLOW` are set in Vercel's staging environment and staging is redeployed** (step 4d). Set them before, or together with, that deployment. The engine and the other server services do not read payment settings, so nothing changes in `/etc/jomcall`. The owner-run `npm run billing:reconcile` and `npm run billing:admin` apply the same rule when their settings say hosted mode on the staging namespace with live keys.
 
 
-The owner chose Razorpay Curlec on 2026-11-14. Facts and sources: `docs/research/payment-providers-malaysia.md` sections 1, 3 and 6. Until D2 is done, leave `JOMCALL_PAYMENT_PROVIDER` unset: the wallet screen shows "Not connected" and no payment call is made.
+The owner chose Razorpay Curlec on 2026-11-14. Facts and sources: `docs/research/payment-providers-malaysia.md` sections 1, 3 and 6. For **production**, until D2 is done there, leave `JOMCALL_PAYMENT_PROVIDER` unset: the wallet screen shows "Not connected" and no payment call is made. Staging runs Curlec with live keys by the owner's choice (decisions above).
 
 D1. **Ask Curlec in writing** whether a prepaid usage wallet for an AI phone-answering SaaS is acceptable. Its Terms prohibit credits convertible to digital services, name intangible services, and give "web-based telephony" as a legally unclear example (<https://curlec.com/s/terms-of-use/>).
 
@@ -286,6 +288,12 @@ Note: Docker restarts a container that exits, not one marked unhealthy. Watch `d
 - Sign-up with any other address shows "Sign-up is by invitation only for now" / "Pendaftaran kini hanya melalui jemputan", and no email is sent.
 - An address invited from Settings → Team can sign up even if it is not on the list.
 - Existing accounts still sign in. Creating a new workspace is refused for an address not on the list (invited members join their workspace instead).
+
+Known limits, accepted for now (owner choices, not built):
+- The sign-up answer tells a prober whether an address is listed or invited: listed or invited addresses get "check your email" (200), others get the refusal (403). The alternative (always answer 200 and send nothing) would show refused people a false "check your email". The rate limit (10 a minute per client address) slows probing; Turnstile would slow it more, but it is on only when both Turnstile keys are set, and no Cloudflare account is recorded in this repository, so do not count on it for staging.
+- The Supabase publishable (anonymous) key is public by design, so an account can still be created straight against Supabase Auth. What stops an unlisted address is the workspace gate. Accounts and workspaces created while staging was public keep working; step 6 (manual review) is the only control for them. A Supabase "before user created" hook could refuse such accounts later.
+- A public mail domain entry such as `@gmail.com` opens sign-up to everyone at that provider. List single addresses for public mail.
+- Entries are ASCII only. An internationalised (IDN) domain in the list makes the whole value invalid, so every sign-up is refused (fails closed). Use the domain's `xn--` form if needed.
 
 What the gate does not cover: it lives in the web app only. Supabase Auth itself still accepts sign-ups from anyone who holds the Supabase anonymous key. JomCall never sends that key to the browser, and an account made that way still cannot create a workspace or top up. Do not turn off "Allow new users to sign up" in Supabase: the web sign-up form, invitations included, would stop working. The engine and the other server services do not read `JOMCALL_SIGNUP_ALLOW`; nothing changes in `/etc/jomcall`.
 

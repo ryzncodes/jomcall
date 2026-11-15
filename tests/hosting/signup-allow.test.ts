@@ -6,7 +6,9 @@ import {
 } from "../../packages/contracts/src/hosting.ts";
 import { issueCsrf } from "../../web/lib/server/csrf.ts";
 import { handleAuth } from "../../web/lib/server/auth.ts";
-import { closeServices } from "../../web/lib/server/services.ts";
+import { closeServices, database } from "../../web/lib/server/services.ts";
+import { dispatchCore } from "../../web/lib/server/api.ts";
+import { appConfig } from "../../web/lib/server/config.ts";
 
 // No network: the auth service is a stub that records every request, and the
 // database host does not resolve, so an invitation lookup fails (closed).
@@ -75,6 +77,13 @@ test("the allow-list parses addresses and whole domains, case-insensitively", ()
   assert.ok(!signupAllowed(allow, "a@sub.team.example.test"));
   assert.ok(!signupAllowed(allow, "a@evilteam.example.test"));
   assert.ok(!signupAllowed(allow, "not-an-address"));
+  // Non-ASCII never matches, even when lower-casing would map it to a listed
+  // address (U+212A KELVIN SIGN lower-cases to "k").
+  const k = signupAllow({ ...hostedEnv, JOMCALL_SIGNUP_ALLOW: "kate@example.test" })!;
+  assert.ok(signupAllowed(k, "kate@example.test"));
+  assert.equal("\u212Aate@example.test".toLowerCase(), "kate@example.test");
+  assert.ok(!signupAllowed(k, "\u212Aate@example.test"));
+  assert.ok(!signupAllowed(allow, "owner@exämple.test"));
 });
 
 test("unset or empty means sign-up stays open", () => {
@@ -146,4 +155,90 @@ test("hosted sign-up with an invalid list refuses everyone", async () => {
   const response = await signup("owner@example.test", "198.51.100.13");
   assert.equal(response.status, 500);
   assert.equal(calls.length, 0);
+});
+
+test("hosted sign-up: an unlisted address with a pending invitation reaches the auth service", async () => {
+  set({ ...hostedEnv, JOMCALL_SIGNUP_ALLOW: LIST });
+  const asked: string[] = [];
+  database().signupInvited = async (email: string) => {
+    asked.push(email);
+    return true;
+  };
+  const response = await signup("invitee@example.test", "198.51.100.14");
+  assert.deepEqual(asked, ["invitee@example.test"]);
+  // The stubbed auth service answers 500, so the handler reports it down.
+  assert.equal(response.status, 503);
+  assert.ok(calls.length > 0);
+});
+
+// A signed-in, confirmed account (stubbed auth service and database) asking to
+// open a workspace. The token is symmetric, so the client asks the stubbed
+// auth service to vouch for it.
+async function createWorkspace(email: string) {
+  const part = (value: object) =>
+    Buffer.from(JSON.stringify(value)).toString("base64url");
+  const jwt = [
+    part({ alg: "HS256", typ: "JWT" }),
+    part({
+      sub: "00000000-0000-4000-8000-000000000001",
+      session_id: "00000000-0000-4000-8000-000000000002",
+      exp: Math.floor(Date.now() / 1000) + 600,
+    }),
+    "c2lnbmF0dXJl",
+  ].join(".");
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input instanceof Request ? input.url : input);
+    calls.push(url);
+    if (url.endsWith("/auth/v1/user"))
+      return Response.json({
+        id: "00000000-0000-4000-8000-000000000001",
+        aud: "authenticated",
+        email,
+        email_confirmed_at: "2026-11-15T00:00:00Z",
+      });
+    return new Response("{}", { status: 500 });
+  }) as typeof fetch;
+  const db = database();
+  const opened: string[] = [];
+  db.withIdentity = (async (_identity: unknown, run: (tx: never) => unknown) =>
+    run(undefined as never)) as typeof db.withIdentity;
+  db.bootstrap = (async () => {
+    opened.push(email);
+    return { orgId: "00000000-0000-4000-8000-000000000003" };
+  }) as unknown as typeof db.bootstrap;
+  const issued = issueCsrf();
+  const pair = issued.headers.getSetCookie()[0].split(";")[0];
+  const token = (await issued.json()).data.token as string;
+  const origin = process.env.APP_ORIGIN!;
+  const response = await dispatchCore(
+    new Request(origin + "/api/v1/organizations", {
+      method: "POST",
+      headers: {
+        origin,
+        cookie: pair + "; " + appConfig().cookies.access + "=" + jwt,
+        "x-csrf-token": token,
+        "content-type": "application/json",
+        "idempotency-key": "00000000-0000-4000-8000-000000000004",
+      },
+      body: JSON.stringify({ name: "Kedai Contoh" }),
+    }),
+  );
+  return { response, opened };
+}
+
+test("hosted workspace creation: an account not on the list is refused", async () => {
+  set({ ...hostedEnv, JOMCALL_SIGNUP_ALLOW: LIST });
+  const { response, opened } = await createWorkspace("stranger@example.test");
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.error.code, "WORKSPACE_NOT_ALLOWED");
+  assert.doesNotMatch(JSON.stringify(body), /example\.test/);
+  assert.deepEqual(opened, []);
+});
+
+test("hosted workspace creation: a listed account reaches bootstrap", async () => {
+  set({ ...hostedEnv, JOMCALL_SIGNUP_ALLOW: LIST });
+  const { response, opened } = await createWorkspace("anyone@team.example.test");
+  assert.equal(response.status, 201);
+  assert.deepEqual(opened, ["anyone@team.example.test"]);
 });
