@@ -13,6 +13,8 @@ export const SHEET_LIMITS = {
   columns: 30,
   cellChars: 1000,
   chars: 200_000,
+  // Larger files are refused before any parsing.
+  bytes: 1_048_576,
   // Lines looked at to pick the delimiter.
   sampleLines: 20,
 } as const;
@@ -110,6 +112,9 @@ function walk(
       started = true;
     }
   }
+  // A quote that opens a field and never closes would swallow the rest of
+  // the file into one cell; the file is refused rather than half-read.
+  if (!stop && quoted) throw fail("UNREADABLE");
   if (!stop && (field || started || c > 1)) endRow();
 }
 
@@ -124,19 +129,25 @@ function detect(text: string): Delimiter {
     if (!text.includes(d)) continue;
     const counts: number[] = [];
     let cols = 0;
-    walk(
-      text,
-      d,
-      (_r, col) => {
-        cols = col;
-        return true;
-      },
-      () => {
-        counts.push(cols);
-        cols = 0;
-        return counts.length < SHEET_LIMITS.sampleLines;
-      },
-    );
+    try {
+      walk(
+        text,
+        d,
+        (_r, col) => {
+          cols = col;
+          return true;
+        },
+        () => {
+          counts.push(cols);
+          cols = 0;
+          return counts.length < SHEET_LIMITS.sampleLines;
+        },
+      );
+    } catch {
+      // An unterminated quote under this delimiter: it scores nothing here,
+      // and the final walk refuses the file if this delimiter is still used.
+      continue;
+    }
     const tally = new Map<number, number>();
     for (const n of counts) tally.set(n, (tally.get(n) ?? 0) + 1);
     let score = 0;
@@ -179,6 +190,7 @@ function dump(text: string, delimiter: Delimiter): string {
 
 export async function sheetToText(data: Buffer, name: string): Promise<string> {
   void name; // the delimiter comes from the content, not the file name
+  if (data.length > SHEET_LIMITS.bytes) throw fail("TOO_LONG");
   try {
     const text = decode(data);
     return dump(text, detect(text));

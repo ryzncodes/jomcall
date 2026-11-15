@@ -152,3 +152,45 @@ test("a dump over 200,000 characters is TOO_LONG", async () => {
   ).join("\n");
   assert.equal(await code(read(long)), "TOO_LONG");
 });
+
+test("a quote that opens a field and never closes is UNREADABLE, not one swallowed cell", async () => {
+  const csv =
+    'Item,Price\nNasi lemak,500\n"Teh tarik,200\nRoti canai,150\nMee goreng,700\n';
+  assert.equal(await code(read(csv)), "UNREADABLE");
+  // A stray quote followed by 400 rows cannot hide them from the row cap.
+  const rows = Array.from({ length: 400 }, (_, i) => `Item ${i},${i}`).join(
+    "\n",
+  );
+  assert.equal(
+    await code(read(`Item,Price\n"oops,1\n${rows}\n`)),
+    "UNREADABLE",
+  );
+  // A closed quote spanning lines is still one valid cell.
+  assert.deepEqual(await lines('Item,Nota\nTeh,"baris satu\nbaris dua"\n'), [
+    "csv!A1: Item",
+    "csv!B1: Nota",
+    "csv!A2: Teh",
+    "csv!B2: baris satu baris dua",
+  ]);
+  // Tab-separated text takes quotes as written, so a lone quote is fine there.
+  assert.deepEqual(await lines('Item\tNota\n"Teh\t2\nKopi\t3\n'), [
+    "csv!A1: Item",
+    "csv!B1: Nota",
+    'csv!A2: "Teh',
+    "csv!B2: 2",
+    "csv!A3: Kopi",
+    "csv!B3: 3",
+  ]);
+});
+
+test("delimited text over 1 MiB is TOO_LONG before any parsing", async () => {
+  const over = Buffer.alloc(SHEET_LIMITS.bytes + 1, 0x61);
+  assert.equal(SHEET_LIMITS.bytes, 1_048_576);
+  assert.equal(await code(sheetToText(over, "a.csv")), "TOO_LONG");
+  // Even bytes that would otherwise be refused as unreadable.
+  const zipped = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), over]);
+  assert.equal(await code(sheetToText(zipped, "a.xlsx")), "TOO_LONG");
+  // At the limit it is parsed: one long cell, cut to 1,000 characters.
+  const at = Buffer.alloc(SHEET_LIMITS.bytes, 0x61);
+  assert.equal(await read(at.toString()), `csv!A1: ${"a".repeat(1000)}`);
+});

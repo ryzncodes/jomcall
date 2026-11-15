@@ -752,3 +752,77 @@ test("a sheet over its row cap is TOO_LONG through readDocument, without a model
   assert.deepEqual(result, { ok: false, code: "TOO_LONG" });
   assert.equal(seen.length, 0);
 });
+
+test("the wrapper escape is linear: a 200,000-character worst case is escaped quickly and correctly", async () => {
+  const worst = "<" + " ".repeat(199_998) + "x";
+  const started = performance.now();
+  const { seen } = await read(
+    {},
+    { kind: "text", text: worst },
+    {
+      tagSuffix: () => "t1",
+    },
+  );
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 200, `took ${elapsed} ms`);
+  const sent: string = seen[0].body.messages[0].content[0].text;
+  // Not a look-alike tag, so it passes through unchanged.
+  assert.ok(sent.includes(`<document-t1>\n${worst}\n</document-t1>`));
+
+  const many = "< / document".repeat(15_000);
+  const t2 = performance.now();
+  const second = await read(
+    {},
+    { kind: "text", text: many },
+    {
+      tagSuffix: () => "t2",
+    },
+  );
+  assert.ok(performance.now() - t2 < 200);
+  const sent2: string = second.seen[0].body.messages[0].content[0].text;
+  assert.equal(sent2.match(/<[\s/]*document/gi)?.length, 2);
+  assert.ok(sent2.includes("‹ / document"));
+});
+
+test("an injected tag suffix is used only when it is 1 to 32 letters or digits", async () => {
+  const tagOf = async (tagSuffix: () => string) => {
+    const { seen } = await read({}, textInput, { tagSuffix });
+    return seen[0].body.messages[0].content[0].text.match(
+      /<(document-[^>]*)>/,
+    )?.[1];
+  };
+  assert.equal(await tagOf(() => "Abc123"), "document-Abc123");
+  assert.equal(await tagOf(() => "a".repeat(32)), `document-${"a".repeat(32)}`);
+  for (const bad of ["", "a".repeat(33), "x>y", "a b", "abc-1", "</document"]) {
+    const tag = await tagOf(() => bad);
+    assert.match(tag ?? "", /^document-[0-9a-f]{12}$/, JSON.stringify(bad));
+  }
+  const thrown = await tagOf(() => {
+    throw new Error("no");
+  });
+  assert.match(thrown ?? "", /^document-[0-9a-f]{12}$/);
+});
+
+test("the image limit is 5,000,000 bytes of base64, at the edge", async () => {
+  const jpeg = (raw: number) =>
+    Buffer.concat([
+      Buffer.from([0xff, 0xd8, 0xff, 0xe0]),
+      Buffer.alloc(raw - 4),
+    ]);
+  // 3,750,000 bytes encode to exactly 5,000,000 base64 characters.
+  const edge = await read(
+    {},
+    { kind: "image", mime: "image/jpeg", data: jpeg(3_750_000) },
+  );
+  assert.equal(edge.seen.length, 1);
+  assert.equal(
+    edge.seen[0].body.messages[0].content[0].source.data.length,
+    5_000_000,
+  );
+  const over = await read(
+    {},
+    { kind: "image", mime: "image/jpeg", data: jpeg(3_750_001) },
+  );
+  assert.deepEqual(over.result, { ok: false, code: "TOO_LONG" });
+  assert.equal(over.seen.length, 0);
+});

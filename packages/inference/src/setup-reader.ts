@@ -95,8 +95,8 @@ export const READER_LIMITS = {
   // max_tokens implies more than ten minutes (about 21,333 tokens).
   maxTokens: 16_000,
   // Measured on the base64 text sent, which is the stricter reading of the
-  // API's 5 MB image limit.
-  imageBase64Bytes: 5 * 1024 * 1024,
+  // API's 5 MB image limit, with a margin below 5,242,880.
+  imageBase64Bytes: 5_000_000,
   // The API's request limit is 32 MB; the prompt needs some of it.
   pdfBase64Bytes: 31 * 1024 * 1024,
 } as const;
@@ -362,7 +362,8 @@ function normaliseFact(raw: unknown, allowed: Set<string>): ReadFact | null {
 // A document cannot open or close the wrapper the reader puts around it: any
 // tag that starts like it has its `<` replaced.
 function wrap(text: string, tag: string): string {
-  const safe = text.replace(/<(\s*\/?\s*)(document)/gi, "‹$1$2");
+  // Linear: the lookahead only scans the spaces and slashes after one "<".
+  const safe = text.replace(/<(?=[\s/]*document)/gi, "‹");
   return `<${tag}>\n${safe}\n</${tag}>`;
 }
 
@@ -465,6 +466,18 @@ async function buildContent(
   };
 }
 
+// A test-supplied suffix is used only when it is plain letters and digits;
+// anything else falls back to the random one.
+function injectedSuffix(make?: () => string): string | null {
+  if (!make) return null;
+  try {
+    const s = make();
+    return typeof s === "string" && /^[0-9a-z]{1,32}$/i.test(s) ? s : null;
+  } catch {
+    return null;
+  }
+}
+
 function failCode(error: unknown): "FAILED" | "REJECTED" {
   const status = (error as { status?: unknown } | null)?.status;
   if (
@@ -553,7 +566,7 @@ export async function readDocument(
 ): Promise<ReadResult> {
   const model = opts.model ?? readerModel;
   const makeTag = () =>
-    `document-${opts.tagSuffix ? opts.tagSuffix() : randomBytes(6).toString("hex")}`;
+    `document-${injectedSuffix(opts.tagSuffix) ?? randomBytes(6).toString("hex")}`;
   let built: Built;
   try {
     built = await buildContent(input, makeTag);
