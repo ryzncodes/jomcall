@@ -1,5 +1,29 @@
 # Handoff
 
+## 2026-11-15 — staging safety: sign-up allow-list and Curlec readiness
+
+Branch `claude/staging-safety-de5753`, pull request into `main` (not merged).
+
+**Owner decisions recorded (2026-11-14/15)**
+- (a) Staging uses LIVE Curlec keys by the owner's explicit choice. (b) The owner already holds a Curlec merchant account under Digitalize Plus Enterprise; no application needed. (c) Vercel Deployment Protection was removed for `staging.jomcall.com` so Curlec's webhook can reach it; the site is public. (d) Digitalize Plus Enterprise is the operating business for JomCall for now. Production approval of Curlec is still pending.
+- Guided setup (#24) was squash-merged as `6d2caa3`; staging was migrated (34 migrations) and rebuilt on 2026-11-15.
+
+**Changed**
+- `JOMCALL_SIGNUP_ALLOW` (hosted web only): comma-separated `name@example.com` / `@example.com`. Unset or empty: sign-up open as before. Set: other addresses get 403 `SIGNUP_NOT_ALLOWED` (BM/English text, list never shown) unless a pending, unexpired invitation exists for that address. Invalid value: every sign-up refused, readiness reports `SIGNUP_ALLOW_INVALID`. Mock and local ignore it. Creating a workspace (`POST /organizations`) is also refused (`WORKSPACE_NOT_ALLOWED`) for addresses not on the list. Login, invitation accept and existing accounts are unchanged.
+- Migration `20261115120000_signup_invited.sql`: `app_private.signup_invited(email)` yes/no for the web login only.
+- `npm run hosted:readiness -- --service web`: fails on a Curlec key whose prefix does not match `CURLEC_ENVIRONMENT` (`CURLEC_KEY_MODE_MISMATCH`), on an unknown prefix (`CURLEC_KEY_MODE_UNKNOWN`), and on live keys on the `staging` namespace without `CURLEC_LIVE_ON_STAGING=1` and `JOMCALL_SIGNUP_ALLOW`.
+
+**Verified** — see the pull request body for the check counts.
+
+**Not verified**
+- Nothing applied to staging. No person has tried the refusal message in a browser. The workspace-creation refusal has no automated hosted test (its two helpers are tested).
+- Curlec's documentation does not state key prefixes; `rzp_live_` / `rzp_test_` come from the owner's accounts.
+
+**Owner steps (staging)**
+1. `npm run hosted:migrate` (staging) for the new migration.
+2. Vercel staging environment: `JOMCALL_SIGNUP_ALLOW=<your addresses or @domain>` and `CURLEC_LIVE_ON_STAGING=1`; redeploy. Nothing changes in `/etc/jomcall`.
+3. `npm run hosted:readiness -- --service web --env-file <local copy>` prints `web: ready`.
+
 ## 2026-11-15 — guided setup flow (interview door)
 
 Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/specs/2026-11-14-setup-flow-design.md`, dated note at the end.

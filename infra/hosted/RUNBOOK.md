@@ -95,7 +95,21 @@ C4. **Turnstile keys.** Cloudflare, Turnstile, Add widget, once per environment:
 
 C5. **R2 bucket and token.** Cloudflare, R2: create `jomcall-backups-staging` and `jomcall-backups-prod` (location hint Asia-Pacific). On each bucket add a lifecycle rule that deletes objects after 30 days, and leave public access off. Under R2, Manage API tokens, create one token per bucket: **Object Read & Write**, applied to that bucket only. Copy the Access Key ID to `R2_ACCESS_KEY_ID` and the Secret Access Key to `R2_SECRET_ACCESS_KEY` (shown once) in that environment's `backup.env`. Recordings will later get their own bucket and token.
 
-### D. Payments (Curlec) — [OWNER], not approved yet
+### D. Payments (Curlec) — [OWNER]; live on staging by the owner's choice, production not approved yet
+
+**Owner decisions, 2026-11-14/15** (recorded here; they change D2, D4, D5 and D7 below):
+- The owner already holds a Curlec merchant account under **Digitalize Plus Enterprise**. No new application is needed (D4 is done); only keys, the webhook and approvals remain.
+- Digitalize Plus Enterprise is the operating business for JomCall for now.
+- Staging uses **LIVE** Curlec keys, by the owner's explicit choice. Real money can move on staging.
+- Vercel Deployment Protection was removed for the staging domain so Curlec's webhook can reach it. Staging is therefore **public**: anyone can open it and, without step 4d, sign up.
+- Production approval of Curlec (D2 for production) is still pending.
+
+Because of the last three points, live keys on staging need two extra settings, or `npm run hosted:readiness -- --service web` fails:
+- `CURLEC_LIVE_ON_STAGING=1` — says in writing that live keys on staging are intended.
+- `JOMCALL_SIGNUP_ALLOW` — the sign-up allow-list (step 4d).
+
+The readiness check also fails when the key does not match `CURLEC_ENVIRONMENT` (a key starting `rzp_live_` needs `CURLEC_ENVIRONMENT=live`; `rzp_test_` needs `test` or empty). Curlec's documentation does not state these prefixes; they are the ones seen on the owner's accounts, so a key with another prefix is reported as `CURLEC_KEY_MODE_UNKNOWN`.
+
 
 The owner chose Razorpay Curlec on 2026-11-14. Facts and sources: `docs/research/payment-providers-malaysia.md` sections 1, 3 and 6. Until D2 is done, leave `JOMCALL_PAYMENT_PROVIDER` unset: the wallet screen shows "Not connected" and no payment call is made.
 
@@ -259,6 +273,23 @@ Note: Docker restarts a container that exits, not one marked unhealthy. Watch `d
 - The client bundle holds no secret: `grep -r "sk-\|-----BEGIN" web/.next-hosted/static` on a local `npm run build:hosted` finds nothing.
 
 [ROLLBACK] promote the previous deployment, or remove the staging environment.
+
+4d. **[OWNER] Limit sign-up on a public staging site.** Needed while Deployment Protection is off, and required by the readiness check while live Curlec keys are set.
+1. If not done yet, run `npm run hosted:migrate` for staging. It adds the small database function that lets invited addresses sign up (migration `20261115120000_signup_invited.sql`). Until it runs, invited addresses that are not on the list are refused.
+2. In Vercel, **staging environment only**, add `JOMCALL_SIGNUP_ALLOW`. The value is a comma-separated list. `name@example.com` allows one address. `@example.com` allows every address at exactly that domain (not its subdomains). Use your own addresses; never put them in git.
+3. If live Curlec keys are set, also add `CURLEC_LIVE_ON_STAGING=1`.
+4. Redeploy staging. Vercel applies changed variables only on the next deployment.
+5. Check: `npm run hosted:readiness -- --service web --env-file <a local copy of the staging web values>` prints `web: ready`. Delete the local copy afterwards.
+
+[CHECK]
+- Sign-up with an address on the list sends the confirmation email.
+- Sign-up with any other address shows "Sign-up is by invitation only for now" / "Pendaftaran kini hanya melalui jemputan", and no email is sent.
+- An address invited from Settings → Team can sign up even if it is not on the list.
+- Existing accounts still sign in. Creating a new workspace is refused for an address not on the list (invited members join their workspace instead).
+
+What the gate does not cover: it lives in the web app only. Supabase Auth itself still accepts sign-ups from anyone who holds the Supabase anonymous key. JomCall never sends that key to the browser, and an account made that way still cannot create a workspace or top up. Do not turn off "Allow new users to sign up" in Supabase: the web sign-up form, invitations included, would stop working. The engine and the other server services do not read `JOMCALL_SIGNUP_ALLOW`; nothing changes in `/etc/jomcall`.
+
+[ROLLBACK] remove `JOMCALL_SIGNUP_ALLOW` and redeploy: sign-up is open again.
 
 ## Step 5. Voice on staging
 

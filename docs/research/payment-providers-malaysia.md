@@ -157,12 +157,18 @@ Findings:
 
 The hosted steps, with where each key goes, are in `infra/hosted/RUNBOOK.md` section D.
 
+**Status update, 2026-11-15 (owner decisions).**
+- The owner already holds a Curlec merchant account under **Digitalize Plus Enterprise**, which is the operating business for JomCall for now. Step 4 (sign up) is not needed.
+- Staging (`staging.jomcall.com`) runs with **live** Curlec keys, by the owner's explicit choice. Steps 5 to 7 (test mode on staging) were skipped for that reason.
+- Vercel Deployment Protection was removed for staging so Curlec's webhook can reach it, so staging is public. Two settings now guard it: `JOMCALL_SIGNUP_ALLOW` (only listed or invited addresses can sign up) and `CURLEC_LIVE_ON_STAGING=1` (says live keys on staging are intended). `npm run hosted:readiness` fails without both while live keys are on staging, and fails whenever the key does not match `CURLEC_ENVIRONMENT`. Steps: `infra/hosted/RUNBOOK.md` section D and step 4d.
+- Production approval of Curlec (step 2 for production) is still pending, and so are steps 1, 3, 8 for production, 10 and 11.
+
 1. **Ask Curlec in writing** whether a prepaid usage wallet for an AI phone answering SaaS is acceptable under its prohibited list (credits, intangible services, web-based telephony; section 1).
 2. **Approve Curlec as an outbound service.** A payment provider is not yet an approved outbound service (`AGENTS.md`).
 3. **Publish the website pages Curlec checks:** About us, Contact us, Pricing, Terms and conditions, Privacy policy, Refund policy; prepare a sample receipt.
 4. **Sign up at Curlec** as Digitalize Plus Enterprise: business type Proprietorship, SSM number, category, address, a bank account in the business's name and the first page of its latest statement.
 5. **Test mode:** generate test keys (Account & Settings → API Keys) and create a test webhook (Account & Settings → Webhooks) at `https://<staging host>/api/billing/webhook/curlec` with events `payment.captured`, `order.paid`, `payment.failed`, `refund.created`, `refund.processed`, `refund.failed`, and a secret you choose. Allow-list the staging domain for the checkout callback.
-6. **Put the test values** in the staging environment (Vercel) or, for a local check, the gitignored `.env.payments`: `JOMCALL_PAYMENT_PROVIDER=curlec`, `CURLEC_ENVIRONMENT=test`, `CURLEC_KEY_ID`, `CURLEC_KEY_SECRET`, `CURLEC_WEBHOOK_SECRET`, and `JOMCALL_PUBLIC_ORIGIN` unless hosted mode's `APP_ORIGIN` applies.
+6. **Put the test values** (or, by the owner's 2026-11-15 choice, the live values with `CURLEC_LIVE_ON_STAGING=1` and `JOMCALL_SIGNUP_ALLOW`) in the staging environment (Vercel) or, for a local check, the gitignored `.env.payments`: `JOMCALL_PAYMENT_PROVIDER=curlec`, `CURLEC_ENVIRONMENT=test`, `CURLEC_KEY_ID`, `CURLEC_KEY_SECRET`, `CURLEC_WEBHOOK_SECRET`, and `JOMCALL_PUBLIC_ORIGIN` unless hosted mode's `APP_ORIGIN` applies.
 7. **One test top-up** with a mock FPX bank: the wallet is credited once, a receipt appears, `npm run billing:reconcile` reports it; then refund part of it with `npm run billing:admin -- refund` and check the wallet is debited once.
 8. **Activate live mode;** wait for website verification (up to 3 working days); generate live keys and a live webhook; set `CURLEC_ENVIRONMENT=live`.
 9. **One small real top-up,** then refund it.
