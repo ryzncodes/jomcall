@@ -756,14 +756,16 @@ test("a result the SQL refuses ends the upload failed, not reading, after one re
     assert.deepEqual(await x.items(), []);
   }));
 
-test("a database error on result that is not a refusal releases the lease with the attempt given back", () =>
+test("a database error on result that is not a refusal releases the lease and the attempt counts", () =>
   withFixture(async (x) => {
     const id = await x.paste();
     const { read, calls } = fake(ok([row("Nasi lemak")]), ok([row("Nasi lemak")]));
     const w = await x.worker(read);
     const op = w.op.bind(w);
     let broken = true;
+    const releases: unknown[] = [];
     w.op = async (action: string, upload?: string | null, lease?: string | null, data?: unknown) => {
+      if (action === "release") releases.push(data);
       if (action === "result" && broken) throw Error("Connection terminated unexpectedly");
       return op(action, upload, lease, data);
     };
@@ -777,9 +779,10 @@ test("a database error on result that is not a refusal releases the lease with t
     }
     let u = await x.upload(id);
     assert.equal(u.state, "queued");
-    assert.equal(u.attempts, 0);
+    assert.equal(u.attempts, 1);
     assert.equal(u.lease_token, null);
     assert.equal(u.fail_code, null);
+    assert.deepEqual(releases, [{}]);
     assert.deepEqual(logged, [`SETUP_READ upload=${id} attempt=1 code=RESULT_NOT_STORED`]);
     // The next tick reads it again and stores the rows.
     broken = false;
@@ -788,6 +791,33 @@ test("a database error on result that is not a refusal releases the lease with t
     u = await x.upload(id);
     assert.equal(u.state, "done");
     assert.equal((await x.items("catalogue_row")).length, 1);
+  }));
+
+test("a result that keeps failing to store is read twice, then READ_FAILED, never a third time", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    const { read, calls } = fake(ok([row("Nasi lemak")]), ok([row("Nasi lemak")]), ok([row("Nasi lemak")]));
+    const w = await x.worker(read);
+    const op = w.op.bind(w);
+    w.op = async (action: string, upload?: string | null, lease?: string | null, data?: unknown) => {
+      if (action === "result") throw Error("Connection terminated unexpectedly");
+      return op(action, upload, lease, data);
+    };
+    const log = console.log;
+    console.log = () => undefined;
+    try {
+      await w.tick();
+      await w.tick();
+      await w.tick();
+    } finally {
+      console.log = log;
+    }
+    assert.equal(calls.length, 2);
+    const u = await x.upload(id);
+    assert.equal(u.state, "failed");
+    assert.equal(u.fail_code, "READ_FAILED");
+    assert.equal(u.attempts, 2);
+    assert.deepEqual(await x.items(), []);
   }));
 
 test("a refusal by setup_read on result fails the upload READ_FAILED", () =>

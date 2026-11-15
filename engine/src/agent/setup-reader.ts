@@ -331,11 +331,12 @@ export class SetupReadWorker {
         );
         return log(upload, attempt, "RESULT_REFUSED");
       }
-      // Any other error (a lost connection, a database restart) is not the
-      // reader's fault: the lease goes back with the attempt returned. If
-      // the release fails too, maintain re-queues the upload when its lease
-      // runs out.
-      await this.op("release", upload, lease, { stopped: true }).catch(
+      // Any other error (a lost connection, a database restart): the lease
+      // goes back and the attempt stays counted, so an error that keeps
+      // coming ends the upload after two reads instead of reading (and
+      // paying) forever. If the release fails too, maintain re-queues the
+      // upload when its lease runs out.
+      await this.op("release", upload, lease, {}).catch(
         () => undefined,
       );
       return log(upload, attempt, "RESULT_NOT_STORED");
