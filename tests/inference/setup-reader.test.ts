@@ -1694,3 +1694,31 @@ test("reconcile: a fact disagreement shows both values, cut to fit", () => {
   assert.ok(reason.length <= 500);
   assert.equal(out.facts[0]!.value, "a".repeat(2000));
 });
+
+test("reconcile: a unit or notes only one read gave are kept on an exact match", () => {
+  const out = reconcileReads(
+    answer([
+      rr("Cuci", 300),
+      rr("Gosok", 150, { unit: "per helai", notes: "" }),
+    ]),
+    answer([
+      rr("Cuci", 300, { unit: "kg" }),
+      rr("Gosok", 150, { unit: "", notes: "siap 2 hari" }),
+    ]),
+  );
+  assert.equal(out.rows[0]!.unit, "kg");
+  assert.equal(out.rows[0]!.needsCheck, false);
+  assert.equal(out.rows[1]!.unit, "per helai");
+  assert.equal(out.rows[1]!.notes, "siap 2 hari");
+  assert.equal(out.rows[1]!.needsCheck, false);
+});
+
+test("reconcile: read A's notes win when both reads have notes", () => {
+  const out = reconcileReads(
+    answer([rr("Karipap ayam", 90, { unit: "pc", notes: "min order 30" })]),
+    answer([rr("Karipap ayam", 90, { notes: "Minimum 30 biji" })]),
+  );
+  assert.equal(out.rows[0]!.notes, "min order 30");
+  assert.equal(out.rows[0]!.unit, "pc");
+  assert.equal(out.rows[0]!.needsCheck, false);
+});

@@ -702,7 +702,8 @@ const firstReason = (...rs: string[]) => rs.find((r) => r) ?? "";
 // Compares two reads of the same document; rows pair one to one, in three
 // stages, each over the rows still unpaired, in document order:
 //  1. Same readerKey of item plus variant (never an empty key). Same price:
-//     read A's row, flagged if either read flagged it, unless the units
+//     read A's row, with read B's unit or notes where read A has none,
+//     flagged if either read flagged it, unless the units
 //     differ (flagged, both units named). Different price: read A's text,
 //     no price when either read had none, flagged with both prices.
 //  2. Same row, worded differently, safe to accept: same item key, the same
@@ -879,8 +880,11 @@ export function reconcileReads(a: ReadOk, b: ReadOk): ReadOk {
           own,
         ),
       };
+    // A unit or notes only one read gave are kept.
     return {
       ...ra,
+      unit: ra.unit || rb.unit,
+      notes: ra.notes || rb.notes,
       needsCheck: ra.needsCheck || rb.needsCheck,
       checkReason: own,
     };
