@@ -3,8 +3,7 @@
 // and the paid path is driven only through an injected read function.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import {
   MATCH_THRESHOLD,
@@ -24,11 +23,14 @@ import {
   type TruthRow,
 } from "../../scripts/setup/reader-score.ts";
 import {
+  OUT_DIR,
   REFUSE_NO_KEY,
+  REFUSE_OUT,
   REFUSE_UNPAID,
   buildInput,
   fieldsFor,
   loadFixtures,
+  outPath,
   parseArgs,
   run,
   type Deps,
@@ -663,14 +665,14 @@ test("options parse strictly", () => {
       "--model",
       "sonnet",
       "--out",
-      "x.json",
+      join(OUT_DIR, "x.json"),
     ]),
     {
       paid: true,
       dry: false,
       only: ["d01", "d05"],
       model: "sonnet",
-      out: "x.json",
+      out: join(OUT_DIR, "x.json"),
     },
   );
   assert.ok("error" in parseArgs(["--model", "opus"]));
@@ -678,6 +680,33 @@ test("options parse strictly", () => {
   assert.ok("error" in parseArgs(["--only", "--paid"]));
   assert.ok("error" in parseArgs(["--out"]));
   assert.ok("error" in parseArgs(["--fast"]));
+});
+
+test("the result file stays under output/setup-reader/", async () => {
+  const root = join(OUT_DIR, "..", "..");
+  // Allowed: a file inside the folder, given from the root or absolute.
+  assert.equal(outPath("output/setup-reader/run.json", root), join(OUT_DIR, "run.json"));
+  assert.equal(outPath("output/setup-reader/a/b.json", root), join(OUT_DIR, "a", "b.json"));
+  assert.equal(outPath(join(OUT_DIR, "run.json"), "/elsewhere"), join(OUT_DIR, "run.json"));
+  assert.equal(outPath("run.json", OUT_DIR), join(OUT_DIR, "run.json"));
+  // Refused: anywhere else, the folder itself, a way out of it, a look-alike.
+  for (const bad of [
+    "x.json",
+    "docs/qa/run.json",
+    "output/run.json",
+    "output/setup-reader",
+    "output/setup-reader/",
+    "output/setup-reader/../run.json",
+    "output/setup-reader-2/run.json",
+    "/tmp/run.json",
+  ])
+    assert.equal(outPath(bad, root), null, bad);
+  // parseArgs refuses with the plain sentence, and run stops before anything.
+  assert.deepEqual(parseArgs(["--dry", "--out", "/tmp/run.json"]), { error: REFUSE_OUT });
+  const a = deps();
+  assert.equal(await run(["--paid", "--out", "/tmp/run.json"], a.deps), 2);
+  assert.equal(a.lines[0]!.split("\n")[0], REFUSE_OUT);
+  assert.match(REFUSE_OUT, /output\/setup-reader\//);
 });
 
 test("the fixtures are 15 synthetic documents the reader accepts as built", () => {
@@ -861,7 +890,9 @@ test("--dry lists every document and sends nothing, even with --paid and a key",
 });
 
 test("the paid path, driven by a local read function: fallback rule, scoring, exit code", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "reader-check-"));
+  // Result files may only go under output/setup-reader/ (ignored by git).
+  mkdirSync(OUT_DIR, { recursive: true });
+  const dir = mkdtempSync(join(OUT_DIR, "test-"));
   try {
     const docs = loadFixtures();
     const truthOf = (id: string) => docs.find((d) => d.id === id)!.rows;

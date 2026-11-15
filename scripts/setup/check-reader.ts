@@ -12,7 +12,7 @@
 // rows read go to the JSON result file (default under output/setup-reader/,
 // which git ignores).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import {
@@ -59,6 +59,20 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 export const FIXTURES = join(root, "tests", "fixtures", "setup-reader");
+// The result file names prices and personal-data hits from the run: it may
+// only be written inside this folder, which .gitignore keeps out of git.
+export const OUT_DIR = join(root, "output", "setup-reader");
+export const REFUSE_OUT =
+  "Refused: --out must name a file inside output/setup-reader/ (that folder is never committed).";
+// The --out value resolved against the working directory (npm runs the
+// script from the repository root), or null when it is not a file inside
+// OUT_DIR.
+export function outPath(value: string, cwd = process.cwd()): string | null {
+  const full = resolve(cwd, value);
+  const rel = relative(OUT_DIR, full);
+  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return null;
+  return full;
+}
 
 // The worker's fallback rule and timeout are imported from it: a delimited or
 // pasted text whose read is flagged on more than FALLBACK_SHARE of at least
@@ -77,7 +91,7 @@ export const REFUSE_NO_KEY =
 export const RETRY_NOTE =
   "Calls counted here are model calls the reader makes (two per photo or PDF read); the Anthropic SDK retries a request itself after a 429, a 5xx or a connection error (default: two retries), so the requests sent can be more.";
 export const USAGE =
-  "Usage: npm run check:setup-reader -- (--dry | --paid) [--only d01,d05] [--model haiku|sonnet] [--out <file>]";
+  "Usage: npm run check:setup-reader -- (--dry | --paid) [--only d01,d05] [--model haiku|sonnet] [--out output/setup-reader/<file>]";
 
 const document = z
   .object({
@@ -189,7 +203,9 @@ export function parseArgs(argv: string[]): Options | { error: string } {
     } else if (a === "--out") {
       const v = value();
       if (!v) return { error: "--out needs a file name" };
-      o.out = v;
+      const full = outPath(v);
+      if (!full) return { error: REFUSE_OUT };
+      o.out = full;
     } else return { error: `unknown option ${a}` };
   }
   return o;
@@ -496,14 +512,8 @@ async function paidRun(
   );
   deps.print(RETRY_NOTE);
 
-  const out = opts.out
-    ? resolve(opts.out)
-    : join(
-        root,
-        "output",
-        "setup-reader",
-        `check-${startedAt.replace(/[:.]/g, "-")}.json`,
-      );
+  const out =
+    opts.out ?? join(OUT_DIR, `check-${startedAt.replace(/[:.]/g, "-")}.json`);
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(
     out,
