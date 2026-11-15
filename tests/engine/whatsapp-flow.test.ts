@@ -398,9 +398,15 @@ test("WhatsApp flow against the local database", async (t) => {
           await f.worker.tick();
           return (await f.messages()).at(-1);
         };
-        const blocked = await reply("Maaf lambat balas.");
-        assert.equal(blocked.status, "blocked");
-        assert.equal(blocked.error_code, "CONSENT_REQUIRED");
+        // With no recorded consent the template cannot go, so the server
+        // refuses the staff reply before storing it.
+        const d = (await f.req("GET", `/conversations/${c.id}`)).body.data;
+        const refused = await f.req("POST", `/conversations/${c.id}/messages`, {
+          text: "Maaf lambat balas.",
+          expectedRevision: d.revision,
+        });
+        assert.equal(refused.status, 409, JSON.stringify(refused.body));
+        assert.equal(refused.body.error.code, "CONSENT_REQUIRED");
         await f.req("POST", `/contacts/${c.contact_id}/consents`, {
           channel: "whatsapp",
           purpose: "service",

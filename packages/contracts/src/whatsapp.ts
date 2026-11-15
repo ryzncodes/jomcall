@@ -114,6 +114,9 @@ export type ChatMessage = {
   notice: "notice_opt_out" | "notice_handoff" | "notice_unsupported" | null;
   // True for the message that carried the AI introduction.
   disclosure: boolean;
+  // True when the reply-request template went out in place of this text, so
+  // the customer never saw the text itself.
+  reply_request: boolean;
 };
 // What the send rules say about a plain staff text right now, read on the
 // server from the same facts the agent process uses. The agent process
