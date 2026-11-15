@@ -21,7 +21,7 @@ Branch `claude/usage-metering-e13eb4`, pull request #26 (not merged). Design: bi
   - `npm run check:billing`: 39 of 39.
   - `npm run db:verify-migrations`: pass, 54 RLS tables.
   - `npm run build:hosted`: pass.
-- After the fix wave: see the PR body.
+- After the fix wave (commit `fix(billing): admission uses the database clock`): typecheck pass; guards 34 of 34; check:core 489 of 489; check:billing 41 of 41; verify-migrations pass (54); build:hosted pass.
 - The migration is applied to the shared local database with psql, with no `schema_migrations` row.
 
 **Not verified**
