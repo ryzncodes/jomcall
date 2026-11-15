@@ -5,6 +5,7 @@ import { createPhase2Harness } from "../helpers/phase2.ts";
 import {
   MAX_QUESTIONS,
   questionById,
+  setupQuestions,
 } from "../../packages/domain/src/setup/questions.ts";
 
 // Saved hours drop the hours question (see "saved hours and first words are
@@ -623,7 +624,8 @@ test("changing packs keeps answered questions and drops answers of a pack that i
     assert.deepEqual(state("every-business"), ["pending"]);
     const ids = await idsOf(f, f.h.orgA.agentId);
     assert.ok(ids.length <= MAX_QUESTIONS);
-    assert.ok(ids.includes(base.id) && ids.includes(own.id));
+    // The dropped pack's question leaves the frozen list; the base one stays.
+    assert.ok(ids.includes(base.id) && !ids.includes(own.id));
     assert.equal(new Set(ids).size, ids.length);
     // Not asked again, and nothing from the dropped pack is newly asked.
     assert.ok(
@@ -1184,4 +1186,83 @@ test("saveSetupItem refuses to make an incomplete item pending or confirmed", as
   } finally {
     await f.close();
   }
+});
+
+test("a dropped pack's question never comes back after a pack change", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    let s: any = (await start({ mainPack: "order", extraPacks: [] })).body.data;
+    const put = async (id: string) => {
+      const q = questionById(id)!;
+      const r = await f.req(
+        "PUT",
+        `${path}/answers/${encodeURIComponent(id)}`,
+        {
+          expectedRevision: s.session.revision,
+          answer: answerFor(q),
+        },
+      );
+      assert.equal(r.status, 200, `${id}: ${JSON.stringify(r.body)}`);
+      s = r.body.data;
+    };
+    await put("order:4");
+    s = (await start({ mainPack: "quote-visit", extraPacks: [] })).body.data;
+    // quote-visit:11 (lead_time) falls outside the 8 frozen slots; the first
+    // quote-visit question stands in for "answer under the new pack".
+    await put(s.questions.find((q: any) => q.id.startsWith("quote-visit:")).id);
+    const active = ["every-business", "quote-visit"];
+    const inactive = (id: string) =>
+      id.includes(":") && !active.includes(id.split(":")[0]!);
+    for (const q of s.questions) assert.ok(!inactive(q.id), q.id);
+    for (const id of await idsOf(f, f.h.orgA.agentId))
+      assert.ok(!inactive(id), id);
+    // The stage can still reach review: every remaining question is answerable.
+    for (let n = 0; n < 12 && s.questions.length; n++)
+      await put(s.questions[0].id);
+    assert.equal(s.questions.length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("opening hours text question is not asked when the schedule is saved", async () => {
+  const { f, path } = await fixture();
+  try {
+    // The harness already saves hours for the workspace; start without hiding them.
+    const s = (
+      await f.req("POST", path, { mainPack: "appointment", extraPacks: [] })
+    ).body.data;
+    assert.ok(!s.questions.some((q: any) => q.kind === "hours"));
+    const frozen = await idsOf(f, f.h.orgA.agentId);
+    for (const id of frozen) {
+      const q = questionById(id)!;
+      assert.ok(
+        !(q.fills.length === 1 && q.fills[0] === "facts.opening_hours"),
+        id,
+      );
+    }
+    for (const q of s.questions)
+      assert.ok(
+        !(q.fills.length === 1 && q.fills[0] === "facts.opening_hours"),
+        q.id,
+      );
+  } finally {
+    await f.close();
+  }
+});
+
+test("setupQuestions skips a question that fills only opening_hours once the schedule is filled", () => {
+  // Base questions 1-5 answered, so the opening_hours question is next in line.
+  const keys = ["business_name", "what_we_do", "address", "state", "landmarks",
+    "map_link", "parking", "access_notes"];
+  const ask = (filled: string[]) =>
+    setupQuestions({
+      mainPack: "appointment",
+      extraPacks: [],
+      filled: new Set([...keys, ...filled]),
+    });
+  const hoursText = (qs: { fills: string[] }[]) =>
+    qs.some((q) => q.fills.length === 1 && q.fills[0] === "facts.opening_hours");
+  assert.ok(hoursText(ask([])), "asked while no schedule is saved");
+  assert.ok(!hoursText(ask(["schedule"])), "not asked once schedule is filled");
 });

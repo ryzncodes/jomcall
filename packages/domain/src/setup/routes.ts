@@ -55,6 +55,10 @@ const owns = (q: SetupQuestion, i: ItemLike) =>
         i.key === factKeyOf(q) &&
         (i.payload as { packId?: unknown } | null)?.packId ===
           q.id.split(":")[0];
+// A frozen fact question belongs to the pack in its id; hours and first words
+// belong to no pack. Questions of a pack that is no longer active never show.
+const packActive = (q: SetupQuestion, active: string[]) =>
+  q.kind !== "fact" || active.includes(q.id.split(":")[0]!);
 const bytes = (v: unknown) =>
   new TextEncoder().encode(JSON.stringify(v)).length;
 // Whether applySetup could write this item: the same parse apply runs.
@@ -324,7 +328,8 @@ export async function setupRoute(
       questions: session.question_ids
         .map((id) => questionById(id))
         .filter(
-          (q): q is SetupQuestion => !!q && !items.some((i) => owns(q, i)),
+          (q): q is SetupQuestion =>
+            !!q && packActive(q, active) && !items.some((i) => owns(q, i)),
         ),
       missing: missingFacts({ ...input, filled: covered, prefer }),
       conflicts,
@@ -435,7 +440,7 @@ export async function setupRoute(
           // the 8 slots for the new packs.
           const kept = open.question_ids.filter((id) => {
             const q = questionById(id);
-            return q && items.some((i) => owns(q, i));
+            return q && packActive(q, active) && items.some((i) => owns(q, i));
           });
           const fresh = setupQuestions({
             mainPack: v.mainPack,
