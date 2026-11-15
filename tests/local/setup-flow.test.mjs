@@ -11,6 +11,8 @@ const expected = [
   "interview.tsx",
   "review.tsx",
   "finish.tsx",
+  "bring.tsx",
+  "upload.ts",
 ];
 const sources = () =>
   readdirSync(dir)
@@ -159,4 +161,368 @@ test("workspace creation keeps the owner's own words for Something else", () => 
   assert.match(tag, /maxLength=\{80\}/);
   const setup = readFileSync(join(dir, "business-type.tsx"), "utf8");
   assert.match(setup, /typeIdForSaved\(/);
+});
+
+test("the bring stage shows the notice in both languages, unconditionally, above the file buttons", () => {
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  const en =
+    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. The file itself is deleted 30 days after you add it, or now with Remove while setup is open. Prices and details read from it stay in your setup until you remove them.";
+  const ms =
+    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail itu sendiri dipadam 30 hari selepas anda menambahnya, atau sekarang dengan butang Buang semasa persediaan masih dibuka. Harga dan butiran yang dibaca daripadanya kekal dalam persediaan anda sehingga anda membuangnya.";
+  assert.ok(bring.includes(en), "English notice");
+  assert.ok(bring.includes(ms), "BM notice");
+  // The notice paragraph is the first thing directly inside .setup-body:
+  // nothing (no condition, no expression) between that element's opening
+  // and the paragraph, and the paragraph's own content is the icon and the
+  // w( call only.
+  const body = bring.indexOf('<div className="setup-body">');
+  assert.ok(body >= 0, "setup-body");
+  const open = body + '<div className="setup-body">'.length;
+  const notice = bring.indexOf("<p", open);
+  assert.equal(bring.slice(open, notice).trim(), "", "nothing before the notice");
+  const close = bring.indexOf("</p>", notice);
+  const para = bring.slice(notice, close);
+  assert.ok(para.includes(en) && para.includes(ms), "notice inside the paragraph");
+  assert.doesNotMatch(para.replace(en, "").replace(ms, ""), /&&|\?/);
+  assert.ok(close < bring.indexOf('type="file"'), "before the file buttons");
+});
+
+test("two real labelled file controls: a photo one (image/*) and a general one; no capture, never Excel", () => {
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  const inputs = [...bring.matchAll(/type="file"/g)].map((m) => m.index);
+  assert.equal(inputs.length, 2);
+  const tags = inputs.map((at) => {
+    assert.ok(bring.lastIndexOf("<label", at) > bring.lastIndexOf("</label>", at), "inside a label");
+    return bring.slice(bring.lastIndexOf("<input", at), bring.indexOf("/>", at));
+  });
+  assert.match(tags[0], /accept="image\/\*"/);
+  assert.match(tags[1], /accept=\{ACCEPT\}/);
+  for (const t of tags) {
+    assert.doesNotMatch(t, /capture/);
+    assert.match(t, /onChange=\{pick\}/);
+  }
+  // One status line announces changes; the list itself is not live.
+  assert.equal([...bring.matchAll(/aria-live="polite"/g)].length, 1);
+  assert.match(bring, /role="status" aria-live="polite"/);
+  assert.doesNotMatch(bring, /<ul[^>]*aria-live/);
+  assert.match(bring, /role="alert"/);
+  // Retry and Remove name the file.
+  assert.match(bring, /`Retry \$\{r\.name\}`/);
+  assert.match(bring, /`Remove \$\{r\.name\}`/);
+});
+
+test("the remove confirmation says confirmed and edited prices stay", () => {
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  assert.ok(
+    bring.includes(
+      "Remove this file? Prices and details read from it are removed too, except ones you confirmed. A price you edited counts as confirmed and stays.",
+    ),
+  );
+  assert.ok(
+    bring.includes(
+      "Buang fail ini? Harga dan butiran yang dibaca daripadanya turut dibuang, kecuali yang sudah anda sahkan. Harga yang anda ubah dikira sudah disahkan dan kekal.",
+    ),
+  );
+  assert.doesNotMatch(bring, /corrections you made to its prices are discarded/);
+});
+
+test("bring.tsx and upload.ts use only named commands and the two raw client calls", () => {
+  const allowed = new Set([
+    "createSetupUpload",
+    "finishSetupUpload",
+    "pasteSetupText",
+    "removeSetupUpload",
+    "setup",
+  ]);
+  for (const f of ["bring.tsx", "upload.ts"]) {
+    const text = readFileSync(join(dir, f), "utf8");
+    assert.doesNotMatch(text, /\bfetch\(|XMLHttpRequest|\/api\//, f);
+    for (const m of text.matchAll(/\bclient\.(\w+)\(/g))
+      assert.ok(["execute", "putChunk", "getChunk"].includes(m[1]), `${f}: client.${m[1]}`);
+    for (const m of text.matchAll(/\bexecute\(\s*([^,\s)]+)/g))
+      assert.ok(allowed.has(m[1].replace(/["']/g, "")), `${f}: execute(${m[1]})`);
+  }
+  const client = readFileSync("web/lib/core/client.ts", "utf8");
+  assert.match(client, /async putChunk\(/);
+  assert.match(client, /async getChunk\(/);
+  assert.match(client, /"content-type": "application\/octet-stream"/);
+});
+
+test("no setup file says local or this computer outside a HOSTED check", () => {
+  for (const { file, text } of sources())
+    text.split("\n").forEach((line, n) => {
+      if (/\blocal\b|setempat|this computer|komputer ini/i.test(line) && !/^\s*\/\//.test(line)) {
+        // Allowed only inside a HOSTED ? ... : ... choice (on the line or
+        // within the few lines before it).
+        const near = text.split("\n").slice(Math.max(0, n - 3), n + 1).join("\n");
+        assert.match(near, /HOSTED/, `${file}:${n + 1}`);
+      }
+    });
+});
+
+test("the flow opens the bring stage only with reading on, and links to it from interview and review", () => {
+  const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
+  assert.match(flow, /useState\(\(\) => bringFirst\(initial\.view\)\)/);
+  assert.match(flow, /setBringing\(bringFirst\(v\)\)/);
+  assert.match(flow, /bringing && readerOn/);
+  assert.match(flow, /const openBring = \(from: "interview" \| "review"\) =>\s*readerOn/);
+  assert.match(flow, /readingNow\(view\.uploads, now, queuedSince\.current\)/);
+  // The conflict check uses the save's own baseline, taken just before it
+  // is sent, and the revision it carried; never a view read afterwards.
+  assert.match(
+    flow,
+    /base = latestView\.current;\s*sent = revision\.current;\s*setView\(await fn\(sent\), at\)/,
+  );
+  assert.match(flow, /quietRetry\(base, sent, latestView\.current, removedHere\.current\)/);
+  assert.doesNotMatch(flow, /onlyReadProgress\(before/);
+  assert.match(flow, /bringVia !== "start" \? leaveBring/);
+  assert.match(flow, /fromReview=\{bringVia === "review"\}/);
+  assert.match(flow, /document\.visibilityState === "visible"/);
+  assert.match(flow, /pollDelay\(/);
+  for (const f of ["interview.tsx", "review.tsx"]) {
+    const text = readFileSync(join(dir, f), "utf8");
+    assert.match(text, /\{onBring && \(/, f);
+    assert.ok(text.includes('w("Add a document", "Tambah fail atau senarai harga")'), f);
+  }
+});
+
+test("leaving the screen empties the upload queue, and a failed Remove never resends", () => {
+  const upload = readFileSync(join(dir, "upload.ts"), "utf8");
+  // Cleanup: queue emptied and every job marked removed, not only aborted.
+  assert.match(upload, /waiting\.current = \[\];\s*for \(const j of all\.values\(\)\) \{\s*j\.removed = true;\s*j\.controller\.abort\(\);/);
+  // Nothing is created after the screen closed or the row was removed.
+  assert.match(upload, /if \(job\.removed \|\| job\.controller\.signal\.aborted\) return;/);
+  // Create and finish have a timeout and the job's signal.
+  assert.match(upload, /within\(CREATE_MS,/);
+  assert.match(upload, /within\(FINISH_MS, job\.controller\.signal,/);
+  // A failed Remove keeps the job stopped.
+  assert.doesNotMatch(upload, /job\.removed = false/);
+  assert.doesNotMatch(upload, /job\.controller = new AbortController\(\)/);
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  assert.match(bring, /removeAgain\s*\?\s*void removeRow\(r\)\s*:\s*manager\.retry\(s\.key\)/);
+  // Saving setup stops every sender: the queue is emptied, each job is
+  // marked removed and aborted, and its upload removed, before the finish
+  // view replaces the setup.
+  assert.match(upload, /const stopAll = useCallback\(\(\) => \{[^]*?queue\.current = \[\];\s*for \(const j of jobs\.current\.values\(\)\) \{\s*j\.removed = true;[^]*?j\.controller\.abort\(\);[^]*?"removeSetupUpload"[^]*?jobs\.current\.clear\(\);/);
+  const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
+  assert.match(flow, /onApplied=\{\(\) => \{[^}]*?uploads\.stopAll\(\);\s*setView\(\{ \.\.\.view, session: null/);
+});
+
+test("the review page shows price rows and uses the reader's check flag", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  // The catalogue_row filter and the needsCheck rules live in rules.ts;
+  // review.tsx renders through them (liveRows, groupRows, factFlagged) and
+  // reads each row's checkReason.
+  const rules = readFileSync(join(dir, "rules.ts"), "utf8");
+  assert.match(rules, /export const liveRows[^]*?i\.kind === "catalogue_row"/);
+  assert.match(rules, /i\.needsCheck && i\.state === "pending"/);
+  assert.match(rules, /export const factFlagged[^]*?i\.needsCheck && i\.state === "pending"/);
+  assert.match(review, /liveRows\(view\.items\)/);
+  assert.match(review, /groupRows\(/);
+  assert.match(review, /factFlagged\(item\)/);
+  // The reason follows "Reason:"; the reader's own words are marked English.
+  assert.match(review, /checkReason\(reason, w, price\)/);
+  assert.match(review, /price=\{false\}/);
+  assert.match(review, /<Reason reason=\{item\.checkReason\}/);
+  // Fixed sentences are translated (reasonParts); the rest stays English.
+  assert.match(review, /r\.reader \? reasonParts\(r\.text, w\)/);
+  assert.match(review, /<span key=\{i\} lang="en">/);
+  assert.match(review, /w\("Prices and services", "Harga dan perkhidmatan"\)/);
+  // The price field: decimal keyboard, a label naming the item, sent on
+  // leave or Enter only (a changed price confirms the row).
+  assert.match(review, /inputMode="decimal"/);
+  assert.match(review, /w\(`Price of \$\{name\}`, `Harga \$\{name\}`\)/);
+  assert.match(review, /\{ debounce: false \}/);
+  assert.match(review, /e\.key === "Enter"/);
+  // Actions carry the item name.
+  for (const s of ["`Confirm ${name}`", "`Remove ${name}`", "`Edit ${name}`", "`Use ${name} instead`"])
+    assert.ok(review.includes(s), s);
+  // One polite status line for the page.
+  assert.equal([...review.matchAll(/aria-live="polite"/g)].length, 1);
+  // The photo preview is a modal dialog, freed on close.
+  assert.match(review, /showModal\(\)/);
+  assert.match(review, /URL\.revokeObjectURL\(url\)/);
+  assert.match(review, /type: "image\/jpeg"/);
+  assert.match(review, /upload\.kind === "image"/);
+  assert.match(review, /upload\.bytesDeletedAt/);
+  // Removing a file reuses the bring stage's confirmation.
+  assert.match(review, /import \{ RemoveFileConfirm, UploadProblems, failDetail \} from "\.\/bring"/);
+  assert.match(readFileSync(join(dir, "bring.tsx"), "utf8"), /export function RemoveFileConfirm/);
+  // Apply sends the replace and counts from the planner, decided after the
+  // last write, and is disabled over the limit.
+  assert.match(review, /base = store\.latest\(\);\s*const sent = store\.revision\(\);\s*const now = applySummary\(base, choices, w, summaryOpts\)/);
+  // The counts know this browser's senders and the packs (unknown facts).
+  assert.match(review, /summaryOpts = \{ senders: store\.uploads\.senders, packs \}/);
+  // Asked again when more would be left out than the question said.
+  assert.match(review, /askAgainWhy\(asked, now\.counts\)/);
+  assert.match(review, /if \(why === "arrived"\) setArrived\(true\)/);
+  assert.match(review, /onlyReadProgress\(base, fresh, store\.removedHere\)/);
+  assert.match(review, /replace: now\.replace/);
+  assert.match(review, /disabled=\{locked \|\| blocked\}/);
+  assert.match(review, /locked = busy \|\| bulkRunning/);
+});
+
+test("price rows stay put for the visit; actions wait for their write; Remove all re-checks each row", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  // The order is worked out once (stableLayout over the previous layout),
+  // never by focus.
+  assert.match(review, /layoutRef\.current,\s*layoutOf\(groupRows\(/);
+  assert.doesNotMatch(review, /setHeld|rowSection\(/);
+  // Stable keys: one key per row id, whatever its look.
+  assert.match(review, /<PriceRow\s+key=\{id\}/);
+  // A removed row folds in place with Undo for the whole visit (no timer),
+  // at the height it had, Undo first and guarded for 500 ms.
+  assert.match(review, /`Undo removing \$\{name\}`, `Buat asal: \$\{name\}`/);
+  assert.match(review, /w\("Undo", "Buat asal"\)/);
+  assert.doesNotMatch(review, /UNDO_MS|setTimeout\(/);
+  assert.match(review, /className="setup-price setup-price-gone"\s*style=\{fold\.style\}/);
+  assert.match(review, /height\.current = li\.current\.getBoundingClientRect\(\)\.height/);
+  // Keep (and an emptied question) puts focus back on the link after it
+  // renders again.
+  assert.match(review, /refocusLink\.current = true;\s*setBulk\("idle"\);/);
+  assert.match(review, /bulkOpen\.current\?\.focus\(\);\s*\}, \[bulk\]\);/);
+  // Bulk and "Use this one instead" removals fold too; the state Undo
+  // restores is read inside the queued write.
+  assert.match(review, /onPrev\(cur\.state\);/);
+  assert.match(review, /onRemove\(s\.id\)/);
+  // The Confirm slot stays after a confirm; buttons wait (aria-disabled,
+  // keeping focus) while their write runs or Remove all runs.
+  assert.match(review, /const confirmSlot = a\.confirm \|\| offered\.current;/);
+  assert.match(review, /\{confirmSlot &&/);
+  assert.match(review, /const off = busy \|\| locked/);
+  assert.match(review, /aria-disabled=\{off \|\| priceInvalid \|\| undefined\}/);
+  // Remove all: fields flushed first, then each row checked inside its own
+  // queued write against the view at that moment; every action locked,
+  // progress shown, an early stop or an empty run said.
+  assert.match(review, /if \(!\(await store\.flushAll\(\)\)\) stopped = true;/);
+  assert.match(review, /removeRow\(id, \(items\) =>\s*bulkRemovable\(items, priceReplace\(items, choicesRef\.current\), id\)/);
+  assert.match(review, /const items = store\.latest\(\)\.items;[^]*?!may\(items\)/);
+  assert.match(review, /onBulk\(true\)/);
+  assert.match(review, /bulkText\("progress", bulk, w\)/);
+  assert.match(review, /bulkText\("stopped"/);
+  assert.match(review, /bulkText\(done \? "done" : "none"/);
+  assert.match(review, /setBulk\(\{ done: n \+ 1, total \}\)/);
+  // The Remove all slot sits below the attention block and, once shown,
+  // stays (disabled with a plain reason).
+  assert.ok(review.indexOf('"Needs your attention"') < review.indexOf('className="setup-bulk"'));
+  // Rendered from the first render whenever a price row shows.
+  assert.doesNotMatch(review, /slotShown/);
+  assert.match(review, /const anyRow = attention\.length > 0 \|\| files\.some/);
+  assert.match(review, /\{anyRow && \(/);
+  // In the question, Keep comes first and Remove second.
+  assert.ok(
+    review.indexOf('{w("Keep", "Kekalkan")}') <
+      review.indexOf("settled(guard, () => void removeUnsure())"),
+  );
+  assert.match(review, /bulkSlot\(unsure\.length, w\)/);
+  // Confirm waits for a price save in flight and stops if it failed.
+  assert.match(review, /if \(!\(await priceSave\.flush\(\)\)\) \{\s*announce\(/);
+  // Answer cards keep their place: Confirmed stays, a removed card folds.
+  assert.match(review, /useEffect\(\(\) => \{\s*if \(checking\) shown\.current = true;\s*\}\);/);
+  assert.match(review, /className="setup-card setup-card-gone" style=\{fold\.style\}/);
+  // A choice is keyed by the row and the saved price it matched.
+  assert.match(review, /choices\[choiceKey\(i\)\]/);
+  // The photo dialog closes on its backdrop only: no padding of its own.
+  assert.match(review, /className="setup-viewer-body"/);
+  const css = readFileSync("web/app/core.css", "utf8");
+  assert.match(css, /\.setup-viewer \{[^}]*padding: 0;/);
+});
+
+test("a price change is never sent when the tab is hidden or the field unmounts", () => {
+  const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
+  assert.match(flow, /const onHide = sendsWhenHidden\(\{ debounce \}\)/);
+  assert.match(flow, /if \(onHide\) \{\s*document\.addEventListener\("visibilitychange", hide\);\s*window\.addEventListener\("pagehide", leave\);\s*\}/);
+  // Unmount sends only a debounced field; a price field's value is dropped.
+  assert.match(flow, /const onUnmount = sendsOnUnmount\(\{ debounce \}\)/);
+  assert.match(flow, /flushers\.delete\(flush\);\s*if \(onUnmount\) void flush\(\);\s*else \{\s*clearTimeout\(timer\.current\);\s*pending\.current = null;\s*\}/);
+  // flush waits for a save of the field already in flight.
+  assert.match(flow, /if \(running && !\(await running\)\) return false;/);
+});
+
+test("Add now on the review page sends fields still being typed first", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  assert.match(review, /if \(await store\.flushAll\(\)\)\s*onAdd\(\{/);
+});
+
+test("the review page and its rules import only the price planner from domain", () => {
+  for (const f of ["review.tsx", "rules.ts"]) {
+    const text = readFileSync(join(dir, f), "utf8");
+    const domain = [...text.matchAll(/from\s+"([^"]*packages\/domain[^"]*)"/g)].map((m) => m[1]);
+    for (const path of domain)
+      assert.match(path, /packages\/domain\/src\/setup\/rows(\.ts)?$/, `${f}: ${path}`);
+  }
+  const rules = readFileSync(join(dir, "rules.ts"), "utf8");
+  assert.match(rules, /import \{\s*planFromView,[^}]*\} from "\.\.\/\.\.\/\.\.\/\.\.\/packages\/domain\/src\/setup\/rows\.ts"/);
+  // The mock preview never loads the setup screens (and so never the planner).
+  for (const f of readdirSync("web/components/product"))
+    assert.doesNotMatch(readFileSync(join("web/components/product", f), "utf8"), /packages\/domain\/src\/setup\/rows/, f);
+});
+
+test("the review page keeps choices, offers Use new only on conflicts, and never offers confirm-all", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  assert.match(review, /chooseRow\(store\.latest\(\)\.items, id, c\)/);
+  assert.match(review, /a\.choice && item\.current/);
+  assert.doesNotMatch(review, /Confirm all/i);
+  assert.ok(
+    readFileSync(join(dir, "rules.ts"), "utf8").includes("`Remove all ${n} that still need checking`"),
+  );
+  assert.ok(review.includes('w("Remove everything from this file", "Buang semua daripada fail ini")'));
+  // A conflict or limit refusal reloads the rows.
+  assert.match(review, /e\.code === "CONFLICT" \|\| e\.code === "KNOWLEDGE_LIMIT"/);
+  assert.match(review, /await store\.reload\(\)/);
+});
+
+test("every confirming or destructive control on the review page goes through the settle guard", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  // The one helper: does nothing while the layout settles, else touches.
+  assert.match(review, /function settled\(guard: Settle, act: \(\) => void\) \{\s*const now = performance\.now\(\);\s*if \(!guard\.ready\(now\)\) return;\s*guard\.touch\(now\);\s*act\(\);\s*\}/);
+  assert.doesNotMatch(review, /undoReady|fold\.ready/);
+  // Touched when the rows or their states change, and on any height change.
+  assert.match(review, /guard\.touch\(performance\.now\(\)\);\s*\}, \[guard, rowsKey\]\);/);
+  assert.match(review, /new ResizeObserver\(\(\) => guard\.touch\(performance\.now\(\)\)\)/);
+  assert.match(review, /guard\.touch\(performance\.now\(\)\);\s*\}, \[guard, bulk, bulkNote\]\);/);
+  // Each button named by these labels acts only through settled().
+  const labels = [
+    "`Confirm ${name}`",
+    "`Remove ${name}`",
+    "`Undo removing ${name}`",
+    "`Use ${name} instead`",
+    "`Confirm ${label}`",
+    "`Remove ${label}`",
+    "`Undo removing ${label}`",
+  ];
+  for (const l of labels) {
+    let at = review.indexOf(l);
+    assert.ok(at >= 0, l);
+    let acting = 0;
+    while (at >= 0) {
+      const button = review.slice(review.lastIndexOf("<button", at), review.indexOf("</button>", at));
+      if (/onClick=/.test(button)) {
+        acting++;
+        assert.match(button, /onClick=\{\(\) =>\s*(?:\{[^]*?)?settled\(\s*guard,/, l);
+      }
+      at = review.indexOf(l, at + 1);
+    }
+    assert.ok(acting > 0, l);
+  }
+  // The rest, pinned one by one.
+  for (const re of [
+    /onClick=\{\(\) => settled\(guard, \(\) => void apply\(true\)\)\}/,
+    /onClick=\{\(\) => settled\(guard, \(\) => void apply\(false\)\)\}/,
+    // Use new refuses while settling; Keep current always acts and touches.
+    /\(k === "new" \? settled : touched\)\(guard, \(\) => onChoice\(i\.id, k\)\)/,
+    /\(k === "new" \? settled : touched\)\(guard, \(\) => \{\s*onChoice\(item\.id, k\);/,
+    /function touched\(guard: Settle, act: \(\) => void\) \{\s*guard\.touch\(performance\.now\(\)\);\s*act\(\);\s*\}/,
+    /onClick=\{\(\) => settled\(guard, \(\) => void removeUnsure\(\)\)\}/,
+    /settled\(guard, \(\) => \{\s*setBulkNote\(""\);\s*setBulk\("asking"\);/,
+    /onClick=\{\(\) => settled\(guard, \(\) => setConfirming\(true\)\)\}/,
+    /onRemove=\{\(\) => settled\(guard, \(\) => void remove\(\)\)\}/,
+  ])
+    assert.match(review, re);
+  // A removed file leaves a placeholder at the group's height; "Use this
+  // one instead" keeps the panel's height; a skipped Remove is said.
+  assert.match(review, /getBoundingClientRect\(\)\.height \?\? 0;\s*setGoneFiles/);
+  assert.match(review, /w\("Chosen", "Dipilih"\)/);
+  assert.match(review, /else if \(r === "skipped"\) announce\(skippedText\(name, w\)\)/);
+  assert.match(review, /else if \(r === "skipped"\) announce\(skippedText\(label, w\)\)/);
 });

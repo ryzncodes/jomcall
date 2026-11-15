@@ -5,6 +5,7 @@ import { createPhase2Harness } from "../helpers/phase2.ts";
 import {
   MAX_QUESTIONS,
   questionById,
+  setupQuestions,
 } from "../../packages/domain/src/setup/questions.ts";
 
 // Saved hours drop the hours question (see "saved hours and first words are
@@ -623,7 +624,8 @@ test("changing packs keeps answered questions and drops answers of a pack that i
     assert.deepEqual(state("every-business"), ["pending"]);
     const ids = await idsOf(f, f.h.orgA.agentId);
     assert.ok(ids.length <= MAX_QUESTIONS);
-    assert.ok(ids.includes(base.id) && ids.includes(own.id));
+    // The dropped pack's question leaves the frozen list; the base one stays.
+    assert.ok(ids.includes(base.id) && !ids.includes(own.id));
     assert.equal(new Set(ids).size, ids.length);
     // Not asked again, and nothing from the dropped pack is newly asked.
     assert.ok(
@@ -1181,6 +1183,196 @@ test("saveSetupItem refuses to make an incomplete item pending or confirmed", as
       ok.body.data.items.find((i: any) => i.id === item.id).state,
       "pending",
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test("a dropped pack's question never comes back after a pack change", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    let s: any = (await start({ mainPack: "order", extraPacks: [] })).body.data;
+    const put = async (id: string) => {
+      const q = questionById(id)!;
+      const r = await f.req(
+        "PUT",
+        `${path}/answers/${encodeURIComponent(id)}`,
+        {
+          expectedRevision: s.session.revision,
+          answer: answerFor(q),
+        },
+      );
+      assert.equal(r.status, 200, `${id}: ${JSON.stringify(r.body)}`);
+      s = r.body.data;
+    };
+    await put("order:4");
+    s = (await start({ mainPack: "quote-visit", extraPacks: [] })).body.data;
+    // quote-visit:11 (lead_time) falls outside the 8 frozen slots; the first
+    // quote-visit question stands in for "answer under the new pack".
+    await put(s.questions.find((q: any) => q.id.startsWith("quote-visit:")).id);
+    const active = ["every-business", "quote-visit"];
+    const inactive = (id: string) =>
+      id.includes(":") && !active.includes(id.split(":")[0]!);
+    for (const q of s.questions) assert.ok(!inactive(q.id), q.id);
+    for (const id of await idsOf(f, f.h.orgA.agentId))
+      assert.ok(!inactive(id), id);
+    // The stage can still reach review: every remaining question is answerable.
+    for (let n = 0; n < 12 && s.questions.length; n++)
+      await put(s.questions[0].id);
+    assert.equal(s.questions.length, 0);
+  } finally {
+    await f.close();
+  }
+});
+
+test("opening hours text question is not asked when the schedule is saved", async () => {
+  const { f, path } = await fixture();
+  try {
+    // The harness already saves hours for the workspace; start without hiding them.
+    const s = (
+      await f.req("POST", path, { mainPack: "appointment", extraPacks: [] })
+    ).body.data;
+    assert.ok(!s.questions.some((q: any) => q.kind === "hours"));
+    const frozen = await idsOf(f, f.h.orgA.agentId);
+    for (const id of frozen) {
+      const q = questionById(id)!;
+      assert.ok(
+        !(q.fills.length === 1 && q.fills[0] === "facts.opening_hours"),
+        id,
+      );
+    }
+    for (const q of s.questions)
+      assert.ok(
+        !(q.fills.length === 1 && q.fills[0] === "facts.opening_hours"),
+        q.id,
+      );
+  } finally {
+    await f.close();
+  }
+});
+
+test("setupQuestions skips a question that fills only opening_hours once the schedule is filled", () => {
+  // Base questions 1-5 answered, so the opening_hours question is next in line.
+  const keys = ["business_name", "what_we_do", "address", "state", "landmarks",
+    "map_link", "parking", "access_notes"];
+  const ask = (filled: string[]) =>
+    setupQuestions({
+      mainPack: "appointment",
+      extraPacks: [],
+      filled: new Set([...keys, ...filled]),
+    });
+  const hoursText = (qs: { fills: string[] }[]) =>
+    qs.some((q) => q.fills.length === 1 && q.fills[0] === "facts.opening_hours");
+  assert.ok(hoursText(ask([])), "asked while no schedule is saved");
+  assert.ok(!hoursText(ask(["schedule"])), "not asked once schedule is filled");
+});
+
+// ---- import facts (final review) ----
+// A fact the reader drafted, written as setup_read writes it.
+async function importFact(
+  f: any,
+  sessionId: string,
+  q: any,
+  flagged: boolean,
+) {
+  const key = keyOfQ(q);
+  await f.h.cleanup.query(
+    `insert into app.setup_item(org_id,session_id,kind,key,payload,source,needs_check,check_reason,state)
+     values($1,$2,'fact',$3,$4,'import',$5,$6,'pending')`,
+    [
+      f.h.orgA.id,
+      sessionId,
+      key,
+      JSON.stringify({
+        packId: q.id.split(":")[0],
+        fieldKey: key,
+        title: key,
+        value: "Dibaca daripada fail",
+        language: "mixed",
+        uploadId: crypto.randomUUID(),
+      }),
+      flagged,
+      flagged ? "JomCall was not sure about this value." : null,
+    ],
+  );
+}
+
+test("a flagged import fact leaves its question asked and its fact missing; answering replaces it", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const q = s.questions.find(
+      (x: any) =>
+        x.kind === "fact" && s.missing.some((m: any) => m.key === keyOfQ(x)),
+    );
+    assert.ok(q, "a question for a required fact");
+    await importFact(f, s.session.id, q, true);
+    const v = await get();
+    assert.ok(v.items.some((i: any) => i.key === keyOfQ(q) && i.needsCheck));
+    assert.ok(v.questions.some((x: any) => x.id === q.id));
+    assert.ok(v.missing.some((m: any) => m.key === keyOfQ(q)));
+    const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(q.id)}`, {
+      expectedRevision: v.session.revision,
+      answer: { kind: "fact", text: "Jawapan pemilik" },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const d = r.body.data;
+    const items = d.items.filter((i: any) => i.key === keyOfQ(q));
+    assert.equal(items.length, 1);
+    assert.equal(items[0].source, "interview");
+    assert.equal(items[0].needsCheck, false);
+    assert.equal(items[0].checkReason, null);
+    assert.equal(items[0].payload.value, "Jawapan pemilik");
+    assert.equal(items[0].payload.uploadId, undefined);
+    assert.ok(!d.questions.some((x: any) => x.id === q.id));
+    assert.ok(!d.missing.some((m: any) => m.key === keyOfQ(q)));
+  } finally {
+    await f.close();
+  }
+});
+
+test("an unflagged import fact hides its question and fills its fact", async () => {
+  const { f, start, get } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const q = s.questions.find(
+      (x: any) =>
+        x.kind === "fact" && s.missing.some((m: any) => m.key === keyOfQ(x)),
+    );
+    assert.ok(q, "a question for a required fact");
+    await importFact(f, s.session.id, q, false);
+    const v = await get();
+    assert.ok(!v.questions.some((x: any) => x.id === q.id));
+    assert.ok(!v.missing.some((m: any) => m.key === keyOfQ(q)));
+  } finally {
+    await f.close();
+  }
+});
+
+test("a fact edit cannot set uploadId; the stored one is kept", async () => {
+  const { f, path, start, get } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const q = s.questions.find((x: any) => x.kind === "fact");
+    await importFact(f, s.session.id, q, false);
+    let v = await get();
+    const item = v.items.find((i: any) => i.key === keyOfQ(q));
+    const stored = item.payload.uploadId;
+    const bad = await f.req("PUT", `${path}/items/${item.id}`, {
+      expectedRevision: v.session.revision,
+      payload: { value: "Baru", uploadId: crypto.randomUUID() },
+    });
+    assert.equal(bad.status, 422);
+    assert.equal(bad.body.error.code, "VALIDATION_ERROR");
+    const ok = await f.req("PUT", `${path}/items/${item.id}`, {
+      expectedRevision: v.session.revision,
+      payload: { value: "Baru" },
+    });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    v = ok.body.data;
+    const after = v.items.find((i: any) => i.id === item.id);
+    assert.equal(after.payload.value, "Baru");
+    assert.equal(after.payload.uploadId, stored);
   } finally {
     await f.close();
   }

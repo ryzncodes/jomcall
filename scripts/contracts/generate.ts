@@ -117,6 +117,27 @@ for (const [name, c] of Object.entries(commands)) {
       "503": error,
     },
   };
+  // Setup upload chunks are raw bytes both ways, and :seq is a number 0..9.
+  if (name === "putSetupUploadChunk" || name === "setupUploadChunk") {
+    const binary = {
+      "application/octet-stream": {
+        schema: { type: "string", format: "binary", maxLength: 3145728 },
+      },
+    };
+    for (const p of params as { in: string; name: string; schema: unknown }[])
+      if (p.in === "path" && p.name === "seq")
+        p.schema = { type: "integer", minimum: 0, maximum: 9 };
+    if (name === "putSetupUploadChunk")
+      Object.assign(operation, {
+        requestBody: { required: true, content: binary },
+      });
+    else
+      operation.responses["200"] = {
+        description:
+          "The chunk's raw bytes; no-store, nosniff, never an image or HTML type.",
+        content: binary,
+      } as (typeof operation.responses)["200"];
+  }
   (paths[route] ??= {})[c.method.toLowerCase()] = operation;
 }
 paths["/api/v1/jobs/{id}/download"] = {

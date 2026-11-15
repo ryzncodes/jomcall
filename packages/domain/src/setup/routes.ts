@@ -11,6 +11,7 @@ import {
 import {
   setupAnswerInput,
   setupApplyInput,
+  setupCataloguePayload,
   setupFactPayload,
   setupItemInput,
   setupSchedulePayload,
@@ -22,10 +23,19 @@ import {
 import { LIMITS, factInput } from "../../../contracts/src/knowledge.ts";
 import { audit, command } from "../../../db/src/receipts.ts";
 import { manager } from "../authorization.ts";
-import { savePackFact } from "../knowledge/routes.ts";
-import { enforceCoreLimits } from "../knowledge/snapshot.ts";
+import { insertCatalogueRows, savePackFact } from "../knowledge/routes.ts";
+import { enforceCoreLimits, jsonbOrder } from "../knowledge/snapshot.ts";
+import { catalogueSearchText } from "../knowledge/text.ts";
+import {
+  planRows,
+  stagedRow,
+  type ExistingRow,
+  type RowPlan,
+  type StagedInput,
+} from "./rows.ts";
 import { writeSchedule } from "../workspace.ts";
 import { basePack, packById, packIds } from "../packs/index.ts";
+import { listUploads, readerReady } from "./uploads.ts";
 import {
   factKeyOf,
   missingFacts,
@@ -35,6 +45,27 @@ import {
 } from "./questions.ts";
 
 const itemColumns = "id,kind,key,payload,source,needs_check,check_reason,state";
+// Items with the upload a price row came from (alias i, upload u). Price rows
+// come after the other kinds, in document order: upload creation time, then
+// the row number after ":" in the key (as a number, so 10 follows 9). The
+// view then moves flagged rows first.
+const itemsFrom = `app.setup_item i left join app.setup_upload u on i.kind='catalogue_row' and u.org_id=i.org_id
+  and u.id=substring(i.payload->>'uploadId' from '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')::uuid`;
+const itemOrder = `(i.kind='catalogue_row'),u.created_at nulls last,
+  (substring(i.key from ':([0-9]{1,9})$'))::int nulls last,i.created_at,i.id`;
+const itemSelect = itemColumns
+  .split(",")
+  .map((c) => "i." + c)
+  .join(",");
+// Editable parts of a staged price row: uploadId stays as stored.
+const catalogueEdit = setupCataloguePayload
+  .omit({ uploadId: true })
+  .partial()
+  .strict();
+// Editable parts of a staged fact: uploadId stays as stored, as for a row.
+const factEdit = setupFactPayload.omit({ uploadId: true });
+// The stored shape after an edit; rows written in tests may lack uploadId.
+const catalogueStored = setupCataloguePayload.partial({ uploadId: true });
 // The staging slot a question fills: a fact key, "schedule" or "settings".
 const questionSlot = (q: SetupQuestion) =>
   q.kind === "hours"
@@ -55,12 +86,34 @@ const owns = (q: SetupQuestion, i: ItemLike) =>
         i.key === factKeyOf(q) &&
         (i.payload as { packId?: unknown } | null)?.packId ===
           q.id.split(":")[0];
+// A frozen fact question belongs to the pack in its id; hours and first words
+// belong to no pack. Questions of a pack that is no longer active never show.
+const packActive = (q: SetupQuestion, active: string[]) =>
+  q.kind !== "fact" || active.includes(q.id.split(":")[0]!);
+// A flagged answer read from a document that the owner has not confirmed:
+// apply skips it, so it fills nothing, answers no question and leaves its
+// fact under "still missing" until the owner answers or confirms it.
+const unchecked = (i: {
+  kind: string;
+  state: string;
+  needsCheck?: boolean;
+  needs_check?: boolean;
+}) =>
+  i.kind !== "catalogue_row" &&
+  i.state === "pending" &&
+  (i.needsCheck ?? i.needs_check) === true;
 const bytes = (v: unknown) =>
   new TextEncoder().encode(JSON.stringify(v)).length;
-// Whether applySetup could write this item: the same parse apply runs.
-// Catalogue rows are never written by apply, so they are not checked.
+// Whether applySetup could write this item: the same parse apply runs. A
+// price row is complete with a name and a price; saveSetupItem asks that only
+// of confirmed rows, since a pending row without a price is skipped, not
+// failed.
 function complete(kind: string, payload: unknown): boolean {
   const p = (payload ?? {}) as Record<string, unknown>;
+  if (kind === "catalogue_row")
+    return (
+      catalogueStored.safeParse(p).success && typeof p.priceSen === "number"
+    );
   if (kind === "fact")
     return (
       typeof p.packId === "string" &&
@@ -135,9 +188,55 @@ export async function setupRoute(
         }
       | undefined;
 
+  // The agent's confirmed catalogue rows a set of staged price rows could
+  // match, oldest first, in one query. planRows decides the matches (same
+  // rowKey as the item or an alias); this query only narrows the rows read.
+  // A match has the same whole-name lookup key (normaliseCode), which
+  // lookup_keys holds when it is at most 60 UTF-16 units and was not cut by
+  // the 40-key limit, so the query reads rows sharing one of those keys plus
+  // rows with 40 keys. When any staged name is long (key over 40 code
+  // points, or a lookup key over 60 units or empty), it reads every confirmed
+  // row of the agent instead (at most 10,000). Rows of other agents and
+  // organizations are never read.
+  const existingFor = async (rows: StagedInput[]): Promise<ExistingRow[]> => {
+    const read = rows.map((r) => stagedRow(r.payload)).filter((r) => r.key);
+    if (!read.length) return [];
+    const all = read.some(
+      (r) => [...r.key].length > 40 || !r.code || r.code.length > 60,
+    );
+    const codes = [...new Set(read.map((r) => r.code))];
+    return (
+      await tx.query(
+        `select id,item,aliases,price_sen,attributes from app.catalogue_row
+         where org_id=$1 and agent_id=$2 and status='confirmed'
+          and ($4 or lookup_keys && $3::text[] or cardinality(lookup_keys) >= 40)
+         order by created_at,id`,
+        [ctx.orgId, agentId, codes, all],
+      )
+    ).rows.map((f) => ({
+      id: f.id,
+      item: f.item,
+      aliases: f.aliases,
+      priceSen: f.price_sen === null ? null : Number(f.price_sen),
+      attributes: f.attributes,
+    }));
+  };
+  const asStaged = (r: {
+    id: string;
+    state: string;
+    needs_check: boolean;
+    payload: unknown;
+  }): StagedInput => ({
+    id: r.id,
+    state: r.state,
+    needsCheck: r.needs_check,
+    payload: r.payload,
+  });
+
   // What an item would replace: the confirmed value already on the agent, or
   // undefined when the target is empty. The review page's conflicts and
-  // applySetup's "kept unless named in replace" both read this.
+  // applySetup's "kept unless named in replace" both read this. Price rows
+  // go through planRows instead, in one query for all of them.
   const currentFor = async (i: {
     kind: string;
     key: string;
@@ -235,24 +334,71 @@ export async function setupRoute(
         missing: [],
         conflicts: [],
         finish: await finished(),
+        uploads: [],
+        reader: readerReady() ? "ready" : "off",
+        rows: {
+          total: 0,
+          flagged: 0,
+          noPrice: 0,
+          willWrite: 0,
+          duplicates: 0,
+          conflicts: 0,
+        },
       };
     const rows = (
       await tx.query(
-        `select ${itemColumns} from app.setup_item where org_id=$1 and session_id=$2 order by created_at,id`,
+        `select ${itemSelect} from ${itemsFrom} where i.org_id=$1 and i.session_id=$2 order by ${itemOrder}`,
         [ctx.orgId, session.id],
       )
     ).rows;
-    const items = rows.map((r) => ({
-      id: r.id,
-      kind: r.kind,
-      key: r.key,
-      payload: r.payload,
-      source: r.source,
-      needsCheck: r.needs_check,
-      checkReason: r.check_reason,
-      state: r.state,
-    }));
+    // The same plan apply runs, with replace unknown: every match is kept.
+    const liveRows = rows
+      .filter(
+        (r) =>
+          r.kind === "catalogue_row" &&
+          ["pending", "confirmed"].includes(r.state),
+      )
+      .map(asStaged);
+    const planned = planRows(
+      liveRows,
+      await existingFor(liveRows),
+      new Set(),
+    );
+    const planOf = new Map(planned.plans.map((x) => [x.id, x]));
+    const position = new Map(liveRows.map((x, k) => [x.id, k]));
+    const items: Setup["items"] = rows.map((r) => {
+      const plan = planOf.get(r.id);
+      return {
+        id: r.id,
+        kind: r.kind,
+        key: r.key,
+        payload: r.payload,
+        source: r.source,
+        needsCheck: r.needs_check,
+        checkReason: r.check_reason,
+        state: r.state,
+        ...(plan
+          ? { outcome: plan.outcome, position: position.get(r.id)! }
+          : {}),
+        ...(plan?.duplicateOf ? { duplicateOf: plan.duplicateOf } : {}),
+        ...(plan?.target
+          ? {
+              current: {
+                id: plan.target.id,
+                item: plan.target.item,
+                priceSen: plan.target.priceSen,
+              },
+            }
+          : {}),
+      };
+    });
+    // Flagged price rows first; otherwise document order (a stable sort).
+    const band = (i: Setup["items"][number]) =>
+      i.kind !== "catalogue_row" ? 0 : i.needsCheck ? 1 : 2;
+    items.sort((a, b) => band(a) - band(b));
     const live = items.filter((i) => i.state !== "removed");
+    // What counts as answered: live items, minus unconfirmed flagged ones.
+    const answered = live.filter((i) => !unchecked(i));
     const confirmed = (
       await tx.query(
         "select field_key from app.knowledge_fact where org_id=$1 and agent_id=$2 and status='confirmed' and field_key is not null",
@@ -263,19 +409,19 @@ export async function setupRoute(
       i.kind === "fact" ? i.key : i.kind === "catalogue_row" ? null : i.kind;
     // Missing: only live items count as filled.
     const filled = new Set<string>(confirmed);
-    for (const i of live) if (slot(i)) filled.add(slot(i)!);
+    for (const i of answered) if (slot(i)) filled.add(slot(i)!);
     // A question can name several facts but stores one; every fact in the
     // fills of an answered frozen question counts as covered.
     const covered = new Set<string>(filled);
     for (const id of session.question_ids) {
       const q = questionById(id);
-      if (q && live.some((i) => owns(q, i)))
+      if (q && answered.some((i) => owns(q, i)))
         for (const f of q.fills)
           if (f.startsWith("facts.")) covered.add(f.slice("facts.".length));
     }
     // Hours live in the schedule, not in the opening_hours fact.
     if (
-      live.some((i) => i.kind === "schedule") ||
+      answered.some((i) => i.kind === "schedule") ||
       (await currentFor({ kind: "schedule", key: "schedule", payload: null })) !==
         undefined
     )
@@ -307,7 +453,14 @@ export async function setupRoute(
       ["pending", "confirmed"].includes(i.state),
     );
     for (const i of pending) {
-      const current = await currentFor(i);
+      // A price row is a conflict only when apply would keep the current
+      // row; rows skipped anyway (flagged, no price) are left out.
+      const current =
+        i.kind === "catalogue_row"
+          ? i.outcome === "conflict"
+            ? i.current
+            : undefined
+          : await currentFor(i);
       if (current !== undefined) conflicts.push({ itemId: i.id, current });
     }
     return {
@@ -320,15 +473,21 @@ export async function setupRoute(
       },
       items,
       // The frozen list, minus every question that has an item in any state
-      // (answered, skipped or applied).
+      // (answered, skipped or applied), except an unconfirmed flagged one.
       questions: session.question_ids
         .map((id) => questionById(id))
         .filter(
-          (q): q is SetupQuestion => !!q && !items.some((i) => owns(q, i)),
+          (q): q is SetupQuestion =>
+            !!q &&
+            packActive(q, active) &&
+            !items.some((i) => owns(q, i) && !unchecked(i)),
         ),
       missing: missingFacts({ ...input, filled: covered, prefer }),
       conflicts,
       finish: false,
+      uploads: await listUploads(tx, ctx.orgId, session.id),
+      reader: readerReady() ? "ready" : "off",
+      rows: planned.totals,
     };
   };
   const bump = async (sessionId: string) => {
@@ -407,7 +566,7 @@ export async function setupRoute(
         ) {
           const items = (
             await tx.query(
-              "select id,kind,key,payload,state from app.setup_item where org_id=$1 and session_id=$2",
+              "select id,kind,key,payload,state,needs_check from app.setup_item where org_id=$1 and session_id=$2",
               [ctx.orgId, open.id],
             )
           ).rows;
@@ -428,14 +587,19 @@ export async function setupRoute(
             }
           const filled = new Set<string>(saved);
           for (const i of items) {
-            if (dropped.has(i.id) || i.kind === "catalogue_row") continue;
+            if (dropped.has(i.id) || i.kind === "catalogue_row" || unchecked(i))
+              continue;
             filled.add(i.kind === "fact" ? i.key : i.kind);
           }
           // Keep every id that already has an item, then fill the rest of
           // the 8 slots for the new packs.
           const kept = open.question_ids.filter((id) => {
             const q = questionById(id);
-            return q && items.some((i) => owns(q, i));
+            return (
+              q &&
+              packActive(q, active) &&
+              items.some((i) => owns(q, i) && !unchecked(i))
+            );
           });
           const fresh = setupQuestions({
             mainPack: v.mainPack,
@@ -526,21 +690,45 @@ export async function setupRoute(
         const kept: string[] = [];
         const items = (
           await tx.query(
-            `select ${itemColumns} from app.setup_item where org_id=$1 and session_id=$2 and state<>'applied' order by created_at,id for update`,
+            `select ${itemSelect} from ${itemsFrom} where i.org_id=$1 and i.session_id=$2 and i.state<>'applied' order by ${itemOrder} for update of i`,
             [ctx.orgId, session.id],
           )
         ).rows;
+        // Price rows: one plan, the same one the view shows.
+        const liveRows = items
+          .filter((i) => i.kind === "catalogue_row" && i.state !== "removed")
+          .map(asStaged);
+        const rowPlan = new Map(
+          planRows(liveRows, await existingFor(liveRows), replace).plans.map(
+            (x) => [x.id, x],
+          ),
+        );
 
         // Decide every item before writing anything.
         const plan: typeof items = [];
+        const inserts: RowPlan[] = [];
+        const updates: RowPlan[] = [];
         for (const i of items) {
           if (i.state === "removed") {
             skipped.push({ itemId: i.id, reason: "removed" });
-          } else if (
-            i.kind === "catalogue_row" ||
-            (i.needs_check && i.state === "pending")
-          ) {
+          } else if (i.kind === "catalogue_row") {
+            const x = rowPlan.get(i.id)!;
+            if (x.outcome === "write") inserts.push(x);
+            else if (x.outcome === "update") updates.push(x);
+            else {
+              skipped.push({ itemId: i.id, reason: x.outcome });
+              // Not named in replace: the owner kept the current row.
+              if (x.outcome === "conflict") kept.push(i.id);
+            }
+          } else if (i.needs_check && i.state === "pending") {
             skipped.push({ itemId: i.id, reason: "unconfirmed" });
+          } else if (
+            i.kind === "fact" &&
+            !packById(String(i.payload?.packId))?.facts.some(
+              (x) => x.key === i.payload?.fieldKey,
+            )
+          ) {
+            skipped.push({ itemId: i.id, reason: "unknown_field" });
           } else if (
             (await currentFor(i)) !== undefined &&
             !replace.has(i.id)
@@ -549,6 +737,20 @@ export async function setupRoute(
             skipped.push({ itemId: i.id, reason: "conflict" });
             kept.push(i.id);
           } else plan.push(i);
+        }
+        // Price rows over the batch or the agent's catalogue limit fail the
+        // whole apply before anything is written.
+        if (inserts.length + updates.length > LIMITS.catalogueBatch)
+          throw new AppError("KNOWLEDGE_LIMIT", 422);
+        if (inserts.length) {
+          const have = (
+            await tx.query(
+              "select count(*)::int as n from app.catalogue_row where org_id=$1 and agent_id=$2",
+              [ctx.orgId, agentId],
+            )
+          ).rows[0].n as number;
+          if (have + inserts.length > LIMITS.catalogueRows)
+            throw new AppError("KNOWLEDGE_LIMIT", 422);
         }
 
         // Packs merge: what the agent already has first, then the session's
@@ -592,7 +794,7 @@ export async function setupRoute(
               ctx.orgId,
               agentId,
               { ...f, packId: f.packId, fieldKey: f.fieldKey },
-              "interview",
+              i.source === "import" ? "import" : "interview",
             );
           } else if (i.kind === "schedule") {
             const h = setupSchedulePayload.parse(i.payload);
@@ -610,6 +812,56 @@ export async function setupRoute(
             ]);
           }
           written.push(i.id);
+        }
+        // Confirmed rows the agent can look up, under the session's main
+        // pack.
+        await insertCatalogueRows(
+          tx,
+          ctx,
+          agentId,
+          inserts.map(({ row }) => ({
+            packId: session.main_pack,
+            status: "confirmed",
+            item: row.item,
+            aliases: [],
+            priceSen: row.priceSen,
+            stockNote: "",
+            attributes: row.attributes,
+            language: "mixed",
+          })),
+          "import",
+        );
+        written.push(...inserts.map((x) => x.id));
+        // Replacing changes only the existing row's price and the unit and
+        // notes in its attributes, and only those the staged row has (an
+        // empty unit or notes keeps the existing one); its item, aliases and
+        // lookup keys stay. The search text holds the attributes, so it is
+        // rebuilt from the existing item and aliases. When the merged
+        // attributes would break the column check (on the jsonb text, so
+        // tested in SQL), the attributes and search text stay as they were
+        // and only the price changes.
+        for (const { id, row, target } of updates) {
+          const merged = { ...target!.attributes, ...row.attributes };
+          await tx.query(
+            `update app.catalogue_row set price_sen=$1,
+              attributes=case when octet_length((attributes||$2::jsonb)::text)<=4000 then attributes||$2::jsonb else attributes end,
+              search_text=case when octet_length((attributes||$2::jsonb)::text)<=4000 then $3 else search_text end,
+              revision=revision+1,updated_at=now()
+             where org_id=$4 and agent_id=$5 and id=$6`,
+            [
+              row.priceSen,
+              JSON.stringify(row.attributes),
+              catalogueSearchText(
+                target!.item,
+                target!.aliases,
+                jsonbOrder(merged),
+              ),
+              ctx.orgId,
+              agentId,
+              target!.id,
+            ],
+          );
+          written.push(id);
         }
         if (written.length)
           await tx.query(
@@ -641,6 +893,10 @@ export async function setupRoute(
         await audit(tx, ctx, "setup.apply", "agent", agentId, {
           applied: written.length,
           skipped: skipped.length,
+          // Existing catalogue rows this apply changed, by id only.
+          ...(updates.length
+            ? { updatedRows: updates.map((x) => x.target!.id) }
+            : {}),
         });
         return out({ agentRevision, applied: written.length, skipped });
       },
@@ -807,11 +1063,16 @@ export async function setupRoute(
       if (v.payload !== undefined) {
         const stored = (item.payload ?? {}) as Record<string, unknown>;
         if (item.kind === "fact")
-          merged = { ...stored, ...setupFactPayload.parse(v.payload) };
+          merged = { ...stored, ...factEdit.parse(v.payload) };
         else if (item.kind === "schedule")
           merged = { ...stored, ...setupSchedulePayload.parse(v.payload) };
         else if (item.kind === "settings")
           merged = { ...stored, ...setupSettingsPayload.parse(v.payload) };
+        else if (item.kind === "catalogue_row")
+          merged = catalogueStored.parse({
+            ...stored,
+            ...catalogueEdit.parse(v.payload),
+          });
         else {
           if (
             !v.payload ||
@@ -823,19 +1084,43 @@ export async function setupRoute(
         }
         if (bytes(merged) > 8000) throw new AppError("VALUE_TOO_LARGE", 422);
       }
+      // A price row is confirmed by an edit only when the request's priceSen
+      // differs from the stored one (the owner changed the price) and the row
+      // is then complete, unless the request names a state. Resending the
+      // stored price, or editing item, variant, unit or notes alone, leaves
+      // the state and the flag as they were. Other kinds keep their state.
+      const isRow = item.kind === "catalogue_row";
+      const pricedEdit =
+        isRow &&
+        merged !== undefined &&
+        Object.prototype.hasOwnProperty.call(v.payload, "priceSen") &&
+        (merged as Record<string, unknown>).priceSen !==
+          (item.payload as Record<string, unknown> | null)?.priceSen &&
+        ["pending", "confirmed"].includes(item.state) &&
+        complete(item.kind, merged);
+      const state = v.state ?? (pricedEdit ? "confirmed" : item.state);
+      const confirms =
+        isRow && (v.state === "confirmed" || (!v.state && pricedEdit));
       // A pending or confirmed item must be complete for its kind, so apply
       // never fails on it later (a skipped fact has no value, for example).
-      const state = v.state ?? item.state;
+      // A pending price row may lack a price: apply skips it as no_price.
+      const whole = merged ?? item.payload;
       if (
-        (state === "pending" || state === "confirmed") &&
-        !complete(item.kind, merged ?? item.payload)
+        isRow
+          ? (state === "confirmed" && !complete(item.kind, whole)) ||
+            (state === "pending" && !catalogueStored.safeParse(whole).success)
+          : (state === "pending" || state === "confirmed") &&
+            !complete(item.kind, whole)
       )
         throw new AppError("ITEM_INCOMPLETE", 422);
+      // A price row this request confirms is no longer flagged; its reason
+      // is kept.
       await tx.query(
-        "update app.setup_item set payload=coalesce($1::jsonb,payload),state=coalesce($2,state),updated_at=now() where id=$3",
+        "update app.setup_item set payload=coalesce($1::jsonb,payload),state=$2,needs_check=needs_check and not $3,updated_at=now() where id=$4",
         [
           merged === undefined ? null : JSON.stringify(merged),
-          v.state ?? null,
+          state,
+          confirms,
           item.id,
         ],
       );

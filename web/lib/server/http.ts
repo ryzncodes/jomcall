@@ -108,6 +108,39 @@ export async function readBody(request: Request, limit = 2 * 1024 * 1024) {
     throw new AppError("INVALID_JSON", 422);
   }
 }
+// A binary body (setup upload chunks). Only application/octet-stream is read;
+// a declared length over the cap is refused unread, and reading stops at the
+// cap, so a larger body is never held in memory. One piece is returned as a
+// view; several are joined once.
+export async function readRaw(request: Request, limit: number): Promise<Buffer> {
+  if (
+    request.headers.get("content-type")?.split(";")[0]?.trim() !==
+    "application/octet-stream"
+  )
+    throw new AppError("OCTET_STREAM_REQUIRED", 415);
+  const declared = Number(request.headers.get("content-length") ?? NaN);
+  if (declared > limit) {
+    await request.body?.cancel();
+    throw new AppError("PAYLOAD_TOO_LARGE", 413);
+  }
+  const reader = request.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (reader)
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.length;
+      if (size > limit) {
+        await reader.cancel();
+        throw new AppError("PAYLOAD_TOO_LARGE", 413);
+      }
+      chunks.push(value);
+    }
+  if (chunks.length === 1)
+    return Buffer.from(chunks[0].buffer, chunks[0].byteOffset, chunks[0].byteLength);
+  return Buffer.concat(chunks, size);
+}
 export function cookie(request: Request, key: string) {
   return (
     request.headers

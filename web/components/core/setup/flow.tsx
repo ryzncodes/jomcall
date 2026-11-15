@@ -1,7 +1,8 @@
 "use client";
-// Guided setup: pick a business type, answer up to 8 questions, check one
-// review page, try a call, publish once. The stage comes from server state
-// read when the page opens; answers are kept as the owner moves on.
+// Guided setup: pick a business type, bring a document if there is one,
+// answer up to 8 questions, check one review page, try a call, publish once.
+// The stage comes from server state read when the page opens; answers are
+// kept as the owner moves on.
 import {
   createContext,
   useCallback,
@@ -22,6 +23,20 @@ import { BusinessTypeStage } from "./business-type";
 import { Interview } from "./interview";
 import { Review } from "./review";
 import { FinishStage, LiveStage } from "./finish";
+import { BringStage } from "./bring";
+import { useUploadManager, type UploadManager } from "./upload";
+import {
+  bringFirst,
+  firstSeenQueued,
+  mergeUploads,
+  pollDelay,
+  quietRetry,
+  readingNow,
+  sendsOnUnmount,
+  sendsWhenHidden,
+  type KnownUpload,
+} from "./rules";
+import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
 
 // The pack every agent has; kept here so the client never loads pack data.
 export const BASE_PACK = "every-business";
@@ -78,7 +93,9 @@ export function frozenTotal(view: Setup): number {
 type Store = {
   agentId: string;
   view: Setup;
-  setView: (v: Setup) => void;
+  // `at` is the request counter taken when the view was asked for; left
+  // out, the view counts as the newest.
+  setView: (v: Setup, at?: number) => void;
   // The latest view, also after an await inside a handler.
   latest: () => Setup;
   reload: () => Promise<Setup | undefined>;
@@ -92,28 +109,58 @@ type Store = {
   saving: boolean;
   saved: boolean;
   error: unknown;
+  // Files being sent; lives here so sending goes on behind other stages.
+  uploads: UploadManager;
+  // The clock the upload labels read (moved on by each poll).
+  now: number;
+  // When this browser first saw each upload queued, on its own clock.
+  queuedSince: ReadonlyMap<string, number>;
+  // Uploads this window removed: their deleted rows are not "another
+  // window's change" when a save is refused as stale (rules.ts:
+  // onlyReadProgress).
+  removedHere: ReadonlySet<string>;
 };
 const StoreContext = createContext<Store>({} as never);
 export const useSetup = () => useContext(StoreContext);
 
 // A field's value is sent 600 ms after the last change, or at once when the
-// field is left or the owner moves on.
-export function useAutosave<T>(save: (value: T) => Promise<boolean>) {
+// field is left or the owner moves on. With `debounce: false` a change is
+// only held until flush (the field is left, Enter, the flush before apply or
+// another stage): a price edit confirms its row, so neither a pause in
+// typing, switching apps (sendsWhenHidden) nor unmounting (sendsOnUnmount,
+// the value is dropped) sends it. flush waits for a save of this field
+// already in flight and reports its failure, so a Confirm right after the
+// field is left never confirms the old value.
+export function useAutosave<T>(
+  save: (value: T) => Promise<boolean>,
+  { debounce = true }: { debounce?: boolean } = {},
+) {
   const store = useSetup();
   const saveRef = useRef(save);
   saveRef.current = save;
   const pending = useRef<{ value: T } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const inflight = useRef<Promise<boolean> | null>(null);
   const flush = useCallback(async () => {
     clearTimeout(timer.current);
+    const running = inflight.current;
+    if (running && !(await running)) return false;
     const p = pending.current;
     if (!p) return true;
     pending.current = null;
-    const ok = await saveRef.current(p.value);
-    if (!ok && !pending.current) pending.current = p;
-    return ok;
+    const job: Promise<boolean> = saveRef.current(p.value).then((ok) => {
+      // Cleared before anyone awaiting it resumes: a later flush retries a
+      // failed value instead of reporting this failure again.
+      if (inflight.current === job) inflight.current = null;
+      if (!ok && !pending.current) pending.current = p;
+      return ok;
+    });
+    inflight.current = job;
+    return job;
   }, []);
   const { flushers } = store;
+  const onHide = sendsWhenHidden({ debounce });
+  const onUnmount = sendsOnUnmount({ debounce });
   useEffect(() => {
     flushers.add(flush);
     // Text typed inside the debounce window is sent when the tab is hidden
@@ -122,20 +169,26 @@ export function useAutosave<T>(save: (value: T) => Promise<boolean>) {
       if (document.visibilityState === "hidden") void flush();
     };
     const leave = () => void flush();
-    document.addEventListener("visibilitychange", hide);
-    window.addEventListener("pagehide", leave);
+    if (onHide) {
+      document.addEventListener("visibilitychange", hide);
+      window.addEventListener("pagehide", leave);
+    }
     return () => {
       document.removeEventListener("visibilitychange", hide);
       window.removeEventListener("pagehide", leave);
       flushers.delete(flush);
-      void flush();
+      if (onUnmount) void flush();
+      else {
+        clearTimeout(timer.current);
+        pending.current = null;
+      }
     };
-  }, [flushers, flush]);
+  }, [flushers, flush, onHide, onUnmount]);
   return {
     change: (value: T) => {
       pending.current = { value };
       clearTimeout(timer.current);
-      timer.current = setTimeout(() => void flush(), 600);
+      if (debounce) timer.current = setTimeout(() => void flush(), 600);
     },
     flush,
     cancel: () => {
@@ -223,8 +276,8 @@ function SetupLoader() {
   const [data, setData] = useState<Loaded>();
   const [error, setError] = useState<unknown>();
   const [attempt, setAttempt] = useState(0);
-  // Read once when the page opens; no polling, so a background refresh never
-  // moves the owner to another stage while they type.
+  // Read once when the page opens. The stages poll only while a document is
+  // being read, and that never moves the owner to another stage.
   useEffect(() => {
     let alive = true;
     Promise.all([
@@ -299,16 +352,75 @@ function SetupStages({
     queue: SetupQuestionView[];
     total: number;
   }>();
+  // Whether the "bring a document" stage is showing. Decided once from the
+  // view when the page opens or a session starts (an untouched session),
+  // then only by the owner: "Add a document" opens it, Continue closes it.
+  // An upload added on the stage does not move the owner on.
+  const [bringing, setBringing] = useState(() => bringFirst(initial.view));
+  // How the owner reached it: Back returns to the interview or review when
+  // they came through "Add a document", else to the business type.
+  const [bringVia, setBringVia] = useState<"start" | "interview" | "review">(
+    "start",
+  );
 
-  const setView = useCallback((v: Setup) => {
+  // Every view request takes a number from this counter, and so does every
+  // upload change this browser makes, so mergeUploads can tell an older
+  // answer from a newer one.
+  const requests = useRef(0);
+  // The latest view as the server sent it, before merging.
+  const raw = useRef<{ view: Setup; at: number }>({ view: initial.view, at: 0 });
+  // What is known about each upload of the open session (see mergeUploads).
+  const known = useRef<{
+    session: string | null;
+    uploads: Map<string, KnownUpload>;
+  }>({ session: null, uploads: new Map() });
+  // When this browser first saw each upload queued (see stalled).
+  const queuedSince = useRef<Map<string, number>>(new Map());
+  const removedHere = useRef<Set<string>>(new Set());
+  const show = useCallback((next: Setup, at: number) => {
+    let v = next;
+    if (v.session) {
+      if (known.current.session !== v.session.id)
+        known.current = { session: v.session.id, uploads: new Map() };
+      const merged = mergeUploads(v.uploads, at, known.current.uploads);
+      known.current.uploads = merged.known;
+      v = { ...v, uploads: merged.uploads };
+      queuedSince.current = firstSeenQueued(
+        queuedSince.current,
+        v.uploads,
+        Date.now(),
+      );
+    }
     latestView.current = v;
     setViewState(v);
     if (v.session) revision.current = v.session.revision;
   }, []);
+  const setView = useCallback(
+    (next: Setup, at = ++requests.current) => {
+      raw.current = { view: next, at };
+      show(next, at);
+    },
+    [show],
+  );
+  // An upload this browser just changed: merged again against the latest
+  // server view (not the merged one), counted as newer than it.
+  const holdUpload = useCallback(
+    (id: string, upload: SetupUpload | "removed") => {
+      const { view: v, at } = raw.current;
+      if (!v.session) return;
+      if (known.current.session !== v.session.id)
+        known.current = { session: v.session.id, uploads: new Map() };
+      known.current.uploads.set(id, { upload, at: ++requests.current });
+      if (upload === "removed") removedHere.current.add(id);
+      show(v, at);
+    },
+    [show],
+  );
   const reload = useCallback(async () => {
+    const at = ++requests.current;
     try {
       const v = await client.execute("setup", { id: agentId });
-      setView(v);
+      setView(v, at);
       return v;
     } catch (e) {
       setError(e);
@@ -320,14 +432,43 @@ function SetupStages({
       const next = chain.current.then(async () => {
         setInFlight((n) => n + 1);
         setError(undefined);
-        try {
-          setView(await fn(revision.current));
+        // The view this try is built on and the revision it carries, taken
+        // just before sending: a poll landing while it is in flight must
+        // not become the baseline of the conflict check.
+        let base = latestView.current,
+          sent = revision.current;
+        const attempt = async () => {
+          const at = ++requests.current;
+          base = latestView.current;
+          sent = revision.current;
+          setView(await fn(sent), at);
           setSaved(true);
           return true;
+        };
+        try {
+          return await attempt();
         } catch (e) {
           setSaved(false);
-          if (e instanceof CoreError && e.code === "CONFLICT") await reload();
-          setError(e);
+          let failure = e;
+          if (e instanceof CoreError && e.code === "CONFLICT") {
+            // A document finishing its read raises the revision too. When
+            // that is all that changed since this save's own baseline, the
+            // save goes again once, quietly, with the fresh revision.
+            const fresh = await reload();
+            if (
+              fresh &&
+              quietRetry(base, sent, latestView.current, removedHere.current)
+            ) {
+              try {
+                return await attempt();
+              } catch (again) {
+                failure = again;
+                if (again instanceof CoreError && again.code === "CONFLICT")
+                  await reload();
+              }
+            }
+          }
+          setError(failure);
           return false;
         } finally {
           setInFlight((n) => n - 1);
@@ -338,6 +479,65 @@ function SetupStages({
     },
     [reload, setView],
   );
+  // A quiet read for polling and after an upload change: no error shown,
+  // and a view older than the latest write is dropped, so the revision the
+  // next write sends never goes back.
+  const refresh = useCallback(async () => {
+    const at = ++requests.current;
+    try {
+      const v = await client.execute("setup", { id: agentId });
+      if ((v.session?.revision ?? -1) >= revision.current) setView(v, at);
+    } catch {
+      // The next poll or action reads again.
+    }
+  }, [client, agentId, setView]);
+  const uploads = useUploadManager({
+    client,
+    agentId,
+    uploads: view.uploads,
+    hold: holdUpload,
+    refresh,
+  });
+  // While a document waits for the reader or is being read, the view is
+  // read again (every 3 s for a minute, then every 10 s), only while the
+  // page is visible. A finished read adds items and raises the revision.
+  // An upload queued for more than 10 minutes is no longer polled for.
+  const [now, setNow] = useState(() => Date.now());
+  const reading =
+    !!view.session && readingNow(view.uploads, now, queuedSince.current);
+  useEffect(() => {
+    if (!reading) return;
+    const started = Date.now();
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (document.visibilityState === "visible") await refresh();
+      if (!alive) return;
+      setNow(Date.now());
+      timer = setTimeout(tick, pollDelay(Date.now() - started));
+    };
+    timer = setTimeout(tick, pollDelay(0));
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [reading, refresh]);
+  // Coming back to the tab reads the view at once while any upload is
+  // still waiting or being read (also one no longer polled for).
+  const waiting =
+    !!view.session &&
+    view.uploads.some((u) => u.state === "queued" || u.state === "reading");
+  useEffect(() => {
+    if (!waiting) return;
+    const back = () => {
+      if (document.visibilityState !== "visible") return;
+      setNow(Date.now());
+      void refresh();
+    };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [waiting, refresh]);
+
   // Waits for writes in flight first: a failed field value goes back to its
   // field and is sent again by its flusher, so nothing typed is lost.
   const flushAll = useCallback(async () => {
@@ -348,13 +548,23 @@ function SetupStages({
   }, [flushers]);
 
   const published = !!workspace.agent.published_version_id;
-  const stage: "type" | "interview" | "add" | "review" | "finish" | "live" =
+  const readerOn = view.reader === "ready";
+  const stage:
+    | "type"
+    | "bring"
+    | "interview"
+    | "add"
+    | "review"
+    | "finish"
+    | "live" =
     override === "type"
       ? "type"
       : view.session
         ? adding
           ? "add"
-          : interviewing || view.questions.length
+          : bringing && readerOn
+            ? "bring"
+            : interviewing || view.questions.length
             ? "interview"
             : "review"
         : override === "live"
@@ -388,6 +598,29 @@ function SetupStages({
     saving: inFlight > 0,
     saved,
     error,
+    uploads,
+    now,
+    queuedSince: queuedSince.current,
+    removedHere: removedHere.current,
+  };
+  // "Add a document" on the interview and review pages: answers typed so
+  // far are sent first.
+  const openBring = (from: "interview" | "review") =>
+    readerOn
+      ? async () => {
+          if (await flushAll()) {
+            setBringVia(from);
+            setBringing(true);
+          }
+        }
+      : undefined;
+  // Leaving the bring stage for the questions: a fresh interview queue,
+  // because reads may have answered questions and the owner may have come
+  // here in the middle of it.
+  const leaveBring = () => {
+    setBringing(false);
+    setInterviewing(false);
+    setInterviewKey((k) => k + 1);
   };
 
   return (
@@ -399,6 +632,8 @@ function SetupStages({
           onStarted={(v) => {
             setView(v);
             setOverride(null);
+            setBringing(bringFirst(v));
+            setBringVia("start");
             setInterviewing(false);
             setInterviewKey((k) => k + 1);
           }}
@@ -410,12 +645,19 @@ function SetupStages({
                 : undefined
           }
         />
+      ) : stage === "bring" ? (
+        <BringStage
+          onBack={bringVia !== "start" ? leaveBring : () => setOverride("type")}
+          onContinue={leaveBring}
+          fromReview={bringVia === "review"}
+        />
       ) : stage === "interview" ? (
         snapshot && interviewing ? (
           <Interview
             key={interviewKey}
             queue={snapshot.queue}
             total={snapshot.total}
+            onBring={openBring("interview")}
             onBack={() => setOverride("type")}
             onDone={() => {
               setInterviewing(false);
@@ -441,8 +683,12 @@ function SetupStages({
           choices={choices}
           onChoice={(id, c) => setChoices((s) => ({ ...s, [id]: c }))}
           onAdd={(q) => setAdding(q)}
+          onBring={openBring("review")}
           onDismiss={(id) => setDismissed((d) => [...d, id])}
           onApplied={() => {
+            // Nothing may keep sending into the closed setup, and no
+            // leave-page warning may follow onto the finish stage.
+            uploads.stopAll();
             setView({ ...view, session: null, questions: [], finish: true });
           }}
         />

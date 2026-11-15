@@ -14,6 +14,7 @@
     "packages/**/*.ts",
     "engine/**/*.ts",
     "tests/**/*.ts",
-    "scripts/hosted/**/*.ts"
+    "scripts/hosted/**/*.ts",
+    "scripts/setup/**/*.ts"
   ]
 }

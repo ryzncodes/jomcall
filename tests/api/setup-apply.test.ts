@@ -681,3 +681,757 @@ test("Something else does not add the base pack to the agent's packs", async () 
     await x.f.close();
   }
 });
+
+// ---- price rows (document import) ----
+// The view's current row without its catalogue row id.
+const named = (c: any) => c && { item: c.item, priceSen: c.priceSen };
+// Rows are written into the staging store the way the reader writes them:
+// kind catalogue_row, key "<upload>:<row>", source import.
+async function priced(x: Fx) {
+  await x.stage({ hours: false, words: false, fact: null });
+  const sessionId = (await x.state()).session.id as string;
+  const org = x.f.h.orgA.id;
+  const upload = async (secondsAgo = 0) =>
+    (
+      await x.q(
+        "insert into app.setup_upload(org_id,session_id,kind,name,mime,bytes,state,created_at) values($1,$2,'text','harga.txt','text/plain',10,'done',now()-make_interval(secs=>$3)) returning id",
+        [org, sessionId, secondsAgo],
+      )
+    ).rows[0].id as string;
+  const row = async (
+    uploadId: string,
+    n: number,
+    p: Record<string, unknown>,
+    o: { state?: string; flag?: string } = {},
+  ) =>
+    (
+      await x.q(
+        "insert into app.setup_item(org_id,session_id,kind,key,payload,source,needs_check,check_reason,state) values($1,$2,'catalogue_row',$3,$4,'import',$5,$6,$7) returning id",
+        [
+          org,
+          sessionId,
+          `${uploadId}:${n}`,
+          JSON.stringify({
+            uploadId,
+            item: "Barang",
+            variant: "",
+            priceSen: 1000,
+            unit: "",
+            notes: "",
+            ...p,
+          }),
+          !!o.flag,
+          o.flag ?? null,
+          o.state ?? "pending",
+        ],
+      )
+    ).rows[0].id as string;
+  const catalogue = async () =>
+    (
+      await x.q(
+        "select id,item,price_sen::int as price,attributes,status,source,pack_id,language,lookup_keys,search_text from app.catalogue_row where org_id=$1 and agent_id=$2 order by created_at,id",
+        [org, x.agentId],
+      )
+    ).rows;
+  const itemState = async (id: string) =>
+    (await x.q("select state,needs_check from app.setup_item where id=$1", [id]))
+      .rows[0];
+  const putItem = async (id: string, body: Record<string, unknown>) =>
+    x.f.req("PUT", `${x.path}/items/${id}`, {
+      expectedRevision: (await x.state()).session.revision,
+      ...body,
+    });
+  // Catalogue rows the owner typed before, through the catalogue command.
+  const owned = async (rows: unknown[], status = "confirmed") => {
+    const rev = (await x.agentRow()).revision;
+    const r = await x.f.req("POST", `/agents/${x.agentId}/catalogue`, {
+      expectedAgentRevision: rev,
+      status,
+      rows,
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  };
+  return { sessionId, upload, row, catalogue, itemState, putItem, owned };
+}
+
+test("apply writes unflagged and confirmed rows, skips flagged pending rows and rows with no price, and reports the counts", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const u = await p.upload();
+    const a = await p.row(u, 1, { item: "Syampu", variant: "500ml", priceSen: 2590, unit: "botol" });
+    const b = await p.row(u, 2, { item: "Sikat", priceSen: 800, notes: "warna hitam" }, { state: "confirmed" });
+    const c = await p.row(u, 3, { item: "Gunting", priceSen: 4500 }, { flag: "price unclear" });
+    const d = await p.row(u, 4, { item: "Gel", priceSen: null });
+    // Confirmed with no price by a direct write: apply still skips it.
+    const e = await p.row(u, 5, { item: "Krim", priceSen: null }, { state: "confirmed" });
+    const st = await x.state();
+    assert.deepEqual(st.rows, { total: 5, flagged: 1, noPrice: 2, willWrite: 2, duplicates: 0, conflicts: 0 });
+    assert.deepEqual(await p.catalogue(), []);
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 2);
+    assert.deepEqual(r.body.data.skipped, [
+      { itemId: c, reason: "unconfirmed" },
+      { itemId: d, reason: "no_price" },
+      { itemId: e, reason: "no_price" },
+    ]);
+    const rows = await p.catalogue();
+    rows.sort((m, n) => n.price - m.price);
+    assert.deepEqual(
+      rows.map((x) => [x.item, x.price, x.attributes, x.status, x.source, x.pack_id, x.language]),
+      [
+        ["Syampu 500ml", 2590, { unit: "botol" }, "confirmed", "import", "appointment", "mixed"],
+        ["Sikat", 800, { notes: "warna hitam" }, "confirmed", "import", "appointment", "mixed"],
+      ],
+    );
+    assert.ok(rows[0].lookup_keys.includes("SYAMPU500ML"));
+    assert.ok(rows[0].lookup_keys.includes("500ML"));
+    assert.equal(rows[1].search_text, "sikat warna hitam");
+    for (const id of [a, b]) assert.equal((await p.itemState(id)).state, "applied");
+    assert.equal((await p.itemState(c)).state, "pending");
+    assert.equal(r.body.data.agentRevision, (await x.agentRow()).revision);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("an edit confirms a row and clears its flag; a flagged row the owner corrected is written with the corrected price", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const u = await p.upload();
+    const flagged = await p.row(u, 1, { item: "Cuci rambut", priceSen: 1000 }, { flag: "price unclear" });
+    const blank = await p.row(u, 2, { item: "Rawatan", priceSen: null });
+    // uploadId is not editable; unknown keys are refused.
+    for (const payload of [{ uploadId: crypto.randomUUID() }, { item: "" }, { priceSen: -1 }, { colour: "red" }]) {
+      const bad = await p.putItem(flagged, { payload });
+      assert.equal(bad.status, 422, JSON.stringify(payload));
+      assert.equal(bad.body.error.code, "VALIDATION_ERROR");
+    }
+    // A pending row with no price can still be edited; it stays pending.
+    const notes = await p.putItem(blank, { payload: { notes: "ikut panjang rambut" } });
+    assert.equal(notes.status, 200, JSON.stringify(notes.body));
+    assert.equal((await p.itemState(blank)).state, "pending");
+    // Confirming a row with no price is refused.
+    const refused = await p.putItem(blank, { state: "confirmed" });
+    assert.equal(refused.status, 422);
+    assert.equal(refused.body.error.code, "ITEM_INCOMPLETE");
+    // An edit to notes alone leaves a flagged row pending and flagged.
+    const notesOnly = await p.putItem(flagged, { payload: { notes: "semak" } });
+    assert.equal(notesOnly.status, 200, JSON.stringify(notesOnly.body));
+    assert.deepEqual(await p.itemState(flagged), { state: "pending", needs_check: true });
+    // An edit that names a state keeps that state.
+    const kept = await p.putItem(flagged, { payload: { notes: "x", priceSen: 1200 }, state: "pending" });
+    assert.equal(kept.status, 200, JSON.stringify(kept.body));
+    assert.deepEqual(await p.itemState(flagged), { state: "pending", needs_check: true });
+    // Correcting the price confirms the row and clears the flag.
+    const fixed = await p.putItem(flagged, { payload: { priceSen: 1500 } });
+    assert.equal(fixed.status, 200, JSON.stringify(fixed.body));
+    const item = fixed.body.data.items.find((i: any) => i.id === flagged);
+    assert.equal(item.state, "confirmed");
+    assert.equal(item.needsCheck, false);
+    assert.equal(item.payload.priceSen, 1500);
+    assert.equal(item.payload.uploadId, u);
+    assert.deepEqual(fixed.body.data.rows, { total: 2, flagged: 0, noPrice: 1, willWrite: 1, duplicates: 0, conflicts: 0 });
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 1);
+    assert.deepEqual(r.body.data.skipped, [{ itemId: blank, reason: "no_price" }]);
+    assert.deepEqual(
+      (await p.catalogue()).map((c) => [c.item, c.price, c.attributes]),
+      [["Cuci rambut", 1500, { notes: "x" }]],
+    );
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("a row matching an existing confirmed row is kept unless named in replace; replace updates that row and the published version's catalogue set is unchanged", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    await p.owned([
+      { item: "Potong rambut", aliases: ["PR-01"], priceSen: 2000, attributes: { brand: "Contoh" } },
+      { item: "Cuci rambut", priceSen: 1500 },
+    ]);
+    const v1 = await publish(x, true);
+    const before = await versionText(x);
+    const setId = v1.snapshot.catalogue.setId;
+    const setRows = async () =>
+      (await x.q("select item,price_sen::int as price from app.catalogue_set_row where set_id=$1 order by ordinal", [setId])).rows;
+    const frozen = await setRows();
+    const u = await p.upload();
+    const potong = await p.row(u, 1, { item: "potong  rambut", priceSen: 2500, unit: "kepala" });
+    const revBefore = (await x.q("select id,revision,lookup_keys,updated_at from app.catalogue_row where item='Potong rambut'")).rows[0];
+    const cuci = await p.row(u, 2, { item: "Cuci-Rambut", priceSen: 1800 });
+    const fresh = await p.row(u, 3, { item: "Warna rambut", priceSen: 9000 });
+    const st = await x.state();
+    const byId = (id: string) => st.items.find((i: any) => i.id === id);
+    assert.deepEqual(named(byId(potong).current), { item: "Potong rambut", priceSen: 2000 });
+    assert.deepEqual(named(byId(cuci).current), { item: "Cuci rambut", priceSen: 1500 });
+    assert.equal(byId(potong).current.id, revBefore.id);
+    assert.equal(byId(fresh).current, undefined);
+    assert.deepEqual(
+      st.conflicts.map((c: any) => c.itemId).sort(),
+      [potong, cuci].sort(),
+    );
+    const r = await x.apply([potong]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 2);
+    assert.deepEqual(r.body.data.skipped, [{ itemId: cuci, reason: "conflict" }]);
+    const rows = await p.catalogue();
+    assert.equal(rows.length, 3);
+    // Only the price and unit/notes change: item, aliases and lookup keys
+    // stay; the search text is rebuilt from the existing item.
+    const updated = rows.find((c) => c.price === 2500)!;
+    assert.equal(updated.item, "Potong rambut");
+    assert.equal(updated.source, "owner");
+    assert.deepEqual(updated.attributes, { brand: "Contoh", unit: "kepala" });
+    assert.deepEqual(updated.lookup_keys, revBefore.lookup_keys);
+    assert.equal(updated.search_text, "potong rambut pr-01 kepala contoh");
+    const after = (await x.q("select revision,updated_at from app.catalogue_row where id=$1", [updated.id])).rows[0];
+    assert.equal(after.revision, revBefore.revision + 1);
+    assert.ok(after.updated_at > revBefore.updated_at);
+    // The audit entry names the updated row by id.
+    const meta = (await x.q("select metadata from app.audit_log where org_id=$1 and action='setup.apply' order by created_at desc limit 1", [x.f.h.orgA.id])).rows[0].metadata;
+    assert.deepEqual(meta.updatedRows, [updated.id]);
+    assert.equal(rows.find((c) => c.item === "Cuci rambut")!.price, 1500);
+    assert.equal(rows.find((c) => c.item === "Warna rambut")!.source, "import");
+    // The owner kept the current row: the staged row is removed.
+    assert.equal((await p.itemState(cuci)).state, "removed");
+    assert.equal((await p.itemState(potong)).state, "applied");
+    // Apply never publishes; the published version and its frozen set stay.
+    assert.deepEqual(await versionText(x), before);
+    assert.equal((await x.agentRow()).published_version_id, v1.id);
+    assert.deepEqual(await setRows(), frozen);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("duplicate staged rows write once; rows sharing a size code are both written", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const u1 = await p.upload(60);
+    const u2 = await p.upload(0);
+    const kopi = await p.row(u1, 1, { item: "Kopi O", priceSen: 250 });
+    const kopiAgain = await p.row(u2, 1, { item: "kopi-o", priceSen: 300 });
+    const tayarA = await p.row(u1, 2, { item: "Tayar A", variant: "195/55R15", priceSen: 25000 });
+    const tayarB = await p.row(u1, 3, { item: "Tayar B", variant: "195/55R15", priceSen: 27000 });
+    // A flagged first row does not block a confirmed later one.
+    const teh = await p.row(u1, 4, { item: "Teh", priceSen: 200 }, { flag: "blurry" });
+    const tehConfirmed = await p.row(u1, 5, { item: "TEH", priceSen: 220 }, { state: "confirmed" });
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 4);
+    assert.deepEqual(r.body.data.skipped, [
+      { itemId: teh, reason: "unconfirmed" },
+      { itemId: kopiAgain, reason: "duplicate" },
+    ]);
+    // Rows written in one apply share a creation time, so compare sorted.
+    assert.deepEqual(
+      (await p.catalogue()).map((c) => [c.item, c.price]).sort(),
+      [
+        ["Kopi O", 250],
+        ["TEH", 220],
+        ["Tayar A 195/55R15", 25000],
+        ["Tayar B 195/55R15", 27000],
+      ],
+    );
+    for (const id of [kopi, tayarA, tayarB, tehConfirmed])
+      assert.equal((await p.itemState(id)).state, "applied");
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("more than 500 rows, or more than 10,000 for the agent, fail the whole apply and write nothing; exactly 500 pass", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const u = await p.upload();
+    await x.q(
+      `insert into app.setup_item(org_id,session_id,kind,key,payload,source,state)
+       select $1,$2,'catalogue_row',$3||':'||n,jsonb_build_object('uploadId',$3::text,'item','Barang '||n,'variant','','priceSen',100,'unit','','notes',''),'import','pending'
+       from generate_series(1,501) n`,
+      [x.f.h.orgA.id, p.sessionId, u],
+    );
+    const before = await x.agentRow();
+    const r = await x.apply([]);
+    assert.equal(r.status, 422, JSON.stringify(r.body));
+    assert.equal(r.body.error.code, "KNOWLEDGE_LIMIT");
+    assert.deepEqual(await p.catalogue(), []);
+    assert.deepEqual(await x.agentRow(), before);
+    assert.equal((await x.state()).session.state, "open");
+    // 500 fit the batch, but not beside 9,600 rows the agent already has.
+    await x.q("delete from app.setup_item where key=$1", [`${u}:501`]);
+    await x.q(
+      `insert into app.catalogue_row(org_id,agent_id,item,search_text,status)
+       select $1,$2,'Lama '||n,'lama','draft' from generate_series(1,9600) n`,
+      [x.f.h.orgA.id, x.agentId],
+    );
+    const over = await x.apply([]);
+    assert.equal(over.status, 422, JSON.stringify(over.body));
+    assert.equal(over.body.error.code, "KNOWLEDGE_LIMIT");
+    assert.equal((await p.catalogue()).length, 9600);
+    assert.equal((await x.state()).session.state, "open");
+    // Exactly 500, with room for them, are written.
+    await x.q("delete from app.catalogue_row where org_id=$1 and agent_id=$2", [x.f.h.orgA.id, x.agentId]);
+    const ok = await x.apply([]);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.data.applied, 500);
+    assert.equal((await p.catalogue()).length, 500);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("import facts: an unknown field is skipped, the rest applies with source import, and the view exposes needsCheck", async () => {
+  const x = await fixture();
+  try {
+    const { fq } = await x.stage({ hours: false, words: false, fact: null });
+    const sessionId = (await x.state()).session.id;
+    const packId = fq.id.split(":")[0];
+    const fieldKey = fq.fills.find((f: string) => f.startsWith("facts.")).slice(6);
+    const fact = async (key: string, value: string, flag?: string) =>
+      (
+        await x.q(
+          "insert into app.setup_item(org_id,session_id,kind,key,payload,source,needs_check,check_reason) values($1,$2,'fact',$3,$4,'import',$5,$6) returning id",
+          [
+            x.f.h.orgA.id,
+            sessionId,
+            key,
+            JSON.stringify({ packId, fieldKey: key, title: "Dari dokumen", value, language: "mixed" }),
+            !!flag,
+            flag ?? null,
+          ],
+        )
+      ).rows[0].id as string;
+    const good = await fact(fieldKey, "Dari senarai harga");
+    const unknown = await fact("not_a_field", "Entah");
+    const unsure = await fact("another_unknown", "Mungkin", "Not sure this is right");
+    const st = await x.state();
+    const item = (id: string) => st.items.find((i: any) => i.id === id);
+    assert.equal(item(good).needsCheck, false);
+    assert.equal(item(unsure).needsCheck, true);
+    assert.equal(item(unsure).checkReason, "Not sure this is right");
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 1);
+    assert.deepEqual(r.body.data.skipped, [
+      { itemId: unknown, reason: "unknown_field" },
+      { itemId: unsure, reason: "unconfirmed" },
+    ]);
+    const fs = await x.facts();
+    assert.deepEqual(
+      fs.map((f) => [f.field_key, f.value, f.source]),
+      [[fieldKey, "Dari senarai harga", "import"]],
+    );
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("the view lists rows flagged first, then by upload and row number, with counts, in a bounded number of queries", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    await p.owned([{ item: "Kopi 1", priceSen: 100 }]);
+    const u1 = await p.upload(120);
+    const u2 = await p.upload(0);
+    // Inserted out of order.
+    const b3 = await p.row(u2, 3, { item: "Kopi 1", priceSen: 150 });
+    const a10 = await p.row(u1, 10, { item: "Teh 10", priceSen: null }, { flag: "no price" });
+    const a2 = await p.row(u1, 2, { item: "Teh 2" });
+    const b1 = await p.row(u2, 1, { item: "Kopi 2" }, { flag: "blurry" });
+    const a1 = await p.row(u1, 1, { item: "Teh 1" });
+    await p.row(u1, 3, { item: "Teh 3" }, { state: "removed" });
+    const pg = (await import("pg")).default;
+    const count = async () => {
+      const original = pg.Client.prototype.query;
+      let n = 0;
+      pg.Client.prototype.query = function (this: unknown, ...args: unknown[]) {
+        n++;
+        return (original as any).apply(this, args);
+      } as any;
+      try {
+        const r = await x.f.req("GET", x.path);
+        assert.equal(r.status, 200);
+        return { n, data: r.body.data };
+      } finally {
+        pg.Client.prototype.query = original;
+      }
+    };
+    const small = await count();
+    assert.ok(small.n > 0, "the counter sees the request's queries");
+    const rows = small.data.items.filter((i: any) => i.kind === "catalogue_row" && i.state !== "removed");
+    assert.deepEqual(
+      rows.map((i: any) => i.id),
+      [a10, b1, a1, a2, b3],
+    );
+    assert.deepEqual(small.data.rows, { total: 5, flagged: 2, noPrice: 1, willWrite: 2, duplicates: 0, conflicts: 1 });
+    assert.deepEqual(named(rows.find((i: any) => i.id === b3).current), { item: "Kopi 1", priceSen: 100 });
+    // Fifty more rows, some matching current rows: the same number of queries.
+    await p.owned(Array.from({ length: 10 }, (_, k) => ({ item: `Roti ${k}`, priceSen: 300 })));
+    await x.q(
+      `insert into app.setup_item(org_id,session_id,kind,key,payload,source,state)
+       select $1,$2,'catalogue_row',$3||':'||(100+n),jsonb_build_object('uploadId',$3::text,'item','Roti '||n,'variant','','priceSen',350,'unit','','notes',''),'import','pending'
+       from generate_series(0,49) n`,
+      [x.f.h.orgA.id, p.sessionId, u2],
+    );
+    const big = await count();
+    assert.equal(big.data.rows.total, 55);
+    assert.equal(
+      big.data.items.filter((i: any) => i.current).length,
+      11,
+    );
+    assert.equal(big.n, small.n);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("applied rows are found by lookup_catalogue in a draft test session and are absent before apply", async () => {
+  const x = await fixture();
+  const { AgentRepository } = await import("../../engine/src/agent/repository.ts");
+  const repo = new AgentRepository(x.f.h.namespace);
+  try {
+    const p = await priced(x);
+    const u = await p.upload();
+    await p.row(u, 1, { item: "Bateri NS60L", priceSen: 23000 });
+    const session = async (revision: number) => {
+      const s = await x.f.req("POST", "/agent-tests", {
+        agentId: x.agentId,
+        locationId: x.f.h.orgA.locationId,
+        source: { kind: "draft", expectedRevision: revision },
+      });
+      assert.equal(s.status, 200, JSON.stringify(s.body));
+      const turn = (
+        await x.q(
+          "insert into app.test_turn(org_id,session_id,client_turn_id,request_hash,input,state,lease_token,lease_until)values($1,$2,$3,'fixture','Test','running',$4,now()+interval '60 seconds')returning *",
+          [x.f.h.orgA.id, s.body.data.id, crypto.randomUUID(), crypto.randomUUID()],
+        )
+      ).rows[0];
+      const snap = (await x.q("select snapshot from app.test_session where id=$1", [s.body.data.id])).rows[0].snapshot;
+      return { turn, snap };
+    };
+    const early = await session((await x.agentRow()).revision);
+    assert.equal(early.snap.catalogue ?? null, null);
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const late = await session(r.body.data.agentRevision);
+    assert.equal(late.snap.catalogue.rows, 1);
+    const hits = await repo.knowledge({ turn: late.turn }).catalogue({ item: "", code: "ns-60l", fits: "" });
+    assert.equal(hits[0]?.item, "Bateri NS60L");
+    assert.equal(Number((hits[0] as any)?.price_sen), 23000);
+  } finally {
+    await repo.close();
+    await x.f.close();
+  }
+});
+
+test("the existing catalogue POST still stores source owner and keeps drafts as drafts", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    await p.owned([{ item: "Taip sendiri", priceSen: 100 }]);
+    await p.owned([{ item: "Draf tampal" }], "draft");
+    assert.deepEqual(
+      (await p.catalogue()).map((c) => [c.item, c.status, c.source, c.pack_id]),
+      [
+        ["Taip sendiri", "confirmed", "owner", null],
+        ["Draf tampal", "draft", "owner", null],
+      ],
+    );
+  } finally {
+    await x.f.close();
+  }
+});
+
+// ---- fix round 1: one plan, owner's choice, matching rules ----
+test("the owner's choice wins: the newer of two staged rows named in replace updates the existing row; the older is a duplicate", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    await p.owned([{ item: "Kopi O", priceSen: 200 }]);
+    const u1 = await p.upload(60);
+    const u2 = await p.upload(0);
+    const older = await p.row(u1, 1, { item: "Kopi O", priceSen: 250 });
+    const newer = await p.row(u2, 1, { item: "kopi o", priceSen: 280 });
+    const st = await x.state();
+    const byId = (id: string) => st.items.find((i: any) => i.id === id);
+    assert.equal(byId(older).outcome, "conflict");
+    assert.equal(byId(newer).outcome, "conflict");
+    assert.equal(st.rows.conflicts, 2);
+    // The browser's re-plan with the owner's choice matches apply.
+    const { planFromView } = await import("../../packages/domain/src/setup/rows.ts");
+    assert.deepEqual(
+      planFromView(st.items, [newer]).plans.map((x) => [x.id, x.outcome]),
+      [[older, "duplicate"], [newer, "update"]],
+    );
+    const r = await x.apply([newer]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 1);
+    assert.deepEqual(r.body.data.skipped, [{ itemId: older, reason: "duplicate" }]);
+    assert.deepEqual(
+      (await p.catalogue()).map((c) => [c.item, c.price]),
+      [["Kopi O", 280]],
+    );
+    assert.equal((await p.itemState(newer)).state, "applied");
+    assert.equal((await p.itemState(older)).state, "pending");
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("a row the owner confirmed beats an earlier pending row with the same name", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const u = await p.upload();
+    const first = await p.row(u, 1, { item: "Kopi O", priceSen: 250 });
+    const second = await p.row(u, 2, { item: "Kopi O", priceSen: 290 }, { flag: "listed twice" });
+    const put = await p.putItem(second, { payload: { priceSen: 300 } });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    const st = put.body.data;
+    const byId = (id: string) => st.items.find((i: any) => i.id === id);
+    assert.equal(byId(second).outcome, "write");
+    assert.equal(byId(first).outcome, "duplicate");
+    assert.equal(byId(first).duplicateOf, second);
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.data.skipped, [{ itemId: first, reason: "duplicate" }]);
+    assert.deepEqual((await p.catalogue()).map((c) => [c.item, c.price]), [["Kopi O", 300]]);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("existing rows match on the whole item or an alias, never on a code token; long names match themselves; other organizations' rows never appear", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const long = "Minyak enjin sintetik penuh 5W-30 untuk kereta Perodua dan Proton 4 liter";
+    await p.owned([
+      { item: "Tayar A 195/55R15", priceSen: 25000 },
+      { item: "Bateri Amaron NS60L", priceSen: 30000 },
+      { item: "Bateri Contoh", aliases: ["NS40"], priceSen: 20000 },
+      { item: long, priceSen: 15000 },
+    ]);
+    // Another organization's agent has "Kopi O".
+    await x.q(
+      "insert into app.catalogue_row(org_id,agent_id,item,lookup_keys,search_text,price_sen) values($1,$2,'Kopi O','{KOPIO}','kopi o',100)",
+      [x.f.h.orgB.id, x.f.h.orgB.agentId],
+    );
+    const u = await p.upload();
+    const tyre = await p.row(u, 1, { item: "195/55R15" });
+    const ns60 = await p.row(u, 2, { item: "NS60L" });
+    const ns40 = await p.row(u, 3, { item: "NS-40" });
+    const longRow = await p.row(u, 4, { item: long.toLowerCase() });
+    const kopi = await p.row(u, 5, { item: "Kopi O" });
+    const st = await x.state();
+    const current = (id: string) => st.items.find((i: any) => i.id === id).current;
+    assert.equal(current(tyre), undefined);
+    assert.equal(current(ns60), undefined);
+    assert.deepEqual(named(current(ns40)), { item: "Bateri Contoh", priceSen: 20000 });
+    assert.deepEqual(named(current(longRow)), { item: long, priceSen: 15000 });
+    assert.equal(current(kopi), undefined);
+    assert.deepEqual(st.conflicts.map((c: any) => c.itemId).sort(), [ns40, longRow].sort());
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("replace keeps the owner's item and keys, changes the price, and a new draft test session looks up the new price; attributes too large to merge are kept", async () => {
+  const x = await fixture();
+  const { AgentRepository } = await import("../../engine/src/agent/repository.ts");
+  const repo = new AgentRepository(x.f.h.namespace);
+  try {
+    const p = await priced(x);
+    await p.owned([
+      { item: "Bateri NS60L", aliases: ["46B24L"], priceSen: 23000, attributes: { brand: "Contoh", unit: "unit" } },
+      { item: "Minyak enjin", priceSen: 9000, attributes: { desc: "x".repeat(3700) } },
+    ]);
+    const before = (
+      await x.q("select id,item,aliases,lookup_keys,search_text,attributes,revision,updated_at from app.catalogue_row where org_id=$1 order by item", [x.f.h.orgA.id])
+    ).rows;
+    const u = await p.upload();
+    const bat = await p.row(u, 1, { item: "bateri ns60l", priceSen: 25000, notes: "termasuk pasang" });
+    const oil = await p.row(u, 2, { item: "Minyak Enjin", priceSen: 9500, notes: "y".repeat(300) });
+    const r = await x.apply([bat, oil]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 2);
+    const after = (
+      await x.q("select id,item,aliases,lookup_keys,search_text,attributes,revision,updated_at,price_sen::int as price from app.catalogue_row where org_id=$1 order by item", [x.f.h.orgA.id])
+    ).rows;
+    assert.equal(after.length, 2);
+    const [b0, m0] = before;
+    const [b1, m1] = after;
+    assert.equal(b1.id, b0.id);
+    assert.equal(b1.item, "Bateri NS60L");
+    assert.deepEqual(b1.aliases, b0.aliases);
+    assert.deepEqual(b1.lookup_keys, b0.lookup_keys);
+    assert.equal(b1.price, 25000);
+    assert.equal(b1.revision, b0.revision + 1);
+    assert.ok(b1.updated_at > b0.updated_at);
+    // The staged row has no unit, so the existing unit stays; brand stays.
+    assert.deepEqual(b1.attributes, { brand: "Contoh", unit: "unit", notes: "termasuk pasang" });
+    assert.ok(b1.search_text.includes("termasuk pasang"));
+    assert.ok(b1.search_text.startsWith("bateri ns60l 46b24l"));
+    // Too large to merge: attributes and search text stay; the price changes.
+    assert.equal(m1.price, 9500);
+    assert.deepEqual(m1.attributes, m0.attributes);
+    assert.equal(m1.search_text, m0.search_text);
+    assert.equal(m1.item, "Minyak enjin");
+    assert.equal(m1.revision, m0.revision + 1);
+    // A new draft test session sees the new price.
+    const s = await x.f.req("POST", "/agent-tests", {
+      agentId: x.agentId,
+      locationId: x.f.h.orgA.locationId,
+      source: { kind: "draft", expectedRevision: r.body.data.agentRevision },
+    });
+    assert.equal(s.status, 200, JSON.stringify(s.body));
+    const turn = (
+      await x.q(
+        "insert into app.test_turn(org_id,session_id,client_turn_id,request_hash,input,state,lease_token,lease_until)values($1,$2,$3,'fixture','Test','running',$4,now()+interval '60 seconds')returning *",
+        [x.f.h.orgA.id, s.body.data.id, crypto.randomUUID(), crypto.randomUUID()],
+      )
+    ).rows[0];
+    const hits = await repo.knowledge({ turn }).catalogue({ item: "", code: "NS60L", fits: "" });
+    assert.equal(hits[0]?.item, "Bateri NS60L");
+    assert.equal(Number((hits[0] as any)?.price_sen), 25000);
+  } finally {
+    await repo.close();
+    await x.f.close();
+  }
+});
+
+test("an item with emoji or rare CJK over 200 UTF-16 units but within 200 characters can be edited and confirmed", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const u = await p.upload();
+    const name = "😀".repeat(100) + "𠀀".repeat(50);
+    assert.ok(name.length > 200 && [...name].length === 150);
+    const id = await p.row(u, 1, { item: name, priceSen: null });
+    const put = await p.putItem(id, { payload: { priceSen: 500 } });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    assert.equal((await p.itemState(id)).state, "confirmed");
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual((await p.catalogue()).map((c) => c.item), [name]);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("the view's predicted outcomes equal what apply does, row by row; conflicts leave out flagged and no-price rows", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    await p.owned([{ item: "Teh", priceSen: 200 }, { item: "Kopi O", priceSen: 250 }]);
+    const u1 = await p.upload(60);
+    const u2 = await p.upload(0);
+    const ids = [
+      await p.row(u1, 1, { item: "Roti bakar", priceSen: 300 }),
+      await p.row(u1, 2, { item: "roti-bakar", priceSen: 320 }),
+      await p.row(u1, 3, { item: "Teh", priceSen: 220 }),
+      await p.row(u1, 4, { item: "Kopi O", priceSen: 270 }, { flag: "blurry" }),
+      await p.row(u1, 5, { item: "Kopi O", priceSen: null }),
+      await p.row(u2, 1, { item: "Nasi lemak", priceSen: 500 }, { state: "confirmed" }),
+      await p.row(u2, 2, { item: "NASI LEMAK", priceSen: 550 }),
+      await p.row(u2, 3, { item: "Milo", priceSen: null }, { flag: "no price" }),
+    ];
+    const st = await x.state();
+    const predicted = new Map(
+      st.items.filter((i: any) => i.kind === "catalogue_row").map((i: any) => [i.id, i.outcome]),
+    );
+    assert.deepEqual(ids.map((id) => predicted.get(id)), [
+      "write", "duplicate", "conflict", "unconfirmed", "no_price", "write", "duplicate", "no_price",
+    ]);
+    assert.deepEqual(st.conflicts.map((c: any) => c.itemId), [ids[2]]);
+    assert.deepEqual(st.rows, { total: 8, flagged: 2, noPrice: 2, willWrite: 2, duplicates: 2, conflicts: 1 });
+    const r = await x.apply([]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const reasons = new Map(r.body.data.skipped.map((s: any) => [s.itemId, s.reason]));
+    for (const id of ids) {
+      const did = (await p.itemState(id)).state === "applied" ? "write" : reasons.get(id);
+      assert.equal(did, predicted.get(id), id);
+    }
+    assert.equal(r.body.data.applied, st.rows.willWrite);
+  } finally {
+    await x.f.close();
+  }
+});
+
+// ---- fix round 2: separator-free key, price-change confirm, long names ----
+test("a staged NS-40 matches an existing NS40: a conflict unless named in replace, then an update", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    await p.owned([{ item: "NS40", priceSen: 20000 }]);
+    const u = await p.upload();
+    const id = await p.row(u, 1, { item: "NS-40", priceSen: 22000 });
+    const st = await x.state();
+    const item = st.items.find((i: any) => i.id === id);
+    assert.equal(item.outcome, "conflict");
+    assert.deepEqual(named(item.current), { item: "NS40", priceSen: 20000 });
+    const r = await x.apply([id]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.data.applied, 1);
+    assert.deepEqual((await p.catalogue()).map((c) => [c.item, c.price]), [["NS40", 22000]]);
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("only a changed price confirms a row: resending the stored price, or editing item or variant alone, leaves state and flag", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    const u = await p.upload();
+    const id = await p.row(u, 1, { item: "Kopi", priceSen: 250 }, { flag: "price unclear" });
+    const flagged = { state: "pending", needs_check: true };
+    for (const payload of [{ priceSen: 250 }, { item: "Kopi ais" }, { variant: "besar" }]) {
+      const r = await p.putItem(id, { payload });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.deepEqual(await p.itemState(id), flagged, JSON.stringify(payload));
+    }
+    const changed = await p.putItem(id, { payload: { priceSen: 280 } });
+    assert.equal(changed.status, 200, JSON.stringify(changed.body));
+    assert.deepEqual(await p.itemState(id), { state: "confirmed", needs_check: false });
+  } finally {
+    await x.f.close();
+  }
+});
+
+test("a long name outside the basic plane matches itself; an alias past the 40-key limit still matches", async () => {
+  const x = await fixture();
+  try {
+    const p = await priced(x);
+    // 40 characters of U+20000 and on: 80 UTF-16 units, so lookup_keys holds
+    // no whole-name key for it.
+    const long = Array.from({ length: 40 }, (_, k) => String.fromCodePoint(0x20000 + k)).join("");
+    assert.equal([...long].length, 40);
+    // 20 aliases of 4 keys each: the later aliases' whole keys are cut.
+    const aliases = Array.from({ length: 20 }, (_, k) => `A${k} B${k} C${k}`);
+    await p.owned([
+      { item: long, priceSen: 4000 },
+      { item: "Barang banyak kod", aliases, priceSen: 900 },
+    ]);
+    const keys = (await x.q("select lookup_keys from app.catalogue_row where item='Barang banyak kod'")).rows[0].lookup_keys;
+    assert.equal(keys.length, 40);
+    assert.ok(!keys.includes("A19B19C19"));
+    const u = await p.upload();
+    const longRow = await p.row(u, 1, { item: long });
+    const aliasRow = await p.row(u, 2, { item: "a19-b19-c19" });
+    const st = await x.state();
+    const current = (id: string) => named(st.items.find((i: any) => i.id === id).current);
+    assert.deepEqual(current(longRow), { item: long, priceSen: 4000 });
+    assert.deepEqual(current(aliasRow), { item: "Barang banyak kod", priceSen: 900 });
+  } finally {
+    await x.f.close();
+  }
+});

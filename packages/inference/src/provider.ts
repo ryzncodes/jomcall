@@ -1,4 +1,7 @@
-import { liveKitUrlProblem } from "../../contracts/src/hosting.ts";
+import {
+  liveKitUrlProblem,
+  setupReader,
+} from "../../contracts/src/hosting.ts";
 import type {
   Readiness,
   VoiceReadiness,
@@ -119,6 +122,19 @@ export function agentVoiceProvider(env: Env = process.env) {
   if (provider === "hosted" && !env.ANTHROPIC_API_KEY?.trim())
     throw Error("VOICE_MODEL_KEY_MISSING");
   return provider;
+}
+
+// The setup document reader switch (defined beside the other hosted guards).
+export { setupReader };
+
+// What the agent process reads uploads with. The reader calls Anthropic
+// directly, so "anthropic" without the key would fail every read: refuse at
+// start instead, even when voice is off. Never echoes a value.
+export function agentSetupReader(env: Env = process.env) {
+  const value = setupReader(env);
+  if (value === "anthropic" && !env.ANTHROPIC_API_KEY?.trim())
+    throw Error("SETUP_READER_KEY_MISSING: ANTHROPIC_API_KEY");
+  return value;
 }
 
 export async function createModelClient(

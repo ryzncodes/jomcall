@@ -74,6 +74,10 @@ export function setupQuestions(input: Input): SetupQuestion[] {
         fills: [...q.fills],
       };
       const key = factKeyOf(question);
+      // Saved hours make a text question that fills only opening_hours moot.
+      const onlyHours =
+        question.fills.length === 1 && question.fills[0] === "facts.opening_hours";
+      if (onlyHours && input.filled.has("schedule")) continue;
       if (key && !input.filled.has(key)) list.push(question);
     }
     return list;

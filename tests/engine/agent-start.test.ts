@@ -39,6 +39,19 @@ test("the agent process rejects an unknown voice provider", async () => {
   assert.match(stderr, /VOICE_PROVIDER_INVALID/);
 });
 
+test("the agent process refuses the setup reader without the model key, even with voice off", async () => {
+  const { code, stderr } = await start({ JOMCALL_SETUP_READER: "anthropic" });
+  assert.equal(code, 1);
+  assert.match(stderr, /SETUP_READER_KEY_MISSING/);
+});
+
+test("the agent process rejects an unknown setup reader without echoing it", async () => {
+  const { code, stderr } = await start({ JOMCALL_SETUP_READER: "s3cret-value" });
+  assert.equal(code, 1);
+  assert.match(stderr, /SETUP_READER_UNKNOWN/);
+  assert.doesNotMatch(stderr, /s3cret-value/);
+});
+
 test("an empty voice provider is not a voice configuration error", async () => {
   // With no database settings the process still stops, but not for voice.
   const { stderr } = await start({ JOMCALL_VOICE_PROVIDER: "" });

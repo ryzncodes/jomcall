@@ -219,6 +219,41 @@ test("conditional keys are required only when their feature is on", () => {
     assert.ok(names.includes(n), n);
 });
 
+test("the setup reader needs the model key in the agent only, even with voice off", () => {
+  const agent = {
+    JOMCALL_MODE: "hosted",
+    JOMCALL_QUEUE_NAMESPACE: "prod",
+    JOMCALL_DATABASE_HOSTS: "db.example.test",
+    AGENT_DATABASE_URL: "postgresql://a:b@db.example.test:5432/postgres",
+    QUEUE_DATABASE_URL: "postgresql://a:b@db.example.test:5432/postgres",
+    JOMCALL_MODEL_PROVIDER: "disabled",
+    JOMCALL_VOICE_PROVIDER: "disabled",
+  };
+  assert.deepEqual(readiness("agent", { ...agent, JOMCALL_SETUP_READER: "disabled" }), []);
+  assert.deepEqual(readiness("agent", { ...agent, JOMCALL_SETUP_READER: "anthropic" }), [
+    { name: "ANTHROPIC_API_KEY", code: "MISSING" },
+  ]);
+  assert.deepEqual(
+    readiness("agent", {
+      ...agent,
+      JOMCALL_SETUP_READER: "anthropic",
+      ANTHROPIC_API_KEY: SECRET,
+    }),
+    [],
+  );
+  // The web service reads the switch and never gets a model key.
+  assert.deepEqual(readiness("web", { ...good, JOMCALL_SETUP_READER: "anthropic" }), []);
+  assert.ok(!SETTINGS.find((s) => s.name === "ANTHROPIC_API_KEY")!.services.includes("web"));
+  // An unknown value is named, never echoed.
+  for (const service of ["web", "agent"] as const) {
+    const findings = readiness(service, {
+      ...(service === "web" ? good : agent),
+      JOMCALL_SETUP_READER: SECRET,
+    });
+    assert.deepEqual(findings, [{ name: "JOMCALL_SETUP_READER", code: "SETUP_READER_UNKNOWN" }]);
+  }
+});
+
 test("the readiness command prints names only and exits 1 when not ready", () => {
   const dir = mkdtempSync(join(tmpdir(), "jomcall-ready-"));
   const file = join(dir, "web.env");

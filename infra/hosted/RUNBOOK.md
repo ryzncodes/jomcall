@@ -383,6 +383,21 @@ Full steps: `docs/research/phone-line-owner-steps.md`. Nothing here has been run
 
 [ROLLBACK] set `JOMCALL_TELEPHONY_PROVIDER=disabled` in Vercel and `agent.env`, `docker compose up -d agent`; point the provider's number back at the owner's phone.
 
+## Step 12. Setup document reader (optional) — [OWNER], applies migrations and switches on an outbound service
+
+Branch `feat/setup-import`. Owners can bring a price-list photo, PDF, CSV file or pasted text into `/app/setup`; the agent process sends it to Anthropic (`claude-haiku-5-5`; `claude-sonnet-5-5` only as a fallback for text and CSV) and drafts prices and facts for the owner to confirm. Nothing here has run on hosted staging or production. Approved by the owner on 2026-11-14 and again on 2026-11-15, for setup's document reading only.
+
+1. **[OWNER]** Apply the two new migrations to staging, from a clean release folder: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. They are `20261116110000_setup_uploads.sql` (upload tables) and `20261116110100_setup_read_worker.sql` (the read worker's functions).
+2. **[OWNER]** Confirm the agent's database role bypasses row-level security. Run the query from Step 2's checks in the SQL editor: `select rolname, rolbypassrls, rolcanlogin from pg_roles where rolname like 'jomcall%' order by 1;`. The row for `jomcall_agent_jobs` must show `rolbypassrls = true`, as it already must for the agent and WhatsApp work. Do not rely on the reader on that environment until it does.
+3. **[OWNER]** Set `JOMCALL_SETUP_READER=anthropic` in both places: the web service (Vercel, staging environment) and the agent (`agent.env` on the server). The web service gets no key. If `ANTHROPIC_API_KEY` is not already set for the agent, add it to `agent.env`; the reader needs it even when voice is off. Rebuild and restart: redeploy on Vercel, then `docker compose up -d --build agent` on the server.
+4. Leave the switch unset, or `disabled`, to keep the reader off: uploading is refused with a message that the reader is not available, and the interview still works.
+
+Uploads are stored in the database, not in object storage. Each setup holds up to 5 files of 10 MB each (pasted text up to 20,000 characters). A file's bytes are deleted 30 days after it was added, whether or not setup was saved, or at once with Remove. Remove on a file also deletes its unconfirmed and removed rows. Rows and details read from a file stay in the setup's staging table after the setup is saved: confirmed ones become catalogue rows, and the staged copies remain until the agent or organization is deleted. On the free staging database (500 MB) this is fine for testing and too small for many customers. Moving originals to R2 is a later piece.
+
+[CHECK] after the switch: on the Setup screen the "bring a document" stage shows the Anthropic notice and accepts a made-up price list; the file reads within about 30 seconds; the review page lists the prices. Use made-up documents only.
+
+[ROLLBACK] unset `JOMCALL_SETUP_READER` in both places and redeploy; the migrations stay (they only add tables and functions).
+
 ---
 
 ## Moving web to Cloudflare Workers later — NOT DONE
