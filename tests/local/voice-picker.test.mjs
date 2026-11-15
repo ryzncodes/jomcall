@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 
 const picker = "web/components/core/voice-picker.tsx";
 const tsList = () => {
@@ -63,7 +64,7 @@ test("the sample list names only files that exist, and every clip is listed", ()
     const [voice, lang] = key.split("-");
     assert.ok(voices.includes(voice), key);
     assert.ok(["en", "ms"].includes(lang), key);
-    assert.match(file, new RegExp(`^${key}\\.(m4a|wav)$`));
+    assert.match(file, new RegExp(`^${key}\\.m4a$`));
     // A few seconds of speech: keep each clip small.
     assert.ok(readFileSync(`${dir}/${file}`).length < 200_000, file);
   }
@@ -77,4 +78,31 @@ test("the sample generator refuses to run without --paid and sends fixed text", 
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   assert.match(pkg.scripts["voice:samples"], /jomcall_voice\.samples/);
   assert.doesNotMatch(pkg.scripts["voice:samples"], /--paid/);
+});
+
+test("git keeps the AAC sample clips and still ignores every other audio file", () => {
+  const ignored = (path) =>
+    spawnSync("git", ["check-ignore", "-q", "--no-index", path]).status === 0;
+  assert.equal(ignored("web/public/voice-samples/Kore-en.m4a"), false);
+  assert.equal(ignored("web/public/voice-samples/Kore-en.wav"), true);
+  assert.equal(ignored("web/public/other/clip.m4a"), true);
+  assert.equal(ignored("recording.m4a"), true);
+});
+
+test("the phone line and the browser test use the one voice fallback", () => {
+  for (const file of [
+    "engine/src/agent/phone-call.ts",
+    "packages/domain/src/agent-test/voice-session.ts",
+  ]) {
+    const text = readFileSync(file, "utf8");
+    assert.match(text, /voiceFor\(settings\.voicePreference\)/, file);
+    assert.doesNotMatch(text, /VOICE_PRESETS\.find/, file);
+  }
+});
+
+test("the Play button changes its label and does not also set aria-pressed", () => {
+  const text = readFileSync(picker, "utf8");
+  assert.doesNotMatch(text, /aria-pressed/);
+  assert.match(text, /role="alert"/);
+  assert.match(text, /Your earlier note/);
 });

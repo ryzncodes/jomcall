@@ -10,9 +10,12 @@ gitignored .env.hosted by the npm script); the key is never printed.
 Writes web/public/voice-samples/<voice>-<lang>.m4a (AAC in MP4, which every
 current browser plays) and the list of clips that exist to
 web/lib/voice-samples.json, which the picker reads. AAC needs macOS
-`afconvert` (part of macOS, nothing installed); without it the clips are
-written as 16-bit WAV, about ten times larger. Resumable: existing clips are
-kept unless --force. A refusal (HTTP 429) stops the run; run it again later.
+`afconvert` (part of macOS, nothing installed); without it the run refuses
+before any request (WAV would be about ten times larger and is gitignored).
+Resumable: existing clips are kept unless --force. The list always starts
+from the clips already on disk, so a run that stops early (a refusal, HTTP
+429, or a failed request) still lists every clip that exists; run it again
+later.
 """
 
 from __future__ import annotations
@@ -66,16 +69,18 @@ def afconvert_aac(wav: Path, m4a: Path) -> bool:
     return done.returncode == 0 and m4a.is_file()
 
 
+def has_aac() -> bool:
+    return shutil.which("afconvert") is not None
+
+
 def existing(out_dir: Path) -> dict[str, str]:
     """Clips on disk, keyed '<voice>-<lang>', for known voices and languages."""
     found: dict[str, str] = {}
     for voice in PRESETS:
         for lang in SENTENCES:
-            for ext in ("m4a", "wav"):
-                name = f"{voice}-{lang}.{ext}"
-                if (out_dir / name).is_file():
-                    found[f"{voice}-{lang}"] = name
-                    break
+            name = f"{voice}-{lang}.m4a"
+            if (out_dir / name).is_file():
+                found[f"{voice}-{lang}"] = name
     return found
 
 
@@ -94,8 +99,10 @@ async def record(
     say=print,
 ) -> dict[str, str]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    found = {} if force else existing(out_dir)
-    todo = [(v, lang) for v in PRESETS for lang in SENTENCES if f"{v}-{lang}" not in found]
+    # Start from what is on disk even with --force: a clip leaves the list
+    # only when it is replaced, never because a run stopped early.
+    found = existing(out_dir)
+    todo = [(v, lang) for v in PRESETS for lang in SENTENCES if force or f"{v}-{lang}" not in found]
     interval = 60 / config.PREWARM_MAX_PER_MIN
     try:
         for index, (preset, lang) in enumerate(todo):
@@ -113,16 +120,14 @@ async def record(
             finally:
                 await voice.aclose()
             key = f"{preset}-{lang}"
-            for ext in ("m4a", "wav"):
-                (out_dir / f"{key}.{ext}").unlink(missing_ok=True)
             with tempfile.TemporaryDirectory() as tmp:
-                wav = Path(tmp) / f"{key}.wav"
+                wav, m4a = Path(tmp) / f"{key}.wav", Path(tmp) / f"{key}.m4a"
                 write_wav(wav, pcm)
-                if convert(wav, out_dir / f"{key}.m4a"):
-                    found[key] = f"{key}.m4a"
-                else:
-                    shutil.copyfile(wav, out_dir / f"{key}.wav")
-                    found[key] = f"{key}.wav"
+                if not convert(wav, m4a):
+                    say(f"AAC conversion failed for {key}. {len(todo) - index} clips remain; run again.")
+                    break
+                shutil.move(str(m4a), out_dir / f"{key}.m4a")
+            found[key] = f"{key}.m4a"
             say(f"recorded {found[key]}")
     finally:
         write_manifest(manifest, found)
@@ -143,6 +148,13 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "Refusing: this calls Google text-to-speech ten times (a few cents). "
             "Run again with --paid.",
+            file=sys.stderr,
+        )
+        return 2
+    if not has_aac():
+        print(
+            "Refusing: macOS afconvert is needed to write AAC clips and was not found. "
+            "Run this on a Mac.",
             file=sys.stderr,
         )
         return 2

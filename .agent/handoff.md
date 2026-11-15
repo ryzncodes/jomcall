@@ -7,7 +7,10 @@ Branch `claude/voice-picker-ec26d4`.
 **Changed**
 - `packages/contracts/src/voices.ts`: the one voice list (`VOICE_PRESETS`), Google's descriptions, `presetVoice` and `voiceFor`. The domain re-exports it; `engine/` is unchanged.
 - `web/components/core/voice-picker.tsx`: radio cards with Play/Stop, used by `web/components/core/agent.tsx`. The wrong "No speech provider is connected" hint is gone. Saving stores the exact voice name; old free text shows the default with a note and is replaced on the next save.
-- `voice/jomcall_voice/samples.py` and `npm run voice:samples -- --paid`: records the ten clips into `web/public/voice-samples/` and writes `web/lib/voice-samples.json`.
+- `voice/jomcall_voice/samples.py` and `npm run voice:samples -- --paid`: records the ten clips into `web/public/voice-samples/` (AAC only; refuses without macOS `afconvert`) and writes `web/lib/voice-samples.json`.
+- `.gitignore`: one exception, `!web/public/voice-samples/*.m4a`, for these synthetic greetings; every other audio file stays ignored. The owner must accept this exception to the no-audio rule.
+- Review fixes (same day): phone line uses `voiceFor`; old free text is shown in the note; Play button label changes (no `aria-pressed`), 44 px, and a message when playback fails; BM copy revised ("Dengar sampel", "Mesra").
+- Open for the owner: confirm `voice:samples` falls under the spoken-path approval in AGENTS.md before running it.
 - Tests: `tests/domain/voices.test.ts`, `tests/local/voice-picker.test.mjs` (TypeScript and Python lists equal, both languages, no "local" wording, hint gone, clip list matches files), `voice/tests/test_samples.py`.
 
 **Verified**
@@ -17,7 +20,8 @@ Branch `claude/voice-picker-ec26d4`.
 **Not verified**
 - No real clips exist: this checkout has no `.env.hosted`, so `voice:samples` was not run. Owner step: `npm run voice:samples -- --paid`, listen, commit the clips.
 - No voice test was started (needs the hosted keys), so the chosen voice reaching a live call was not heard; it is covered by the existing test in `tests/api/voice-tests.test.ts`.
-- The "no voice chosen" note was seen in the browser with an empty saved value; the old free-text case was not (unit tests only). Accessibility with a screen reader not checked. No person has used the picker.
+- `npm run check:core` showed 46 failures in `tests/db/core-tools-channels.test.ts`, `tests/engine/phone-call.test.ts`, `tests/engine/phone-server.test.ts`, `tests/engine/whatsapp-flow.test.ts` and `tests/api/phone-numbers.test.ts`. The cause is unproven; re-run on a clean database after the metering pull request merges.
+- The "no voice chosen" note was seen in the browser with an empty saved value; the old free-text note and the playback-failure message were not (static guards only). Accessibility with a screen reader not checked. No person has used the picker.
 
 ## 2026-11-15 — guided setup flow (interview door)
 

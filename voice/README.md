@@ -64,9 +64,12 @@ like the agent's 54633, so stop the worker before `npm run local:start` (preflig
   (English and Bahasa Melayu), ten requests in all, spaced like prewarm. It sends only two
   fixed greetings with no business or caller text and costs a few cents; without `--paid`, or
   without `GOOGLE_CLOUD_API_KEY` (read from `.env.hosted`), it refuses and calls nothing.
-  Output: `web/public/voice-samples/<voice>-<lang>.m4a` (AAC through macOS `afconvert`; 16-bit
-  WAV when that tool is missing) and `web/lib/voice-samples.json`, the list the picker reads.
-  Resumable: existing clips are kept unless `--force`. A voice with no clip shows no Play button.
+  Output: `web/public/voice-samples/<voice>-<lang>.m4a` (AAC through macOS `afconvert`; without
+  that tool it refuses before any request) and `web/lib/voice-samples.json`, the list the picker
+  reads. Resumable: existing clips are kept unless `--force`; the list always starts from the
+  clips on disk, so a run that stops early still lists every clip that exists. A voice with no
+  clip shows no Play button. `.gitignore` ignores audio, with one exception for these synthetic
+  clips (`!web/public/voice-samples/*.m4a`), so they can be committed.
 - **Barge-in** needs words: only a non-empty interim transcript while the agent is speaking
   interrupts it. Raw voice-activity detection alone does nothing, so noise or echo cannot
   abort a turn or spend one of the session's turns.

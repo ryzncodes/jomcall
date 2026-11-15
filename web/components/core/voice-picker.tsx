@@ -27,7 +27,10 @@ export function VoicePicker({
     { locale } = useExperience();
   const saved = presetVoice(value);
   const selected = saved ?? DEFAULT_VOICE;
+  // Old free text saved before the picker existed (not a voice name).
+  const earlier = !saved && typeof value === "string" ? value.trim() : "";
   const [playing, setPlaying] = useState<VoicePreset | null>(null);
+  const [failed, setFailed] = useState<VoicePreset | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const stop = () => {
     audio.current?.pause();
@@ -39,15 +42,20 @@ export function VoicePicker({
   useEffect(() => stop, [locale]);
   const play = (voice: VoicePreset, file: string) => {
     stop();
+    setFailed(null);
     const clip = new Audio("/voice-samples/" + file);
     audio.current = clip;
     clip.onended = () => {
       if (audio.current === clip) stop();
     };
     setPlaying(voice);
-    clip.play().catch(() => {
-      if (audio.current === clip) stop();
-    });
+    const fail = () => {
+      if (audio.current !== clip) return;
+      stop();
+      setFailed(voice);
+    };
+    clip.onerror = fail;
+    clip.play().catch(fail);
   };
   return (
     <fieldset className="agent-voice">
@@ -56,7 +64,7 @@ export function VoicePicker({
         {VOICE_PRESETS.some((v) => files[v + "-" + locale])
           ? w(
               "The voice callers hear on voice calls. Play a short sample before you choose.",
-              "Suara yang didengar pemanggil dalam panggilan suara. Main sampel pendek sebelum memilih.",
+              "Suara yang didengar pemanggil dalam panggilan suara. Dengar sampel pendek sebelum memilih.",
             )
           : w(
               "The voice callers hear on voice calls. Voice samples are not available yet.",
@@ -65,9 +73,22 @@ export function VoicePicker({
       </p>
       {!saved && (
         <p className="agent-voice-note" role="note">
+          {earlier
+            ? w(
+                `Your earlier note "${earlier}" is not a voice name. Calls use ${DEFAULT_VOICE}. Saving replaces it with the voice selected below.`,
+                `Catatan anda sebelum ini, "${earlier}", bukan nama suara. Panggilan menggunakan ${DEFAULT_VOICE}. Apabila anda simpan draf, catatan itu diganti dengan suara yang dipilih di bawah.`,
+              )
+            : w(
+                `No voice chosen yet, so calls use the default voice, ${DEFAULT_VOICE}. Saving the draft stores the voice selected below.`,
+                `Belum ada suara dipilih, jadi panggilan menggunakan suara lalai, ${DEFAULT_VOICE}. Apabila anda simpan draf, suara yang dipilih di bawah akan disimpan.`,
+              )}
+        </p>
+      )}
+      {failed && (
+        <p className="agent-voice-note" role="alert">
           {w(
-            `No voice chosen yet, so calls use the default voice, ${DEFAULT_VOICE}. Saving the draft stores the voice selected below.`,
-            `Tiada suara dipilih lagi, jadi panggilan menggunakan suara lalai, ${DEFAULT_VOICE}. Menyimpan draf akan menyimpan suara yang dipilih di bawah.`,
+            `The ${failed} sample could not play. Check your connection and try again.`,
+            `Sampel ${failed} tidak dapat dimainkan. Semak sambungan anda dan cuba lagi.`,
           )}
         </p>
       )}
@@ -103,15 +124,15 @@ export function VoicePicker({
                 <button
                   type="button"
                   className="agent-voice-play"
-                  aria-pressed={playing === voice}
+                  data-playing={playing === voice || undefined}
                   aria-label={
                     playing === voice
                       ? w(`Stop ${voice} sample`, `Henti sampel ${voice}`)
-                      : w(`Play ${voice} sample`, `Main sampel ${voice}`)
+                      : w(`Play ${voice} sample`, `Dengar sampel ${voice}`)
                   }
                   onClick={() => (playing === voice ? stop() : play(voice, file))}
                 >
-                  {playing === voice ? w("Stop", "Henti") : w("Play", "Main")}
+                  {playing === voice ? w("Stop", "Henti") : w("Play", "Dengar")}
                 </button>
               )}
             </div>

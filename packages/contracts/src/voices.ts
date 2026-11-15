@@ -22,7 +22,7 @@ export const DEFAULT_VOICE: VoicePreset = VOICE_PRESETS[0];
 export const VOICE_DETAILS: Record<VoicePreset, { en: string; ms: string }> =
   {
     Kore: { en: "Firm, female", ms: "Tegas, perempuan" },
-    Sulafat: { en: "Warm, female", ms: "Hangat, perempuan" },
+    Sulafat: { en: "Warm, female", ms: "Mesra, perempuan" },
     Leda: { en: "Youthful, female", ms: "Muda, perempuan" },
     Achird: { en: "Friendly, male", ms: "Ramah, lelaki" },
     Charon: { en: "Informative, male", ms: "Informatif, lelaki" },

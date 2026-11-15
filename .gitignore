@@ -47,6 +47,9 @@ web/next-env.d.ts
 
 # Original synthetic UI test tone; never customer audio.
 !web/public/audio/sample-tone.wav
+# Voice picker samples: synthetic text-to-speech greetings from fixed
+# sentences (npm run voice:samples); never customer audio. AAC only.
+!web/public/voice-samples/*.m4a
 
 # Isolated local runtime outputs
 .next-mock/
