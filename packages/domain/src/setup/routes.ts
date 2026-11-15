@@ -26,6 +26,7 @@ import { savePackFact } from "../knowledge/routes.ts";
 import { enforceCoreLimits } from "../knowledge/snapshot.ts";
 import { writeSchedule } from "../workspace.ts";
 import { basePack, packById, packIds } from "../packs/index.ts";
+import { listUploads, readerReady } from "./uploads.ts";
 import {
   factKeyOf,
   missingFacts,
@@ -239,6 +240,8 @@ export async function setupRoute(
         missing: [],
         conflicts: [],
         finish: await finished(),
+        uploads: [],
+        reader: readerReady() ? "ready" : "off",
       };
     const rows = (
       await tx.query(
@@ -334,6 +337,8 @@ export async function setupRoute(
       missing: missingFacts({ ...input, filled: covered, prefer }),
       conflicts,
       finish: false,
+      uploads: await listUploads(tx, ctx.orgId, session.id),
+      reader: readerReady() ? "ready" : "off",
     };
   };
   const bump = async (sessionId: string) => {

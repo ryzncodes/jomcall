@@ -71,6 +71,12 @@ import {
   type SetupApplyResult,
 } from "./setup.ts";
 import {
+  setupPasteText,
+  setupUploadCreate,
+  uploadSeq,
+  type SetupUpload,
+} from "./setup-upload.ts";
+import {
   catalogueInput,
   confirmInput,
   factInput,
@@ -542,6 +548,46 @@ export const commands = {
     "/agents/:id/setup/apply",
     setupApplyInput.extend({ id: uuid }),
     out<SetupApplyResult>(),
+  ),
+  createSetupUpload: route(
+    "POST",
+    "/agents/:id/setup/uploads",
+    setupUploadCreate.extend({ id: uuid }),
+    out<SetupUpload>(),
+  ),
+  // The body is the chunk's raw bytes (application/octet-stream, at most
+  // 3 MiB), not JSON; the input lists the path fields only. `received` is the
+  // number of bytes stored for this upload so far, across all chunks.
+  putSetupUploadChunk: route(
+    "PUT",
+    "/agents/:id/setup/uploads/:uploadId/chunks/:seq",
+    z.object({ id: uuid, uploadId: uuid, seq: uploadSeq }).strict(),
+    out<{ received: number }>(),
+  ),
+  finishSetupUpload: route(
+    "POST",
+    "/agents/:id/setup/uploads/:uploadId/finish",
+    z.object({ id: uuid, uploadId: uuid }).strict(),
+    out<SetupUpload>(),
+  ),
+  pasteSetupText: route(
+    "POST",
+    "/agents/:id/setup/uploads/text",
+    setupPasteText.extend({ id: uuid }),
+    out<SetupUpload>(),
+  ),
+  removeSetupUpload: route(
+    "DELETE",
+    "/agents/:id/setup/uploads/:uploadId",
+    z.object({ id: uuid, uploadId: uuid }).strict(),
+    out<{ removed: true }>(),
+  ),
+  // Raw bytes (application/octet-stream) for the review page's preview.
+  setupUploadChunk: route(
+    "GET",
+    "/agents/:id/setup/uploads/:uploadId/chunks/:seq",
+    z.object({ id: uuid, uploadId: uuid, seq: uploadSeq }).strict(),
+    out<Uint8Array>(),
   ),
   knowledgeGaps: route("GET", "/agents/:id/gaps", id, out<KnowledgeGap[]>()),
   resolveGap: route(

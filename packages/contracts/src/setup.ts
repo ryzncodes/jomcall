@@ -1,6 +1,7 @@
 // Guided setup: staged answers held until the owner confirms the review page.
 import { z } from "zod";
 import { scheduleInput } from "./agent.ts";
+import type { SetupUpload } from "./setup-upload.ts";
 
 const packId = z.string().regex(/^[a-z][a-z0-9-]{1,40}$/);
 const bytes = (v: unknown) =>
@@ -34,8 +35,21 @@ export const setupFactPayload = z
     value: factText.min(1),
     title: z.string().trim().min(1).max(200),
     language: z.enum(["ms", "en", "zh", "mixed"]),
+    // Set on facts an import drafted, so removing the upload finds them.
+    uploadId: z.uuid(),
   })
   .partial()
+  .strict();
+// One price-list row an import drafted (setup_item kind catalogue_row).
+export const setupCataloguePayload = z
+  .object({
+    uploadId: z.uuid(),
+    item: z.string().trim().min(1).max(200),
+    variant: z.string().trim().max(200),
+    priceSen: z.number().int().min(0).max(100000000000).nullable(),
+    unit: z.string().trim().max(60),
+    notes: z.string().trim().max(300),
+  })
   .strict();
 export const setupSchedulePayload = z.object(hoursShape).strict();
 export const setupSettingsPayload = z.object(wordsShape).strict();
@@ -130,4 +144,8 @@ export type Setup = {
   // No open session and the latest one was applied after the published
   // version (or nothing is published): the owner should test and publish.
   finish: boolean;
+  // Uploads of the open session that are not removed, oldest first.
+  uploads: SetupUpload[];
+  // "off" when JOMCALL_SETUP_READER is not "anthropic": uploading is refused.
+  reader: "ready" | "off";
 };

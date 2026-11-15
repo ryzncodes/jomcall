@@ -121,6 +121,17 @@ export function agentVoiceProvider(env: Env = process.env) {
   return provider;
 }
 
+// The setup document reader switch. Unset, empty or "disabled" means off;
+// "anthropic" lets the agent process send uploads to Anthropic. Anything else
+// throws, naming the variable and never its value. The web process reads only
+// this switch, never a model key.
+export function setupReader(env: Env = process.env): "disabled" | "anthropic" {
+  const value = env.JOMCALL_SETUP_READER || "disabled";
+  if (value !== "disabled" && value !== "anthropic")
+    throw Error("SETUP_READER_UNKNOWN: JOMCALL_SETUP_READER");
+  return value;
+}
+
 export async function createModelClient(
   config: ProviderConfig,
   env: Env = process.env,

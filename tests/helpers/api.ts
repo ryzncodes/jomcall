@@ -86,6 +86,48 @@ export async function createApiHarness(
       body: text ? JSON.parse(text) : null,
     };
   }
+  // Like request(), but the body and the response stay raw bytes (setup
+  // upload chunks). A body is sent as application/octet-stream unless a
+  // content-type header says otherwise.
+  async function raw(
+    actor: { token: string; refreshToken: string } | null,
+    orgId: string | null,
+    method: string,
+    path: string,
+    body?: Uint8Array,
+    headers: Record<string, string> = {},
+  ) {
+    const csrf = await fetch(`http://127.0.0.1:${port}/api/auth/csrf`);
+    const token = (await csrf.json()).data.token;
+    const challenge = csrf.headers
+      .getSetCookie()
+      .map((x) => x.split(";")[0])
+      .join("; ");
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method,
+      headers: {
+        "content-type": "application/octet-stream",
+        cookie: [
+          challenge,
+          actor
+            ? `ca_local_access=${actor.token}; ca_local_refresh=${actor.refreshToken}`
+            : "",
+        ].join("; "),
+        origin: "http://127.0.0.1:4182",
+        "x-csrf-token": token,
+        ...(orgId ? { "x-organization-id": orgId } : {}),
+        ...(method !== "GET" ? { "idempotency-key": crypto.randomUUID() } : {}),
+        ...headers,
+      },
+      body: body as BodyInit | undefined,
+      redirect: "manual",
+    });
+    return {
+      status: response.status,
+      headers: response.headers,
+      bytes: new Uint8Array(await response.arrayBuffer()),
+    };
+  }
   async function post(
     path: string,
     body: string,
@@ -109,6 +151,7 @@ export async function createApiHarness(
   }
   return {
     request,
+    raw,
     post,
     close: async () => {
       await closeServices();

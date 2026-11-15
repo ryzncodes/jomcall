@@ -1,0 +1,766 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { createPhase2Harness } from "../helpers/phase2.ts";
+import { setupReader } from "../../packages/inference/src/provider.ts";
+import { readRaw } from "../../web/lib/server/http.ts";
+
+// The web process only reads the reader switch; no model is called here.
+async function withReader<T>(value: string | undefined, run: () => Promise<T>) {
+  const prior = process.env.JOMCALL_SETUP_READER;
+  if (value === undefined) delete process.env.JOMCALL_SETUP_READER;
+  else process.env.JOMCALL_SETUP_READER = value;
+  try {
+    return await run();
+  } finally {
+    if (prior === undefined) delete process.env.JOMCALL_SETUP_READER;
+    else process.env.JOMCALL_SETUP_READER = prior;
+  }
+}
+
+const MiB = 1024 * 1024;
+const enc = (s: string) => new TextEncoder().encode(s);
+const cat = (...parts: Uint8Array[]) => new Uint8Array(Buffer.concat(parts));
+const fill = (n: number, byte = 0x41) => new Uint8Array(n).fill(byte);
+const pdf = (n: number) => cat(enc("%PDF-1.4\n"), fill(n - 9));
+const jpeg = cat(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), fill(60));
+const png = cat(
+  new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  fill(60),
+);
+const webp = cat(enc("RIFF"), new Uint8Array([10, 0, 0, 0]), enc("WEBPVP8 "), fill(40));
+const xlsx = cat(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), fill(60));
+
+async function fixture() {
+  const f = await createPhase2Harness();
+  const agentId = f.h.orgA.agentId;
+  const base = `/agents/${agentId}/setup`;
+  const up = `${base}/uploads`;
+  const started = await f.req("POST", base, {
+    mainPack: "appointment",
+    extraPacks: [],
+  });
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  type Actor = typeof f.h.alice;
+  const as = (a: Actor = f.h.alice, org = f.h.orgA.id) => ({
+    req: (method: string, path: string, body?: unknown) =>
+      f.api.request(a, org, method, "/api/v1" + path, body),
+    raw: (
+      method: string,
+      path: string,
+      body?: Uint8Array,
+      headers: Record<string, string> = {},
+    ) => f.api.raw(a, org, method, "/api/v1" + path, body, headers),
+  });
+  const owner = as();
+  const create = (
+    body: Record<string, unknown> = {},
+    who = owner,
+    path = up,
+  ) =>
+    who.req("POST", path, {
+      kind: "pdf",
+      name: "senarai-harga.pdf",
+      mime: "application/pdf",
+      bytes: 300,
+      ...body,
+    });
+  const put = (id: string, seq: number, bytes: Uint8Array, who = owner) =>
+    who.raw("PUT", `${up}/${id}/chunks/${seq}`, bytes);
+  const finish = (id: string, who = owner) =>
+    who.req("POST", `${up}/${id}/finish`, {});
+  const remove = (id: string, who = owner) =>
+    who.req("DELETE", `${up}/${id}`, {});
+  const chunk = (id: string, seq: number, who = owner) =>
+    who.raw("GET", `${up}/${id}/chunks/${seq}`);
+  const view = async () => (await f.req("GET", base)).body.data;
+  const q = (sql: string, args: unknown[] = []) => f.h.cleanup.query(sql, args);
+  // Create, send the parts in order and finish.
+  const upload = async (
+    parts: Uint8Array[],
+    body: Record<string, unknown> = {},
+  ) => {
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const c = await create({ bytes: total, ...body });
+    assert.equal(c.status, 200, JSON.stringify(c.body));
+    for (const [i, p] of parts.entries())
+      assert.equal((await put(c.body.data.id, i, p)).status, 200);
+    return { id: c.body.data.id as string, done: await finish(c.body.data.id) };
+  };
+  const reads = async (id: string) =>
+    Number(
+      (
+        await q(
+          "select count(*) from app.outbox where kind='setup.read' and resource_id=$1",
+          [id],
+        )
+      ).rows[0].count,
+    );
+  const chunks = async (id: string) =>
+    Number(
+      (
+        await q("select count(*) from app.setup_upload_chunk where upload_id=$1", [
+          id,
+        ])
+      ).rows[0].count,
+    );
+  const row = async (id: string) =>
+    (await q("select * from app.setup_upload where id=$1", [id])).rows[0];
+  const sessionId = started.body.data.session.id as string;
+  return {
+    f,
+    agentId,
+    base,
+    up,
+    as,
+    owner,
+    create,
+    put,
+    finish,
+    remove,
+    chunk,
+    view,
+    q,
+    upload,
+    reads,
+    chunks,
+    row,
+    sessionId,
+  };
+}
+
+test("setupReader reads the switch and fails closed on any other value", () => {
+  assert.equal(setupReader({}), "disabled");
+  assert.equal(setupReader({ JOMCALL_SETUP_READER: "" }), "disabled");
+  assert.equal(setupReader({ JOMCALL_SETUP_READER: "disabled" }), "disabled");
+  assert.equal(setupReader({ JOMCALL_SETUP_READER: "anthropic" }), "anthropic");
+  assert.throws(
+    () => setupReader({ JOMCALL_SETUP_READER: "s3cret-looking-value" }),
+    (e: Error) =>
+      e.message === "SETUP_READER_UNKNOWN: JOMCALL_SETUP_READER" &&
+      !e.message.includes("s3cret"),
+  );
+});
+
+test("the raw body reader stops at the cap without a content-length", async () => {
+  // A streamed body with no declared length: 1 MiB pieces, four available.
+  let pulled = 0;
+  const stream = () =>
+    new ReadableStream<Uint8Array>({
+      pull(c) {
+        if (pulled++ < 4) c.enqueue(fill(MiB));
+        else c.close();
+      },
+    });
+  const req = (body: ReadableStream<Uint8Array>, type = "application/octet-stream") =>
+    new Request("http://127.0.0.1/x", {
+      method: "PUT",
+      headers: { "content-type": type },
+      body,
+      duplex: "half",
+    } as RequestInit);
+  await assert.rejects(readRaw(req(stream()), 3 * MiB), (e: any) => e.code === "PAYLOAD_TOO_LARGE" && e.status === 413);
+  // Stopped after the fourth piece crossed the cap, not at the end of the body.
+  assert.ok(pulled <= 5, String(pulled));
+  pulled = 0;
+  assert.equal((await readRaw(req(stream()), 4 * MiB)).length, 4 * MiB);
+  pulled = 0;
+  await assert.rejects(readRaw(req(stream(), "application/json"), 4 * MiB), (e: any) => e.status === 415);
+});
+
+test("create, three chunks, finish queues one read", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const parts = [pdf(100), fill(100, 0x42), fill(100, 0x43)];
+      const c = await x.create({ name: "harga.pdf", bytes: 300 });
+      assert.equal(c.status, 200, JSON.stringify(c.body));
+      const id = c.body.data.id;
+      assert.equal(c.body.data.state, "uploading");
+      // Any order; a re-sent seq replaces the earlier bytes.
+      assert.equal((await x.put(id, 2, parts[2])).status, 200);
+      assert.equal((await x.put(id, 1, fill(100, 0x5a))).status, 200);
+      const p0 = await x.put(id, 0, parts[0]);
+      assert.equal(p0.status, 200);
+      assert.deepEqual(JSON.parse(Buffer.from(p0.bytes).toString()).data, {
+        received: 300,
+      });
+      // Same idempotency key: replayed; same key with other bytes: conflict.
+      const key = randomUUID();
+      const path = `${x.up}/${id}/chunks/1`;
+      const first = await x.owner.raw("PUT", path, parts[1], {
+        "idempotency-key": key,
+      });
+      assert.equal(first.status, 200);
+      const again = await x.owner.raw("PUT", path, parts[1], {
+        "idempotency-key": key,
+      });
+      assert.equal(again.status, 200);
+      const other = await x.owner.raw("PUT", path, fill(100, 0x51), {
+        "idempotency-key": key,
+      });
+      assert.equal(other.status, 409);
+      assert.equal(await x.reads(id), 0);
+
+      const done = await x.finish(id);
+      assert.equal(done.status, 200, JSON.stringify(done.body));
+      const u = done.body.data;
+      assert.equal(u.state, "queued");
+      assert.equal(u.bytes, 300);
+      assert.equal(u.kind, "pdf");
+      assert.equal(u.failCode, null);
+      assert.deepEqual(
+        Object.keys(u).sort(),
+        ["bytes", "createdAt", "factCount", "failCode", "id", "kind", "name", "rowCount", "state"],
+      );
+      assert.equal(await x.reads(id), 1);
+      const r = await x.row(id);
+      assert.equal(r.chunks, 3);
+      assert.equal(r.mime, "application/pdf");
+      // The bytes are frozen once queued.
+      assert.equal((await x.put(id, 1, parts[1])).status, 409);
+      assert.equal((await x.finish(id)).status, 409);
+      assert.equal(await x.reads(id), 1);
+
+      const v = await x.view();
+      assert.equal(v.reader, "ready");
+      assert.deepEqual(
+        v.uploads.map((y: any) => [y.id, y.state]),
+        [[id, "queued"]],
+      );
+
+      // The preview: raw bytes, never an image or HTML type.
+      const g = await x.chunk(id, 1);
+      assert.equal(g.status, 200);
+      assert.deepEqual(g.bytes, parts[1]);
+      assert.equal(g.headers.get("content-type"), "application/octet-stream");
+      assert.equal(g.headers.get("cache-control"), "no-store");
+      assert.equal(g.headers.get("x-content-type-options"), "nosniff");
+      assert.equal((await x.chunk(id, 5)).status, 404);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("pasted text is stored as one chunk and queued", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const text = "Potong rambut RM25\n剪发 RM25\nCuci + gaya RM40 😀";
+      const r = await x.owner.req("POST", `${x.up}/text`, { text });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const u = r.body.data;
+      assert.equal(u.kind, "text");
+      assert.equal(u.state, "queued");
+      assert.equal(u.bytes, enc(text).length);
+      assert.equal(await x.chunks(u.id), 1);
+      assert.equal(await x.reads(u.id), 1);
+      assert.equal(Buffer.from((await x.chunk(u.id, 0)).bytes).toString(), text);
+      for (const bad of ["   ", "x".repeat(20001)]) {
+        const b = await x.owner.req("POST", `${x.up}/text`, { text: bad });
+        assert.equal(b.status, 422);
+      }
+      // 20,000 characters exactly, counted as characters (not bytes).
+      const max = await x.owner.req("POST", `${x.up}/text`, {
+        text: "剪".repeat(20000),
+      });
+      assert.equal(max.status, 200, JSON.stringify(max.body));
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("sixth upload in a session is refused", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const ids: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const c = await x.create();
+        assert.equal(c.status, 200, JSON.stringify(c.body));
+        ids.push(c.body.data.id);
+      }
+      const sixth = await x.create();
+      assert.equal(sixth.status, 422);
+      assert.equal(sixth.body.error.code, "UPLOAD_LIMIT");
+      const paste = await x.owner.req("POST", `${x.up}/text`, { text: "a" });
+      assert.equal(paste.body.error.code, "UPLOAD_LIMIT");
+      // A removed upload no longer holds a session slot.
+      assert.equal((await x.remove(ids[0])).status, 200);
+      assert.equal((await x.create()).status, 200);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("twenty-first in 24 hours is refused", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      // Twenty earlier uploads in this workspace, all removed: removing does
+      // not reset the cap, and they hold no session slot.
+      for (let i = 0; i < 20; i++)
+        await x.q(
+          "insert into app.setup_upload(org_id,session_id,kind,name,mime,bytes,state) values($1,$2,'pdf','lama.pdf','application/pdf',10,'removed')",
+          [x.f.h.orgA.id, x.sessionId],
+        );
+      const r = await x.create();
+      assert.equal(r.status, 429);
+      assert.equal(r.body.error.code, "UPLOAD_RATE");
+      const paste = await x.owner.req("POST", `${x.up}/text`, { text: "a" });
+      assert.equal(paste.status, 429);
+      // Older than 24 hours: no longer counted.
+      await x.q(
+        "update app.setup_upload set created_at=now()-interval '25 hours' where org_id=$1",
+        [x.f.h.orgA.id],
+      );
+      assert.equal((await x.create()).status, 200);
+      // Another workspace has its own count.
+      const bob = await x.f.api.request(
+        x.f.h.bob,
+        x.f.h.orgB.id,
+        "POST",
+        `/api/v1/agents/${x.f.h.orgB.agentId}/setup`,
+        { mainPack: "appointment", extraPacks: [] },
+      );
+      assert.equal(bob.status, 200);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("11 MB declared size is refused", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const r = await x.create({ bytes: 11 * 1000 * 1000 });
+      assert.equal(r.status, 422);
+      assert.equal(r.body.error.code, "UPLOAD_TOO_LARGE");
+      assert.equal((await x.create({ bytes: 10 * MiB + 1 })).status, 422);
+      assert.equal((await x.create({ bytes: 10 * MiB })).status, 200);
+      assert.equal((await x.create({ bytes: 0 })).status, 422);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("a chunk over 3 MiB is refused", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const c = await x.create({ bytes: 10 * MiB });
+      const id = c.body.data.id;
+      const big = await x.put(id, 0, cat(enc("%PDF-"), fill(3 * MiB - 4)));
+      assert.equal(big.status, 413);
+      assert.equal(await x.chunks(id), 0);
+      const exact = await x.put(id, 0, cat(enc("%PDF-"), fill(3 * MiB - 5)));
+      assert.equal(exact.status, 200);
+      // Only application/octet-stream is read.
+      const json = await x.owner.raw(
+        "PUT",
+        `${x.up}/${id}/chunks/1`,
+        enc("{}"),
+        { "content-type": "application/json" },
+      );
+      assert.equal(json.status, 415);
+      // Seq outside 0..9, and an empty chunk.
+      assert.equal((await x.put(id, 10, fill(10))).status, 422);
+      assert.equal((await x.put(id, 1, new Uint8Array(0))).status, 422);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("finish with a missing chunk is refused", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const c = await x.create({ bytes: 300 });
+      const id = c.body.data.id;
+      const none = await x.finish(id);
+      assert.equal(none.status, 409);
+      assert.equal(none.body.error.code, "UPLOAD_INCOMPLETE");
+      await x.put(id, 0, pdf(100));
+      await x.put(id, 2, fill(100));
+      const gap = await x.finish(id);
+      assert.equal(gap.status, 409);
+      assert.equal(gap.body.error.code, "UPLOAD_INCOMPLETE");
+      assert.equal((await x.row(id)).state, "uploading");
+      assert.equal(await x.reads(id), 0);
+      await x.put(id, 1, fill(100));
+      assert.equal((await x.finish(id)).status, 200);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("total bytes not equal to declared is refused", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const c = await x.create({ bytes: 300 });
+      const id = c.body.data.id;
+      await x.put(id, 0, pdf(100));
+      await x.put(id, 1, fill(100));
+      const short = await x.finish(id);
+      assert.equal(short.status, 422);
+      assert.equal(short.body.error.code, "UPLOAD_SIZE_MISMATCH");
+      // More than declared is refused when the chunk arrives.
+      const over = await x.put(id, 2, fill(101));
+      assert.equal(over.status, 422);
+      assert.equal(
+        JSON.parse(Buffer.from(over.bytes).toString()).error.code,
+        "UPLOAD_SIZE_MISMATCH",
+      );
+      assert.equal(await x.chunks(id), 2);
+      assert.equal(await x.reads(id), 0);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("type is checked by leading bytes, not by name", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      // A .jpg name with PDF bytes is stored as a PDF.
+      const a = await x.upload([pdf(80)], {
+        kind: "image",
+        name: "gambar.jpg",
+        mime: "image/jpeg",
+      });
+      assert.equal(a.done.status, 200, JSON.stringify(a.done.body));
+      assert.equal(a.done.body.data.kind, "pdf");
+      assert.equal((await x.row(a.id)).mime, "application/pdf");
+      for (const [bytes, kind, mime] of [
+        [jpeg, "image", "image/jpeg"],
+        [png, "image", "image/png"],
+        [webp, "image", "image/webp"],
+      ] as const) {
+        const u = await x.upload([bytes], { kind: "pdf", name: "fail.pdf" });
+        assert.equal(u.done.body.data.kind, kind);
+        assert.equal((await x.row(u.id)).mime, mime);
+      }
+      await x.q("update app.setup_upload set state='removed' where session_id=$1", [
+        x.sessionId,
+      ]);
+      const sheet = await x.upload([xlsx], { kind: "image", name: "a.png" });
+      assert.equal(sheet.done.body.data.kind, "sheet");
+      assert.equal(
+        (await x.row(sheet.id)).mime,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      // CSV text declared as a sheet, with a Chinese character split across
+      // the chunk boundary.
+      const csv = enc("Item,Harga\n剪发,25\n");
+      const cut = 12; // inside the three bytes of 剪
+      const c = await x.upload([csv.slice(0, cut), csv.slice(cut)], {
+        kind: "sheet",
+        name: "harga.csv",
+        mime: "text/csv",
+      });
+      assert.equal(c.done.status, 200, JSON.stringify(c.done.body));
+      assert.equal(c.done.body.data.kind, "sheet");
+      assert.equal((await x.row(c.id)).mime, "text/csv");
+      await x.q("update app.setup_upload set state='removed' where session_id=$1", [
+        x.sessionId,
+      ]);
+
+      // Refused: CSV text declared as an image, a GIF, text with a NUL byte,
+      // and bytes that are not UTF-8 text.
+      for (const [bytes, kind] of [
+        [csv, "image"],
+        [cat(enc("GIF89a"), fill(20)), "image"],
+        [cat(enc("a,b\n"), new Uint8Array([0]), enc("c")), "sheet"],
+        [new Uint8Array([0xc3, 0x28, 0x41]), "sheet"],
+      ] as const) {
+        const total = bytes.length;
+        const cr = await x.create({ kind, bytes: total, name: "x.csv" });
+        const id = cr.body.data.id;
+        await x.put(id, 0, bytes);
+        const key = randomUUID();
+        const r = await x.owner.raw(
+          "POST",
+          `${x.up}/${id}/finish`,
+          enc("{}"),
+          { "content-type": "application/json", "idempotency-key": key },
+        );
+        assert.equal(r.status, 422);
+        assert.equal(
+          JSON.parse(Buffer.from(r.bytes).toString()).error.code,
+          "UPLOAD_TYPE",
+        );
+        // The refused upload's bytes are gone and it is no longer listed;
+        // its row stays as removed so the 24-hour cap still counts it.
+        const stored = await x.row(id);
+        assert.equal(stored.state, "removed");
+        assert.equal(stored.fail_code, "UPLOAD_TYPE");
+        assert.equal(await x.chunks(id), 0);
+        assert.equal(await x.reads(id), 0);
+        assert.ok(!(await x.view()).uploads.some((u: any) => u.id === id));
+        // A replay of the same request gives the same refusal.
+        const replay = await x.owner.raw(
+          "POST",
+          `${x.up}/${id}/finish`,
+          enc("{}"),
+          { "content-type": "application/json", "idempotency-key": key },
+        );
+        assert.equal(replay.status, 422);
+        assert.equal(
+          JSON.parse(Buffer.from(replay.bytes).toString()).error.code,
+          "UPLOAD_TYPE",
+        );
+      }
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("staff cannot create or read chunks", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const u = await x.upload([pdf(50)], { bytes: 50 });
+      const pending = (await x.create({ bytes: 50 })).body.data.id;
+      const staff = x.as(x.f.h.staff);
+      for (const r of [
+        await x.create({}, staff),
+        await staff.req("POST", `${x.up}/text`, { text: "a" }),
+        await x.finish(pending, staff),
+        await x.remove(u.id, staff),
+      ])
+        assert.equal(r.status, 403);
+      assert.equal((await x.put(pending, 0, pdf(50), staff)).status, 403);
+      assert.equal((await x.chunk(u.id, 0, staff)).status, 403);
+      assert.equal(await x.chunks(pending), 0);
+      assert.equal((await x.row(u.id)).state, "queued");
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("another workspace gets 404", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const u = await x.upload([pdf(50)], { bytes: 50 });
+      const pending = (await x.create({ bytes: 50 })).body.data.id;
+      // Bob, in his own workspace, names orgA's agent or orgA's upload.
+      const bob = x.as(x.f.h.bob, x.f.h.orgB.id);
+      const bobBase = `/agents/${x.f.h.orgB.agentId}/setup`;
+      assert.equal(
+        (await bob.req("POST", bobBase, { mainPack: "appointment", extraPacks: [] }))
+          .status,
+        200,
+      );
+      for (const r of [
+        await x.create({}, bob),
+        await bob.req("POST", `${x.up}/text`, { text: "a" }),
+        await x.finish(pending, bob),
+        await x.remove(u.id, bob),
+        await bob.req("POST", `${bobBase}/uploads/${pending}/finish`, {}),
+        await bob.req("DELETE", `${bobBase}/uploads/${u.id}`, {}),
+      ])
+        assert.equal(r.status, 404);
+      for (const r of [
+        await x.put(pending, 0, pdf(50), bob),
+        await x.chunk(u.id, 0, bob),
+        await bob.raw("PUT", `${bobBase}/uploads/${pending}/chunks/0`, pdf(50)),
+        await bob.raw("GET", `${bobBase}/uploads/${u.id}/chunks/0`),
+      ])
+        assert.equal(r.status, 404);
+      // Bob in orgA's workspace header: not a member.
+      const intruder = x.as(x.f.h.bob, x.f.h.orgA.id);
+      assert.equal((await x.chunk(u.id, 0, intruder)).status, 404);
+      assert.equal(await x.chunks(pending), 0);
+      assert.equal((await x.row(u.id)).state, "queued");
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test("remove deletes chunks and that upload's pending items, keeps confirmed ones", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const u = await x.upload([pdf(60)], { bytes: 60 });
+      const other = await x.upload([pdf(60)], { bytes: 60 });
+      const add = (
+        kind: string,
+        key: string,
+        payload: unknown,
+        state = "pending",
+        source = "import",
+      ) =>
+        x.q(
+          "insert into app.setup_item(org_id,session_id,kind,key,payload,source,state) values($1,$2,$3,$4,$5,$6,$7)",
+          [x.f.h.orgA.id, x.sessionId, kind, key, JSON.stringify(payload), source, state],
+        );
+      const row = (uploadId: string, item: string) => ({
+        uploadId,
+        item,
+        variant: "",
+        priceSen: 2500,
+        unit: "",
+        notes: "",
+      });
+      await add("catalogue_row", `${u.id}:0`, row(u.id, "Potong rambut"));
+      await add("catalogue_row", `${u.id}:1`, row(u.id, "Cuci rambut"), "confirmed");
+      await add("catalogue_row", `${u.id}:2`, row(u.id, "Gaya"), "removed");
+      await add("catalogue_row", `${other.id}:0`, row(other.id, "Warna"));
+      await add("fact", "services_offered", {
+        packId: "appointment",
+        fieldKey: "services_offered",
+        title: "Services",
+        value: "Potong, cuci",
+        language: "mixed",
+        uploadId: u.id,
+      });
+      await add(
+        "fact",
+        "address",
+        { packId: "base", fieldKey: "address", title: "Address", value: "Jalan Contoh 1", language: "mixed" },
+        "pending",
+        "interview",
+      );
+      const before = (await x.view()).session.revision;
+
+      const r = await x.remove(u.id);
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.deepEqual(r.body.data, { removed: true });
+      assert.equal(await x.chunks(u.id), 0);
+      assert.equal((await x.row(u.id)).state, "removed");
+      assert.equal(await x.chunks(other.id), 1);
+      const items = (
+        await x.q(
+          "select key,state from app.setup_item where session_id=$1 order by key",
+          [x.sessionId],
+        )
+      ).rows.map((i) => `${i.key}=${i.state}`);
+      assert.deepEqual(
+        items.sort(),
+        [
+          `${other.id}:0=pending`,
+          `${u.id}:1=confirmed`,
+          `${u.id}:2=removed`,
+          "address=pending",
+        ].sort(),
+      );
+      const v = await x.view();
+      assert.ok(v.session.revision > before);
+      assert.deepEqual(
+        v.uploads.map((y: any) => y.id),
+        [other.id],
+      );
+      assert.equal((await x.chunk(u.id, 0)).status, 404);
+      // Removing again is harmless.
+      assert.equal((await x.remove(u.id)).status, 200);
+      // An upload left half-sent can be removed too.
+      const half = (await x.create({ bytes: 300 })).body.data.id;
+      await x.put(half, 0, pdf(100));
+      assert.equal((await x.remove(half)).status, 200);
+      assert.equal(await x.chunks(half), 0);
+      assert.equal(await x.reads(half), 0);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+test('reader off: create is refused with READER_OFF and the view says reader "off"', async () => {
+  for (const value of [undefined, "", "disabled", "openai"])
+    await withReader(value, async () => {
+      const x = await fixture();
+      try {
+        const r = await x.create();
+        assert.equal(r.status, 503, String(value));
+        assert.equal(r.body.error.code, "READER_OFF");
+        const p = await x.owner.req("POST", `${x.up}/text`, { text: "a" });
+        assert.equal(p.status, 503);
+        assert.equal(p.body.error.code, "READER_OFF");
+        // The interview still works: the view loads and says the reader is off.
+        const v = await x.f.req("GET", x.base);
+        assert.equal(v.status, 200);
+        assert.equal(v.body.data.reader, "off");
+        assert.deepEqual(v.body.data.uploads, []);
+        assert.equal(
+          Number(
+            (
+              await x.q("select count(*) from app.setup_upload where org_id=$1", [
+                x.f.h.orgA.id,
+              ])
+            ).rows[0].count,
+          ),
+          0,
+        );
+      } finally {
+        await x.f.close();
+      }
+    });
+});
+
+test("an applied session refuses uploads with 409", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const queued = await x.upload([pdf(50)], { bytes: 50 });
+      const pending = (await x.create({ bytes: 50 })).body.data.id;
+      const rev = (await x.view()).session.revision;
+      const applied = await x.f.req("POST", `${x.base}/apply`, {
+        expectedRevision: rev,
+        replace: [],
+      });
+      assert.equal(applied.status, 200, JSON.stringify(applied.body));
+      for (const r of [
+        await x.create(),
+        await x.owner.req("POST", `${x.up}/text`, { text: "a" }),
+        await x.finish(pending),
+      ])
+        assert.equal(r.status, 409);
+      assert.equal((await x.put(pending, 0, pdf(50))).status, 409);
+      // The owner may still delete an upload now; the preview still reads.
+      assert.equal((await x.chunk(queued.id, 0)).status, 200);
+      assert.equal((await x.remove(queued.id)).status, 200);
+      assert.equal(await x.chunks(queued.id), 0);
+      // Without any session the upload commands are 404.
+      const fresh = await x.f.api.request(
+        x.f.h.bob,
+        x.f.h.orgB.id,
+        "POST",
+        `/api/v1/agents/${x.f.h.orgB.agentId}/setup/uploads`,
+        { kind: "pdf", name: "a.pdf", mime: "application/pdf", bytes: 10 },
+      );
+      assert.equal(fresh.status, 404);
+    } finally {
+      await x.f.close();
+    }
+  }));
+
+// Sign-in already requires a confirmed email in every mode: verifyIdentity
+// (web/lib/server/auth.ts) refuses any token whose user has no
+// email_confirmed_at, before any command runs. This proves it for uploads.
+test("an account whose email is not confirmed is refused", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      await x.q("update auth.users set email_confirmed_at=null where id=$1", [
+        x.f.h.alice.userId,
+      ]);
+      const r = await x.create();
+      assert.equal(r.status, 401);
+      assert.equal(r.body.error.code, "UNAUTHORIZED");
+      const p = await x.owner.req("POST", `${x.up}/text`, { text: "a" });
+      assert.equal(p.status, 401);
+      assert.equal(
+        Number(
+          (
+            await x.q("select count(*) from app.setup_upload where org_id=$1", [
+              x.f.h.orgA.id,
+            ])
+          ).rows[0].count,
+        ),
+        0,
+      );
+    } finally {
+      await x.f.close();
+    }
+  }));
