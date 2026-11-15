@@ -10,6 +10,8 @@ import { adjustWallet, balanceSen, entitle, setBalance, usageEvents } from "../h
 import { recordUsage } from "../../packages/billing/src/usage.ts";
 import { CallRepository } from "../../engine/src/agent/call-repository.ts";
 import { listPendingUsage, retryUsage } from "../../scripts/billing/usage-admin.ts";
+import { Engine } from "../../engine/src/engine.ts";
+import { workerMode } from "../../packages/contracts/src/hosting.ts";
 
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
 type F = Awaited<ReturnType<typeof phoneFixture>>;
@@ -262,9 +264,11 @@ test("the agent role cannot bill an organization or read its wallet directly", a
       "select app_private.wallet_state($1)",
       "select app_private.plan_entitlements($1)",
       "select app_private.charge_plan_period($1)",
-      "select app_private.channel_admission($1,'phone',now())",
+      "select app_private.channel_admission($1,'phone',now(),'local')",
       "select app_private.call_bill($1)",
-      "select app_private.conversation_bill($1)",
+      "select app_private.whatsapp_window_bill($1)",
+      "select app_private.queue_billing_notice($1,'local','phone','WALLET_EXHAUSTED')",
+      "select app_private.billing_notice_payload($1,'local')",
     ])
       await assert.rejects(agent.query(sql, [f.h.orgA.id]), /permission denied/, sql);
   } finally {
@@ -320,6 +324,8 @@ async function planWithoutPeriod(f: F, org: string, plan = "growth") {
   );
   await adjustWallet(f.h.cleanup, org, 100_000);
 }
+const notices = (f: F, org: string) =>
+  f.h.cleanup.query("select count(*)::int n from app.billing_notice where org_id=$1", [org]).then((r) => r.rows[0].n);
 const periodCount = (f: F, org: string) =>
   f.h.cleanup.query("select count(*)::int n from app.plan_period where org_id=$1", [org]).then((r) => r.rows[0].n);
 // Marks an answered call as ended and owed with chosen times, as a call_end
@@ -388,7 +394,7 @@ test("a call refused for its configuration starts no plan period and debits noth
   }
 });
 
-test("a billing fault refuses only that call, with its own row and code", async () => {
+test("a billing fault: the call is answered anyway and marked BILLING_CHECK_FAILED (owner decision A)", async () => {
   const f = await phoneFixture({ entitled: false });
   const trigger = "test_fail_period_" + randomUUID().replaceAll("-", "");
   try {
@@ -402,12 +408,27 @@ test("a billing fault refuses only that call, with its own row and code", async 
     );
     await f.h.cleanup.query(`create trigger ${trigger} before insert on app.plan_period for each row execute function public.${trigger}()`);
     const dialled = await f.addNumber();
-    const refused = (await f.ring(dialled)).result;
-    assert.equal(refused.refusal, "BILLING_CHECK_FAILED", "not reported as a missing plan");
-    const row = await f.row(refused.callId!);
-    assert.deepEqual([row.state, row.refusal, row.outcome], ["refused", "BILLING_CHECK_FAILED", "refused"]);
+    const call = (await f.ring(dialled)).result as Live;
+    assert.equal((call as any).refusal, null, "answered, not refused");
+    const row = await f.row(call.callId);
+    assert.deepEqual([row.state, row.refusal, row.billing_check], ["active", null, "BILLING_CHECK_FAILED"]);
+    // It is still metered at the end.
+    await f.calls.answered(call.callId, sha(call.token));
+    await f.h.cleanup.query("update app.call set answered_at=now()-interval '20 seconds' where id=$1", [call.callId]);
+    await f.calls.end(call.callId, sha(call.token), { reason: "hangup" });
+    assert.equal((await f.row(call.callId)).usage_state, "billed");
+    // No owner email for a failed check; operators find it in usage-pending.
+    assert.equal(await notices(f, org), 0);
+    const db = await f.h.cleanup.connect();
+    try {
+      assert.ok((await listPendingUsage(db, 10_000)).some((r) => r.id === call.callId && r.kind === "call_check_failed"));
+    } finally {
+      db.release();
+    }
     await f.h.cleanup.query(`drop trigger ${trigger} on app.plan_period`);
-    assert.equal((await f.ring(dialled)).result.refusal, null, "admitted once the fault clears");
+    const next = await f.ring(dialled);
+    assert.equal(next.result.refusal, null);
+    assert.equal((await f.row(next.result.callId!)).billing_check, null, "a clean check leaves no mark");
   } finally {
     await f.h.cleanup.query(`drop trigger if exists ${trigger} on app.plan_period`);
     await f.h.cleanup.query(`drop function if exists public.${trigger}()`);
@@ -546,13 +567,105 @@ test("the web role cannot read the billing columns on calls and conversations", 
       "select billed_seconds from app.call",
       "select usage_event_id from app.call",
       "select * from app.call",
-      "select usage_state from app.conversation",
-      "select usage_at from app.conversation",
+      "select billing_check from app.call",
+      "select * from app.whatsapp_usage_window",
+      "select * from app.billing_notice",
     ])
       await assert.rejects(web.query(sql + " limit 0"), /permission denied/, sql);
     await web.query("select id,state,outcome,duration_seconds,refusal from app.call limit 0");
-    await web.query("select id,state,owner,needs_attention,last_message_at from app.conversation limit 0");
+    await web.query("select * from app.conversation limit 0");
   } finally {
     await web.end();
+  }
+});
+
+test("an exhausted wallet with paid minutes left: calls are answered and billed from the allowance; once used up, refused (owner decision B)", async () => {
+  const f = await phoneFixture();
+  try {
+    const org = f.h.orgA.id;
+    await f.publish();
+    const dialled = await f.addNumber();
+    // Growth is paid for this period (400 minutes, none used); the wallet is at the exhausted threshold.
+    await setBalance(f.h.cleanup, org, -500);
+    const call = (await f.ring(dialled)).result as Live;
+    assert.equal((call as any).refusal, null, "answered from the paid allowance");
+    await f.calls.answered(call.callId, sha(call.token));
+    await f.h.cleanup.query("update app.call set answered_at=now()-interval '90 seconds' where id=$1", [call.callId]);
+    await f.calls.end(call.callId, sha(call.token), { reason: "hangup" });
+    const [event] = await voiceEvents(f);
+    assert.equal(event.amount_sen, 0, "billed 0");
+    assert.equal(event.included_seconds, event.quantity);
+    assert.equal(await balanceSen(f.h.cleanup, org), -500);
+    // Allowance used up: the wallet decides again.
+    await noAllowance(f, org);
+    assert.equal((await f.ring(dialled)).result.refusal, "WALLET_EXHAUSTED");
+  } finally {
+    await f.close();
+  }
+});
+
+test("a plan or wallet refusal queues one owner email per reason per day; none for configuration refusals (owner decision C)", async () => {
+  const f = await phoneFixture({ entitled: false });
+  try {
+    const org = f.h.orgA.id;
+    const dialled = await f.addNumber();
+    // A configuration refusal: no email.
+    assert.equal((await f.ring(dialled)).result.refusal, "AGENT_UNPUBLISHED");
+    assert.equal(await notices(f, org), 0);
+    await f.publish();
+    // Many refusals for the same reason in a day: one email.
+    for (let i = 0; i < 4; i++) assert.equal((await f.ring(dialled)).result.refusal, "NO_PHONE_ENTITLEMENT");
+    const rows = (
+      await f.h.cleanup.query("select channel,reason,kl_day::text,delivery_state from app.billing_notice where org_id=$1", [org])
+    ).rows;
+    const today = (await f.h.cleanup.query("select (now() at time zone 'Asia/Kuala_Lumpur')::date::text d")).rows[0].d;
+    assert.deepEqual(rows, [{ channel: "phone", reason: "NO_PHONE_ENTITLEMENT", kl_day: today, delivery_state: "pending" }]);
+    const outbox = (
+      await f.h.cleanup.query("select kind,namespace from app.outbox where org_id=$1 and kind='billing.refusal_notice'", [org])
+    ).rows;
+    assert.deepEqual(outbox, [{ kind: "billing.refusal_notice", namespace: f.h.namespace }]);
+    // Another reason the same day: a second email.
+    await entitle(f.h.cleanup, org);
+    await noAllowance(f, org);
+    await setBalance(f.h.cleanup, org, -600);
+    for (let i = 0; i < 3; i++) assert.equal((await f.ring(dialled)).result.refusal, "WALLET_EXHAUSTED");
+    assert.equal(await notices(f, org), 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("the engine sends the refusal email to the owner, in English and Bahasa Melayu, with no caller details; never in mock mode", async () => {
+  const f = await phoneFixture({ entitled: false });
+  let engine: Engine | undefined;
+  try {
+    const org = f.h.orgA.id;
+    await f.publish();
+    const dialled = await f.addNumber();
+    const caller = "+60119876543";
+    assert.equal((await f.ring(dialled, caller)).result.refusal, "NO_PHONE_ENTITLEMENT");
+    // Mock mode has no worker: nothing would ever send the queued email.
+    assert.throws(() => workerMode({ JOMCALL_MODE: "mock" }), /LOCAL_ONLY/);
+    assert.throws(() => workerMode({}), /LOCAL_ONLY/);
+    engine = await Engine.create(f.h.namespace);
+    await engine.tick();
+    await engine.tick();
+    const state = (await f.h.cleanup.query("select delivery_state from app.billing_notice where org_id=$1", [org])).rows[0];
+    assert.equal(state.delivery_state, "sent");
+    const owner = f.h.alice.confirmedEmail;
+    const list = await (await fetch("http://127.0.0.1:54624/api/v1/messages?limit=200")).json();
+    const mine = list.messages.filter(
+      (m: { To: { Address: string }[]; Subject: string }) =>
+        m.To.some((t) => t.Address === owner) && m.Subject === "JomCall: action needed / tindakan diperlukan",
+    );
+    assert.equal(mine.length, 1);
+    const mail = await (await fetch("http://127.0.0.1:54624/api/v1/message/" + mine[0].ID)).json();
+    assert.match(mail.Text, /Phone calls to your JomCall number are not being answered because your plan does not include a phone number/);
+    assert.match(mail.Text, /Panggilan ke nombor JomCall anda tidak dijawab kerana pelan anda tidak termasuk nombor telefon/);
+    assert.match(mail.Text, /\/app\/billing/);
+    assert.doesNotMatch(mail.Text, /60119876543|\+6011/);
+  } finally {
+    await engine?.close();
+    await f.close();
   }
 });

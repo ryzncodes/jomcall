@@ -4,8 +4,8 @@
 //   npm run billing:admin -- refund <org id> <top-up id> <sen> "<reason>" "<operator>"
 //   npm run billing:admin -- plan <org id> <starter|growth|payg> "<operator>"
 //   npm run billing:admin -- usage-pending
-//   npm run billing:admin -- usage-retry <call or conversation id>
-// `usage-pending` lists calls and conversations whose bill has not landed
+//   npm run billing:admin -- usage-retry <call id or WhatsApp window id>
+// `usage-pending` lists calls and WhatsApp windows whose bill has not landed
 // (stuck: maintenance stopped after 20 attempts); `usage-retry` tries one
 // bill once more now and counts a failure (scripts/billing/usage-admin.ts).
 // `plan` stands in for the plan picker the wallet screen does not have yet.

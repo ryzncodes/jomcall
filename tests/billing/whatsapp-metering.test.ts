@@ -9,8 +9,6 @@ import { webhookPost } from "../../web/lib/server/whatsapp-webhook.ts";
 import { buildInboundText, signBody } from "../../packages/whatsapp/src/index.ts";
 import { createFakeProvider } from "../../packages/whatsapp/src/fake.ts";
 import { WhatsAppWorker } from "../../engine/src/whatsapp/worker.ts";
-import { recordUsage } from "../../packages/billing/src/usage.ts";
-import pg from "pg";
 
 const secret = "test-app-secret-" + randomUUID();
 const customerNumber = () => "6011" + String(randomInt(1_000_000, 9_999_999));
@@ -81,6 +79,15 @@ async function setup(entitlement: { plan?: "starter" | "growth"; creditSen?: num
       )
     ).rows;
   const billed = () => usageEvents(h.cleanup, h.orgA.id, "whatsapp_conversation");
+  // WhatsApp billing windows for one customer (contact and channel), oldest first.
+  const windows = async (from: string) =>
+    (
+      await h.cleanup.query(
+        `select w.* from app.whatsapp_usage_window w join app.conversation c on(c.org_id=w.org_id and c.id=w.conversation_id)
+         where w.org_id=$1 and c.wa_id=$2 order by w.starts_at,w.id`,
+        [h.orgA.id, from],
+      )
+    ).rows;
   return {
     ...f,
     worker,
@@ -90,6 +97,7 @@ async function setup(entitlement: { plan?: "starter" | "growth"; creditSen?: num
     conversations,
     outbound,
     billed,
+    windows,
     async close() {
       await worker.close();
       await h.cleanup.query("delete from app.whatsapp_event where namespace=$1", [h.namespace]);
@@ -98,7 +106,7 @@ async function setup(entitlement: { plan?: "starter" | "growth"; creditSen?: num
   };
 }
 
-test("a conversation is billed once per window, when the agent's first answer is sent", async () => {
+test("a customer is billed once per 24-hour window, which opens at the agent's first accepted answer", async () => {
   const f = await setup({ plan: "growth" });
   try {
     const from = customerNumber();
@@ -109,29 +117,41 @@ test("a conversation is billed once per window, when the agent's first answer is
     assert.deepEqual((await f.outbound(c.id)).map((m) => [m.author, m.status]), [["agent", "sent"], ["agent", "sent"]]);
     let events = await f.billed();
     assert.equal(events.length, 1);
-    assert.equal(events[0].idempotency_key, "wa:" + c.id);
+    const [w] = await f.windows(from);
+    const first = (
+      await f.h.cleanup.query(
+        "select status_at from app.message where conversation_id=$1 and author='agent' order by created_at,id limit 1",
+        [c.id],
+      )
+    ).rows[0];
+    assert.ok(Math.abs(w.starts_at - first.status_at) < 1000, "the window starts at the first accepted agent message");
+    assert.equal(
+      events[0].idempotency_key,
+      `wa:${c.channel_id}:${c.contact_id}:${Math.floor(w.starts_at.getTime() / 1000)}`,
+      "the key names the customer and the window, not the conversation",
+    );
     assert.equal(events[0].quantity, 1);
     assert.equal(events[0].amount_sen, 15);
-    assert.equal(c.usage_state, "billed");
-    assert.equal(c.usage_event_id, events[0].id);
+    assert.deepEqual([w.usage_state, w.usage_event_id, w.conversation_id], ["billed", events[0].id, c.id]);
     assert.equal(await balanceSen(f.h.cleanup, f.h.orgA.id), before - 15);
-    // A day of silence starts a new conversation: a new window, a new bill.
-    await f.h.cleanup.query(
-      "update app.conversation set last_inbound_at=now()-interval '25 hours' where id=$1",
-      [c.id],
-    );
+    // A day later (a new conversation, and the window has ended): a new bill.
+    await f.h.cleanup.query("update app.conversation set last_inbound_at=now()-interval '25 hours' where id=$1", [c.id]);
+    await f.h.cleanup.query("update app.whatsapp_usage_window set starts_at=starts_at-interval '25 hours' where id=$1", [w.id]);
+    // The first bill's key holds the window's original start second; moving
+    // the window back does not change it, so wait a second to get a new key.
+    await new Promise((r) => setTimeout(r, 1100));
     await f.say(from, "Saya nak tanya lagi.");
     const all = await f.conversations(from);
     assert.equal(all.length, 2);
     events = await f.billed();
     assert.equal(events.length, 2);
-    assert.equal(events[1].idempotency_key, "wa:" + all[1].id);
+    assert.equal((await f.windows(from))[1].conversation_id, all[1].id);
   } finally {
     await f.close();
   }
 });
 
-test("a staff request and an opt-out send only notices and are not billed; an owed conversation is billed by maintenance once, priced when it became billable", async () => {
+test("a staff request and an opt-out send only notices and are not billed; an owed window is billed by maintenance once, priced at its start", async () => {
   const f = await setup({ plan: "growth" });
   try {
     const staffOnly = customerNumber();
@@ -141,18 +161,21 @@ test("a staff request and an opt-out send only notices and are not billed; an ow
     const optOut = customerNumber();
     await f.say(optOut, "stop");
     assert.equal((await f.billed()).length, 0);
-    assert.equal(c.usage_state, null);
-    // An answered conversation whose bill did not land stays owed;
-    // maintenance bills it, and the next pass adds nothing.
+    assert.deepEqual(await f.windows(staffOnly), []);
+    // A window whose bill did not land stays owed; maintenance bills it,
+    // priced at the window's start, and the next pass adds nothing.
     const billableAt = "2026-11-14T03:00:00.000Z";
-    await f.h.cleanup.query("update app.conversation set usage_state='pending',usage_at=$2 where id=$1", [c.id, billableAt]);
+    await f.h.cleanup.query(
+      "insert into app.whatsapp_usage_window(org_id,channel_id,contact_id,conversation_id,starts_at)values($1,$2,$3,$4,$5)",
+      [c.org_id, c.channel_id, c.contact_id, c.id, billableAt],
+    );
     await f.worker.tick();
     await f.worker.tick();
     const events = await f.billed();
     assert.equal(events.length, 1);
-    assert.equal(events[0].idempotency_key, "wa:" + c.id);
-    assert.equal(new Date(events[0].occurred_at).toISOString(), billableAt, "priced at the first accepted message, not the retry");
-    assert.equal((await f.conversations(staffOnly))[0].usage_state, "billed");
+    assert.equal(events[0].idempotency_key, `wa:${c.channel_id}:${c.contact_id}:${Date.parse(billableAt) / 1000}`);
+    assert.equal(new Date(events[0].occurred_at).toISOString(), billableAt, "priced at the window's start, not the retry");
+    assert.equal((await f.windows(staffOnly))[0].usage_state, "billed");
   } finally {
     await f.close();
   }
@@ -205,7 +228,7 @@ test("an exhausted wallet: new conversations are flagged and not answered; a bil
     await f.say(fresh, "Masih ada?");
     [b] = await f.conversations(fresh);
     assert.deepEqual((await f.outbound(b.id)).map((m) => [m.author, m.status]), [["agent", "sent"]]);
-    assert.equal(b.usage_state, "billed");
+    assert.equal((await f.windows(fresh))[0].usage_state, "billed");
     assert.equal((await f.billed()).length, 2);
   } finally {
     await f.close();
@@ -213,6 +236,18 @@ test("an exhausted wallet: new conversations are flagged and not answered; a bil
 });
 
 type F = Awaited<ReturnType<typeof setup>>;
+// A test-only trigger that makes inserts into `table` fail for orgA only.
+async function failFor(f: F, table: string, name: string) {
+  await f.h.cleanup.query(
+    `create function public.${name}()returns trigger language plpgsql as $$begin
+      if new.org_id='${f.h.orgA.id}'::uuid then raise exception 'INJECTED_FAULT';end if;return new;end$$`,
+  );
+  await f.h.cleanup.query(`create trigger ${name} before insert on ${table} for each row execute function public.${name}()`);
+}
+async function dropFail(f: F, table: string, name: string) {
+  await f.h.cleanup.query(`drop trigger if exists ${name} on ${table}`);
+  await f.h.cleanup.query(`drop function if exists public.${name}()`);
+}
 // The worker's steps one by one, so a test can act between the agent's
 // answer and its send.
 async function answerWithoutSending(f: F, from: string, text: string) {
@@ -229,29 +264,30 @@ const message = async (f: F, conversationId: string) =>
     )
   ).rows[0];
 
-test("a failed bill never undoes the send: the message stays sent and the conversation stays owed", async () => {
+test("a failed bill never undoes the send: the message stays sent and the window stays owed", async () => {
   const f = await setup({ plan: "growth" });
+  const trigger = "test_fail_usage_" + randomUUID().replaceAll("-", "");
   try {
     const from = customerNumber();
     const c = await answerWithoutSending(f, from, "Ada slot esok?");
-    // The key is already taken with another quantity, so the bill fails.
-    const worker = new pg.Pool({ connectionString: process.env.WORKER_DATABASE_URL, max: 1 });
-    try {
-      await recordUsage(worker, { orgId: f.h.orgA.id, kind: "whatsapp_conversation", quantity: 2, idempotencyKey: "wa:" + c.id });
-    } finally {
-      await worker.end();
-    }
+    // Recording usage fails for this organization (as a database fault would).
+    await failFor(f, "app.usage_event", trigger);
     assert.equal(await f.worker.runOneTurn(), true);
     assert.equal(await f.worker.sendOne(), true);
     assert.equal((await message(f, c.id)).status, "sent");
-    let [row] = await f.conversations(from);
-    assert.deepEqual([row.usage_state, row.usage_attempts], ["pending", 1]);
-    assert.ok(row.usage_at, "the moment it became billable is kept");
+    let [w] = await f.windows(from);
+    assert.deepEqual([w.usage_state, w.usage_attempts, w.conversation_id], ["pending", 1, c.id]);
     await f.worker.op("maintain");
-    [row] = await f.conversations(from);
-    assert.deepEqual([row.usage_state, row.usage_attempts], ["pending", 2]);
-    assert.equal((await f.billed()).filter((e) => e.quantity === 1).length, 0);
+    [w] = await f.windows(from);
+    assert.deepEqual([w.usage_state, w.usage_attempts], ["pending", 2]);
+    assert.equal((await f.billed()).length, 0);
+    // Once the fault clears, maintenance bills it at the window's start.
+    await f.h.cleanup.query(`drop trigger ${trigger} on app.usage_event`);
+    await f.worker.op("maintain");
+    const [event] = await f.billed();
+    assert.equal(new Date(event.occurred_at).getTime(), w.starts_at.getTime());
   } finally {
+    await dropFail(f, "app.usage_event", trigger);
     await f.close();
   }
 });
@@ -291,7 +327,7 @@ test("an agent answer sent as the reply-request template is billed", async () =>
     assert.equal(f.provider.sent.at(-1)?.kind, "template");
     const events = await f.billed();
     assert.equal(events.length, 1);
-    assert.equal(events[0].idempotency_key, "wa:" + c.id);
+    assert.equal(events[0].idempotency_key.startsWith(`wa:${c.channel_id}:${c.contact_id}:`), true);
   } finally {
     await f.close();
   }
@@ -312,13 +348,13 @@ test("a send whose result was lost is billed when the late result says it was se
     assert.equal((await message(f, c.id)).status, "sent");
     const events = await f.billed();
     assert.equal(events.length, 1);
-    assert.equal(events[0].idempotency_key, "wa:" + c.id);
+    assert.equal(events[0].idempotency_key.startsWith(`wa:${c.channel_id}:${c.contact_id}:`), true);
   } finally {
     await f.close();
   }
 });
 
-test("a billing fault skips only that turn, flagged with its own code; the worker moves on", async () => {
+test("a billing fault: the agent answers anyway and the turn is marked BILLING_CHECK_FAILED (owner decision A)", async () => {
   const f = await setup(null);
   const trigger = "test_fail_period_" + randomUUID().replaceAll("-", "");
   try {
@@ -329,28 +365,85 @@ test("a billing fault skips only that turn, flagged with its own code; the worke
     );
     await adjustWallet(f.h.cleanup, org, 100_000);
     // Starting this organization's plan period fails (as a database fault would).
-    await f.h.cleanup.query(
-      `create function public.${trigger}()returns trigger language plpgsql as $$begin
-        if new.org_id='${org}'::uuid then raise exception 'INJECTED_FAULT';end if;return new;end$$`,
+    await failFor(f, "app.plan_period", trigger);
+    const from = customerNumber();
+    await f.say(from, "Hai"); // tick() does not throw
+    const [a] = await f.conversations(from);
+    assert.deepEqual((await f.outbound(a.id)).map((m) => [m.author, m.status]), [["agent", "sent"]]);
+    assert.equal(a.needs_attention, false);
+    const turn = (
+      await f.h.cleanup.query("select state,billing_check from app.conversation_turn where conversation_id=$1", [a.id])
+    ).rows;
+    assert.deepEqual(turn, [{ state: "completed", billing_check: "BILLING_CHECK_FAILED" }]);
+    // Still metered: the window is billed.
+    assert.equal((await f.windows(from))[0].usage_state, "billed");
+    assert.equal(
+      (await f.h.cleanup.query("select count(*)::int n from app.billing_notice where org_id=$1", [org])).rows[0].n,
+      0,
+      "no owner email for a failed check",
     );
-    await f.h.cleanup.query(`create trigger ${trigger} before insert on app.plan_period for each row execute function public.${trigger}()`);
-    const first = customerNumber();
-    await f.say(first, "Hai"); // tick() does not throw
-    const [a] = await f.conversations(first);
-    assert.deepEqual(await f.outbound(a.id), []);
-    assert.deepEqual([a.needs_attention, a.attention_reason], [true, "BILLING_CHECK_FAILED"]);
-    const turn = (await f.h.cleanup.query("select state,error_code from app.conversation_turn where conversation_id=$1", [a.id])).rows;
-    assert.deepEqual(turn, [{ state: "skipped", error_code: "BILLING_CHECK_FAILED" }]);
-    // The queue is not stuck behind it: once the fault clears, the next
-    // conversation is answered.
-    await f.h.cleanup.query(`drop trigger ${trigger} on app.plan_period`);
-    const second = customerNumber();
-    await f.say(second, "Hai");
-    const [b] = await f.conversations(second);
-    assert.deepEqual((await f.outbound(b.id)).map((m) => [m.author, m.status]), [["agent", "sent"]]);
   } finally {
-    await f.h.cleanup.query(`drop trigger if exists ${trigger} on app.plan_period`);
-    await f.h.cleanup.query(`drop function if exists public.${trigger}()`);
+    await dropFail(f, "app.plan_period", trigger);
+    await f.close();
+  }
+});
+
+
+test("resolving and reopening a chat inside the 24-hour window bills once; a message after the window bills again (owner decision D)", async () => {
+  const f = await setup({ plan: "growth" });
+  try {
+    const from = customerNumber();
+    await f.say(from, "Hai, ada slot?");
+    const [first] = await f.conversations(from);
+    const resolve = async (id: string) => {
+      const d = (await f.req("GET", `/conversations/${id}`)).body.data;
+      const r = await f.req("POST", `/conversations/${id}/resolve`, { expectedRevision: d.revision });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+    };
+    // Resolved and reopened twice within the window: still one bill.
+    await resolve(first.id);
+    await f.say(from, "Satu lagi soalan");
+    let all = await f.conversations(from);
+    assert.equal(all.length, 2, "a new conversation after the resolve");
+    assert.deepEqual((await f.outbound(all[1].id)).map((m) => [m.author, m.status]), [["agent", "sent"]]);
+    await resolve(all[1].id);
+    await f.say(from, "Terima kasih");
+    all = await f.conversations(from);
+    assert.equal(all.length, 3);
+    assert.equal((await f.billed()).length, 1);
+    assert.equal((await f.windows(from)).length, 1);
+    // The window ends 24 hours after it started: the next answer bills again,
+    // even in the same open conversation.
+    await f.h.cleanup.query(
+      "update app.whatsapp_usage_window set starts_at=starts_at-interval '24 hours 1 second' where org_id=$1",
+      [f.h.orgA.id],
+    );
+    // The first bill's key holds the window's original start second; moving
+    // the window back does not change it, so wait a second to get a new key.
+    await new Promise((r) => setTimeout(r, 1100));
+    await f.say(from, "Esok pula?");
+    assert.equal((await f.conversations(from)).length, 3, "same conversation");
+    assert.equal((await f.billed()).length, 2);
+    assert.equal((await f.windows(from)).length, 2);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a customer whose window is open is answered even when the wallet is exhausted", async () => {
+  const f = await setup({ plan: "growth" });
+  try {
+    const from = customerNumber();
+    await f.say(from, "Hai");
+    const [first] = await f.conversations(from);
+    const d = (await f.req("GET", `/conversations/${first.id}`)).body.data;
+    assert.equal((await f.req("POST", `/conversations/${first.id}/resolve`, { expectedRevision: d.revision })).status, 200);
+    await setBalance(f.h.cleanup, f.h.orgA.id, -600);
+    await f.say(from, "Saya lupa tanya");
+    const all = await f.conversations(from);
+    assert.deepEqual((await f.outbound(all[1].id)).map((m) => m.author), ["agent"], "already paid for this window");
+    assert.equal((await f.billed()).length, 1);
+  } finally {
     await f.close();
   }
 });
