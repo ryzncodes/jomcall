@@ -58,6 +58,8 @@ try {
   } else if (action === "plan" && args.length === 3 && uuid.test(args[0]) && ["starter", "growth", "payg"].includes(args[1]) && args[2].trim().length >= 2) {
     const [org, code, operator] = args;
     await db.query("begin");
+    // Wallet lock first, as charge_plan_period and call admission take it.
+    await db.query("select pg_advisory_xact_lock(hashtextextended('wallet:'||$1,0))", [org]);
     const running = (
       await db.query("select 1 from app.plan_period where org_id=$1 and starts_at<=now() and ends_at>now()", [org])
     ).rowCount;

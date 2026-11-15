@@ -254,6 +254,13 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 6. Plan change takes effect next period (from `payg` and between paid plans), and a pending change can be cancelled.
 7. Tenant and role isolation: another organization's allowance is untouched, rows are not visible across organizations, staff and outsiders cannot choose a plan, and the app role cannot write plan rows or charge.
 
+### Known limits (found in review, not fixed here)
+
+- **WhatsApp: an agent answer whose send result was lost is not billed.** If the worker dies after Meta accepted the message, maintenance marks it `unknown`, and the status webhook does not move `unknown` forward. The customer got the answer; the conversation is billed only if a later agent message is sent. Under-billing, not double billing.
+- **Admission runs inside the global call-start lock.** A long transaction that holds one organization's wallet lock delays every call start until it ends.
+- **Maintenance takes several organizations' wallet locks in one transaction.** A deadlock with `charge_due_plans` is possible. Inside maintenance it only defers that bill; a `charge_due_plans` run would abort and must be retried.
+- **Billing a crashed call shortens `duration_seconds`**, which the call log shows. An answered call with no turns becomes 0 seconds and is free.
+
 ### Open owner decisions
 
 - **First subscription timing.** Under the next-period rule, an organization that moves from `payg` to Starter waits until its next anchor date for the number and minutes. Two alternatives: start the first paid period immediately with a full or pro-rated fee, or re-anchor on the day of the first subscription.
@@ -268,7 +275,7 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 
 ## 13. Metering and admission on the real channels (2026-11-15)
 
-Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `supabase/migrations/20261115123000_channel_metering.sql`; tests `tests/billing/phone-metering.test.ts` (8) and `tests/billing/whatsapp-metering.test.ts` (5). Everything was tested against the fake telephony, the fake WhatsApp provider and the local database only.
+Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `supabase/migrations/20261115123000_channel_metering.sql`; tests `tests/billing/phone-metering.test.ts` (10) and `tests/billing/whatsapp-metering.test.ts` (5). Everything was tested against the fake telephony, the fake WhatsApp provider and the local database only.
 
 ### What was built
 
@@ -277,7 +284,7 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
   - `agent_call('maintain')`: a worker crash, through token expiry.
 
   The quantity is the call row's `duration_seconds`, counted from `answered_at`. It is copied to `billed_seconds`, and `usage_event_id` links the bill. Never billed: a call never answered, a call of 0 seconds (`usage_state='free'`), a refused call, and browser test calls (section 4).
-- **A failed bill never blocks the end of a call.** The call ends with `usage_state='pending'`, and every `maintain` pass retries each owed call on its own. A duplicate or late end gets 401 because the token is already cleared. The idempotency key is a second guard.
+- **A failed bill never blocks the end of a call.** The call ends with `usage_state='pending'`, and every `maintain` pass retries each owed call on its own, least-tried first. `usage_attempts` counts failures; after 20 the call is left `pending` for an operator, so one that can never be billed does not hold up the rest. A duplicate or late end gets 401 because the token is already cleared. The idempotency key is a second guard.
 - **WhatsApp.**
   - **Window:** one `app.conversation` row. A new one starts after 24 hours without a customer message (WhatsApp design §5).
   - **Billing:** `whatsapp_conversation`, quantity 1, key `wa:<conversation id>`, when the first agent-authored message in the conversation reaches `sent` in `whatsapp_work('send_result')`. This includes the template that replaces it outside the 24-hour window, and a late `unknown` that becomes `sent`.
@@ -289,7 +296,7 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
   3. reads `wallet_state`.
 
   It returns `NO_PHONE_ENTITLEMENT` or `NO_WHATSAPP_ENTITLEMENT`, then `WALLET_UNFUNDED` or `WALLET_EXHAUSTED`, or null. Grace is admitted.
-  - **Phone:** it runs inside `call_start`'s lock, after the configuration refusals (suspended, unpublished, disclosure) and before the caller limit and the busy-line guard. The plan period uses the agent process's clock, `at`, like opening hours.
+  - **Phone:** it runs inside `call_start`'s lock, after the configuration refusals (suspended, unpublished, disclosure) and before the caller limit and the busy-line guard. The plan period is read at the **database** clock, never the agent's `at` (which still decides opening hours), so the agent process cannot choose which period is charged or checked.
   - **WhatsApp:** it runs in `turn_claim` for agent turns, and only while the conversation has not been billed.
 - **Never cut off.** Nothing re-checks the plan or the wallet during a call, or in a conversation already answered in its window. Those keep going and are billed into grace or below.
 - **Roles.**
@@ -307,6 +314,13 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
 3. **Refused calls are silent.** Section 4 says a refused call rings through to the business and the owner is told. Neither exists (phone design open decision 4). These refusals are silent like the other configuration refusals: the room is deleted and a refused row stays in the call log.
 4. **The WhatsApp unit.** WhatsApp design O7 says to bill per delivered message from Meta's `pricing` status. This follows section 12 instead: JomCall's own fee per conversation.
 5. **Lazy period start.** Section 12 expects `charge_due_plans` to start periods, but nothing schedules it. Admission starts or retries the period itself, so the first call or chat of a period can debit the monthly fee.
+
+### Known limits (found in review, not fixed here)
+
+- **WhatsApp: an agent answer whose send result was lost is not billed.** If the worker dies after Meta accepted the message, maintenance marks it `unknown`, and the status webhook does not move `unknown` forward. The customer got the answer; the conversation is billed only if a later agent message is sent. Under-billing, not double billing.
+- **Admission runs inside the global call-start lock.** A long transaction that holds one organization's wallet lock delays every call start until it ends.
+- **Maintenance takes several organizations' wallet locks in one transaction.** A deadlock with `charge_due_plans` is possible. Inside maintenance it only defers that bill; a `charge_due_plans` run would abort and must be retried.
+- **Billing a crashed call shortens `duration_seconds`**, which the call log shows. An answered call with no turns becomes 0 seconds and is free.
 
 ### Open owner decisions
 

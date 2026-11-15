@@ -1,5 +1,42 @@
 # Handoff
 
+## 2026-11-15 — usage metering and plan entitlements on the real channels
+
+Branch `claude/usage-metering-e13eb4`, pull request #26 (not merged). Design: billing design section 13.
+
+**Changed**
+- Migration `20261115123000_channel_metering.sql` (re-runnable). It patches `app_private.agent_call` and `app_private.whatsapp_work` and adds `channel_admission`, `call_bill` and `conversation_bill`.
+- **Phone:** bills `voice_second` once per call (`call:<id>`) when it ends, through `call_end` or `maintain`.
+- **WhatsApp:** bills `whatsapp_conversation` once per conversation (`wa:<id>`) when the agent's first message is sent.
+- **Admission:** refuses new calls (`NO_PHONE_ENTITLEMENT`, `WALLET_UNFUNDED`, `WALLET_EXHAUSTED`, silent) and skips new WhatsApp conversations (`NO_WHATSAPP_ENTITLEMENT` or the wallet codes; needs attention, nothing sent). Grace is served, and work already under way is never cut.
+- **Roles:** the agent login role lost `record_usage`, `wallet_state` and `plan_entitlements`.
+- **Operator command:** `npm run billing:admin -- plan <org> <code> "<operator>"`. This is the only way to give a workspace a plan today.
+- **Tests:** phone and WhatsApp fixtures now give orgs a Growth plan and credit (`tests/helpers/billing.ts`).
+
+**Verified (2026-11-15, fakes and local database only)**
+- Before the review fix wave:
+  - `npm run typecheck`: pass.
+  - `npm run test:guards`: 34 of 34.
+  - `npm run check:core`: 487 of 487.
+  - `npm run check:billing`: 39 of 39.
+  - `npm run db:verify-migrations`: pass, 54 RLS tables.
+  - `npm run build:hosted`: pass.
+- After the fix wave: see the PR body.
+- The migration is applied to the shared local database with psql, with no `schema_migrations` row.
+
+**Not verified**
+- No carrier, Meta or payment provider was called.
+- Not applied to hosted staging (owner step: `npm run hosted:migrate`).
+- No UI copy for the new refusals.
+- Paid model gates were not re-run; no prompt or tool list changed.
+
+**Next**
+- Plan picker on the wallet screen.
+- Specific call-log and inbox text for the new codes.
+- Schedule `charge_due_plans`.
+- Bill a WhatsApp answer whose send result was lost.
+- Move admission out of the global call-start lock.
+
 ## 2026-11-15 — guided setup flow (interview door)
 
 Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/specs/2026-11-14-setup-flow-design.md`, dated note at the end.

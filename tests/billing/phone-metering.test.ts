@@ -168,8 +168,11 @@ test("a call ended but not yet billed is billed by maintenance, once", async () 
     let row = await f.row(failing.callId);
     assert.equal(row.state, "ended", "billing never blocks the end of a call");
     assert.equal(row.usage_state, "pending");
+    assert.equal(row.usage_attempts, 1);
     await f.calls.maintain();
-    assert.equal((await f.row(failing.callId)).usage_state, "pending", "retried, still owed");
+    row = await f.row(failing.callId);
+    assert.equal(row.usage_state, "pending", "retried, still owed");
+    assert.equal(row.usage_attempts, 2, "each failed attempt is counted; maintenance stops after 20");
 
     // 2. A crash between the end and the bill (the end committed, the bill
     //    did not): maintenance bills it, and a second pass adds nothing.
@@ -263,6 +266,45 @@ test("the agent role cannot bill an organization or read its wallet directly", a
       await assert.rejects(agent.query(sql, [f.h.orgA.id]), /permission denied/, sql);
   } finally {
     await agent.end();
+    await f.close();
+  }
+});
+
+test("the agent's clock never chooses the plan period that is charged or checked", async () => {
+  const f = await phoneFixture();
+  try {
+    await f.publish();
+    const dialled = await f.addNumber();
+    const periods = () =>
+      f.h.cleanup.query("select count(*)::int n from app.plan_period where org_id=$1", [f.h.orgA.id]).then((r) => r.rows[0].n);
+    assert.equal(await periods(), 1);
+    // Two years ahead: a period that would need a new fee, and past any grace.
+    f.setClock(Date.now() + 2 * 365 * 86_400_000);
+    assert.equal((await f.ring(dialled)).result.refusal, null);
+    assert.equal(await periods(), 1, "no period was created for the agent's date");
+  } finally {
+    await f.close();
+  }
+});
+
+test("maintenance: an unanswered expired call and an answered call with no turns are free", async () => {
+  const f = await phoneFixture();
+  try {
+    await f.publish();
+    const dialled = await f.addNumber();
+    const unanswered = (await f.ring(dialled)).result as Live;
+    const silent = await answeredCall(f, dialled, 300);
+    await f.h.cleanup.query("update app.call set token_expires_at=now()-interval '1 second' where id=any($1)", [
+      [unanswered.callId, silent.callId],
+    ]);
+    await f.calls.maintain();
+    for (const id of [unanswered.callId, silent.callId]) {
+      const row = await f.row(id);
+      assert.deepEqual([row.state, row.usage_state], ["ended", "free"]);
+    }
+    assert.equal((await f.row(silent.callId)).duration_seconds, 0);
+    assert.equal((await voiceEvents(f)).length, 0);
+  } finally {
     await f.close();
   }
 });

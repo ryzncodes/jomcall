@@ -28,6 +28,11 @@ alter table app.call add column if not exists billed_seconds integer;
 alter table app.call add column if not exists usage_event_id uuid;
 alter table app.conversation add column if not exists usage_state text;
 alter table app.conversation add column if not exists usage_event_id uuid;
+-- Failed billing attempts. Maintenance retries the least-tried first and stops
+-- after 20, so a bill that can never land (a missing price, a key conflict)
+-- cannot hold up the others; it stays 'pending' for an operator.
+alter table app.call add column if not exists usage_attempts integer not null default 0;
+alter table app.conversation add column if not exists usage_attempts integer not null default 0;
 do $$ begin
  if not exists(select 1 from pg_constraint where conrelid='app.call'::regclass and conname='call_usage_state_check') then
   alter table app.call add constraint call_usage_state_check check(
@@ -58,7 +63,8 @@ grant create on schema app_private to jomcall_agent_jobs;
 -- Internal. Null when the organization may take a new call ('phone') or a new
 -- WhatsApp conversation ('whatsapp'); otherwise the refusal code. The current
 -- plan period is started or retried first, because nothing else schedules it
--- yet: without a period the plan reports no entitlements. Grace (down to
+-- yet: without a period the plan reports no entitlements. Callers pass the
+-- database clock. Grace (down to
 -- -RM4.99) is still served; unfunded and exhausted are not.
 create or replace function app_private.channel_admission(p_org uuid,p_need text,p_at timestamptz)returns text language plpgsql security definer set search_path='' as $$
 declare e jsonb;w jsonb;begin
@@ -137,7 +143,9 @@ declare body text;hits int;i int;
   return '{}';$o$];
  news text[]:=array[
   $n$v_prev uuid;v_caller text;v_admission text;begin$n$,
-  $n$  v_admission=app_private.channel_admission(n.org_id,'phone',v_at);
+  $n$  -- The database clock, never the agent's `at`: the agent process must not
+  -- choose which plan period is charged or checked.
+  v_admission=app_private.channel_admission(n.org_id,'phone',now());
   if(select calls_suspended_at from app.organization where id=n.org_id)is not null then v_refusal='CALLS_SUSPENDED';$n$,
   $n$  elsif v_admission is not null then v_refusal=v_admission;
   elsif v_caller is not null and(select count(*)from app.call x where x.org_id=n.org_id and x.caller_e164=v_caller$n$,
@@ -147,10 +155,11 @@ declare body text;hits int;i int;
   $n$   where id in(select id from app.call where namespace=p_namespace and state='active' and token_expires_at<=now()limit 100);
   -- Each owed call on its own: one that cannot be billed stays owed and is
   -- retried on the next pass, without holding up the others.
-  for v_prev in select id from app.call where namespace=p_namespace and usage_state='pending' order by ended_at,id limit 100 loop
+  for v_prev in select id from app.call where namespace=p_namespace and usage_state='pending' and usage_attempts<20 order by usage_attempts,ended_at,id limit 100 loop
    begin
     perform app_private.call_bill(v_prev);
    exception when others then
+    update app.call set usage_attempts=usage_attempts+1 where id=v_prev;
     raise warning 'CALL_BILLING_DEFERRED';
    end;
   end loop;
@@ -163,6 +172,7 @@ declare body text;hits int;i int;
   begin
    perform app_private.call_bill(c.id);
   exception when others then
+   update app.call set usage_attempts=usage_attempts+1 where id=c.id;
    raise warning 'CALL_BILLING_DEFERRED';
   end;
   return '{}';$n$];
@@ -212,16 +222,18 @@ declare body text;hits int;i int;
     begin
      perform app_private.conversation_bill(c.id);
     exception when others then
+     update app.conversation set usage_attempts=usage_attempts+1 where id=c.id;
      raise warning 'CONVERSATION_BILLING_DEFERRED';
     end;
    end if;
   elsif v_status in('failed','blocked','unknown')then$n$,
   $n$state<>'pending' and processed_at<now()-interval '7 days' limit 1000);
   for v_id in select x.id from app.conversation x join app.whatsapp_channel h on(h.org_id=x.org_id and h.id=x.channel_id)
-   where h.namespace=p_namespace and x.usage_state='pending' order by x.last_message_at,x.id limit 100 loop
+   where h.namespace=p_namespace and x.usage_state='pending' and x.usage_attempts<20 order by x.usage_attempts,x.last_message_at,x.id limit 100 loop
    begin
     perform app_private.conversation_bill(v_id);
    exception when others then
+    update app.conversation set usage_attempts=usage_attempts+1 where id=v_id;
     raise warning 'CONVERSATION_BILLING_DEFERRED';
    end;
   end loop;

@@ -161,7 +161,7 @@ for (const [name, entitlement] of [
       assert.deepEqual(await f.outbound(c.id), []);
       assert.equal(c.needs_attention, true);
       assert.equal(c.attention_reason, "NO_WHATSAPP_ENTITLEMENT");
-      assert.equal(c.owner, "agent", "the agent resumes once the plan allows it");
+      assert.equal(c.owner, "agent", "not handed to staff for good");
       const turn = (
         await f.h.cleanup.query("select state,error_code from app.conversation_turn where conversation_id=$1", [c.id])
       ).rows;
