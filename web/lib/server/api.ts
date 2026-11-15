@@ -21,6 +21,10 @@ import { tokenHash } from "../../../packages/domain/src/invitation-crypto.ts";
 import { command, audit } from "../../../packages/db/src/receipts.ts";
 import { z } from "zod";
 import { AppError, name, uuid } from "../../../packages/contracts/src/index.ts";
+import {
+  signupAllow,
+  signupAllowed,
+} from "../../../packages/contracts/src/hosting.ts";
 import { requireApp } from "./config.ts";
 import { verifyIdentity } from "./auth.ts";
 import { database } from "./services.ts";
@@ -74,11 +78,18 @@ async function dispatch(request: Request, deps: CoreDeps) {
       ? uuid.parse(request.headers.get("idempotency-key"))
       : "";
     const body = mutation ? await readBody(request) : {};
-    if (path === "/organizations" && method === "POST")
+    if (path === "/organizations" && method === "POST") {
+      // Second layer behind the sign-up gate: an account made some other way
+      // (for example straight against the auth service) still cannot open a
+      // workspace, and so cannot top up, unless its address is on the list.
+      const allow = signupAllow();
+      if (allow && !signupAllowed(allow, identity.confirmedEmail))
+        throw new AppError("WORKSPACE_NOT_ALLOWED", 403);
       return respond(
         await db.bootstrap(identity, body, { idempotencyKey: key }),
         201,
       );
+    }
     if (path === "/invitations/accept" && method === "POST") {
       const value = z
         .object({ token: z.string().regex(/^[a-f0-9]{64}$/) })
