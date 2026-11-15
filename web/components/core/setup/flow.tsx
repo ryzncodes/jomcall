@@ -1,7 +1,8 @@
 "use client";
-// Guided setup: pick a business type, answer up to 8 questions, check one
-// review page, try a call, publish once. The stage comes from server state
-// read when the page opens; answers are kept as the owner moves on.
+// Guided setup: pick a business type, bring a document if there is one,
+// answer up to 8 questions, check one review page, try a call, publish once.
+// The stage comes from server state read when the page opens; answers are
+// kept as the owner moves on.
 import {
   createContext,
   useCallback,
@@ -22,6 +23,9 @@ import { BusinessTypeStage } from "./business-type";
 import { Interview } from "./interview";
 import { Review } from "./review";
 import { FinishStage, LiveStage } from "./finish";
+import { BringStage } from "./bring";
+import { useUploadManager, type UploadManager } from "./upload";
+import { bringFirst, pollDelay, readingNow } from "./rules";
 
 // The pack every agent has; kept here so the client never loads pack data.
 export const BASE_PACK = "every-business";
@@ -92,6 +96,8 @@ type Store = {
   saving: boolean;
   saved: boolean;
   error: unknown;
+  // Files being sent; lives here so sending goes on behind other stages.
+  uploads: UploadManager;
 };
 const StoreContext = createContext<Store>({} as never);
 export const useSetup = () => useContext(StoreContext);
@@ -223,8 +229,8 @@ function SetupLoader() {
   const [data, setData] = useState<Loaded>();
   const [error, setError] = useState<unknown>();
   const [attempt, setAttempt] = useState(0);
-  // Read once when the page opens; no polling, so a background refresh never
-  // moves the owner to another stage while they type.
+  // Read once when the page opens. The stages poll only while a document is
+  // being read, and that never moves the owner to another stage.
   useEffect(() => {
     let alive = true;
     Promise.all([
@@ -299,6 +305,11 @@ function SetupStages({
     queue: SetupQuestionView[];
     total: number;
   }>();
+  // Whether the "bring a document" stage is showing. Decided once from the
+  // view when the page opens or a session starts (an untouched session),
+  // then only by the owner: "Add a document" opens it, Continue closes it.
+  // An upload added on the stage does not move the owner on.
+  const [bringing, setBringing] = useState(() => bringFirst(initial.view));
 
   const setView = useCallback((v: Setup) => {
     latestView.current = v;
@@ -338,6 +349,45 @@ function SetupStages({
     },
     [reload, setView],
   );
+  // A quiet read for polling and after an upload change: no error shown,
+  // and a view older than the latest write is dropped, so the revision the
+  // next write sends never goes back.
+  const refresh = useCallback(async () => {
+    try {
+      const v = await client.execute("setup", { id: agentId });
+      if ((v.session?.revision ?? -1) >= revision.current) setView(v);
+    } catch {
+      // The next poll or action reads again.
+    }
+  }, [client, agentId, setView]);
+  const uploads = useUploadManager({
+    client,
+    agentId,
+    uploads: view.uploads,
+    latest: () => latestView.current,
+    setView,
+    refresh,
+  });
+  // While a document waits for the reader or is being read, the view is
+  // read again (every 3 s for a minute, then every 10 s), only while the
+  // page is visible. A finished read adds items and raises the revision.
+  const reading = !!view.session && readingNow(view.uploads);
+  useEffect(() => {
+    if (!reading) return;
+    const started = Date.now();
+    let alive = true;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (document.visibilityState === "visible") await refresh();
+      if (alive) timer = setTimeout(tick, pollDelay(Date.now() - started));
+    };
+    timer = setTimeout(tick, pollDelay(0));
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [reading, refresh]);
+
   // Waits for writes in flight first: a failed field value goes back to its
   // field and is sent again by its flusher, so nothing typed is lost.
   const flushAll = useCallback(async () => {
@@ -348,13 +398,23 @@ function SetupStages({
   }, [flushers]);
 
   const published = !!workspace.agent.published_version_id;
-  const stage: "type" | "interview" | "add" | "review" | "finish" | "live" =
+  const readerOn = view.reader === "ready";
+  const stage:
+    | "type"
+    | "bring"
+    | "interview"
+    | "add"
+    | "review"
+    | "finish"
+    | "live" =
     override === "type"
       ? "type"
       : view.session
         ? adding
           ? "add"
-          : interviewing || view.questions.length
+          : bringing && readerOn
+            ? "bring"
+            : interviewing || view.questions.length
             ? "interview"
             : "review"
         : override === "live"
@@ -388,7 +448,15 @@ function SetupStages({
     saving: inFlight > 0,
     saved,
     error,
+    uploads,
   };
+  // "Add a document" on the interview and review pages: answers typed so
+  // far are sent first.
+  const openBring = readerOn
+    ? async () => {
+        if (await flushAll()) setBringing(true);
+      }
+    : undefined;
 
   return (
     <StoreContext.Provider value={store}>
@@ -399,6 +467,7 @@ function SetupStages({
           onStarted={(v) => {
             setView(v);
             setOverride(null);
+            setBringing(bringFirst(v));
             setInterviewing(false);
             setInterviewKey((k) => k + 1);
           }}
@@ -410,12 +479,24 @@ function SetupStages({
                 : undefined
           }
         />
+      ) : stage === "bring" ? (
+        <BringStage
+          onBack={() => setOverride("type")}
+          onContinue={() => {
+            // A fresh interview queue: reads may have answered questions,
+            // and the owner may have come here in the middle of it.
+            setBringing(false);
+            setInterviewing(false);
+            setInterviewKey((k) => k + 1);
+          }}
+        />
       ) : stage === "interview" ? (
         snapshot && interviewing ? (
           <Interview
             key={interviewKey}
             queue={snapshot.queue}
             total={snapshot.total}
+            onBring={openBring}
             onBack={() => setOverride("type")}
             onDone={() => {
               setInterviewing(false);
@@ -441,6 +522,7 @@ function SetupStages({
           choices={choices}
           onChoice={(id, c) => setChoices((s) => ({ ...s, [id]: c }))}
           onAdd={(q) => setAdding(q)}
+          onBring={openBring}
           onDismiss={(id) => setDismissed((d) => [...d, id])}
           onApplied={() => {
             setView({ ...view, session: null, questions: [], finish: true });

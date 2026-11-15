@@ -251,12 +251,15 @@ export function WordsEditor({
 export function Interview({
   queue,
   total,
+  onBring,
   onBack,
   onDone,
 }: {
   queue: SetupQuestionView[];
   // Null for a single "still missing" fact added from the review page.
   total: number | null;
+  // Opens the "bring a document" stage; absent when reading is off.
+  onBring?: () => void;
   onBack: () => void;
   onDone: (skipped?: boolean) => void;
 }) {
@@ -288,6 +291,11 @@ export function Interview({
             <span key={i} data-done={i < answeredBefore + pos} />
           ))}
         </div>
+      )}
+      {onBring && (
+        <button type="button" className="setup-link" onClick={onBring}>
+          {w("Add a document", "Tambah dokumen")}
+        </button>
       )}
       <QuestionScreen
         key={q.id}

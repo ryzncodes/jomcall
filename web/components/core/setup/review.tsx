@@ -53,6 +53,7 @@ export function Review({
   choices,
   onChoice,
   onAdd,
+  onBring,
   onDismiss,
   onApplied,
 }: {
@@ -62,6 +63,8 @@ export function Review({
   choices: Record<string, Choice>;
   onChoice: (itemId: string, choice: Choice) => void;
   onAdd: (q: SetupQuestionView) => void;
+  // Opens the "bring a document" stage; absent when reading is off.
+  onBring?: () => void;
   onDismiss: (id: string) => void;
   onApplied: () => void;
 }) {
@@ -180,6 +183,11 @@ export function Review({
             "Betulkan apa-apa yang salah. Jawapan disimpan apabila anda sahkan di bawah. Pemanggil mendengarnya selepas anda terbitkan; waktu operasi terus digunakan untuk tempahan.",
           )}
         </p>
+        {onBring && (
+          <button type="button" className="setup-link" onClick={onBring}>
+            {w("Add a document", "Tambah dokumen")}
+          </button>
+        )}
       </header>
       <div className="setup-body">
         {hours && (

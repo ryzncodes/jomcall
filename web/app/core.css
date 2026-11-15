@@ -1367,6 +1367,81 @@
 [data-theme="dark"] .setup-day-open input {
   accent-color: var(--accent);
 }
+/* Bring a document: the file button is a label around a real file input,
+   which stays focusable and clickable but invisible. */
+.setup-file {
+  position: relative;
+  gap: 10px;
+  min-height: 52px;
+  border-radius: 10px;
+  font-size: 15px;
+  cursor: pointer;
+  justify-self: stretch;
+}
+.setup-file-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.setup-file:has(.setup-file-input:focus-visible) {
+  outline: 3px solid #708b50;
+  outline-offset: 3px;
+}
+.setup-file[data-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+.setup-file[data-disabled="true"] .setup-file-input {
+  cursor: not-allowed;
+}
+.setup-upload-notice {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+.setup-paste {
+  display: grid;
+  gap: 8px;
+}
+.setup-paste > .button {
+  justify-self: start;
+}
+.setup-upload .setup-card-row > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+.setup-upload-name {
+  margin: 0;
+  font-weight: 600;
+}
+.setup-upload .setup-card-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.setup-confirm {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+.setup-confirm .setup-card-actions {
+  justify-content: flex-start;
+}
+@media (max-width: 420px) {
+  .setup-upload .setup-card-row {
+    flex-direction: column;
+  }
+  .setup-upload .setup-card-actions {
+    justify-content: flex-start;
+  }
+}
+
 /* Headings receive focus after a step change; they are not controls. */
 .setup-flow [tabindex="-1"]:focus,
 .setup-finish [tabindex="-1"]:focus {

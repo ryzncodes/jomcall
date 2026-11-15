@@ -51,11 +51,9 @@ export class HttpCoreClient implements CoreClient {
       }),
     );
   }
-  async execute<K extends Command>(
-    command: K,
-    input: Input<K>,
-    key?: string,
-  ): Promise<Output<K>> {
+  // The command's path with its fields filled in; the fields left over are
+  // the query or body.
+  private route<K extends Command>(command: K, input: Input<K>) {
     const def = commands[command],
       value = { ...def.input.parse(input) } as Record<string, unknown>;
     const path = def.path.replace(/:([a-zA-Z]+)/g, (_, field: string) => {
@@ -63,11 +61,20 @@ export class HttpCoreClient implements CoreClient {
       delete value[field];
       return encodeURIComponent(v);
     });
-    const headers: Record<string, string> = {
-      ...(this.options.orgId
-        ? { "x-organization-id": this.options.orgId }
-        : {}),
-    };
+    return { def, path, value };
+  }
+  private orgHeader(): Record<string, string> {
+    return this.options.orgId
+      ? { "x-organization-id": this.options.orgId }
+      : {};
+  }
+  async execute<K extends Command>(
+    command: K,
+    input: Input<K>,
+    key?: string,
+  ): Promise<Output<K>> {
+    const { def, path, value } = this.route(command, input);
+    const headers: Record<string, string> = this.orgHeader();
     let url = "/api/v1" + path,
       body: string | undefined;
     const operation =
@@ -99,6 +106,50 @@ export class HttpCoreClient implements CoreClient {
     if (operation && this.pending.get(operation) === headers["idempotency-key"])
       this.pending.delete(operation);
     return result;
+  }
+  // A setup upload chunk: the body is raw bytes, not JSON. Same CSRF token,
+  // organization and idempotency rules as execute. The key belongs to the
+  // upload id and seq: a chunk sent again after a failure or a lost answer
+  // carries the same key until one send is acknowledged.
+  async putChunk(
+    input: Input<"putSetupUploadChunk">,
+    bytes: Blob,
+  ): Promise<Output<"putSetupUploadChunk">> {
+    const { path } = this.route("putSetupUploadChunk", input);
+    const operation = "putSetupUploadChunk:" + path;
+    if (!this.pending.has(operation))
+      this.pending.set(operation, crypto.randomUUID());
+    const key = this.pending.get(operation)!;
+    const result = await this.decode(
+      await this.fetcher("/api/v1" + path, {
+        method: "PUT",
+        headers: {
+          ...this.orgHeader(),
+          "content-type": "application/octet-stream",
+          "x-csrf-token": await this.csrf(),
+          "idempotency-key": key,
+        },
+        body: bytes,
+        credentials: "same-origin",
+        cache: "no-store",
+      }),
+    );
+    if (this.pending.get(operation) === key) this.pending.delete(operation);
+    return result;
+  }
+  // One stored chunk's raw bytes (the review page's preview).
+  async getChunk(input: Input<"setupUploadChunk">): Promise<Uint8Array> {
+    const { path } = this.route("setupUploadChunk", input);
+    const r = await this.fetcher("/api/v1" + path, {
+      headers: this.orgHeader(),
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (!r.ok) {
+      await this.decode(r);
+      throw new CoreError("REQUEST_FAILED", r.status);
+    }
+    return new Uint8Array(await r.arrayBuffer());
   }
   async download(id: string) {
     const r = await this.fetcher(

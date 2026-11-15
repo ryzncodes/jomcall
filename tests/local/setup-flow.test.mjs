@@ -11,6 +11,8 @@ const expected = [
   "interview.tsx",
   "review.tsx",
   "finish.tsx",
+  "bring.tsx",
+  "upload.ts",
 ];
 const sources = () =>
   readdirSync(dir)
@@ -159,4 +161,79 @@ test("workspace creation keeps the owner's own words for Something else", () => 
   assert.match(tag, /maxLength=\{80\}/);
   const setup = readFileSync(join(dir, "business-type.tsx"), "utf8");
   assert.match(setup, /typeIdForSaved\(/);
+});
+
+test("the bring stage shows the notice in both languages above the file button", () => {
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  const en =
+    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. Files are deleted after 30 days, and you can delete one now with Remove.";
+  const ms =
+    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail dipadam selepas 30 hari, dan anda boleh memadamnya sekarang dengan Buang.";
+  assert.ok(bring.includes(en), "English notice");
+  assert.ok(bring.includes(ms), "BM notice");
+  // Not hidden behind a condition: it comes before the file input.
+  assert.ok(bring.indexOf(en) < bring.indexOf('type="file"'));
+  assert.doesNotMatch(bring.slice(bring.lastIndexOf("{", bring.indexOf(en)), bring.indexOf(en)), /&&|\?/);
+});
+
+test("the file input is a real labelled control, offers the camera through the picker, and never Excel", () => {
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  const at = bring.indexOf('type="file"');
+  const label = bring.lastIndexOf("<label", at);
+  assert.ok(label >= 0 && bring.indexOf("</label>", at) > at, "input inside a label");
+  const tag = bring.slice(bring.lastIndexOf("<input", at), bring.indexOf("/>", at));
+  assert.match(tag, /accept=\{ACCEPT\}/);
+  assert.doesNotMatch(tag, /capture/);
+  assert.match(bring, /aria-live="polite"/);
+  assert.match(bring, /role="alert"/);
+});
+
+test("bring.tsx and upload.ts use only named commands and the two raw client calls", () => {
+  const allowed = new Set([
+    "createSetupUpload",
+    "finishSetupUpload",
+    "pasteSetupText",
+    "removeSetupUpload",
+    "setup",
+  ]);
+  for (const f of ["bring.tsx", "upload.ts"]) {
+    const text = readFileSync(join(dir, f), "utf8");
+    assert.doesNotMatch(text, /\bfetch\(|XMLHttpRequest|\/api\//, f);
+    for (const m of text.matchAll(/\bclient\.(\w+)\(/g))
+      assert.ok(["execute", "putChunk", "getChunk"].includes(m[1]), `${f}: client.${m[1]}`);
+    for (const m of text.matchAll(/\bexecute\(\s*([^,\s)]+)/g))
+      assert.ok(allowed.has(m[1].replace(/["']/g, "")), `${f}: execute(${m[1]})`);
+  }
+  const client = readFileSync("web/lib/core/client.ts", "utf8");
+  assert.match(client, /async putChunk\(/);
+  assert.match(client, /async getChunk\(/);
+  assert.match(client, /"content-type": "application\/octet-stream"/);
+});
+
+test("no setup file says local or this computer outside a HOSTED check", () => {
+  for (const { file, text } of sources())
+    text.split("\n").forEach((line, n) => {
+      if (/\blocal\b|setempat|this computer|komputer ini/i.test(line) && !/^\s*\/\//.test(line)) {
+        // Allowed only inside a HOSTED ? ... : ... choice (on the line or
+        // within the few lines before it).
+        const near = text.split("\n").slice(Math.max(0, n - 3), n + 1).join("\n");
+        assert.match(near, /HOSTED/, `${file}:${n + 1}`);
+      }
+    });
+});
+
+test("the flow opens the bring stage only with reading on, and links to it from interview and review", () => {
+  const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
+  assert.match(flow, /useState\(\(\) => bringFirst\(initial\.view\)\)/);
+  assert.match(flow, /setBringing\(bringFirst\(v\)\)/);
+  assert.match(flow, /bringing && readerOn/);
+  assert.match(flow, /const openBring = readerOn/);
+  assert.match(flow, /readingNow\(view\.uploads\)/);
+  assert.match(flow, /document\.visibilityState === "visible"/);
+  assert.match(flow, /pollDelay\(/);
+  for (const f of ["interview.tsx", "review.tsx"]) {
+    const text = readFileSync(join(dir, f), "utf8");
+    assert.match(text, /\{onBring && \(/, f);
+    assert.ok(text.includes('w("Add a document", "Tambah dokumen")'), f);
+  }
 });
