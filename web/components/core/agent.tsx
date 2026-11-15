@@ -12,6 +12,8 @@ import { useExperience } from "../experience";
 import { Field } from "./field";
 import { GreetingField } from "./agent-fields";
 import { KnowledgeCoreEditor } from "./knowledge-core";
+import { VoicePicker } from "./voice-picker";
+import { voiceFor } from "../../../packages/contracts/src/voices";
 import {
   useCore,
   useWords,
@@ -258,7 +260,12 @@ function AgentEditor({ initial }: { initial: Agent }) {
                   client.execute("saveDraft", {
                     id: initial.id,
                     expectedRevision: revision,
-                    settings,
+                    // An old free-text or empty voice is saved as the voice
+                    // the picker shows (the default), as its note says.
+                    settings: {
+                      ...settings,
+                      voicePreference: voiceFor(settings.voicePreference),
+                    },
                   }),
                 );
                 if (r) accept(r);
@@ -359,21 +366,10 @@ function AgentEditor({ initial }: { initial: Agent }) {
                     />
                   </Field>
                 )}
-                <Field
-                  label={w("Voice preference", "Pilihan suara")}
-                  hint={w(
-                    "Preference only. No speech provider is connected.",
-                    "Pilihan sahaja. Tiada penyedia suara disambungkan.",
-                  )}
-                >
-                  <input
-                    maxLength={120}
-                    value={settings.voicePreference}
-                    onChange={(e) =>
-                      change({ voicePreference: e.target.value })
-                    }
-                  />
-                </Field>
+                <VoicePicker
+                  value={settings.voicePreference}
+                  onChange={(voicePreference) => change({ voicePreference })}
+                />
                 <button className="button button-dark">
                   {w("Save draft", "Simpan draf")}
                 </button>

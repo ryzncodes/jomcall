@@ -58,6 +58,15 @@ like the agent's 54633, so stop the worker before `npm run local:start` (preflig
   stops on a 429 and says how many lines remain. Cache: `voice/.cache/<preset>/`, gitignored.
   The call opening (greeting + disclosure) is the one line synthesized at call time; it is
   cached by model + preset + text, so a repeat call with the same text costs no request.
+- **Voice picker samples.** `npm run voice:samples -- --paid` records the Agent builder's
+  sample clips: one per preset (`PRESETS` in `worker.py`, kept equal to `VOICE_PRESETS` in
+  `packages/contracts/src/voices.ts` by `tests/local/voice-picker.test.mjs`) per language
+  (English and Bahasa Melayu), ten requests in all, spaced like prewarm. It sends only two
+  fixed greetings with no business or caller text and costs a few cents; without `--paid`, or
+  without `GOOGLE_CLOUD_API_KEY` (read from `.env.hosted`), it refuses and calls nothing.
+  Output: `web/public/voice-samples/<voice>-<lang>.m4a` (AAC through macOS `afconvert`; 16-bit
+  WAV when that tool is missing) and `web/lib/voice-samples.json`, the list the picker reads.
+  Resumable: existing clips are kept unless `--force`. A voice with no clip shows no Play button.
 - **Barge-in** needs words: only a non-empty interim transcript while the agent is speaking
   interrupts it. Raw voice-activity detection alone does nothing, so noise or echo cannot
   abort a turn or spend one of the session's turns.

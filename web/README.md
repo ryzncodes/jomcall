@@ -46,6 +46,10 @@ The dev/start scripts bind to localhost. No environment variables or backend acc
 
 The sidebar hides Phone numbers, WhatsApp and Integrations until each is connected. Guided setup leaves the sidebar once the agent is published, except while the owner is on it.
 
+## Voice picker (local and hosted apps)
+
+The Agent builder's Voice field is a single-choice list of the five spoken voices in `packages/contracts/src/voices.ts` (`VOICE_PRESETS`, the same list the browser voice test, the phone line and the Python worker use). Each shows Google's own description and gender. Saving stores the exact voice name in `voicePreference`; a saved value that is not a voice name (old free text or empty) shows the default voice selected with a note, and is replaced by the selected voice on the next save. Play buttons stream pre-recorded clips from `web/public/voice-samples/` in the page's language, one at a time, with a plain audio element: no model call and no microphone. Clips are recorded with `npm run voice:samples -- --paid` (see `voice/README.md`); a voice without a clip has no Play button. The mock preview keeps its own setup voice styles and does not use this picker.
+
 ## Preview boundaries
 
 Setup persists in this browser under `jomcall-preview-setup-v1`. Malformed drafts recover to defaults; unavailable storage shows a warning. Clear that key to reset the preview. Use fictional information only. Contacts, inbox, call log, consent and bookings share persistent browser-local records. Export downloads sample JSON.

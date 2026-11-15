@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-11-15 — voice picker in the Agent builder
+
+Branch `claude/voice-picker-ec26d4`.
+
+**Changed**
+- `packages/contracts/src/voices.ts`: the one voice list (`VOICE_PRESETS`), Google's descriptions, `presetVoice` and `voiceFor`. The domain re-exports it; `engine/` is unchanged.
+- `web/components/core/voice-picker.tsx`: radio cards with Play/Stop, used by `web/components/core/agent.tsx`. The wrong "No speech provider is connected" hint is gone. Saving stores the exact voice name; old free text shows the default with a note and is replaced on the next save.
+- `voice/jomcall_voice/samples.py` and `npm run voice:samples -- --paid`: records the ten clips into `web/public/voice-samples/` and writes `web/lib/voice-samples.json`.
+- Tests: `tests/domain/voices.test.ts`, `tests/local/voice-picker.test.mjs` (TypeScript and Python lists equal, both languages, no "local" wording, hint gone, clip list matches files), `voice/tests/test_samples.py`.
+
+**Verified**
+- See the pull request body for the check counts.
+- Browser, local app on port 4183 with a fake workspace: desktop and 375 px, English and BM, dark theme; Play/Stop and one-at-a-time with temporary synthetic tone clips (removed before commit); saving Charon and reloading keeps Charon.
+
+**Not verified**
+- No real clips exist: this checkout has no `.env.hosted`, so `voice:samples` was not run. Owner step: `npm run voice:samples -- --paid`, listen, commit the clips.
+- No voice test was started (needs the hosted keys), so the chosen voice reaching a live call was not heard; it is covered by the existing test in `tests/api/voice-tests.test.ts`.
+- The old-free-text note was not seen in a browser (covered by unit tests only). Accessibility with a screen reader not checked. No person has used the picker.
+
 ## 2026-11-15 — guided setup flow (interview door)
 
 Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/specs/2026-11-14-setup-flow-design.md`, dated note at the end.
