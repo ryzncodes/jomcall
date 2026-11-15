@@ -1397,8 +1397,13 @@
 .wa-placeholder {
   display: none;
 }
-.wa-empty svg {
+.wa-empty svg,
+.wa-placeholder svg {
+  display: block;
   color: var(--secondary);
+}
+.wa-placeholder svg {
+  margin: 0 auto 8px;
 }
 .wa-count {
   margin: 0;

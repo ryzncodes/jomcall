@@ -143,8 +143,8 @@ function outlookWords(o: ReplyOutlook): Pair {
       "Pelanggan telah menarik diri di WhatsApp. Tiada mesej lagi boleh dihantar.",
     ],
     WINDOW_CLOSED: [
-      "More than 24 hours since the customer last wrote. WhatsApp allows only approved templates now, and this business has no approved reply-request template. Add one in WhatsApp settings.",
-      "Lebih 24 jam sejak pelanggan kali terakhir menulis. WhatsApp hanya membenarkan templat yang diluluskan, dan perniagaan ini tiada templat minta-balas yang diluluskan. Tambah satu dalam tetapan WhatsApp.",
+      "More than 24 hours since the customer last wrote. WhatsApp allows only approved templates now, and this business has no approved reply-request template. An owner or admin can add one in WhatsApp settings.",
+      "Lebih 24 jam sejak pelanggan kali terakhir menulis. WhatsApp hanya membenarkan templat yang diluluskan, dan perniagaan ini tiada templat minta-balas yang diluluskan. Pemilik atau pentadbir boleh menambahnya dalam tetapan WhatsApp.",
     ],
     CONSENT_REQUIRED: [
       "More than 24 hours since the customer last wrote. The reply-request template needs the customer's recorded consent for service messages, and none is recorded. Record it on the contact if the customer gave it.",
@@ -622,7 +622,7 @@ function ConversationView({
                 disabled={!detail.reply_outlook.allow}
                 onChange={(e) => setDraft(e.target.value)}
               />
-              {detail.owner === "agent" && (
+              {detail.owner === "agent" && detail.reply_outlook.allow && (
                 <small>
                   {w(
                     "Sending takes this chat over from the agent.",
