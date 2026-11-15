@@ -17,7 +17,8 @@ from .voice_out import Voice
 
 log = logging.getLogger("jomcall_voice.worker")
 
-# Keep in step with VOICE_PRESETS in packages/domain/src/agent-test/voice-session.ts.
+# Keep in step with VOICE_PRESETS in packages/contracts/src/voices.ts
+# (tests/local/voice-picker.test.mjs checks the two lists are equal).
 PRESETS = ("Kore", "Sulafat", "Leda", "Achird", "Charon")
 FRAME_SAMPLES = config.TTS_SAMPLE_RATE // 50  # 20 ms
 FRAME_BYTES = FRAME_SAMPLES * 2

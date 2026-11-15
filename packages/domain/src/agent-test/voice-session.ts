@@ -10,20 +10,18 @@ import {
   voiceStart,
   type VoiceStartResult,
 } from "../../../contracts/src/agent-test.ts";
+import {
+  VOICE_PRESETS,
+  voiceFor,
+} from "../../../contracts/src/voices.ts";
 import { voiceConfig } from "../../../inference/src/provider.ts";
 import { audit } from "../../../db/src/receipts.ts";
 import { manager } from "../authorization.ts";
 import { loadSession } from "./sessions.ts";
 
-// The only list of spoken voices a business may pick. These five passed the
-// owner's listening test. Anything else falls back to the first.
-export const VOICE_PRESETS = [
-  "Kore",
-  "Sulafat",
-  "Leda",
-  "Achird",
-  "Charon",
-] as const;
+// The voice list lives in contracts so the web app's picker can import it.
+// Re-exported here for the engine and tests that already import it from here.
+export { VOICE_PRESETS };
 export const VOICE_AGENT_NAME = "jomcall-voice";
 const VOICE_SECONDS = 300;
 
@@ -78,8 +76,7 @@ export async function startVoiceTest(
   const text = (x: unknown) => (typeof x === "string" ? x : "");
   const disclosure = text(settings.aiDisclosure).trim();
   if (!disclosure) throw new AppError("DISCLOSURE_REQUIRED", 422);
-  const preference = text(settings.voicePreference);
-  const voice = VOICE_PRESETS.find((p) => p === preference) ?? VOICE_PRESETS[0];
+  const voice = voiceFor(settings.voicePreference);
   // Hex fits the token pattern the voice endpoint accepts. Only its SHA-256
   // is stored; the plain value goes to the worker in the dispatch metadata.
   const voiceToken = randomBytes(32).toString("hex");

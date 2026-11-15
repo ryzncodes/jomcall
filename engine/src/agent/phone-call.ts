@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { executeCoreTool } from "../../../packages/domain/src/knowledge/tools.ts";
 import { executeTestTool } from "../../../packages/domain/src/agent-test/tools.ts";
 import { toolCallSchema } from "../../../packages/contracts/src/agent-test.ts";
-import { VOICE_PRESETS } from "../../../packages/domain/src/agent-test/voice-session.ts";
+import { voiceFor } from "../../../packages/contracts/src/voices.ts";
 import { toE164 } from "../../../packages/domain/src/phone/numbers.ts";
 import type { Telephony } from "../../../packages/domain/src/phone/telephony.ts";
 import type { CallRepository } from "./call-repository.ts";
@@ -79,7 +79,7 @@ export async function startPhoneCall(
     return { callId: result.callId, refusal: result.refusal, busyLine: BUSY_LINE.has(result.refusal) };
   const settings = result.settings ?? {};
   const text = (x: unknown) => (typeof x === "string" ? x.trim() : "");
-  const voice = VOICE_PRESETS.find((p) => p === settings.voicePreference) ?? VOICE_PRESETS[0];
+  const voice = voiceFor(settings.voicePreference);
   return {
     callId: result.callId,
     token,
