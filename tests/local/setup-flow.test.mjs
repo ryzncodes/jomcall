@@ -163,29 +163,67 @@ test("workspace creation keeps the owner's own words for Something else", () => 
   assert.match(setup, /typeIdForSaved\(/);
 });
 
-test("the bring stage shows the notice in both languages above the file button", () => {
+test("the bring stage shows the notice in both languages, unconditionally, above the file buttons", () => {
   const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
   const en =
-    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. Files are deleted after 30 days, and you can delete one now with Remove.";
+    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. Files and pasted text are deleted after 30 days. You can also delete one now with the Remove button while setup is open.";
   const ms =
-    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail dipadam selepas 30 hari, dan anda boleh memadamnya sekarang dengan Buang.";
+    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail dan teks yang ditampal dipadam selepas 30 hari. Anda juga boleh memadamnya sekarang dengan butang Buang semasa persediaan masih dibuka.";
   assert.ok(bring.includes(en), "English notice");
   assert.ok(bring.includes(ms), "BM notice");
-  // Not hidden behind a condition: it comes before the file input.
-  assert.ok(bring.indexOf(en) < bring.indexOf('type="file"'));
-  assert.doesNotMatch(bring.slice(bring.lastIndexOf("{", bring.indexOf(en)), bring.indexOf(en)), /&&|\?/);
+  // The notice paragraph is the first thing directly inside .setup-body:
+  // nothing (no condition, no expression) between that element's opening
+  // and the paragraph, and the paragraph's own content is the icon and the
+  // w( call only.
+  const body = bring.indexOf('<div className="setup-body">');
+  assert.ok(body >= 0, "setup-body");
+  const open = body + '<div className="setup-body">'.length;
+  const notice = bring.indexOf("<p", open);
+  assert.equal(bring.slice(open, notice).trim(), "", "nothing before the notice");
+  const close = bring.indexOf("</p>", notice);
+  const para = bring.slice(notice, close);
+  assert.ok(para.includes(en) && para.includes(ms), "notice inside the paragraph");
+  assert.doesNotMatch(para.replace(en, "").replace(ms, ""), /&&|\?/);
+  assert.ok(close < bring.indexOf('type="file"'), "before the file buttons");
 });
 
-test("the file input is a real labelled control, offers the camera through the picker, and never Excel", () => {
+test("two real labelled file controls: a photo one (image/*) and a general one; no capture, never Excel", () => {
   const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
-  const at = bring.indexOf('type="file"');
-  const label = bring.lastIndexOf("<label", at);
-  assert.ok(label >= 0 && bring.indexOf("</label>", at) > at, "input inside a label");
-  const tag = bring.slice(bring.lastIndexOf("<input", at), bring.indexOf("/>", at));
-  assert.match(tag, /accept=\{ACCEPT\}/);
-  assert.doesNotMatch(tag, /capture/);
-  assert.match(bring, /aria-live="polite"/);
+  const inputs = [...bring.matchAll(/type="file"/g)].map((m) => m.index);
+  assert.equal(inputs.length, 2);
+  const tags = inputs.map((at) => {
+    assert.ok(bring.lastIndexOf("<label", at) > bring.lastIndexOf("</label>", at), "inside a label");
+    return bring.slice(bring.lastIndexOf("<input", at), bring.indexOf("/>", at));
+  });
+  assert.match(tags[0], /accept="image\/\*"/);
+  assert.match(tags[1], /accept=\{ACCEPT\}/);
+  for (const t of tags) {
+    assert.doesNotMatch(t, /capture/);
+    assert.match(t, /onChange=\{pick\}/);
+  }
+  // One status line announces changes; the list itself is not live.
+  assert.equal([...bring.matchAll(/aria-live="polite"/g)].length, 1);
+  assert.match(bring, /role="status" aria-live="polite"/);
+  assert.doesNotMatch(bring, /<ul[^>]*aria-live/);
   assert.match(bring, /role="alert"/);
+  // Retry and Remove name the file.
+  assert.match(bring, /`Retry \$\{r\.name\}`/);
+  assert.match(bring, /`Remove \$\{r\.name\}`/);
+});
+
+test("the remove confirmation says confirmed and edited prices stay", () => {
+  const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
+  assert.ok(
+    bring.includes(
+      "Remove this file? Prices and details read from it are removed too, except ones you confirmed. A price you edited counts as confirmed and stays.",
+    ),
+  );
+  assert.ok(
+    bring.includes(
+      "Buang fail ini? Harga dan butiran yang dibaca daripadanya turut dibuang, kecuali yang sudah anda sahkan. Harga yang anda ubah dikira sudah disahkan dan kekal.",
+    ),
+  );
+  assert.doesNotMatch(bring, /corrections you made to its prices are discarded/);
 });
 
 test("bring.tsx and upload.ts use only named commands and the two raw client calls", () => {
@@ -228,7 +266,9 @@ test("the flow opens the bring stage only with reading on, and links to it from 
   assert.match(flow, /setBringing\(bringFirst\(v\)\)/);
   assert.match(flow, /bringing && readerOn/);
   assert.match(flow, /const openBring = readerOn/);
-  assert.match(flow, /readingNow\(view\.uploads\)/);
+  assert.match(flow, /readingNow\(view\.uploads, now\)/);
+  assert.match(flow, /onlyReadProgress\(before, latestView\.current\)/);
+  assert.match(flow, /bringVia === "link" \? leaveBring/);
   assert.match(flow, /document\.visibilityState === "visible"/);
   assert.match(flow, /pollDelay\(/);
   for (const f of ["interview.tsx", "review.tsx"]) {

@@ -118,3 +118,46 @@ test("a setup upload chunk is read back as bytes; an error stays a CoreError", a
     (e: unknown) => e instanceof CoreError && e.code === "NOT_FOUND" && e.status === 404,
   );
 });
+test("a non-JSON error body (a proxy's HTML page) is a failed request with its status, not offline", async () => {
+  for (const status of [413, 502]) {
+    const client = new HttpCoreClient({
+      orgId: "org-1",
+      fetch: async (url) =>
+        String(url) === "/api/auth/csrf"
+          ? Response.json({ ok: true, data: { token: "csrf-1" } })
+          : new Response("<html><body>Bad gateway</body></html>", {
+              status,
+              headers: { "content-type": "text/html" },
+            }),
+    });
+    const input = { id: agent, uploadId: upload, seq: 0 };
+    for (const call of [
+      () => client.putChunk(input, new Blob([new Uint8Array([1])])),
+      () => client.getChunk(input),
+      () => client.execute("setup", { id: agent }),
+    ])
+      await assert.rejects(
+        call(),
+        (e: unknown) =>
+          e instanceof CoreError && e.code === "REQUEST_FAILED" && e.status === status,
+      );
+  }
+});
+test("a chunk PUT passes its abort signal to the request", async () => {
+  const controller = new AbortController();
+  let seen: AbortSignal | null | undefined;
+  const client = new HttpCoreClient({
+    fetch: async (url, init) => {
+      if (String(url) === "/api/auth/csrf")
+        return Response.json({ ok: true, data: { token: "csrf-1" } });
+      seen = init?.signal;
+      return Response.json({ ok: true, data: { received: 1 } });
+    },
+  });
+  await client.putChunk(
+    { id: agent, uploadId: upload, seq: 0 },
+    new Blob([new Uint8Array([1])]),
+    controller.signal,
+  );
+  assert.equal(seen, controller.signal);
+});

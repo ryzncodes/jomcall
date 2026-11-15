@@ -25,7 +25,14 @@ import { Review } from "./review";
 import { FinishStage, LiveStage } from "./finish";
 import { BringStage } from "./bring";
 import { useUploadManager, type UploadManager } from "./upload";
-import { bringFirst, mergeUploads, pollDelay, readingNow } from "./rules";
+import {
+  bringFirst,
+  mergeUploads,
+  onlyReadProgress,
+  pollDelay,
+  readingNow,
+  type KnownUpload,
+} from "./rules";
 import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
 
 // The pack every agent has; kept here so the client never loads pack data.
@@ -83,7 +90,9 @@ export function frozenTotal(view: Setup): number {
 type Store = {
   agentId: string;
   view: Setup;
-  setView: (v: Setup) => void;
+  // `at` is the request counter taken when the view was asked for; left
+  // out, the view counts as the newest.
+  setView: (v: Setup, at?: number) => void;
   // The latest view, also after an await inside a handler.
   latest: () => Setup;
   reload: () => Promise<Setup | undefined>;
@@ -99,6 +108,8 @@ type Store = {
   error: unknown;
   // Files being sent; lives here so sending goes on behind other stages.
   uploads: UploadManager;
+  // The clock the upload labels read (moved on by each poll).
+  now: number;
 };
 const StoreContext = createContext<Store>({} as never);
 export const useSetup = () => useContext(StoreContext);
@@ -311,41 +322,59 @@ function SetupStages({
   // then only by the owner: "Add a document" opens it, Continue closes it.
   // An upload added on the stage does not move the owner on.
   const [bringing, setBringing] = useState(() => bringFirst(initial.view));
+  // How the owner reached it: Back returns to the interview or review when
+  // they came through "Add a document", else to the business type.
+  const [bringVia, setBringVia] = useState<"start" | "link">("start");
 
-  // Uploads this browser just changed, kept over any older view (see
-  // mergeUploads); scoped to one session.
-  const held = useRef<{
+  // Every view request takes a number from this counter, and so does every
+  // upload change this browser makes, so mergeUploads can tell an older
+  // answer from a newer one.
+  const requests = useRef(0);
+  // The latest view as the server sent it, before merging.
+  const raw = useRef<{ view: Setup; at: number }>({ view: initial.view, at: 0 });
+  // What is known about each upload of the open session (see mergeUploads).
+  const known = useRef<{
     session: string | null;
-    uploads: Map<string, SetupUpload | "removed">;
+    uploads: Map<string, KnownUpload>;
   }>({ session: null, uploads: new Map() });
-  const setView = useCallback((next: Setup) => {
+  const show = useCallback((next: Setup, at: number) => {
     let v = next;
     if (v.session) {
-      if (held.current.session !== v.session.id)
-        held.current = { session: v.session.id, uploads: new Map() };
-      const merged = mergeUploads(v.uploads, held.current.uploads);
-      held.current.uploads = merged.held;
+      if (known.current.session !== v.session.id)
+        known.current = { session: v.session.id, uploads: new Map() };
+      const merged = mergeUploads(v.uploads, at, known.current.uploads);
+      known.current.uploads = merged.known;
       v = { ...v, uploads: merged.uploads };
     }
     latestView.current = v;
     setViewState(v);
     if (v.session) revision.current = v.session.revision;
   }, []);
+  const setView = useCallback(
+    (next: Setup, at = ++requests.current) => {
+      raw.current = { view: next, at };
+      show(next, at);
+    },
+    [show],
+  );
+  // An upload this browser just changed: merged again against the latest
+  // server view (not the merged one), counted as newer than it.
   const holdUpload = useCallback(
     (id: string, upload: SetupUpload | "removed") => {
-      const v = latestView.current;
+      const { view: v, at } = raw.current;
       if (!v.session) return;
-      if (held.current.session !== v.session.id)
-        held.current = { session: v.session.id, uploads: new Map() };
-      held.current.uploads.set(id, upload);
-      setView(v);
+      if (known.current.session !== v.session.id)
+        known.current = { session: v.session.id, uploads: new Map() };
+      known.current.uploads.set(id, { upload, at: ++requests.current });
+      show(v, at);
     },
-    [setView],
+    [show],
   );
   const reload = useCallback(async () => {
+    const at = ++requests.current;
     try {
       const v = await client.execute("setup", { id: agentId });
-      setView(v);
+      setView(v, at);
       return v;
     } catch (e) {
       setError(e);
@@ -357,14 +386,34 @@ function SetupStages({
       const next = chain.current.then(async () => {
         setInFlight((n) => n + 1);
         setError(undefined);
-        try {
-          setView(await fn(revision.current));
+        const attempt = async () => {
+          const at = ++requests.current;
+          setView(await fn(revision.current), at);
           setSaved(true);
           return true;
+        };
+        try {
+          return await attempt();
         } catch (e) {
           setSaved(false);
-          if (e instanceof CoreError && e.code === "CONFLICT") await reload();
-          setError(e);
+          let failure = e;
+          if (e instanceof CoreError && e.code === "CONFLICT") {
+            // A document finishing its read raises the revision too. When
+            // that is all that changed, the save goes again once, quietly,
+            // with the fresh revision.
+            const before = latestView.current;
+            const fresh = await reload();
+            if (fresh && onlyReadProgress(before, latestView.current)) {
+              try {
+                return await attempt();
+              } catch (again) {
+                failure = again;
+                if (again instanceof CoreError && again.code === "CONFLICT")
+                  await reload();
+              }
+            }
+          }
+          setError(failure);
           return false;
         } finally {
           setInFlight((n) => n - 1);
@@ -379,9 +428,10 @@ function SetupStages({
   // and a view older than the latest write is dropped, so the revision the
   // next write sends never goes back.
   const refresh = useCallback(async () => {
+    const at = ++requests.current;
     try {
       const v = await client.execute("setup", { id: agentId });
-      if ((v.session?.revision ?? -1) >= revision.current) setView(v);
+      if ((v.session?.revision ?? -1) >= revision.current) setView(v, at);
     } catch {
       // The next poll or action reads again.
     }
@@ -396,7 +446,9 @@ function SetupStages({
   // While a document waits for the reader or is being read, the view is
   // read again (every 3 s for a minute, then every 10 s), only while the
   // page is visible. A finished read adds items and raises the revision.
-  const reading = !!view.session && readingNow(view.uploads);
+  // An upload queued for more than 10 minutes is no longer polled for.
+  const [now, setNow] = useState(() => Date.now());
+  const reading = !!view.session && readingNow(view.uploads, now);
   useEffect(() => {
     if (!reading) return;
     const started = Date.now();
@@ -404,7 +456,9 @@ function SetupStages({
     let timer: ReturnType<typeof setTimeout>;
     const tick = async () => {
       if (document.visibilityState === "visible") await refresh();
-      if (alive) timer = setTimeout(tick, pollDelay(Date.now() - started));
+      if (!alive) return;
+      setNow(Date.now());
+      timer = setTimeout(tick, pollDelay(Date.now() - started));
     };
     timer = setTimeout(tick, pollDelay(0));
     return () => {
@@ -412,6 +466,21 @@ function SetupStages({
       clearTimeout(timer);
     };
   }, [reading, refresh]);
+  // Coming back to the tab reads the view at once while any upload is
+  // still waiting or being read (also one no longer polled for).
+  const waiting =
+    !!view.session &&
+    view.uploads.some((u) => u.state === "queued" || u.state === "reading");
+  useEffect(() => {
+    if (!waiting) return;
+    const back = () => {
+      if (document.visibilityState !== "visible") return;
+      setNow(Date.now());
+      void refresh();
+    };
+    document.addEventListener("visibilitychange", back);
+    return () => document.removeEventListener("visibilitychange", back);
+  }, [waiting, refresh]);
 
   // Waits for writes in flight first: a failed field value goes back to its
   // field and is sent again by its flusher, so nothing typed is lost.
@@ -474,14 +543,26 @@ function SetupStages({
     saved,
     error,
     uploads,
+    now,
   };
   // "Add a document" on the interview and review pages: answers typed so
   // far are sent first.
   const openBring = readerOn
     ? async () => {
-        if (await flushAll()) setBringing(true);
+        if (await flushAll()) {
+          setBringVia("link");
+          setBringing(true);
+        }
       }
     : undefined;
+  // Leaving the bring stage for the questions: a fresh interview queue,
+  // because reads may have answered questions and the owner may have come
+  // here in the middle of it.
+  const leaveBring = () => {
+    setBringing(false);
+    setInterviewing(false);
+    setInterviewKey((k) => k + 1);
+  };
 
   return (
     <StoreContext.Provider value={store}>
@@ -493,6 +574,7 @@ function SetupStages({
             setView(v);
             setOverride(null);
             setBringing(bringFirst(v));
+            setBringVia("start");
             setInterviewing(false);
             setInterviewKey((k) => k + 1);
           }}
@@ -506,14 +588,8 @@ function SetupStages({
         />
       ) : stage === "bring" ? (
         <BringStage
-          onBack={() => setOverride("type")}
-          onContinue={() => {
-            // A fresh interview queue: reads may have answered questions,
-            // and the owner may have come here in the middle of it.
-            setBringing(false);
-            setInterviewing(false);
-            setInterviewKey((k) => k + 1);
-          }}
+          onBack={bringVia === "link" ? leaveBring : () => setOverride("type")}
+          onContinue={leaveBring}
         />
       ) : stage === "interview" ? (
         snapshot && interviewing ? (

@@ -27,17 +27,29 @@ export class HttpCoreClient implements CoreClient {
   constructor(private options: { fetch?: typeof fetch; orgId?: string }) {
     this.fetcher = (options.fetch ?? fetch).bind(undefined);
   }
-  async csrf() {
+  async csrf(signal?: AbortSignal) {
     const r = await this.fetcher("/api/auth/csrf", {
       credentials: "same-origin",
       cache: "no-store",
+      signal,
     });
     return (await this.decode(r)).token as string;
   }
+  // A body that is not JSON (a proxy's HTML 413 or 502 page) is a failed
+  // request with that status, not a parse error that reads as offline.
   private async decode(r: Response) {
-    const value = await r.json();
-    if (!r.ok || !value.ok)
-      throw new CoreError(value.error?.code ?? "REQUEST_FAILED", r.status);
+    let value: {
+      ok?: boolean;
+      data?: any;
+      error?: { code?: string };
+    } | null;
+    try {
+      value = await r.json();
+    } catch {
+      throw new CoreError("REQUEST_FAILED", r.status);
+    }
+    if (!r.ok || !value?.ok)
+      throw new CoreError(value?.error?.code ?? "REQUEST_FAILED", r.status);
     return value.data;
   }
   async auth(action: string, body: unknown) {
@@ -110,10 +122,12 @@ export class HttpCoreClient implements CoreClient {
   // A setup upload chunk: the body is raw bytes, not JSON. Same CSRF token,
   // organization and idempotency rules as execute. The key belongs to the
   // upload id and seq: a chunk sent again after a failure or a lost answer
-  // carries the same key until one send is acknowledged.
+  // carries the same key until one send is acknowledged. `signal` stops the
+  // send (a removed upload, a timed-out attempt).
   async putChunk(
     input: Input<"putSetupUploadChunk">,
     bytes: Blob,
+    signal?: AbortSignal,
   ): Promise<Output<"putSetupUploadChunk">> {
     const { path } = this.route("putSetupUploadChunk", input);
     const operation = "putSetupUploadChunk:" + path;
@@ -126,12 +140,13 @@ export class HttpCoreClient implements CoreClient {
         headers: {
           ...this.orgHeader(),
           "content-type": "application/octet-stream",
-          "x-csrf-token": await this.csrf(),
+          "x-csrf-token": await this.csrf(signal),
           "idempotency-key": key,
         },
         body: bytes,
         credentials: "same-origin",
         cache: "no-store",
+        signal,
       }),
     );
     if (this.pending.get(operation) === key) this.pending.delete(operation);

@@ -5,6 +5,7 @@ import {
   UPLOAD_LIMITS,
   type SetupUpload,
 } from "../../../../packages/contracts/src/setup-upload";
+import type { Setup, SetupItem } from "../../../../packages/contracts/src/setup";
 
 type TestLike = {
   id: string;
@@ -81,9 +82,14 @@ export const SHRINK_STEPS = [
   { side: 2400, quality: 0.5 },
   { side: 1600, quality: 0.5 },
 ] as const;
-// What the file picker offers. Images include the camera on phones.
+// A picture whose long side is more than this many times its short side
+// (a long screenshot) is unreadable once shrunk to 2,400 px.
+export const MAX_ASPECT = 4;
+// What the general file picker offers; the photo picker offers image/*.
 export const ACCEPT =
   "image/*,application/pdf,.pdf,.csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values";
+// An upload still queued after this long is no longer polled for.
+export const QUEUE_PATIENCE_MS = 10 * 60 * 1000;
 
 // Chunk sizes for a file of `bytes`: pieces of at most 3 MiB, at most 10 of
 // them. An empty file or one over 10 MiB gets no plan (refused).
@@ -145,6 +151,40 @@ export function fileKind(name: string, type: string): FileKind | null {
   return null;
 }
 
+// Some Android pickers give a file with no type and no extension; its
+// first 16 bytes decide, as on the server.
+export const needsSniff = (name: string, type: string) =>
+  !extension(name) && !type.trim();
+
+const startsWith = (head: Uint8Array, bytes: number[], at = 0) =>
+  bytes.every((b, i) => head[at + i] === b);
+const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0));
+// HEIF and AVIF brands; the browser decodes these and sends a JPEG.
+const HEIF_BRANDS = ["heic", "heix", "hevc", "heim", "heis", "mif1", "msf1", "avif"];
+
+// The server's leading-byte rules (JPEG, PNG, WebP, PDF; a zip is an Excel
+// workbook), plus picture formats the browser turns into a JPEG first (GIF,
+// HEIC/HEIF/AVIF).
+export function sniffKind(head: Uint8Array): FileKind | null {
+  if (startsWith(head, [0xff, 0xd8, 0xff])) return "image";
+  if (startsWith(head, [0x89, 0x50, 0x4e, 0x47])) return "image";
+  if (startsWith(head, ascii("RIFF")) && startsWith(head, ascii("WEBP"), 8))
+    return "image";
+  if (startsWith(head, ascii("GIF8"))) return "image";
+  if (
+    startsWith(head, ascii("ftyp"), 4) &&
+    HEIF_BRANDS.some((b) => startsWith(head, ascii(b), 8))
+  )
+    return "image";
+  if (startsWith(head, ascii("%PDF-"))) return "pdf";
+  if (startsWith(head, [0x50, 0x4b, 0x03, 0x04])) return "excel";
+  return null;
+}
+
+// A long screenshot: refused, because shrinking makes it unreadable.
+export const tooLong = (width: number, height: number) =>
+  Math.max(width, height) > MAX_ASPECT * Math.min(width, height);
+
 // Refusals made in the browser, before anything is sent, and the server's
 // refusals of a file, each with one plain sentence.
 export type Refusal =
@@ -154,7 +194,8 @@ export type Refusal =
   | "SPLIT"
   | "LIST_TOO_LONG"
   | "PHOTO_FORMAT"
-  | "PHOTO_TOO_BIG";
+  | "PHOTO_TOO_BIG"
+  | "PHOTO_TOO_LONG";
 
 // Size checks on the file as picked. Photos are shrunk first, so only an
 // empty one is refused here.
@@ -185,12 +226,12 @@ export function refusalText(r: Refusal, w: Words): string {
     case "SPLIT":
       return w(
         "This file is larger than 10 MB. Split it into smaller files and add them one at a time.",
-        "Fail ini lebih besar daripada 10 MB. Pecahkan kepada fail yang lebih kecil dan tambah satu demi satu.",
+        "Fail ini lebih besar daripada 10 MB. Bahagikan kepada fail yang lebih kecil dan tambah satu demi satu.",
       );
     case "LIST_TOO_LONG":
       return w(
         "This list is too long. Paste only the price columns, or split it into smaller files.",
-        "Senarai ini terlalu panjang. Tampal lajur harga sahaja, atau pecahkan kepada fail yang lebih kecil.",
+        "Senarai ini terlalu panjang. Tampal lajur harga sahaja, atau bahagikan kepada fail yang lebih kecil.",
       );
     case "PHOTO_FORMAT":
       return w(
@@ -200,17 +241,33 @@ export function refusalText(r: Refusal, w: Words): string {
     case "PHOTO_TOO_BIG":
       return w(
         "This photo is still too large after making it smaller. Take a screenshot of it and add that instead.",
-        "Foto ini masih terlalu besar walaupun sudah dikecilkan. Ambil tangkapan skrin foto itu dan tambah yang itu.",
+        "Foto ini masih terlalu besar walaupun sudah dikecilkan. Ambil tangkapan skrin foto itu, kemudian tambah tangkapan skrin tersebut.",
+      );
+    case "PHOTO_TOO_LONG":
+      return w(
+        "This picture is very long. Crop it into shorter parts and add each part.",
+        "Gambar ini terlalu panjang. Potong kepada beberapa bahagian yang lebih pendek dan tambah setiap bahagian.",
       );
   }
 }
+
+// Files picked beyond the places left in this setup, named in one sentence.
+export function noRoomText(names: readonly string[], w: Words): string {
+  const list = names.join(", ");
+  return w(
+    `Not added, because this setup has room for 5 files: ${list}. Remove a file to make room.`,
+    `Tidak ditambah kerana persediaan ini hanya ada ruang untuk 5 fail: ${list}. Buang satu fail untuk memberi ruang.`,
+  );
+}
+
+export type UploadStep = "create" | "chunk" | "finish" | "paste" | "remove";
 
 // The server's answer to an upload request, when it has its own sentence;
 // null for anything the shared error text covers. UPLOAD_RATE means the
 // daily cap when creating, and the 30 chunk writes when sending a chunk.
 export function requestErrorText(
   code: string,
-  step: "create" | "chunk" | "finish" | "paste" | "remove",
+  step: UploadStep,
   w: Words,
 ): string | null {
   switch (code) {
@@ -229,11 +286,11 @@ export function requestErrorText(
       return step === "chunk"
         ? w(
             "This file was sent too many times. Remove it and add it again.",
-            "Fail ini telah dihantar terlalu banyak kali. Buang dan tambah semula.",
+            "Fail ini sudah dihantar terlalu banyak kali. Buang dan tambah semula.",
           )
         : w(
             "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.",
-            "Ruang kerja anda telah menambah 20 fail dalam 24 jam lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
+            "Ruang kerja anda sudah menambah 20 fail dalam 24 jam lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
           );
     case "READER_OFF":
       return failText("READER_OFF", w);
@@ -242,13 +299,46 @@ export function requestErrorText(
   }
 }
 
+// The sentence for a failed upload request; never a raw code. `status` is
+// null when no answer came (offline, timeout). Any other refusal (CONFLICT,
+// UPLOAD_INCOMPLETE, UPLOAD_SIZE_MISMATCH, EMPTY_CHUNK, PAYLOAD_TOO_LARGE,
+// OCTET_STREAM_REQUIRED, NOT_FOUND, a proxy's REQUEST_FAILED) means this
+// send cannot be fixed by Retry. Null only for signed-out or not-allowed
+// answers, which the shared error text explains.
+export function sendFailureText(
+  status: number | null,
+  code: string | null,
+  step: UploadStep,
+  w: Words,
+): string | null {
+  const own = code ? requestErrorText(code, step, w) : null;
+  if (own) return own;
+  if (status === 401 || status === 403) return null;
+  if (status === null || retryable(status))
+    return w(
+      "Sending stopped. Check your connection, then try again.",
+      "Penghantaran terhenti. Semak sambungan anda, kemudian cuba lagi.",
+    );
+  return sendBrokenText(w);
+}
+export const sendBrokenText = (w: Words) =>
+  w(
+    "Something went wrong sending this file. Remove it and add it again.",
+    "Ada masalah semasa menghantar fail ini. Buang dan tambah semula.",
+  );
+
+// Retry is offered only when sending the same thing again can work: no
+// answer, a timeout or a server error, and never after the write cap.
+export const retryOffered = (status: number | null, code: string | null) =>
+  code !== "UPLOAD_RATE" && retryable(status);
+
 // One plain sentence per reason a read failed.
 export function failText(code: string | null, w: Words): string {
   switch (code) {
     case "TOO_LONG":
       return w(
         "Too long to read. Split it into smaller files.",
-        "Terlalu panjang untuk dibaca. Pecahkan kepada fail yang lebih kecil.",
+        "Terlalu panjang untuk dibaca. Bahagikan kepada fail yang lebih kecil.",
       );
     case "UNREADABLE":
       return w(
@@ -269,7 +359,7 @@ export function failText(code: string | null, w: Words): string {
     case "ABANDONED":
       return w(
         "This upload was interrupted. Add it again.",
-        "Muat naik ini terganggu. Tambah semula.",
+        "Muat naik ini terputus. Tambah semula.",
       );
     case "UPLOAD_TYPE":
       return refusalText("TYPE", w);
@@ -286,23 +376,36 @@ const plural = (n: number, one: string, many: string) =>
 type UploadView = Pick<
   SetupUpload,
   "state" | "failCode" | "rowCount" | "factCount" | "droppedCount"
->;
+> &
+  Partial<Pick<SetupUpload, "createdAt">>;
+
+// An upload queued for longer than QUEUE_PATIENCE_MS: the screen stops
+// polling for it and says the owner can come back later.
+export const stalled = (u: Pick<SetupUpload, "state"> & Partial<Pick<SetupUpload, "createdAt">>, now: number) =>
+  u.state === "queued" &&
+  !!u.createdAt &&
+  now - Date.parse(u.createdAt) > QUEUE_PATIENCE_MS;
 
 // The state line under one upload, from the server's record alone. While
 // this browser is sending it, the screen shows sendingLabel instead; an
 // upload still "uploading" without a sender here was cut off (a reload or a
 // closed tab) and cannot be resumed.
-export function uploadLabel(u: UploadView, w: Words): string {
+export function uploadLabel(u: UploadView, w: Words, now?: number): string {
   switch (u.state) {
     case "uploading":
       return w(
         "This upload was interrupted. Remove it and add the file again.",
-        "Muat naik ini terganggu. Buang dan tambah fail itu semula.",
+        "Muat naik ini terputus. Buang dan tambah fail itu semula.",
       );
     case "queued":
-      return w("Waiting to be read", "Menunggu untuk dibaca");
+      return now !== undefined && stalled(u, now)
+        ? w(
+            "Still waiting to be read. You can go on and come back later.",
+            "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
+          )
+        : w("Waiting to be read", "Menunggu untuk dibaca");
     case "reading":
-      return w("Reading…", "Sedang membaca…");
+      return w("Reading…", "Sedang dibaca…");
     case "failed":
       return failText(u.failCode, w);
     case "removed":
@@ -314,7 +417,7 @@ export function uploadLabel(u: UploadView, w: Words): string {
         prices && facts
           ? w(
               `${plural(prices, "price", "prices")} and ${plural(facts, "fact", "facts")} found`,
-              `${prices} harga dan ${facts} fakta ditemui`,
+              `${prices} harga dan ${facts} butiran ditemui`,
             )
           : prices
             ? w(
@@ -324,7 +427,7 @@ export function uploadLabel(u: UploadView, w: Words): string {
             : facts
               ? w(
                   `${plural(facts, "fact", "facts")} found`,
-                  `${facts} fakta ditemui`,
+                  `${facts} butiran ditemui`,
                 )
               : w(
                   "Nothing found in this file. Try a clearer photo, or answer the questions instead.",
@@ -344,18 +447,27 @@ export function uploadLabel(u: UploadView, w: Words): string {
 }
 
 // Progress of a file this browser is sending; `seq` counts from 0.
-export type SendPhase = "preparing" | "sending" | "failed" | "sent";
+export type SendPhase = "waiting" | "preparing" | "sending" | "failed" | "sent";
 export function sendingLabel(
   s: { phase: SendPhase; seq: number; total: number },
   w: Words,
 ): string {
+  if (s.phase === "waiting")
+    return w("Waiting to send", "Menunggu untuk dihantar");
   if (s.phase === "preparing") return w("Preparing…", "Menyediakan…");
-  if (s.phase === "failed") return w("Sending failed", "Penghantaran gagal");
+  if (s.phase === "failed") return w("Sending failed", "Gagal dihantar");
   if (s.phase === "sent")
     return w("Waiting to be read", "Menunggu untuk dibaca");
   const n = Math.min(s.seq + 1, s.total);
   return w(`Sending ${n} of ${s.total}`, `Menghantar ${n} daripada ${s.total}`);
 }
+
+// Which line a row shows: this browser's send progress only while the
+// server still lists the upload as uploading (or not yet at all); once the
+// server has it queued or further, the server's label wins and the local
+// sender is dropped, "Sending failed" included.
+export const senderShown = (upload: Pick<SetupUpload, "state"> | undefined) =>
+  !upload || upload.state === "uploading";
 
 // The pasted-text upload's stored name is English; the screen names it.
 export const uploadName = (u: Pick<SetupUpload, "kind" | "name">, w: Words) =>
@@ -365,7 +477,7 @@ export const uploadName = (u: Pick<SetupUpload, "kind" | "name">, w: Words) =>
 // characters, at most 200 UTF-16 units, never empty.
 export function safeName(name: string): string {
   const clean = name
-    .replace(/[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/g, "")
+    .replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "")
     .trim();
   let cut = clean.slice(0, 200);
   const last = cut.charCodeAt(cut.length - 1);
@@ -399,9 +511,16 @@ export function fitSize(
 export const slotsLeft = (used: number) =>
   Math.max(0, UPLOAD_LIMITS.perSession - used);
 
-// The view is polled while any upload waits for the reader or is being read.
-export const readingNow = (uploads: readonly Pick<SetupUpload, "state">[]) =>
-  uploads.some((u) => u.state === "queued" || u.state === "reading");
+// The view is polled while any upload is being read, or waits for the
+// reader and has not waited longer than QUEUE_PATIENCE_MS.
+export const readingNow = (
+  uploads: readonly (Pick<SetupUpload, "state"> &
+    Partial<Pick<SetupUpload, "createdAt">>)[],
+  now: number,
+) =>
+  uploads.some(
+    (u) => u.state === "reading" || (u.state === "queued" && !stalled(u, now)),
+  );
 
 // Whether the "bring a document" stage opens by itself after the business
 // type: reading is on, a session is open, and nothing is in it yet (no
@@ -421,7 +540,7 @@ export function bringFirst(view: {
 }
 
 // Whether a failed request is worth sending again unchanged: no answer at
-// all (offline, lost response), a server error, or a timeout.
+// all (offline, lost response, timeout), a server error, or a timeout.
 export const retryable = (status: number | null) =>
   status === null || status === 408 || status >= 500;
 
@@ -435,32 +554,93 @@ const UPLOAD_RANK: Record<SetupUpload["state"], number> = {
   removed: 4,
 };
 
-// Uploads this browser knows more about than a given view: one it just
-// created, finished, pasted or removed. Create, finish and paste do not
-// raise the session revision, so a view the server built just before one
-// of them (a poll, a save's answer) can still list the upload as it was,
-// or not at all. The held copy wins until the server lists the upload at
-// least as far along (or, for a removal, no longer lists it); then the
-// entry is dropped. Returns the uploads to show and the entries still held.
+// What this browser knows about one upload, and the request counter when it
+// learned it: from a view (the counter when that view was requested) or from
+// its own create, finish, paste or remove (a counter taken then).
+export type KnownUpload = { upload: SetupUpload | "removed"; at: number };
+
+// Merges a view's uploads, requested at counter `at`, with what is known.
+// - A removal wins; it is forgotten once a view requested after it no longer
+//   lists the upload.
+// - A row never moves backwards (uploading < queued < reading < done/failed):
+//   a slower, older answer cannot turn "done" back into "reading".
+// - A known upload missing from the view is kept when the view was
+//   requested before it was learned (create, finish and paste do not raise
+//   the session revision), and dropped when the view was requested after
+//   (it is gone on the server), so no phantom row is polled for ever.
 export function mergeUploads(
   server: readonly SetupUpload[],
-  held: ReadonlyMap<string, SetupUpload | "removed">,
-): { uploads: SetupUpload[]; held: Map<string, SetupUpload | "removed"> } {
-  const still = new Map(held);
+  at: number,
+  known: ReadonlyMap<string, KnownUpload>,
+): { uploads: SetupUpload[]; known: Map<string, KnownUpload> } {
+  const next = new Map(known);
   const uploads: SetupUpload[] = [];
+  const listed = new Set(server.map((u) => u.id));
   for (const u of server) {
-    const h = still.get(u.id);
-    if (h === undefined) uploads.push(u);
-    else if (h === "removed") continue;
-    else if (UPLOAD_RANK[u.state] >= UPLOAD_RANK[h.state]) {
-      still.delete(u.id);
-      uploads.push(u);
-    } else uploads.push(h);
+    const k = next.get(u.id);
+    if (k?.upload === "removed") continue;
+    if (k && UPLOAD_RANK[k.upload.state] > UPLOAD_RANK[u.state]) {
+      uploads.push(k.upload);
+      continue;
+    }
+    uploads.push(u);
+    if (!k || at >= k.at) next.set(u.id, { upload: u, at });
   }
-  for (const [id, h] of still) {
-    if (server.some((u) => u.id === id)) continue;
-    if (h === "removed") still.delete(id);
-    else uploads.push(h);
+  for (const [id, k] of known) {
+    if (listed.has(id)) continue;
+    if (at > k.at) next.delete(id);
+    else if (k.upload !== "removed") uploads.push(k.upload);
   }
-  return { uploads, held: still };
+  return { uploads, known: next };
+}
+
+// The parts of an item a person or the reader sets (not the outcome,
+// duplicate and current fields the view works out each time).
+const itemShape = (i: SetupItem) =>
+  JSON.stringify([
+    i.kind,
+    i.key,
+    i.payload,
+    i.source,
+    i.needsCheck,
+    i.checkReason,
+    i.state,
+  ]);
+
+// After a save is refused as stale: was the only change between the view
+// the save was based on and the fresh one a document being read? Same
+// session and packs; no upload added or gone; uploads only moved from
+// queued or reading on to reading, done or failed; every earlier item
+// unchanged; new items only from an import. Then the save is sent once more
+// with the fresh revision, quietly.
+export function onlyReadProgress(
+  before: Pick<Setup, "session" | "uploads" | "items">,
+  after: Pick<Setup, "session" | "uploads" | "items">,
+): boolean {
+  const b = before.session,
+    a = after.session;
+  if (!b || !a || b.id !== a.id || a.state !== "open") return false;
+  if (
+    b.mainPack !== a.mainPack ||
+    b.extraPacks.join(",") !== a.extraPacks.join(",")
+  )
+    return false;
+  if (before.uploads.length !== after.uploads.length) return false;
+  const moved: Record<string, string[]> = {
+    queued: ["reading", "done", "failed"],
+    reading: ["done", "failed"],
+  };
+  for (const u of after.uploads) {
+    const old = before.uploads.find((x) => x.id === u.id);
+    if (!old) return false;
+    if (old.state !== u.state && !moved[old.state]?.includes(u.state))
+      return false;
+  }
+  const fresh = new Map(after.items.map((i) => [i.id, i]));
+  for (const i of before.items) {
+    const now = fresh.get(i.id);
+    if (!now || itemShape(now) !== itemShape(i)) return false;
+  }
+  const old = new Set(before.items.map((i) => i.id));
+  return after.items.every((i) => old.has(i.id) || i.source === "import");
 }

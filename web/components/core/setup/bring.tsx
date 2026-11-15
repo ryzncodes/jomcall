@@ -1,10 +1,11 @@
 "use client";
-// Stage 2, optional: bring what you have. The owner adds a photo, PDF or CSV
-// file, or pastes text; it is sent in the background and read while they
-// answer the questions. Continue is always available. Sending lives in the
-// flow's store (upload.ts), so it goes on after the owner moves on.
-import { useEffect, useId, useRef, useState } from "react";
-import { Info, UploadSimple } from "@phosphor-icons/react";
+// Stage 2, optional: bring what you have. The owner adds photos, PDF or CSV
+// files, or pastes text; they are sent in the background, one at a time,
+// and read while the owner answers the questions. Continue is always
+// available. Sending lives in the flow's store (upload.ts), so it goes on
+// after the owner moves on.
+import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
+import { Camera, Info, UploadSimple } from "@phosphor-icons/react";
 import { CoreError } from "@/lib/core/client";
 import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
 import { useWords, errorText } from "../state";
@@ -12,9 +13,13 @@ import { useExperience } from "../../experience";
 import { useLanding, useSetup } from "./flow";
 import {
   ACCEPT,
+  noRoomText,
   readingNow,
   refusalText,
-  requestErrorText,
+  retryOffered,
+  sendBrokenText,
+  sendFailureText,
+  senderShown,
   sendingLabel,
   slotsLeft,
   uploadLabel,
@@ -29,6 +34,7 @@ type Row = {
   upload: SetupUpload | null;
   sender: Sender | undefined;
 };
+type Words = (en: string, ms: string) => string;
 
 export function BringStage({
   onBack,
@@ -42,9 +48,9 @@ export function BringStage({
     store = useSetup(),
     id = useId();
   const ms = locale === "ms";
-  const { uploads: manager, view } = store;
+  const { uploads: manager, view, now } = store;
   const heading = useLanding<HTMLHeadingElement>("bring");
-  const fileRef = useRef<HTMLInputElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLHeadingElement>(null);
   const keepRef = useRef<HTMLButtonElement>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
@@ -52,11 +58,14 @@ export function BringStage({
   const [pasting, setPasting] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
+  const [said, setSaid] = useState("");
 
-  const notice = manager.notice;
-  const excel =
-    notice?.refusal === "EXCEL" ||
-    (notice?.error instanceof CoreError && notice.error.code === "UPLOAD_XLSX");
+  const problems = manager.problems;
+  const excel = problems.some(
+    (p) =>
+      p.refusal === "EXCEL" ||
+      (p.error instanceof CoreError && p.error.code === "UPLOAD_XLSX"),
+  );
   // An Excel file gets the paste box: copying the cells is the way in.
   useEffect(() => {
     if (excel) setPasteOpen(true);
@@ -65,16 +74,20 @@ export function BringStage({
     if (confirming) keepRef.current?.focus();
   }, [confirming]);
 
-  // The server's uploads, oldest first, each with this browser's sender if
-  // it is sending it; then files still being prepared here.
+  // The server's uploads, oldest first, then rows this browser has not had
+  // listed yet (waiting, being prepared, or failed before creating). Each
+  // row keeps one key for its whole life.
   const rows: Row[] = [
-    ...view.uploads.map((u) => ({
-      key: u.id,
-      uploadId: u.id,
-      name: uploadName(u, w),
-      upload: u,
-      sender: manager.senders.find((s) => s.uploadId === u.id),
-    })),
+    ...view.uploads.map((u) => {
+      const s = manager.senders.find((x) => x.uploadId === u.id);
+      return {
+        key: s?.key ?? manager.rowKey(u.id),
+        uploadId: u.id,
+        name: uploadName(u, w),
+        upload: u,
+        sender: s && senderShown(u) ? s : undefined,
+      };
+    }),
     ...manager.senders
       .filter(
         (s) => !s.uploadId || !view.uploads.some((u) => u.id === s.uploadId),
@@ -89,24 +102,59 @@ export function BringStage({
   ];
   const left = slotsLeft(rows.length);
   const busy =
-    readingNow(view.uploads) ||
+    readingNow(view.uploads, now) ||
     manager.senders.some((s) => s.phase !== "failed");
+  const labelOf = (r: Row) =>
+    r.sender
+      ? sendingLabel(r.sender, w)
+      : r.upload
+        ? uploadLabel(r.upload, w, now)
+        : "";
 
-  const removeRow = async (uploadId: string) => {
+  // One status line announces what changed (a file added, read or failed),
+  // not every "Sending n of m".
+  const kinds = rows.map((r) => [r.key, kindOf(r)] as const);
+  const signature = kinds.map((k) => k.join(":")).join("|");
+  const seen = useRef<Map<string, string> | null>(null);
+  useEffect(() => {
+    const next = new Map(kinds);
+    let message = "";
+    if (seen.current)
+      for (const r of rows) {
+        const before = seen.current.get(r.key),
+          after = next.get(r.key);
+        if (before === after) continue;
+        if (before === undefined)
+          message = w(`${r.name} added`, `${r.name} ditambah`);
+        else if (after === "done" || after === "failed")
+          message = `${r.name}: ${labelOf(r)}`;
+      }
+    seen.current = next;
+    if (message) setSaid(message);
+    // Runs when a row's kind changes, not on every progress step.
+  }, [signature]);
+
+  const pick = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = [...(e.target.files ?? [])];
+    // Lets the same file be picked again after a refusal.
+    e.target.value = "";
+    if (files.length) void manager.addFiles(files);
+  };
+  const removeRow = async (r: Row) => {
     setRemoving(true);
-    const ok = await manager.remove(uploadId);
+    const ok = await manager.remove({ key: r.key, uploadId: r.uploadId });
     setRemoving(false);
     setConfirming(null);
-    // After the next paint: the freed place may enable the file input.
+    // After the next paint: the freed place may enable the file inputs.
     requestAnimationFrame(() =>
       ok
-        ? fileRef.current?.focus()
-        : document.getElementById(`${id}-remove-${uploadId}`)?.focus(),
+        ? photoRef.current?.focus()
+        : document.getElementById(`${id}-remove-${r.key}`)?.focus(),
     );
   };
-  const keep = (uploadId: string) => {
+  const keep = (r: Row) => {
     setConfirming(null);
-    document.getElementById(`${id}-remove-${uploadId}`)?.focus();
+    document.getElementById(`${id}-remove-${r.key}`)?.focus();
   };
 
   return (
@@ -126,43 +174,60 @@ export function BringStage({
         <p className="setup-hint setup-private setup-upload-notice" id={`${id}-notice`}>
           <Info size={16} aria-hidden="true" />
           {w(
-            "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. Files are deleted after 30 days, and you can delete one now with Remove.",
-            "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail dipadam selepas 30 hari, dan anda boleh memadamnya sekarang dengan Buang.",
+            "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. Files and pasted text are deleted after 30 days. You can also delete one now with the Remove button while setup is open.",
+            "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail dan teks yang ditampal dipadam selepas 30 hari. Anda juga boleh memadamnya sekarang dengan butang Buang semasa persediaan masih dibuka.",
           )}
         </p>
-        <label className="button button-dark setup-file" data-disabled={!left}>
-          <input
-            ref={fileRef}
-            type="file"
-            className="setup-file-input"
-            accept={ACCEPT}
-            multiple
-            disabled={!left}
-            aria-describedby={`${id}-notice ${id}-limits`}
-            onChange={(e) => {
-              const files = [...(e.target.files ?? [])];
-              // Lets the same file be picked again after a refusal.
-              e.target.value = "";
-              if (files.length) void manager.addFiles(files);
-            }}
-          />
-          <UploadSimple size={18} aria-hidden="true" />
-          <span>{w("Add a photo or file", "Tambah foto atau fail")}</span>
-        </label>
+        <div className="setup-file-row">
+          <label className="button button-dark setup-file" data-disabled={!left}>
+            <input
+              ref={photoRef}
+              type="file"
+              className="setup-file-input"
+              accept="image/*"
+              multiple
+              disabled={!left}
+              aria-describedby={`${id}-notice ${id}-limits`}
+              onChange={pick}
+            />
+            <Camera size={18} aria-hidden="true" />
+            <span>{w("Take or choose a photo", "Ambil atau pilih foto")}</span>
+          </label>
+          <label
+            className="button secondary-button setup-file"
+            data-disabled={!left}
+          >
+            <input
+              type="file"
+              className="setup-file-input"
+              accept={ACCEPT}
+              multiple
+              disabled={!left}
+              aria-describedby={`${id}-notice ${id}-limits`}
+              onChange={pick}
+            />
+            <UploadSimple size={18} aria-hidden="true" />
+            <span>{w("Add a file", "Tambah fail")}</span>
+          </label>
+        </div>
         <p className="setup-hint" id={`${id}-limits`}>
           {left
             ? w(
-                "A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in one setup and 20 a day for your workspace; removing a file frees its place in this setup.",
-                "Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi satu persediaan dan 20 sehari bagi ruang kerja anda; membuang fail mengosongkan tempatnya dalam persediaan ini.",
+                "A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in each setup and 20 files a day for your workspace. Remove a file to make room for another.",
+                "Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi setiap persediaan dan 20 fail sehari bagi ruang kerja anda. Buang fail untuk memberi ruang kepada fail lain.",
               )
             : w(
                 "This setup has 5 files. Remove one to add another.",
                 "Persediaan ini sudah ada 5 fail. Buang satu untuk menambah yang lain.",
               )}
         </p>
-        {notice && (
+        {problems.length > 0 && (
           <div className="storage-warning" role="alert">
-            {noticeText(notice, w, ms)}
+            <ul className="setup-problems">
+              {problems.map((p, i) => (
+                <li key={i}>{noticeText(p, w, ms)}</li>
+              ))}
+            </ul>
           </div>
         )}
         {pasteOpen ? (
@@ -195,8 +260,8 @@ export function BringStage({
             />
             <small id={`${id}-paste-hint`} className="setup-hint">
               {w(
-                "Up to 20,000 characters. Copy the cells from a spreadsheet, or a price list from a chat.",
-                "Sehingga 20,000 aksara. Salin sel daripada hamparan, atau senarai harga daripada sembang.",
+                "Up to 20,000 characters. Copy the cells from Excel or Google Sheets, or a price list from a chat.",
+                "Sehingga 20,000 aksara. Salin sel daripada Excel atau Google Sheets, atau senarai harga daripada sembang.",
               )}
             </small>
             <button
@@ -214,7 +279,7 @@ export function BringStage({
             className="setup-link"
             onClick={() => setPasteOpen(true)}
           >
-            {w("Paste text instead", "Tampal teks")}
+            {w("Paste text instead", "Atau tampal teks")}
           </button>
         )}
         <section className="setup-section" aria-labelledby={`${id}-files`}>
@@ -226,23 +291,20 @@ export function BringStage({
           >
             {w("Your files", "Fail anda")}
           </h2>
+          <p className="sr-only" role="status" aria-live="polite">
+            {said}
+          </p>
           {rows.length === 0 && (
             <p className="setup-hint">
               {w("Nothing added yet.", "Belum ada apa-apa ditambah.")}
             </p>
           )}
-          <ul className="setup-cards" aria-live="polite">
+          <ul className="setup-cards">
             {rows.map((r) => {
               const s = r.sender;
               const failed = s?.phase === "failed";
-              const label = s
-                ? sendingLabel(s, w)
-                : r.upload
-                  ? uploadLabel(r.upload, w)
-                  : "";
-              const detail = s && failed ? failDetail(s.error, w, ms) : null;
-              const stuck =
-                s?.error instanceof CoreError && s.error.code === "UPLOAD_RATE";
+              const detail = s && failed ? failDetail(s, w, ms) : null;
+              const canRetry = !!s && failed && retryAllowed(s);
               const bad =
                 failed ||
                 (!s &&
@@ -259,36 +321,38 @@ export function BringStage({
                         className={bad ? "setup-error" : "setup-hint"}
                         data-state={s?.phase ?? r.upload?.state}
                       >
-                        {label}
+                        {labelOf(r)}
                       </p>
                       {detail && <p className="setup-error">{detail}</p>}
                     </div>
                     <div className="setup-card-actions">
-                      {s && failed && !stuck && (
+                      {canRetry && (
                         <button
                           type="button"
                           className="button button-small secondary-button"
+                          aria-label={w(
+                            `Retry ${r.name}`,
+                            `Cuba lagi ${r.name}`,
+                          )}
                           onClick={() => manager.retry(s.key)}
                         >
                           {w("Retry", "Cuba lagi")}
                         </button>
                       )}
-                      {r.uploadId && (
-                        <button
-                          type="button"
-                          id={`${id}-remove-${r.uploadId}`}
-                          className="button button-small secondary-button"
-                          aria-label={w(`Remove ${r.name}`, `Buang ${r.name}`)}
-                          aria-expanded={confirming === r.uploadId}
-                          disabled={removing}
-                          onClick={() => setConfirming(r.uploadId)}
-                        >
-                          {w("Remove", "Buang")}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        id={`${id}-remove-${r.key}`}
+                        className="button button-small secondary-button"
+                        aria-label={w(`Remove ${r.name}`, `Buang ${r.name}`)}
+                        aria-expanded={confirming === r.key}
+                        disabled={removing}
+                        onClick={() => setConfirming(r.key)}
+                      >
+                        {w("Remove", "Buang")}
+                      </button>
                     </div>
                   </div>
-                  {confirming === r.uploadId && (
+                  {confirming === r.key && (
                     <div
                       className="setup-confirm"
                       role="group"
@@ -296,8 +360,8 @@ export function BringStage({
                     >
                       <p id={`${id}-confirm`} className="setup-hint">
                         {w(
-                          "Remove this file and everything read from it? Any corrections you made to its prices are discarded too.",
-                          "Buang fail ini dan semua yang dibaca daripadanya? Apa-apa pembetulan yang anda buat pada harganya juga akan dibuang.",
+                          "Remove this file? Prices and details read from it are removed too, except ones you confirmed. A price you edited counts as confirmed and stays.",
+                          "Buang fail ini? Harga dan butiran yang dibaca daripadanya turut dibuang, kecuali yang sudah anda sahkan. Harga yang anda ubah dikira sudah disahkan dan kekal.",
                         )}
                       </p>
                       <div className="setup-card-actions">
@@ -305,7 +369,7 @@ export function BringStage({
                           type="button"
                           className="button button-small button-dark"
                           disabled={removing}
-                          onClick={() => void removeRow(r.uploadId!)}
+                          onClick={() => void removeRow(r)}
                         >
                           {removing
                             ? w("Removing…", "Membuang…")
@@ -316,7 +380,7 @@ export function BringStage({
                           ref={keepRef}
                           className="button button-small secondary-button"
                           disabled={removing}
-                          onClick={() => keep(r.uploadId!)}
+                          onClick={() => keep(r)}
                         >
                           {w("Keep", "Kekalkan")}
                         </button>
@@ -331,7 +395,7 @@ export function BringStage({
             <p className="setup-hint">
               {w(
                 "Reading carries on while you answer the questions.",
-                "Pembacaan diteruskan semasa anda menjawab soalan.",
+                "Fail terus dibaca semasa anda menjawab soalan.",
               )}
             </p>
           )}
@@ -355,22 +419,38 @@ export function BringStage({
   );
 }
 
-type Words = (en: string, ms: string) => string;
+// What the status line tracks for one row.
+function kindOf(r: Row): string {
+  if (r.sender) return r.sender.phase === "failed" ? "failed" : "sending";
+  return r.upload?.state === "done" || r.upload?.state === "failed"
+    ? r.upload.state
+    : "waiting";
+}
 
-// The sentence for the last refusal or failed request, with the file name.
+// The sentence for one refusal or failed request, with the file name.
 function noticeText(n: UploadNotice, w: Words, ms: boolean): string {
+  if (n.refusal === "NO_ROOM") return noRoomText(n.names ?? [], w);
   const reason = n.refusal
     ? refusalText(n.refusal, w)
     : n.error instanceof CoreError
-      ? (requestErrorText(n.error.code, n.step ?? "create", w) ??
+      ? (sendFailureText(n.error.status, n.error.code, n.step ?? "create", w) ??
         errorText(n.error, ms))
-      : errorText(n.error, ms);
+      : (sendFailureText(null, null, n.step ?? "create", w) ?? "");
   return n.name ? `${n.name}: ${reason}` : reason;
 }
 
-// Why a send stopped, under "Sending failed".
-function failDetail(error: unknown, w: Words, ms: boolean): string {
-  return error instanceof CoreError
-    ? (requestErrorText(error.code, "chunk", w) ?? errorText(error, ms))
-    : errorText(error, ms);
+// Why a send stopped, under "Sending failed". A failure while preparing
+// the file (no request step) gets the general sentence.
+function failDetail(s: Sender, w: Words, ms: boolean): string {
+  if (!s.step) return sendBrokenText(w);
+  return s.error instanceof CoreError
+    ? (sendFailureText(s.error.status, s.error.code, s.step, w) ??
+        errorText(s.error, ms))
+    : (sendFailureText(null, null, s.step, w) ?? sendBrokenText(w));
 }
+
+const retryAllowed = (s: Sender) =>
+  !!s.step &&
+  (s.error instanceof CoreError
+    ? retryOffered(s.error.status, s.error.code)
+    : retryOffered(null, null));

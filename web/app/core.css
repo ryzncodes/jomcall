@@ -1398,6 +1398,22 @@
 .setup-file[data-disabled="true"] .setup-file-input {
   cursor: not-allowed;
 }
+.setup-file-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 480px) {
+  .setup-file-row {
+    grid-template-columns: 1fr;
+  }
+}
+.setup-problems {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
 .setup-upload-notice {
   padding: 12px 14px;
   border: 1px solid var(--line);
