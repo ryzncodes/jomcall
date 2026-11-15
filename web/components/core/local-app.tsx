@@ -19,6 +19,7 @@ import { LocalSettings, LocalHours } from "./settings";
 import { LocalBilling } from "./billing";
 import { LocalPhoneNumbers, LocalCalls } from "./phone";
 import { LocalWhatsApp } from "./whatsapp";
+import { LocalInbox } from "./inbox";
 import {
   businessTypeText,
   businessTypes,
@@ -376,6 +377,8 @@ function LocalWorkspace({ screen }: { screen: string }) {
                 <LocalCalls />
               ) : screen === "whatsapp" ? (
                 <LocalWhatsApp />
+              ) : screen === "inbox" ? (
+                <LocalInbox />
               ) : (
                 <>
                   <Heading

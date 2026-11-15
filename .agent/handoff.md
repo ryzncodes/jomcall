@@ -1,5 +1,44 @@
 # Handoff
 
+## 2026-11-15 — WhatsApp inbox review fixes
+
+Branch `claude/whatsapp-inbox-341dbf`, pull request #25 (not merged). All 15 review points; list in `docs/superpowers/plans/2026-11-15-whatsapp-inbox.md` ("Review fixes").
+
+**Changed**
+- `replyConversation` refuses hard refusals before storing (`DO_NOT_CONTACT`, `OPTED_OUT`, `CONSENT_REQUIRED`, `CONTACT_UNAVAILABLE`, `REPLY_REQUEST_SENT`, 409); the worker stays the final gate. Owner may overrule.
+- Outlook SQL shared with `send_claim` (`packages/domain/src/whatsapp/send-facts-sql.ts`, drift guard), database clock; messages gain `reply_request`.
+- Screen: one idempotency key per draft, last-four masking, poll sequence counter, byte counter, header errors, caps notes, Back returns to the list, BM wording. Pure rules in `web/lib/core/inbox-rules.ts`.
+- `tests/engine/whatsapp-flow.test.ts`: the no-consent staff reply now expects a 409 `CONSENT_REQUIRED` instead of a stored blocked message.
+
+**Verified (2026-11-15)**
+- `npm run typecheck` pass; `npm run test:guards` 45 of 45; `npm run build:local`, `build:mock`, `build:hosted` pass.
+- `tests/domain/whatsapp-inbox-rules.test.ts` 6 of 6. `tests/api/whatsapp-inbox.test.ts` 10 of 12 subtests: the two failing need an agent reply and fail on the shared database's metering migration (as before).
+
+**Not verified**
+- `tests/engine/whatsapp-flow.test.ts`: its edited subtest cannot reach the edited lines on the shared database (an earlier agent-reply subtest fails on metering and leaves do-not-contact on). Covered instead by the inbox API test's `CONSENT_REQUIRED` refusal.
+- Merge step: after the metering pull request (26) merges, rebase and call `entitle()` for the inbox test's organization.
+
+## 2026-11-15 — WhatsApp inbox screen
+
+Branch `claude/whatsapp-inbox-341dbf`, pull request #25 (not merged). Plan and deviations: `docs/superpowers/plans/2026-11-15-whatsapp-inbox.md`.
+
+**Changed**
+- `conversation` read (`packages/domain/src/whatsapp/routes.ts`, type in `packages/contracts/src/whatsapp.ts`): adds `compliance` (do-not-contact, pending deletion, latest WhatsApp consent for service and marketing), `reply_outlook` (`decideSend` on the facts the worker's `send_claim` reads) and per-message `notice` and `disclosure`. No new command, no migration, no engine change.
+- `web/components/core/inbox.tsx`: the inbox at `/app/inbox` in the local and hosted apps. The Inbox sidebar entry is hidden unless `channels.whatsapp` is true.
+- Tests: `tests/api/whatsapp-inbox.test.ts` (10 cases), `tests/local/whatsapp-inbox.test.mjs` (8 guards).
+
+**Verified (2026-11-15)**
+- At the final commit: `npm run typecheck` pass; `npm run test:guards` 42 of 42; `npm run build:local`, `build:mock` and `build:hosted` pass.
+- `npm run check:core`: 443 of 492, 49 failing, all on the shared local database after the usage-metering session applied its `20261115123000_channel_metering.sql` there directly (functions `channel_admission`, `call_bill`, `conversation_bill`, not in this branch; its note says a WhatsApp agent reply or a phone call on an org without a plan now fails). The failures are phone-line, core-tools and WhatsApp agent-reply tests; two are in `tests/api/whatsapp-inbox.test.ts` (the two subtests that need an agent reply). That file passed 10 of 10 at commit `3c3b258`, before the metering migration was on the database. Whichever branch merges second must give the inbox test's org a plan (the metering branch adds `entitle()` in `tests/helpers/billing.ts`).
+- Browser, built-in pane, local app on 4182 with `JOMCALL_WHATSAPP_PROVIDER=fake`, the agent process with `JOMCALL_MODEL_PROVIDER=disabled`, a fake workspace and three fake customers sent with `npm run whatsapp:simulate`: the not-connected state; the list in the server's order with needs-staff reasons; a chat with the handoff and AI introduction system lines; a staff reply inside the window (sent); the outside-window outlook with Send disabled (window aged with SQL on the local database); a reply blocked by the agent process with `WINDOW_CLOSED` (agent paused, reply queued, window aged, agent restarted); STOP with the opt-out line and consent shown as opted out; take over and hand back; resolve with its confirm step and the resolved state; the contact link. Combinations seen: list in English at desktop and BM at 375 px; chat in English at desktop and BM at 375 px; reply inside the window, outside-window outlook and the `WINDOW_CLOSED` refusal in English at desktop and in BM at 375 px (outlook and refusal only; no BM send); opt-out in BM at 375 px and English at desktop; take over and hand back in BM at 375 px; resolve in English at desktop; one dark-theme look in English at desktop. No console errors; no horizontal scroll at 375 px.
+
+**Not verified**
+- No person has used the screen. The empty inbox, loading and error-with-retry states, the 403 message and the open-proposals line were not seen in a browser (guard tests and API tests cover their wording and behaviour). The fallback template replacing a reply was tested by API only, not in the browser. No agent reply from a model was seen (the model was disabled; the agent was not published).
+- Nothing ran on hosted staging.
+
+**Next**
+- Calls in the same Inbox timeline (`screens.md`), acting on agent proposals from a chat, unread tracking if owners ask for it.
+
 ## 2026-11-15 — usage metering and plan entitlements on the real channels
 
 Branch `claude/usage-metering-e13eb4`, pull request #26 (not merged). Design: billing design section 13. Revised after review, then for four owner decisions (A-D), the same day.
