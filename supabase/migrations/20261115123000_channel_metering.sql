@@ -394,15 +394,16 @@ declare body text;hits int;i int;
  news text[]:=array[
   $n$    update app.conversation set needs_attention=true,attention_reason='AGENT_NOT_PUBLISHED',revision=revision+1 where id=c.id;return jsonb_build_object('skipped',true);
    end if;
-   -- The agent keeps serving a conversation it already answered, and a
-   -- customer whose billing window is open (already paid). Otherwise it needs
+   -- The agent keeps serving a customer whose 24-hour billing window is open
+   -- (already paid), in this conversation or a reopened one. Otherwise, even
+   -- in a long-running conversation, it needs
    -- the plan's WhatsApp agent and a wallet that allows service: if not, the
    -- turn is skipped, the conversation is flagged for staff and nothing is
    -- sent. A skipped turn is not answered later (after a top-up, say) unless
    -- the customer writes again. channel_admission never raises; the guard
    -- keeps any fault on this turn, so the oldest-first claim moves on.
    if not exists(select 1 from app.whatsapp_usage_window w where w.org_id=c.org_id
-    and(w.conversation_id=c.id or(w.channel_id=c.channel_id and w.contact_id=c.contact_id and w.starts_at>now()-interval '24 hours')))then
+    and w.channel_id=c.channel_id and w.contact_id=c.contact_id and w.starts_at>now()-interval '24 hours')then
     begin
      v_kind:=app_private.channel_admission(c.org_id,'whatsapp',now(),p_namespace);
     exception when others then

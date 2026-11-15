@@ -447,3 +447,25 @@ test("a customer whose window is open is answered even when the wallet is exhaus
     await f.close();
   }
 });
+
+test("after the window ends, a long-running conversation needs a wallet that allows service again", async () => {
+  const f = await setup({ plan: "growth" });
+  try {
+    const from = customerNumber();
+    await f.say(from, "Hai");
+    const [c] = await f.conversations(from);
+    await f.h.cleanup.query(
+      "update app.whatsapp_usage_window set starts_at=starts_at-interval '25 hours' where org_id=$1",
+      [f.h.orgA.id],
+    );
+    await setBalance(f.h.cleanup, f.h.orgA.id, -600);
+    await f.say(from, "Satu lagi");
+    const [same] = await f.conversations(from);
+    assert.equal(same.id, c.id, "the same conversation");
+    assert.deepEqual([same.needs_attention, same.attention_reason], [true, "WALLET_EXHAUSTED"]);
+    assert.equal((await f.outbound(c.id)).length, 1, "only the first answer was sent");
+    assert.equal((await f.billed()).length, 1);
+  } finally {
+    await f.close();
+  }
+});

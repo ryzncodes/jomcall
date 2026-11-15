@@ -22,7 +22,7 @@ Branch `claude/usage-metering-e13eb4`, pull request #26 (not merged). Design: bi
 - typecheck: pass.
 - guards: 34 of 34.
 - check:core: 506 of 506.
-- check:billing: 58 of 58 (phone-metering 21, whatsapp-metering 11).
+- check:billing: 59 of 59 (phone-metering 21, whatsapp-metering 12).
 - verify-migrations: pass (scratch replay, 56 RLS tables).
 - build:hosted: pass.
 - voice pytest: 287 passed.

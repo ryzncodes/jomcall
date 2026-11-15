@@ -268,7 +268,7 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 
 ## 13. Metering and admission on the real channels (2026-11-15)
 
-Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `supabase/migrations/20261115123000_channel_metering.sql`; tests `tests/billing/phone-metering.test.ts` (21), `tests/billing/whatsapp-metering.test.ts` (11) and `voice/tests/test_phone.py` (3 new). Everything was tested against the fake telephony, the fake WhatsApp provider, the local engine with its local mail catcher, and the local database only. Revised twice on the same day: once after review, then for the four owner decisions below.
+Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `supabase/migrations/20261115123000_channel_metering.sql`; tests `tests/billing/phone-metering.test.ts` (21), `tests/billing/whatsapp-metering.test.ts` (12) and `voice/tests/test_phone.py` (3 new). Everything was tested against the fake telephony, the fake WhatsApp provider, the local engine with its local mail catcher, and the local database only. Revised twice on the same day: once after review, then for the four owner decisions below.
 
 ### Owner decisions (2026-11-15)
 
@@ -285,7 +285,7 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
   - **Window start:** the moment `whatsapp_work('send_result')` records the provider's `sent` for an agent-authored message (including the template that replaces it outside the 24-hour customer-service window, and a late result that turns `unknown` into `sent`) while that customer has no window that started less than 24 hours earlier. That moment (the database `now()` of that transaction) is `starts_at` of a new row in `app.whatsapp_usage_window`. Notices, staff replies and unanswered chats never start a window.
   - **Window end:** `starts_at + 24 hours`. Agent answers after that, in the same conversation or a new one, start a new window and a new bill.
   - **Key:** `wa:<channel id>:<contact id>:<starts_at as whole Unix seconds>`, quantity 1, `whatsapp_conversation`, priced at `starts_at`. An advisory lock per customer makes two concurrent sends open one window.
-  - **Admission** (`turn_claim`) is skipped while the customer has an open window or the conversation already opened one, so a paid chat is never refused mid-window, including after a resolve and reopen.
+  - **Admission** (`turn_claim`) is skipped while the customer has an open window, so a paid chat is never refused mid-window, including after a resolve and reopen. After the window ends, the next agent turn is checked again, even in the same long-running conversation, so an exhausted wallet stops it (the wallet rule stays for WhatsApp, decision B).
 
 ### What was built
 
