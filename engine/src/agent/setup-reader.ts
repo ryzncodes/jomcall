@@ -13,6 +13,7 @@ import {
 } from "../../../packages/contracts/src/hosting.ts";
 import {
   setupCataloguePayload,
+  setupFactPayload,
 } from "../../../packages/contracts/src/setup.ts";
 import { factInput } from "../../../packages/contracts/src/knowledge.ts";
 import {
@@ -41,6 +42,8 @@ export type SetupReadDeps = {
   env?: Env;
   // Per read; tests shorten it.
   timeoutMs?: number;
+  // How often maintain runs; tests pass 0 so every tick runs it.
+  maintainEveryMs?: number;
 };
 
 type Claim = {
@@ -59,7 +62,14 @@ type Claim = {
 // A heavily flagged long list is read once more with the stronger model.
 const FALLBACK_SHARE = 0.5;
 const FALLBACK_MIN_ROWS = 10;
-const READ_TIMEOUT_MS = 60_000;
+// A 300-row answer can take well over a minute. The lease (eight minutes,
+// set in setup_read) covers two reads plus the chunk fetch and the result.
+const READ_TIMEOUT_MS = 120_000;
+const MAINTAIN_EVERY_MS = 30_000;
+// Loop pauses: after a handled upload, and after a tick that found nothing
+// (or failed).
+const BUSY_PAUSE_MS = 1_000;
+const IDLE_PAUSE_MS = 5_000;
 const IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp"] as const;
 
 // Never used: an injected read gets this in place of a real client, so a test
@@ -110,16 +120,49 @@ export function readerFields(claim: {
 const log = (upload: string, attempt: number, code: string) =>
   console.log(`SETUP_READ upload=${upload} attempt=${attempt} code=${code}`);
 
+// What jsonb and the staging store accept: no NUL and no lone surrogate
+// half (both are refused by Postgres), cut by code points, never inside a
+// character.
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+export function clean(s: string, maxPoints?: number): string {
+  const out = s.replace(/\u0000/g, "").replace(LONE_SURROGATE, "");
+  if (maxPoints === undefined) return out;
+  const points = [...out];
+  return points.length <= maxPoints ? out : points.slice(0, maxPoints).join("");
+}
+
+type Ok = Extract<ReadResult, { ok: true }>;
+// The fallback read replaces the first only when it kept at least as many
+// rows and is not more heavily flagged; an empty or shorter answer never
+// wins. Facts are merged, the first read's fact winning per field.
+export function better(first: Ok, second: ReadResult): Ok {
+  if (
+    !second.ok ||
+    second.rows.length < first.rows.length ||
+    second.flaggedShare > first.flaggedShare
+  )
+    return first;
+  const have = new Set(first.facts.map((f) => f.fieldKey));
+  return {
+    ...second,
+    facts: [...first.facts, ...second.facts.filter((f) => !have.has(f.fieldKey))],
+  };
+}
+
 export class SetupReadWorker {
   private pool: pg.Pool;
   private stop = new AbortController();
   private running: Promise<unknown> = Promise.resolve();
+  private loop: Promise<void> | undefined;
+  private closed = false;
+  private lastMaintain = -Infinity;
   private constructor(
     readonly namespace: string,
     private readonly read: ReadFn,
     private readonly client: () => AnthropicLike,
     readonly enabled: boolean,
     private readonly timeoutMs: number,
+    private readonly maintainEveryMs: number,
     env: Env,
   ) {
     // Local: 127.0.0.1:54622 only. Hosted: TLS and an allow-listed host.
@@ -143,6 +186,7 @@ export class SetupReadWorker {
       client,
       enabled,
       deps.timeoutMs ?? READ_TIMEOUT_MS,
+      deps.maintainEveryMs ?? MAINTAIN_EVERY_MS,
       env,
     );
   }
@@ -161,15 +205,50 @@ export class SetupReadWorker {
     ).rows[0].value;
   }
 
-  // Maintenance, then at most one upload. True when an upload was handled.
+  // Maintenance (at most every maintainEveryMs), then at most one upload.
+  // True when an upload was handled.
   tick(): Promise<boolean> {
     const run = this.once();
     this.running = run.catch(() => undefined);
     return run;
   }
 
+  // The worker's own loop: one second after a handled upload, five after a
+  // tick that found nothing or failed. close() ends it promptly.
+  run(): Promise<void> {
+    this.loop ??= (async () => {
+      while (!this.stop.signal.aborted) {
+        let handled = false;
+        try {
+          handled = await this.tick();
+        } catch {
+          console.error("SETUP_READ_TICK_FAILED");
+        }
+        await this.pause(handled ? BUSY_PAUSE_MS : IDLE_PAUSE_MS);
+      }
+    })();
+    return this.loop;
+  }
+
+  private pause(ms: number) {
+    const signal = this.stop.signal;
+    if (signal.aborted) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      signal.addEventListener("abort", done, { once: true });
+    });
+  }
+
   private async once(): Promise<boolean> {
-    await this.op("maintain");
+    if (Date.now() - this.lastMaintain >= this.maintainEveryMs) {
+      await this.op("maintain");
+      this.lastMaintain = Date.now();
+    }
     if (this.stop.signal.aborted) return false;
     const claim = (await this.op("claim")) as Claim | null;
     if (!claim) return false;
@@ -189,22 +268,30 @@ export class SetupReadWorker {
     if (input === null) return log(upload, attempt, "LEASE_LOST");
     if (input === "UNREADABLE") return fail("UNREADABLE");
 
+    // Stopping (a deploy): the lease goes back with the attempt returned.
+    const stopped = async () => {
+      await this.op("release", upload, lease, { stopped: true });
+      log(upload, attempt, "STOPPED");
+    };
+    if (this.stop.signal.aborted) return stopped();
     const fields = readerFields(claim);
     let result = await this.readOnce(input, fields);
-    // Inside the same lease; not a second attempt. A failed or worse
-    // fallback keeps the first result.
+    // Inside the same lease; not a second attempt. A failed, shorter or
+    // more heavily flagged fallback keeps the first result.
     if (
       result.ok &&
       result.flaggedShare > FALLBACK_SHARE &&
       result.rows.length >= FALLBACK_MIN_ROWS &&
       !this.stop.signal.aborted
-    ) {
-      const second = await this.readOnce(input, fields, readerFallbackModel);
-      if (second.ok && second.flaggedShare <= result.flaggedShare)
-        result = second;
-    }
+    )
+      result = better(
+        result,
+        await this.readOnce(input, fields, readerFallbackModel),
+      );
 
     if (!result.ok) {
+      if (result.code === "FAILED" && this.stop.signal.aborted)
+        return stopped();
       if (result.code === "FAILED") {
         // Retryable: a later tick tries again, unless this was the second try.
         const r = await this.op("release", upload, lease);
@@ -215,7 +302,17 @@ export class SetupReadWorker {
     }
 
     const payload = this.payload(upload, result, fields);
-    const r = await this.op("result", upload, lease, payload);
+    let r;
+    try {
+      r = await this.op("result", upload, lease, payload);
+    } catch {
+      // Refused or failed: the upload must not wait in "reading" to be sent
+      // to the model again and fail the same way.
+      await this.op("fail", upload, lease, { code: "READ_FAILED" }).catch(
+        () => undefined,
+      );
+      return log(upload, attempt, "RESULT_REFUSED");
+    }
     log(
       upload,
       attempt,
@@ -273,23 +370,20 @@ export class SetupReadWorker {
     return { kind: "text", text: data.toString("utf8") };
   }
 
-  // Rows and facts in the shapes the staging store keeps. A row or fact that
-  // the payload contracts refuse is counted as dropped, not sent.
-  private payload(
-    upload: string,
-    result: Extract<ReadResult, { ok: true }>,
-    fields: ReaderField[],
-  ) {
+  // Rows and facts in the shapes the staging store keeps, checked with the
+  // same rules setup_read enforces. A row or fact that fails them is counted
+  // as dropped (rows) or left out (facts), not sent.
+  private payload(upload: string, result: Ok, fields: ReaderField[]) {
     let dropped = result.dropped;
     const rows = [];
     for (const r of result.rows) {
       const parsed = setupCataloguePayload.safeParse({
         uploadId: upload,
-        item: r.item,
-        variant: r.variant,
+        item: clean(r.item),
+        variant: clean(r.variant),
         priceSen: r.priceSen,
-        unit: r.unit,
-        notes: r.notes,
+        unit: clean(r.unit),
+        notes: clean(r.notes),
       });
       if (!parsed.success) {
         dropped += 1;
@@ -303,9 +397,11 @@ export class SetupReadWorker {
         unit,
         notes,
         needsCheck: r.needsCheck,
-        checkReason: r.needsCheck ? r.checkReason.slice(0, 500) : "",
+        checkReason: r.needsCheck ? clean(r.checkReason, 500) : "",
       });
     }
+    // The worker is the gate for "this field belongs to this pack": only the
+    // fields offered to the reader (readerFields) are accepted.
     const titles = new Map(
       fields.map((f) => [`${f.packId}\u0000${f.fieldKey}`, f.title]),
     );
@@ -313,34 +409,45 @@ export class SetupReadWorker {
     for (const f of result.facts) {
       const title = titles.get(`${f.packId}\u0000${f.fieldKey}`);
       if (!title) continue;
-      // The same parse applySetup runs, so an import fact never fails apply.
-      const ok =
-        !!f.value.trim() &&
-        factInput.safeParse({
-          expectedAgentRevision: 1,
-          packId: f.packId,
-          fieldKey: f.fieldKey,
-          title,
-          value: f.value,
-          language: "mixed",
-        }).success;
-      if (!ok) continue;
+      // The interview's own value rule (2,000 code points, 4,000 bytes,
+      // trimmed), then the parse applySetup runs.
+      const parsed = setupFactPayload.safeParse({
+        value: clean(f.value),
+        title,
+        language: "mixed",
+        uploadId: upload,
+      });
+      if (!parsed.success || !parsed.data.value) continue;
+      const value = parsed.data.value;
+      const applies = factInput.safeParse({
+        expectedAgentRevision: 1,
+        packId: f.packId,
+        fieldKey: f.fieldKey,
+        title,
+        value,
+        language: "mixed",
+      }).success;
+      if (!applies) continue;
       facts.push({
         packId: f.packId,
         fieldKey: f.fieldKey,
         title,
-        value: f.value,
+        value,
         needsCheck: f.needsCheck,
-        checkReason: f.needsCheck ? f.checkReason.slice(0, 500) : "",
+        checkReason: f.needsCheck ? clean(f.checkReason, 500) : "",
       });
     }
     return { rows, facts, dropped: Math.min(dropped, 9999) };
   }
 
-  // Stops a read in progress (it counts as a retryable failure), waits for
-  // the current tick, then closes the pool.
+  // Stops a read in progress (its lease goes back with the attempt
+  // returned), ends the loop, waits for the current tick, then closes the
+  // pool. Safe to call twice.
   async close() {
+    if (this.closed) return;
+    this.closed = true;
     this.stop.abort();
+    await this.loop;
     await this.running;
     await this.pool.end();
   }

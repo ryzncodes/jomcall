@@ -18,12 +18,13 @@ import {
   type ReaderInput,
   type ReaderField,
 } from "../../packages/inference/src/setup-reader.ts";
-import { packById } from "../../packages/domain/src/packs/index.ts";
+import { basePack, packById } from "../../packages/domain/src/packs/index.ts";
 
 // The web process accepts uploads only while the switch is on.
 process.env.JOMCALL_SETUP_READER = "anthropic";
 
-type Step = ReadResult | Error | (() => Promise<ReadResult> | ReadResult);
+type ReadOpts = Parameters<ReadFn>[2];
+type Step = ReadResult | Error | ((opts: ReadOpts) => Promise<ReadResult> | ReadResult);
 // Answers with the steps in order; the last one repeats.
 function fake(...steps: Step[]) {
   const calls: { input: ReaderInput; fields: ReaderField[]; model?: string }[] = [];
@@ -31,7 +32,7 @@ function fake(...steps: Step[]) {
     calls.push({ input, fields, model: opts.model });
     const step = steps.length > 1 ? steps.shift()! : steps[0]!;
     if (step instanceof Error) throw step;
-    return typeof step === "function" ? step() : step;
+    return typeof step === "function" ? step(opts) : step;
   };
   return { read, calls };
 }
@@ -75,10 +76,13 @@ async function fixture() {
   const sessionId = started.body.data.session.id as string;
   const q = (sql: string, args: unknown[] = []) => f.h.cleanup.query(sql, args);
   const workers: SetupReadWorker[] = [];
-  const worker = async (read: ReadFn, opts: { enabled?: boolean; ns?: string } = {}) => {
+  const worker = async (read: ReadFn, opts: { enabled?: boolean; ns?: string; timeoutMs?: number } = {}) => {
     const w = await SetupReadWorker.create(opts.ns ?? f.h.namespace, {
       read,
       enabled: opts.enabled ?? true,
+      // Every tick runs maintain here; the process default is every 30 s.
+      maintainEveryMs: 0,
+      ...(opts.timeoutMs ? { timeoutMs: opts.timeoutMs } : {}),
     });
     workers.push(w);
     return w;
@@ -444,6 +448,45 @@ test("flaggedShare above 0.5 with 10 rows triggers one fallback read; its result
     assert.equal(u.state, "done");
   }));
 
+test("a fallback with fewer rows never replaces the first read; facts are merged when it wins", () =>
+  withFixture(async (x) => {
+    const firstFacts = [fact("every-business", "business_name", "Dari bacaan pertama")];
+    // Empty fallback: share 0, but no rows.
+    const empty = await x.paste("empty fallback");
+    const a = fake(ok(flaggedRows(10, 6), firstFacts), ok([]));
+    await (await x.worker(a.read)).tick();
+    assert.equal(a.calls.length, 2);
+    let rows = (await x.items("catalogue_row")).filter((r) => r.key.startsWith(empty));
+    assert.equal(rows.length, 10);
+    assert.equal(rows.filter((r) => r.needs_check).length, 6);
+    assert.equal((await x.upload(empty)).fact_count, 1);
+    // Two clean rows: still fewer rows.
+    const two = await x.paste("two rows");
+    const b = fake(ok(flaggedRows(10, 6).map((r) => ({ ...r, item: "B " + r.item }))), ok([row("Satu"), row("Dua")]));
+    await (await x.worker(b.read)).tick();
+    rows = (await x.items("catalogue_row")).filter((r) => r.key.startsWith(two));
+    assert.equal(rows.length, 10);
+    assert.ok(rows.every((r) => r.payload.item.startsWith("B ")));
+    // Ten rows, two flagged: kept, with the first read's fact merged in and
+    // winning for its field.
+    const good = await x.paste("good fallback");
+    const c = fake(
+      ok(flaggedRows(10, 6).map((r) => ({ ...r, item: "C " + r.item })), [fact("appointment", "walk_in_policy", "Pertama")]),
+      ok(flaggedRows(10, 2).map((r) => ({ ...r, item: "D " + r.item })), [
+        fact("appointment", "walk_in_policy", "Kedua"),
+        fact("appointment", "booking_window", "Dua minggu"),
+      ]),
+    );
+    await (await x.worker(c.read)).tick();
+    rows = (await x.items("catalogue_row")).filter((r) => r.key.startsWith(good));
+    assert.equal(rows.length, 10);
+    assert.ok(rows.every((r) => r.payload.item.startsWith("D ")));
+    assert.equal(rows.filter((r) => r.needs_check).length, 2);
+    const facts = await x.items("fact");
+    assert.equal(facts.find((f) => f.key === "walk_in_policy")!.payload.value, "Pertama");
+    assert.equal(facts.find((f) => f.key === "booking_window")!.payload.value, "Dua minggu");
+  }));
+
 test("fallback keeps the better result: a worse or failed fallback keeps the first", () =>
   withFixture(async (x) => {
     const worse = await x.paste("worse");
@@ -568,6 +611,9 @@ test("delete_after is set for uploads of sessions that never get applied; chunks
       "update app.setup_upload set created_at=now()-interval '31 days',delete_after=null where id=$1",
       [id],
     );
+    // A local agent process running beside the tests sweeps every upload in
+    // the database too (retention is not per namespace). It would only do
+    // what this worker does, so each assertion below holds whoever swept.
     // Still open: not swept yet.
     assert.equal((await x.upload(id)).bytes_deleted_at, null);
     await w.tick();
@@ -640,3 +686,178 @@ test("a second worker cannot read chunks of an upload leased by the first", () =
     assert.equal(Buffer.from(mine.data, "base64").toString("utf8"), "Rahsia RM9");
     assert.equal((await x.upload(id)).state, "reading");
   }));
+
+test("strings are cut by code points and cleaned before the result is sent", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    // 499 units, then an emoji whose two halves straddle unit 500.
+    const reason = "x".repeat(499) + "\u{1F600}" + "tail";
+    const { read } = fake(
+      ok([
+        row("Nasi\u0000 lemak", { needsCheck: true, checkReason: reason }),
+        row("Teh \uD800tarik"),
+      ]),
+    );
+    await (await x.worker(read)).tick();
+    assert.equal((await x.upload(id)).state, "done");
+    const rows = await x.items("catalogue_row");
+    assert.equal(rows[0].payload.item, "Nasi lemak");
+    assert.equal(rows[0].check_reason, "x".repeat(499) + "\u{1F600}");
+    assert.equal(rows[1].payload.item, "Teh tarik");
+  }));
+
+test("a result the SQL refuses ends the upload failed, not reading, after one read", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    // More rows than setup_read accepts.
+    const { read, calls } = fake(ok(Array.from({ length: 301 }, (_, i) => row(`Item ${i}`))));
+    const w = await x.worker(read);
+    await w.tick();
+    let u = await x.upload(id);
+    assert.equal(u.state, "failed");
+    assert.equal(u.fail_code, "READ_FAILED");
+    assert.equal(u.lease_token, null);
+    await w.tick();
+    assert.equal(calls.length, 1);
+    u = await x.upload(id);
+    assert.equal(u.state, "failed");
+    assert.deepEqual(await x.items(), []);
+  }));
+
+test("facts: a dropped pack mid-read, a field not in its pack, and first wins per key", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    const { read } = fake(async () => {
+      // The owner switches the main pack while the document is read.
+      const switched = await x.f.req("POST", x.base, { mainPack: "order", extraPacks: [] });
+      assert.equal(switched.status, 200, JSON.stringify(switched.body));
+      return ok([], [
+        fact("appointment", "walk_in_policy", "Boleh walk-in"),
+        // business_name is every-business's field, not appointment's.
+        fact("appointment", "business_name", "Salah pek"),
+        fact("every-business", "address", "Jalan Contoh 1"),
+      ]);
+    });
+    const w = await x.worker(read);
+    await w.tick();
+    const facts = await x.items("fact");
+    assert.deepEqual(facts.map((f) => f.key), ["address"]);
+    assert.equal((await x.upload(id)).fact_count, 1);
+    // setup_read keeps the first of two facts for one key.
+    const second = await x.paste("second");
+    const claim = await w.op("claim");
+    assert.equal(claim.upload, second);
+    const f = (value: string) => ({
+      packId: "every-business",
+      fieldKey: "parking",
+      title: "Parking",
+      value,
+      needsCheck: false,
+      checkReason: "",
+    });
+    await w.op("result", second, claim.lease, { rows: [], facts: [f("Pertama"), f("Kedua")], dropped: 0 });
+    const parking = (await x.items("fact")).filter((i) => i.key === "parking");
+    assert.equal(parking.length, 1);
+    assert.equal(parking[0].payload.value, "Pertama");
+  }));
+
+test("a null or missing lease opens nothing", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    const w = await x.worker(fake(ok([])).read);
+    const claim = await w.op("claim");
+    for (const action of ["chunk", "result", "fail", "release"])
+      assert.equal(await w.op(action, id, null, { seq: 0, code: "TOO_LONG", rows: [], facts: [], dropped: 0 }), null, action);
+    // A lease row whose lease_until was cleared is not held.
+    await x.q("update app.setup_upload set lease_until=null where id=$1", [id]);
+    assert.equal(await w.op("chunk", id, claim.lease, { seq: 0 }), null);
+    await x.q("update app.setup_upload set lease_until=now()+interval '1 minute' where id=$1", [id]);
+    // A missing seq is refused, not read as seq 0.
+    await assert.rejects(w.op("chunk", id, claim.lease, {}), /INVALID_SETUP_READ_OPERATION/);
+    assert.equal((await x.upload(id)).state, "reading");
+  }));
+
+test("another namespace's maintain does not re-queue this namespace's expired lease", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    const mine = await x.worker(fake(ok([])).read);
+    await mine.op("claim");
+    await x.q("update app.setup_upload set lease_until=now()-interval '1 second' where id=$1", [id]);
+    const other = await x.worker(fake(ok([])).read, { ns: `test_${randomUUID()}` });
+    await other.tick();
+    assert.equal((await x.upload(id)).state, "reading");
+    await mine.op("maintain");
+    assert.equal((await x.upload(id)).state, "queued");
+  }));
+
+test("the timeout's abort reaches the reader and counts as a retryable failure", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    let reason: unknown;
+    const { read } = fake(
+      (opts) =>
+        new Promise<ReadResult>((resolve) =>
+          opts.signal!.addEventListener("abort", () => {
+            reason = opts.signal!.reason;
+            resolve(failed("FAILED"));
+          }),
+        ),
+    );
+    await (await x.worker(read, { timeoutMs: 50 })).tick();
+    assert.equal((reason as Error).name, "TimeoutError");
+    const u = await x.upload(id);
+    assert.equal(u.state, "queued");
+    assert.equal(u.attempts, 1);
+  }));
+
+test("close() during a read ends the loop and gives the attempt back", () =>
+  withFixture(async (x) => {
+    const id = await x.paste();
+    let started!: () => void;
+    const reading = new Promise<void>((r) => (started = r));
+    const { read, calls } = fake(
+      (opts) =>
+        new Promise<ReadResult>((resolve) => {
+          started();
+          opts.signal!.addEventListener("abort", () => resolve(failed("FAILED")));
+        }),
+    );
+    const w = await x.worker(read);
+    const loop = w.run();
+    await reading;
+    assert.equal((await x.upload(id)).state, "reading");
+    const t0 = Date.now();
+    await w.close();
+    await loop;
+    assert.ok(Date.now() - t0 < 3000);
+    assert.equal(calls.length, 1);
+    const u = await x.upload(id);
+    assert.equal(u.state, "queued");
+    assert.equal(u.attempts, 0);
+    assert.equal(await x.outboxDone(id), false);
+  }));
+
+test("the worker loop waits when idle and close() ends it promptly", () =>
+  withFixture(async (x) => {
+    const w = await x.worker(fake(ok([])).read);
+    const loop = w.run();
+    await new Promise((r) => setTimeout(r, 200));
+    const t0 = Date.now();
+    await w.close();
+    await loop;
+    assert.ok(Date.now() - t0 < 2000);
+  }));
+
+test("the SQL's base pack id is the TypeScript basePack", async () => {
+  const pool = new pg.Pool({ connectionString: process.env.LOCAL_ADMIN_DATABASE_URL, max: 1 });
+  try {
+    const def = (
+      await pool.query(
+        "select pg_get_functiondef('app_private.setup_read(text,text,uuid,uuid,jsonb)'::regprocedure) as d",
+      )
+    ).rows[0].d as string;
+    assert.ok(def.includes(`array['${basePack}', s.main_pack]`), "base pack id differs");
+  } finally {
+    await pool.end();
+  }
+});

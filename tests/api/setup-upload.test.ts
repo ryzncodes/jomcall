@@ -251,7 +251,7 @@ test("create, three chunks, finish queues one read", () =>
       assert.equal(u.failCode, null);
       assert.deepEqual(
         Object.keys(u).sort(),
-        ["bytes", "createdAt", "factCount", "failCode", "id", "kind", "name", "rowCount", "state"],
+        ["bytes", "bytesDeletedAt", "createdAt", "droppedCount", "factCount", "failCode", "id", "kind", "name", "rowCount", "state"],
       );
       assert.equal(await x.reads(id), 1);
       const r = await x.row(id);

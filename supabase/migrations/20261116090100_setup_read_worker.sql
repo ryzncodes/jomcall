@@ -3,11 +3,12 @@
 -- through app_private.setup_read. The agent role gets no table grant: the
 -- function, owned by jomcall_agent_jobs, is its only way in.
 --
--- Lease: claim sets a random lease_token and a lease_until five minutes out (a
--- 60-second read, a 60-second fallback read, the chunk fetch and the result
--- all fit). chunk, result, fail and release act only while state is
--- 'reading', the token matches and lease_until has not passed; a second worker
--- cannot guess the token. maintain re-queues expired leases.
+-- Lease: claim sets a random lease_token and a lease_until eight minutes out
+-- (a 120-second read, a 120-second fallback read, the chunk fetch and the
+-- result fit with room to spare). chunk, result, fail and release act only
+-- while state is 'reading', a lease token was passed and matches, and
+-- lease_until is set and has not passed; a second worker cannot guess the
+-- token. maintain re-queues expired leases.
 --
 -- Outbox: the setup.read row stays undelivered while its upload is queued or
 -- reading, so a released or re-queued upload is claimed again. It is
@@ -29,7 +30,6 @@ create index if not exists setup_upload_unswept on app.setup_upload(created_at) 
 -- Set when the 30-day sweep has run for an upload, so the sweep's index holds
 -- only uploads it has not reached yet.
 alter table app.setup_upload add column if not exists bytes_deleted_at timestamptz;
-drop index if exists app.setup_upload_delete_after;
 create index if not exists setup_upload_due on app.setup_upload(delete_after) where bytes_deleted_at is null;
 -- The read actions find an upload's setup.read row by resource id.
 create index if not exists outbox_setup_read on app.outbox(resource_id) where kind = 'setup.read';
@@ -109,7 +109,7 @@ begin
     update app.outbox set delivered_at = now(), lease_until = null where id = o.id;
     continue;
    end if;
-   update app.setup_upload set state = 'reading', attempts = attempts + 1, lease_token = gen_random_uuid(), lease_until = now() + interval '5 minutes'
+   update app.setup_upload set state = 'reading', attempts = attempts + 1, lease_token = gen_random_uuid(), lease_until = now() + interval '8 minutes'
    where id = u.id returning * into u;
    return jsonb_build_object('upload', u.id, 'lease', u.lease_token, 'attempt', u.attempts, 'kind', u.kind, 'mime', u.mime,
     'name', u.name, 'chunks', u.chunks, 'mainPack', s.main_pack, 'extraPacks', to_jsonb(s.extra_packs), 'questionIds', to_jsonb(s.question_ids));
@@ -117,15 +117,18 @@ begin
   return null;
 
  elsif p_action in ('chunk', 'result', 'fail', 'release') then
-  -- The upload must have a setup.read row in this namespace.
-  select b.* into o from app.outbox b where b.resource_id = p_upload and b.kind = 'setup.read' and b.namespace = p_namespace
+  if p_lease is null then return null; end if;
+  -- The upload must have a setup.read row in this namespace, in its own
+  -- organization.
+  select b.* into o from app.outbox b join app.setup_upload y on y.org_id = b.org_id and y.id = b.resource_id
+  where b.resource_id = p_upload and b.kind = 'setup.read' and b.namespace = p_namespace
   order by b.created_at desc, b.id desc limit 1;
   if not found then return null; end if;
 
   if p_action = 'chunk' then
    select * into u from app.setup_upload where org_id = o.org_id and id = p_upload;
-   if not found or u.state <> 'reading' or u.lease_token is distinct from p_lease or u.lease_until <= now() then return null; end if;
-   if jsonb_typeof(p_data->'seq') <> 'number' or (p_data->>'seq') !~ '^[0-9]$' then raise exception 'INVALID_SETUP_READ_OPERATION'; end if;
+   if not found or u.state <> 'reading' or u.lease_token is distinct from p_lease or not coalesce(u.lease_until > now(), false) then return null; end if;
+   if jsonb_typeof(p_data->'seq') is distinct from 'number' or (p_data->>'seq') !~ '^[0-9]$' then raise exception 'INVALID_SETUP_READ_OPERATION'; end if;
    select * into c from app.setup_upload_chunk where org_id = u.org_id and upload_id = u.id and seq = (p_data->>'seq')::int;
    if not found then return jsonb_build_object('missing', true); end if;
    return jsonb_build_object('data', encode(c.data, 'base64'));
@@ -140,9 +143,15 @@ begin
   select * into u from app.setup_upload where id = u.id for update;
   -- Removed while it was being read: left as it is.
   if u.state = 'removed' then return jsonb_build_object('removed', true); end if;
-  if u.state <> 'reading' or u.lease_token is distinct from p_lease or u.lease_until <= now() then return null; end if;
+  if u.state <> 'reading' or u.lease_token is distinct from p_lease or not coalesce(u.lease_until > now(), false) then return null; end if;
 
   if p_action = 'release' then
+   -- The worker is stopping ({"stopped": true}): back to the queue with the
+   -- attempt given back, since the document was never fully read.
+   if p_data->'stopped' = 'true'::jsonb then
+    update app.setup_upload set state = 'queued', attempts = greatest(attempts - 1, 0), lease_token = null, lease_until = null where id = u.id;
+    return jsonb_build_object('state', 'queued');
+   end if;
    -- A retryable failure: back to the queue, unless this was the second try.
    if u.attempts >= 2 then
     update app.setup_upload set state = 'failed', fail_code = 'READ_FAILED', lease_token = null, lease_until = null where id = u.id;

@@ -43,6 +43,8 @@ type UploadRow = {
   fail_code: string | null;
   row_count: number;
   fact_count: number;
+  dropped_count: number;
+  bytes_deleted_at: Date | null;
   writes: number;
   created_at: Date;
 };
@@ -55,6 +57,10 @@ const publicUpload = (r: UploadRow): SetupUpload => ({
   failCode: r.fail_code,
   rowCount: r.row_count,
   factCount: r.fact_count,
+  droppedCount: r.dropped_count,
+  bytesDeletedAt: r.bytes_deleted_at
+    ? new Date(r.bytes_deleted_at).toISOString()
+    : null,
   createdAt: new Date(r.created_at).toISOString(),
 });
 

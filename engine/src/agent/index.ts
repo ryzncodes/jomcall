@@ -124,23 +124,15 @@ async function stop() {
   await voice?.close();
   await voiceRepository?.close();
   await whatsapp?.close();
-  // Aborts a read in progress (retried later) and waits for its tick.
+  // Aborts a read in progress (its attempt is given back) and ends the loop.
   await setupRead.close();
   await setupLoop;
   await runner.close();
 }
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
-const setupLoop = (async () => {
-  while (!stopping) {
-    try {
-      await setupRead.tick();
-    } catch {
-      console.error("SETUP_READ_TICK_FAILED");
-    }
-    if (!stopping) await new Promise((r) => setTimeout(r, 1000));
-  }
-})();
+// Its own loop: 1 s after a read, 5 s when idle, maintain every 30 s.
+const setupLoop = setupRead.run();
 while (!stopping) {
   try {
     await runner.tick();
