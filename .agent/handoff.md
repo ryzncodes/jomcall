@@ -12,12 +12,12 @@ Branch `claude/voice-picker-ec26d4`.
 
 **Verified**
 - See the pull request body for the check counts.
-- Browser, local app on port 4183 with a fake workspace: desktop and 375 px, English and BM, dark theme; Play/Stop and one-at-a-time with temporary synthetic tone clips (removed before commit); saving Charon and reloading keeps Charon.
+- Browser, local app on port 4183 with a new fake workspace owned only by the test account `voice-picker-owner@example.test` (left in the shared local Supabase): desktop and 375 px, English and BM, dark theme; Play/Stop and one-at-a-time with temporary synthetic tone clips (removed before commit); saving Charon and reloading keeps Charon.
 
 **Not verified**
 - No real clips exist: this checkout has no `.env.hosted`, so `voice:samples` was not run. Owner step: `npm run voice:samples -- --paid`, listen, commit the clips.
 - No voice test was started (needs the hosted keys), so the chosen voice reaching a live call was not heard; it is covered by the existing test in `tests/api/voice-tests.test.ts`.
-- The old-free-text note was not seen in a browser (covered by unit tests only). Accessibility with a screen reader not checked. No person has used the picker.
+- The "no voice chosen" note was seen in the browser with an empty saved value; the old free-text case was not (unit tests only). Accessibility with a screen reader not checked. No person has used the picker.
 
 ## 2026-11-15 — guided setup flow (interview door)
 
