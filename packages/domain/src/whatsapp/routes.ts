@@ -21,7 +21,7 @@ import {
   sealCredentials,
   whatsappReadiness,
 } from "../../../whatsapp/src/index.ts";
-import { windowOpen } from "./policy.ts";
+import { decideSend, windowOpen } from "./policy.ts";
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
@@ -86,15 +86,68 @@ async function conversationDetail(
 ) {
   const row = await loadConversation(tx, ctx, id);
   const { last_inbound_at } = row;
+  const now = new Date().toISOString();
+  const lastInboundAt = last_inbound_at
+    ? new Date(last_inbound_at).toISOString()
+    : null;
+  // The same facts the agent process reads in send_claim, read here without
+  // locks. The worker decides again at send time; this is the outlook.
+  const facts = (
+    await tx.query(
+      `select coalesce(k.do_not_contact,true) as do_not_contact,coalesce(k.deletion_pending,true) as deletion_pending,
+        coalesce(h.state,'not_connected') as channel_state,
+        (select g.granted from app.consent_record g where g.org_id=c.org_id and g.contact_id=c.contact_id and g.channel='whatsapp' and g.purpose='service' order by g.created_at desc,g.id desc limit 1) as consent_service,
+        (select g.granted from app.consent_record g where g.org_id=c.org_id and g.contact_id=c.contact_id and g.channel='whatsapp' and g.purpose='marketing' order by g.created_at desc,g.id desc limit 1) as consent_marketing,
+        (select jsonb_build_object('id',f.id,'name',f.name,'language',f.language,'category',f.category,'status',f.status,'variables',f.variables) from app.whatsapp_template f
+          where f.org_id=c.org_id and f.channel_id=c.channel_id and f.purpose='reengage' and f.status='approved' and f.category='utility' and f.variables=0
+          order by (f.language like coalesce(k.preferred_language,'ms')||'%') desc,f.created_at,f.id limit 1) as fallback
+       from app.conversation c left join app.contact k on(k.org_id=c.org_id and k.id=c.contact_id)
+       left join app.whatsapp_channel h on(h.org_id=c.org_id and h.id=c.channel_id)
+       where c.org_id=$1 and c.id=$2`,
+      [ctx.orgId, id],
+    )
+  ).rows[0];
+  const decision = decideSend({
+    message: { kind: "text", templateVariables: [], optOutNotice: false },
+    channel: { state: facts.channel_state },
+    contact: {
+      doNotContact: facts.do_not_contact,
+      deletionPending: facts.deletion_pending,
+    },
+    conversation: { lastInboundAt },
+    consent: {
+      service: facts.consent_service,
+      marketing: facts.consent_marketing,
+    },
+    template: null,
+    fallback: facts.fallback,
+    now,
+  });
   return {
     ...row,
-    window_open: windowOpen(
-      last_inbound_at ? new Date(last_inbound_at).toISOString() : null,
-      new Date().toISOString(),
-    ),
+    window_open: windowOpen(lastInboundAt, now),
+    compliance: {
+      do_not_contact: facts.do_not_contact,
+      deletion_pending: facts.deletion_pending,
+      consent_service: facts.consent_service,
+      consent_marketing: facts.consent_marketing,
+    },
+    reply_outlook: decision.allow
+      ? {
+          allow: true,
+          mode: decision.mode,
+          fallback: decision.mode === "template" && decision.fallback,
+          reason: null,
+        }
+      : { allow: false, mode: null, fallback: false, reason: decision.reason },
     messages: (
       await tx.query(
-        "select * from (select id,direction,author,kind,body,status,error_code,created_at from app.message where org_id=$1 and conversation_id=$2 order by created_at desc,id desc limit 200) recent order by created_at,id",
+        `select * from (select m.id,m.direction,m.author,m.kind,m.body,m.status,m.error_code,m.created_at,
+           case when t.kind like 'notice\\_%' then t.kind end as notice,
+           (m.id=c.disclosure_message_id) is true as disclosure
+          from app.message m join app.conversation c on(c.org_id=m.org_id and c.id=m.conversation_id)
+          left join app.conversation_turn t on(t.org_id=m.org_id and t.id=m.turn_id)
+          where m.org_id=$1 and m.conversation_id=$2 order by m.created_at desc,m.id desc limit 200) recent order by created_at,id`,
         [ctx.orgId, id],
       )
     ).rows,

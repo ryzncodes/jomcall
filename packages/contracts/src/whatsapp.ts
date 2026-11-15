@@ -110,10 +110,29 @@ export type ChatMessage = {
   status: string;
   error_code: string | null;
   created_at: string;
+  // The fixed notice a system message carries, or null.
+  notice: "notice_opt_out" | "notice_handoff" | "notice_unsupported" | null;
+  // True for the message that carried the AI introduction.
+  disclosure: boolean;
 };
+// What the send rules say about a plain staff text right now, read on the
+// server from the same facts the agent process uses. The agent process
+// decides again at send time, and that decision is the one recorded.
+export type ReplyOutlook =
+  | { allow: true; mode: "text"; fallback: false; reason: null }
+  | { allow: true; mode: "template"; fallback: true; reason: null }
+  | { allow: false; mode: null; fallback: false; reason: string };
 export type ConversationDetail = ConversationSummary & {
   last_inbound_at: string | null;
   window_open: boolean;
+  compliance: {
+    do_not_contact: boolean;
+    deletion_pending: boolean;
+    // Latest recorded answer on WhatsApp; null when never asked.
+    consent_service: boolean | null;
+    consent_marketing: boolean | null;
+  };
+  reply_outlook: ReplyOutlook;
   messages: ChatMessage[];
   proposals: {
     id: string;
