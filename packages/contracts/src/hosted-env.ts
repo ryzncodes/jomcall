@@ -4,6 +4,7 @@
 // the same guard functions the services use, and reports names and codes only.
 import {
   appOrigin,
+  curlecKeyMode,
   databaseConnection,
   isLoopbackHost,
   cloudflareMailSettings,
@@ -12,6 +13,7 @@ import {
   mailSettings,
   queueNamespace,
   serviceSecret,
+  signupAllow,
   supabaseUrl,
   turnstileSettings,
   voiceListen,
@@ -203,6 +205,14 @@ export const SETTINGS: Setting[] = [
     description:
       "Optional Turnstile secret key, verified server-side; set both Turnstile keys or neither",
   },
+  {
+    name: "JOMCALL_SIGNUP_ALLOW",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional sign-up allow-list: comma-separated name@example.com or @example.com; empty leaves sign-up open; invited addresses may still sign up",
+  },
   // --- Payments (Curlec chosen 2026-11-14; leave JOMCALL_PAYMENT_PROVIDER empty until approved) ---
   {
     name: "JOMCALL_PAYMENT_PROVIDER",
@@ -243,6 +253,14 @@ export const SETTINGS: Setting[] = [
     required: (env) => env.JOMCALL_PAYMENT_PROVIDER === "curlec",
     description:
       "Secret chosen when creating the Curlec webhook (only when JOMCALL_PAYMENT_PROVIDER=curlec)",
+  },
+  {
+    name: "CURLEC_LIVE_ON_STAGING",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: 1 acknowledges live Curlec keys on the staging namespace (readiness also needs JOMCALL_SIGNUP_ALLOW then)",
   },
   {
     name: "JOMCALL_PUBLIC_ORIGIN",
@@ -580,6 +598,44 @@ function attempt(
   }
 }
 
+// Curlec on the web service: the key's mode must match CURLEC_ENVIRONMENT, and
+// live keys on the staging namespace need an explicit acknowledgement plus a
+// sign-up allow-list, because staging is public. Live means CURLEC_ENVIRONMENT
+// is live OR the key is a live key, so a mismatched pair cannot slip past.
+function curlecFindings(env: Env, missing: Set<string>, findings: Finding[]) {
+  if (env.JOMCALL_PAYMENT_PROVIDER?.trim() !== "curlec") return;
+  const environment = env.CURLEC_ENVIRONMENT?.trim() || "test";
+  if (environment !== "test" && environment !== "live")
+    findings.push({ name: "CURLEC_ENVIRONMENT", code: "INVALID_ENVIRONMENT" });
+  let keyMode: "live" | "test" | null = null;
+  if (!missing.has("CURLEC_KEY_ID")) {
+    keyMode = curlecKeyMode(env.CURLEC_KEY_ID ?? "");
+    if (keyMode === null)
+      findings.push({ name: "CURLEC_KEY_ID", code: "CURLEC_KEY_MODE_UNKNOWN" });
+    else if (
+      (environment === "test" || environment === "live") &&
+      keyMode !== environment
+    )
+      findings.push({
+        name: "CURLEC_ENVIRONMENT",
+        code: "CURLEC_KEY_MODE_MISMATCH",
+      });
+  }
+  const live = environment === "live" || keyMode === "live";
+  if (!live || env.JOMCALL_QUEUE_NAMESPACE?.trim() !== "staging") return;
+  if (env.CURLEC_LIVE_ON_STAGING?.trim() !== "1")
+    findings.push({
+      name: "CURLEC_LIVE_ON_STAGING",
+      code: "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED",
+    });
+  // An invalid list is already reported by its own check.
+  if (!env.JOMCALL_SIGNUP_ALLOW?.trim())
+    findings.push({
+      name: "JOMCALL_SIGNUP_ALLOW",
+      code: "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING",
+    });
+}
+
 // Names what is missing or wrong for one service. Never returns a value.
 export function readiness(service: Service, env: Env): Finding[] {
   const findings: Finding[] = [];
@@ -615,6 +671,8 @@ export function readiness(service: Service, env: Env): Finding[] {
     check("JOMCALL_QUEUE_NAMESPACE", () => queueNamespace(hostedEnv));
   if (service === "web") {
     check("TURNSTILE_SITE_KEY", () => turnstileSettings(hostedEnv));
+    check("JOMCALL_SIGNUP_ALLOW", () => signupAllow(hostedEnv));
+    curlecFindings(env, missing, findings);
     check("APP_ORIGIN", () => appOrigin(hostedEnv));
     check("SUPABASE_URL", () => supabaseUrl(hostedEnv));
     database("APP_DATABASE_URL");

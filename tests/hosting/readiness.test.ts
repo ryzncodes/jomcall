@@ -90,6 +90,109 @@ test("wrong values are named by variable and code, never echoed", () => {
   assert.equal(byName.JOMCALL_QUEUE_NAMESPACE, "INVALID_QUEUE_NAMESPACE");
 });
 
+const CURLEC = {
+  JOMCALL_PAYMENT_PROVIDER: "curlec",
+  CURLEC_KEY_SECRET: SECRET,
+  CURLEC_WEBHOOK_SECRET: SECRET,
+};
+const codes = (env: Record<string, string>) =>
+  Object.fromEntries(readiness("web", env).map((f) => [f.name, f.code]));
+
+test("Curlec test keys with CURLEC_ENVIRONMENT test are ready", () => {
+  assert.deepEqual(
+    readiness("web", { ...good, ...CURLEC, CURLEC_KEY_ID: "rzp_test_Abc123" }),
+    [],
+  );
+});
+
+test("a Curlec key whose prefix does not match CURLEC_ENVIRONMENT is refused", () => {
+  const live = `rzp_live_${SECRET}`;
+  // Live key, environment left at its default (test): the owner's mistake.
+  const a = readiness("web", {
+    ...good,
+    ...CURLEC,
+    JOMCALL_QUEUE_NAMESPACE: "prod",
+    CURLEC_KEY_ID: live,
+  });
+  assert.deepEqual(a, [
+    { name: "CURLEC_ENVIRONMENT", code: "CURLEC_KEY_MODE_MISMATCH" },
+  ]);
+  assert.doesNotMatch(JSON.stringify(a), new RegExp(SECRET));
+  const b = codes({
+    ...good,
+    ...CURLEC,
+    JOMCALL_QUEUE_NAMESPACE: "prod",
+    CURLEC_ENVIRONMENT: "live",
+    CURLEC_KEY_ID: "rzp_test_Abc123",
+  });
+  assert.equal(b.CURLEC_ENVIRONMENT, "CURLEC_KEY_MODE_MISMATCH");
+});
+
+test("a Curlec key with an unknown prefix or an unknown environment is refused", () => {
+  const c = codes({ ...good, ...CURLEC, CURLEC_KEY_ID: `key_${SECRET}` });
+  assert.equal(c.CURLEC_KEY_ID, "CURLEC_KEY_MODE_UNKNOWN");
+  const d = codes({
+    ...good,
+    ...CURLEC,
+    CURLEC_ENVIRONMENT: "sandbox",
+    CURLEC_KEY_ID: "rzp_test_Abc123",
+  });
+  assert.equal(d.CURLEC_ENVIRONMENT, "INVALID_ENVIRONMENT");
+});
+
+test("live Curlec keys on staging need the acknowledgement and an allow-list", () => {
+  const liveStaging = {
+    ...good,
+    ...CURLEC,
+    CURLEC_ENVIRONMENT: "live",
+    CURLEC_KEY_ID: "rzp_live_Abc123",
+  };
+  assert.deepEqual(codes(liveStaging), {
+    CURLEC_LIVE_ON_STAGING: "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED",
+    JOMCALL_SIGNUP_ALLOW: "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING",
+  });
+  assert.deepEqual(
+    codes({ ...liveStaging, CURLEC_LIVE_ON_STAGING: "1" }),
+    { JOMCALL_SIGNUP_ALLOW: "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING" },
+  );
+  assert.deepEqual(
+    codes({ ...liveStaging, JOMCALL_SIGNUP_ALLOW: "@example.test" }),
+    { CURLEC_LIVE_ON_STAGING: "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED" },
+  );
+  assert.deepEqual(
+    readiness("web", {
+      ...liveStaging,
+      CURLEC_LIVE_ON_STAGING: "1",
+      JOMCALL_SIGNUP_ALLOW: "owner@example.test,@example.test",
+    }),
+    [],
+  );
+  // An invalid list is reported as invalid, once.
+  assert.deepEqual(
+    codes({
+      ...liveStaging,
+      CURLEC_LIVE_ON_STAGING: "1",
+      JOMCALL_SIGNUP_ALLOW: "example.test",
+    }),
+    { JOMCALL_SIGNUP_ALLOW: "SIGNUP_ALLOW_INVALID" },
+  );
+  // A live key counts as live even when the environment says test.
+  const mismatched = codes({
+    ...liveStaging,
+    CURLEC_ENVIRONMENT: "test",
+  });
+  assert.equal(mismatched.CURLEC_ENVIRONMENT, "CURLEC_KEY_MODE_MISMATCH");
+  assert.equal(
+    mismatched.CURLEC_LIVE_ON_STAGING,
+    "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED",
+  );
+  // Production needs no acknowledgement.
+  assert.deepEqual(
+    readiness("web", { ...liveStaging, JOMCALL_QUEUE_NAMESPACE: "prod" }),
+    [],
+  );
+});
+
 test("conditional keys are required only when their feature is on", () => {
   const agent = {
     JOMCALL_MODE: "hosted",

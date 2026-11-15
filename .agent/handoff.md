@@ -23,6 +23,37 @@ Branch `claude/voice-picker-ec26d4`.
 - `npm run check:core` showed 46 failures in `tests/db/core-tools-channels.test.ts`, `tests/engine/phone-call.test.ts`, `tests/engine/phone-server.test.ts`, `tests/engine/whatsapp-flow.test.ts` and `tests/api/phone-numbers.test.ts`. The cause is unproven; re-run on a clean database after the metering pull request merges.
 - The "no voice chosen" note was seen in the browser with an empty saved value; the old free-text note and the playback-failure message were not (static guards only). Accessibility with a screen reader not checked. No person has used the picker.
 
+## 2026-11-15 — staging safety: sign-up allow-list and Curlec readiness
+
+Branch `claude/staging-safety-de5753`, pull request into `main` (not merged).
+
+**Owner decisions recorded (2026-11-14/15)**
+- (a) Staging uses LIVE Curlec keys by the owner's explicit choice. (b) The owner already holds a Curlec merchant account under Digitalize Plus Enterprise; no application needed. (c) Vercel Deployment Protection was removed for `staging.jomcall.com` so Curlec's webhook can reach it; the site is public. (d) Digitalize Plus Enterprise is the operating business for JomCall for now. Production approval of Curlec is still pending.
+- Guided setup (#24) was squash-merged as `6d2caa3`; staging was migrated (34 migrations) and rebuilt on 2026-11-15.
+
+**Changed**
+- `JOMCALL_SIGNUP_ALLOW` (hosted web only): comma-separated `name@example.com` / `@example.com`. Unset or empty: sign-up open as before. Set: other addresses get 403 `SIGNUP_NOT_ALLOWED` (BM/English text, list never shown) unless a pending, unexpired invitation exists for that address. Invalid value: every sign-up refused, readiness reports `SIGNUP_ALLOW_INVALID`. Mock and local ignore it. Creating a workspace (`POST /organizations`) is also refused (`WORKSPACE_NOT_ALLOWED`) for addresses not on the list. Login and invitation accept are unchanged. Existing accounts keep signing in and can top up workspaces they already have; an existing account not on the list that has no workspace can no longer create one.
+- Migration `20261115120000_signup_invited.sql`: `app_private.signup_invited(email)` yes/no for the web login only, owned by `jomcall_members` (bypassrls) like `accept_invitation`.
+- Run time (`paymentReadiness`, `packages/billing/src/provider.ts`): the same rules as readiness. A Curlec key with an unknown prefix is refused (`CURLEC_KEY_MODE_UNKNOWN`); in hosted mode on the `staging` namespace, live keys without `CURLEC_LIVE_ON_STAGING=1` (`LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED`) or without a valid list (`SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING`) leave payments not connected: wallet top-ups and the Curlec webhook are refused. **Once deployed, the staging wallet stops taking payments until the owner sets both in Vercel's staging environment.** Prefix logic now lives once, in `curlecKeyMode` (`hosting.ts`).
+- Non-ASCII addresses never match the list (lower-casing maps look-alikes such as U+212A to ASCII).
+- `npm run hosted:readiness -- --service web`: fails on a Curlec key whose prefix does not match `CURLEC_ENVIRONMENT` (`CURLEC_KEY_MODE_MISMATCH`), on an unknown prefix (`CURLEC_KEY_MODE_UNKNOWN`), and on live keys on the `staging` namespace without `CURLEC_LIVE_ON_STAGING=1` and `JOMCALL_SIGNUP_ALLOW`.
+
+**Verified (2026-11-15, this worktree, local only)**
+- `npm run typecheck`: pass. `npm run test:guards`: 34 of 34. `npm run build:hosted` and `npm run build:mock`: pass. `npm run db:verify-migrations`: pass, 54 tables with row-level security.
+- `npm run check:core` (487 tests): first full run 486 of 487, the one failure `tests/engine/terminal.test.ts` because this worktree had no own `node_modules` (fixed by `npm ci`). Second full run 442 of 487: all 45 failures are phone, WhatsApp and core-tools tests, caused by `app_private.channel_admission` (code `NO_PHONE_ENTITLEMENT`) that the parallel usage-metering session's unmerged migration `20261115123000_channel_metering.sql` had put into the shared local database; not this branch. Rerun of the files this branch touches plus terminal, hosting, billing, auth and bootstrap: 111 of 111.
+- After review fixes (same day): `npm run typecheck` pass; `npm run test:guards` 34 of 34; `npm run build:hosted` and `npm run build:mock` pass; `npm run db:verify-migrations` pass (54 tables); `tests/hosting/*`, `tests/billing/*`, `tests/db/signup-invited.test.ts`, `tests/api/bootstrap.test.ts`: 113 of 113; `tests/api/{auth,members,outage,csrf,mail-auth}.test.ts`: 5 of 5. `check:core` was not re-run in full (the shared database still holds the other session's function).
+
+**Not verified**
+- Nothing applied to staging. No person has tried the refusal message in a browser. Staging runs the old code until this is merged and deployed, so it stays public with live keys and open sign-up until then. The list stops new sign-ups only; existing accounts keep signing in and topping up their workspaces. The migration's ownership change (temporary CREATE on `app_private` for `jomcall_members`) is checked on the local database only, not on hosted Supabase. Handler tests stub the auth service and the database; nothing ran against a real hosted service.
+- Owner choices documented, not built: the sign-up answer (200 vs 403) tells a prober whether an address is listed or invited; Turnstile is on only with both keys set and no Cloudflare account is recorded; accounts made straight against Supabase Auth with the public publishable key still exist (the workspace gate stops them; manual review is the only control for accounts made while staging was public; a "before user created" hook is a later option); `@gmail.com`-style entries open sign-up to a whole provider; an IDN domain in the list makes the value invalid (fails closed).
+- Curlec's documentation does not state key prefixes; `rzp_live_` / `rzp_test_` come from the owner's accounts.
+
+**Owner steps (staging)**
+1. `npm run hosted:migrate` (staging) for the new migration.
+2. Vercel staging environment: `JOMCALL_SIGNUP_ALLOW=<your addresses or @domain>` and `CURLEC_LIVE_ON_STAGING=1`; redeploy. Nothing changes in `/etc/jomcall`.
+3. `npm run hosted:readiness -- --service web --env-file <local copy>` prints `web: ready`.
+4. Review accounts and workspaces created on staging since Deployment Protection came off.
+
 ## 2026-11-15 — guided setup flow (interview door)
 
 Branch `feat/setup-flow` (pull request not yet open). Design: `docs/superpowers/specs/2026-11-14-setup-flow-design.md`, dated note at the end.
