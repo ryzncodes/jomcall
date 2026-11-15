@@ -1,5 +1,5 @@
 {
- "note": "Synthetic documents for npm run check:setup-reader. Every business, person, address and number is invented. d01-d12 and their rows come from the knowledge-intake spike (2026-11-14); d07-d09 were workbooks there and are delimited text here; d13, d14 and d15 are new (d15 is d08's content as pasted text). mustNotAppear: phrases from lines that are not price rows (d14's debt book). priceSen is the price in sen (null: the document gives no readable price). trap marks a price the document itself makes unsure: unreadable (physically covered), no-price ('call', 'TBA', 'tanya boss'), ambiguous (a smudged or half-covered digit, or an add-on amount such as '+15' or 'tambah RM2'), corrected (an old price replaced; truth is the new one), approx ('about', 'dari'), range (two prices). An unsure price (unreadable, no-price, ambiguous, approx, range) must come back flagged or without a price. optional: fine to read or to leave out. variantAlt: other acceptable wordings of the variant. factLabels are for people only and are not scored.",
+ "note": "Synthetic documents for npm run check:setup-reader. Every business, person, address and number is invented. d01-d12 and their rows come from the knowledge-intake spike (2026-11-14); d07-d09 were workbooks there and are delimited text here; d13, d14 and d15 are new (d15 is d08's content as pasted text). mustNotAppear: phrases from lines that are not price rows (d14's debt book). priceSen is the price in sen (null: the document gives no readable price). trap marks a price the document itself makes unsure: unreadable (physically covered), no-price ('call', 'TBA', 'tanya boss'), ambiguous (a smudged or half-covered digit; an add-on or surcharge such as '+15', 'tambah RM2' or a late fee; a price that holds only under a condition, such as a minimum order, a distance or 'free above' an amount; a quantity tier named by the variant, such as 'Borong (≥10)', is a plain price), corrected (an old price replaced; truth is the new one, oldPriceSen the old one, which must never come back unflagged), approx ('about', 'dari'), range (two prices). An unsure price (unreadable, no-price, ambiguous, approx, range) must come back flagged or without a price. optional: fine to read or to leave out. alsoSen: other amounts the document gives for the same unsure item (such as 0 above an order total); the item may come back as one flagged row or as several flagged rows. variantAlt: other acceptable wordings of the variant. factLabels are for people only and are not scored.",
  "documents": [
   {
    "id": "d01",
@@ -65,7 +65,8 @@
     {
      "item": "Scalp Treatment",
      "priceSen": 9500,
-     "trap": "corrected"
+     "trap": "corrected",
+     "oldPriceSen": 9000
     },
     {
      "item": "Facial Basic",
@@ -336,7 +337,8 @@
     },
     {
      "item": "Tambah telur",
-     "priceSen": 150
+     "priceSen": 150,
+     "trap": "ambiguous"
     },
     {
      "item": "Bungkus",
@@ -506,7 +508,11 @@
     },
     {
      "item": "Inspection",
-     "priceSen": 5000
+     "priceSen": 5000,
+     "trap": "ambiguous",
+     "alsoSen": [
+      0
+     ]
     },
     {
      "item": "Buka unit / Dismantle",
@@ -584,6 +590,7 @@
     {
      "item": "Denda lewat",
      "priceSen": 1000,
+     "trap": "ambiguous",
      "optional": true
     }
    ],
@@ -800,7 +807,8 @@
    "rows": [
     {
      "item": "Cuci + Kering + Lipat",
-     "priceSen": 450
+     "priceSen": 450,
+     "trap": "ambiguous"
     },
     {
      "item": "Cuci sahaja",
@@ -1169,7 +1177,8 @@
       "8in"
      ],
      "priceSen": 9000,
-     "trap": "corrected"
+     "trap": "corrected",
+     "oldPriceSen": 8500
     },
     {
      "item": "Kek Coklat Moist",
@@ -1225,7 +1234,8 @@
       "8 inch"
      ],
      "priceSen": 9500,
-     "trap": "corrected"
+     "trap": "corrected",
+     "oldPriceSen": 9000
     },
     {
      "item": "Kek Pandan Gula Melaka",
@@ -1260,19 +1270,23 @@
     },
     {
      "item": "Karipap ayam",
-     "priceSen": 90
+     "priceSen": 90,
+     "trap": "ambiguous"
     },
     {
      "item": "Donut gula",
-     "priceSen": 120
+     "priceSen": 120,
+     "trap": "ambiguous"
     },
     {
      "item": "Roti sosej",
-     "priceSen": 250
+     "priceSen": 250,
+     "trap": "ambiguous"
     },
     {
      "item": "Tart telur",
-     "priceSen": 200
+     "priceSen": 200,
+     "trap": "ambiguous"
     },
     {
      "item": "Brownies (box of 9)",
@@ -1444,7 +1458,8 @@
     },
     {
      "item": "Jersi microfiber sublimation full print",
-     "priceSen": 3500
+     "priceSen": 3500,
+     "trap": "ambiguous"
     },
     {
      "item": "Tote bag canvas print 1 side",
@@ -1457,7 +1472,8 @@
     {
      "item": "Mug magic",
      "priceSen": 2400,
-     "trap": "corrected"
+     "trap": "corrected",
+     "oldPriceSen": 5400
     },
     {
      "item": "Sticker A4 mirrorkote",
@@ -1479,7 +1495,11 @@
     },
     {
      "item": "Design fee",
-     "priceSen": 3000
+     "priceSen": 3000,
+     "trap": "ambiguous",
+     "alsoSen": [
+      0
+     ]
     }
    ],
    "factLabels": [
@@ -1503,15 +1523,18 @@
    "rows": [
     {
      "item": "Package A 经济套餐",
-     "priceSen": 1200
+     "priceSen": 1200,
+     "trap": "ambiguous"
     },
     {
      "item": "Package B",
-     "priceSen": 1600
+     "priceSen": 1600,
+     "trap": "ambiguous"
     },
     {
      "item": "Package C 豪华",
-     "priceSen": 2200
+     "priceSen": 2200,
+     "trap": "ambiguous"
     },
     {
      "item": "Below 50 pax surcharge",
@@ -1521,7 +1544,8 @@
     },
     {
      "item": "Satay ayam",
-     "priceSen": 120
+     "priceSen": 120,
+     "trap": "ambiguous"
     },
     {
      "item": "Satay daging 沙爹牛肉",
@@ -1542,7 +1566,11 @@
     {
      "item": "Transport",
      "priceSen": 5000,
-     "optional": true
+     "trap": "ambiguous",
+     "optional": true,
+     "alsoSen": [
+      0
+     ]
     }
    ],
    "factLabels": [
@@ -1588,11 +1616,13 @@
     },
     {
      "item": "Towing / angkut motor rosak dlm 5km",
-     "priceSen": 3000
+     "priceSen": 3000,
+     "trap": "ambiguous"
     },
     {
      "item": "Caj simpan motor",
      "priceSen": 500,
+     "trap": "ambiguous",
      "optional": true
     }
    ],
@@ -1775,7 +1805,8 @@
       "8in"
      ],
      "priceSen": 9000,
-     "trap": "corrected"
+     "trap": "corrected",
+     "oldPriceSen": 8500
     },
     {
      "item": "Kek Coklat Moist",
@@ -1831,7 +1862,8 @@
       "8 inch"
      ],
      "priceSen": 9500,
-     "trap": "corrected"
+     "trap": "corrected",
+     "oldPriceSen": 9000
     },
     {
      "item": "Kek Pandan Gula Melaka",
@@ -1866,19 +1898,23 @@
     },
     {
      "item": "Karipap ayam",
-     "priceSen": 90
+     "priceSen": 90,
+     "trap": "ambiguous"
     },
     {
      "item": "Donut gula",
-     "priceSen": 120
+     "priceSen": 120,
+     "trap": "ambiguous"
     },
     {
      "item": "Roti sosej",
-     "priceSen": 250
+     "priceSen": 250,
+     "trap": "ambiguous"
     },
     {
      "item": "Tart telur",
-     "priceSen": 200
+     "priceSen": 200,
+     "trap": "ambiguous"
     },
     {
      "item": "Brownies (box of 9)",

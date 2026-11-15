@@ -1,10 +1,12 @@
 // Reading check for guided setup's document reader: npm run check:setup-reader.
 //
-// Reads the synthetic documents in tests/fixtures/setup-reader/ with the real
-// readDocument and scores the rows against truth.json. Without --paid it
-// refuses; --dry builds every request locally and sends nothing. With --paid
-// it calls the Anthropic API (api.anthropic.com) once per document, twice
-// when the worker's fallback rule applies, which costs money.
+// Reads the synthetic documents in tests/fixtures/setup-reader/ the way the
+// worker does (readDocumentChecked, and the worker's fallback rule) and
+// scores the rows against truth.json. Without --paid it refuses; --dry builds
+// every request locally and sends nothing. With --paid it calls the Anthropic
+// API (api.anthropic.com), which costs money: twice per photo or PDF (two
+// reads, compared), once per delimited or pasted text, plus one fallback read
+// of a text when the worker's fallback rule applies.
 //
 // The console shows counts only, never document text or model output; the
 // rows read go to the JSON result file (default under output/setup-reader/,
@@ -14,8 +16,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { z } from "zod";
 import {
+  READER_DISAGREE_PREFIX,
   READER_LIMITS,
+  READER_ONE_READ_ROW,
+  isDoubleRead,
   readDocument,
+  readDocumentChecked,
   readerFallbackModel,
   readerModel,
   type AnthropicLike,
@@ -29,11 +35,13 @@ import { packById } from "../../packages/domain/src/packs/index.ts";
 // The worker module loads the pg library at import but builds no pool and
 // opens no connection until SetupReadWorker.create, which is never called here.
 import {
+  FALLBACK_KINDS,
   FALLBACK_MIN_ROWS,
   FALLBACK_SHARE,
   READ_TIMEOUT_MS,
   better,
   readerFields,
+  wantsFallback,
 } from "../../engine/src/agent/setup-reader.ts";
 import {
   failures,
@@ -50,9 +58,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
 export const FIXTURES = join(root, "tests", "fixtures", "setup-reader");
 
-// The worker's fallback rule and timeout are imported from it: a read
-// flagged on more than FALLBACK_SHARE of at least FALLBACK_MIN_ROWS rows is
-// read again with the fallback model, and better() picks the result.
+// The worker's fallback rule and timeout are imported from it: a delimited or
+// pasted text whose read is flagged on more than FALLBACK_SHARE of at least
+// FALLBACK_MIN_ROWS rows is read again with the fallback model, and better()
+// picks the result (wantsFallback). Photos and PDFs get no fallback.
 // What the browser's shrinking produces at most for a photo.
 const BROWSER_IMAGE_BYTES = 3_600_000;
 
@@ -64,7 +73,7 @@ export const REFUSE_NO_KEY =
 // request on its own after a 429, a 5xx or a connection error (its default
 // is two retries), so the HTTP requests sent, and the spend, can be higher.
 export const RETRY_NOTE =
-  "Reads counted here are calls to readDocument; the Anthropic SDK retries a request itself after a 429, a 5xx or a connection error (default: two retries), so the requests sent can be more.";
+  "Calls counted here are model calls the reader makes (two per photo or PDF read); the Anthropic SDK retries a request itself after a 429, a 5xx or a connection error (default: two retries), so the requests sent can be more.";
 export const USAGE =
   "Usage: npm run check:setup-reader -- (--dry | --paid) [--only d01,d05] [--model haiku|sonnet] [--out <file>]";
 
@@ -190,14 +199,15 @@ export type Deps = {
   print: Print;
   // Called only on the paid path, after both refusals.
   makeClient: () => AnthropicLike;
+  // Stands in for readDocumentChecked (same shape as readDocument).
   read?: typeof readDocument;
   fixtures?: string;
   now?: () => number;
 };
 
-// --dry: every input built and passed through readDocument with a local
-// client that records the request and answers with no rows. Nothing leaves
-// this machine.
+// --dry: every input built and passed through readDocumentChecked with a
+// local client that records each request and answers with no rows (a photo
+// or PDF makes two). Nothing leaves this machine.
 async function dryRun(docs: FixtureDoc[], print: Print): Promise<number> {
   let bad = 0;
   print("Dry run: nothing is sent. Per document, what --paid would send:");
@@ -209,6 +219,7 @@ async function dryRun(docs: FixtureDoc[], print: Print): Promise<number> {
       "bytes".padStart(7),
       "sent-as".padStart(8),
       "request".padStart(8),
+      "calls".padStart(5),
       "truth".padStart(6),
       "fields".padStart(7),
       "pack".padEnd(15),
@@ -233,9 +244,11 @@ async function dryRun(docs: FixtureDoc[], print: Print): Promise<number> {
       problems.push("not a PDF");
     let requestBytes = 0;
     let sentAs = "";
+    let calls = 0;
     const local: AnthropicLike = {
       messages: {
         async create(body) {
+          calls += 1;
           requestBytes = Buffer.byteLength(JSON.stringify(body));
           const content = body.messages[0]?.content;
           sentAs = Array.isArray(content) ? (content[0]?.type ?? "") : "text";
@@ -256,7 +269,7 @@ async function dryRun(docs: FixtureDoc[], print: Print): Promise<number> {
         },
       },
     };
-    const result = await readDocument(input, fields, { client: local });
+    const result = await readDocumentChecked(input, fields, { client: local });
     if (!result.ok) problems.push(`reader refused it: ${result.code}`);
     if (problems.length) bad += 1;
     print(
@@ -267,6 +280,7 @@ async function dryRun(docs: FixtureDoc[], print: Print): Promise<number> {
         String(doc.data.length).padStart(7),
         sentAs.padStart(8),
         String(requestBytes).padStart(8),
+        String(calls).padStart(5),
         String(doc.rows.length).padStart(6),
         String(fields.length).padStart(7),
         doc.mainPack.padEnd(15),
@@ -287,6 +301,8 @@ async function dryRun(docs: FixtureDoc[], print: Print): Promise<number> {
 
 type ReadRecord = {
   model: ReaderModel;
+  // Model calls this read made (two for a photo or PDF).
+  calls: number;
   seconds: number;
   code: string | null;
   rows: number;
@@ -300,7 +316,7 @@ async function paidRun(
   opts: Options,
   deps: Deps,
 ): Promise<number> {
-  const read = deps.read ?? readDocument;
+  const read = deps.read ?? readDocumentChecked;
   const now = deps.now ?? (() => performance.now());
   const client = deps.makeClient();
   const first: ReaderModel =
@@ -331,6 +347,7 @@ async function paidRun(
       result,
       record: {
         model,
+        calls: isDoubleRead(input) ? 2 : 1,
         seconds,
         code: result.ok ? null : result.code,
         rows: result.ok ? result.rows.length : 0,
@@ -349,18 +366,14 @@ async function paidRun(
     reads.push(a.record);
     let kept = a.result;
     let fallback: DocResult["fallback"] = "none";
-    if (
-      fallbackOn &&
-      a.result.ok &&
-      a.result.flaggedShare > FALLBACK_SHARE &&
-      a.result.rows.length >= FALLBACK_MIN_ROWS
-    ) {
+    if (fallbackOn && wantsFallback(input, a.result)) {
       const b = await once(input, fields, readerFallbackModel);
       reads.push(b.record);
       kept = better(a.result, b.result);
       fallback = kept === a.result ? "kept-first" : "used-second";
     }
     const seconds = reads.reduce((s, r) => s + r.seconds, 0);
+    const calls = reads.reduce((s, r) => s + r.calls, 0);
     const rows = kept.ok ? kept.rows : [];
     const facts = kept.ok ? kept.facts : [];
     const score = scoreRows(doc.rows, rows);
@@ -387,9 +400,16 @@ async function paidRun(
       nullPrice: score.nullPrice,
       unsureUnflagged: score.unsureUnflagged,
       dropped: kept.ok ? kept.dropped : 0,
+      disagree: rows.filter(
+        (r) => r.needsCheck && r.checkReason.startsWith(READER_DISAGREE_PREFIX),
+      ).length,
+      oneRead: rows.filter(
+        (r) => r.needsCheck && r.checkReason === READER_ONE_READ_ROW,
+      ).length,
       facts: facts.length,
       flaggedRows: score.flaggedRows,
       flaggedShare: kept.ok ? kept.flaggedShare : 0,
+      calls,
       seconds,
       injection:
         doc.injection && kept.ok
@@ -435,7 +455,7 @@ async function paidRun(
       facts,
     });
     deps.print(
-      `${doc.id} read in ${seconds.toFixed(1)} s (${reads.length} call${reads.length > 1 ? "s" : ""})`,
+      `${doc.id} read in ${seconds.toFixed(1)} s (${calls} model call${calls > 1 ? "s" : ""})`,
     );
   }
 
@@ -459,6 +479,9 @@ async function paidRun(
         .map((r) => `${r.id} ${r.personal}`)
         .join(", ")}.`,
     );
+  deps.print(
+    `${sum.calls} model call(s) in all; ${sum.disagree} row(s) flagged because two reads gave different prices, ${sum.oneRead} found by only one read.`,
+  );
   deps.print(
     `Fallback read ran on ${sum.fallbackRan} of ${results.length} document(s); field lists of ${[...new Set(results.map((r) => r.fields))].sort((x, y) => x - y).join(", ")} fields.`,
   );
@@ -485,6 +508,7 @@ async function paidRun(
         fallbackRule: {
           share: FALLBACK_SHARE,
           minRows: FALLBACK_MIN_ROWS,
+          kinds: FALLBACK_KINDS,
           timeoutMs: READ_TIMEOUT_MS,
         },
         retries: RETRY_NOTE,

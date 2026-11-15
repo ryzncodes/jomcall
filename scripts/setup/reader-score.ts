@@ -24,6 +24,12 @@ const UNSURE: readonly Trap[] = [
   "range",
 ];
 
+// oldPriceSen: on a corrected row, the price the document replaced. A read
+// row carrying it is wrong (flagged or not), even under a name that matches
+// no truth item. alsoSen: on an unsure row, other amounts the document gives
+// for the same item (an amount that drops to 0 above an order total, say);
+// a flagged read row at one of them is as good as one at priceSen, so the
+// item may come back as one flagged row or as several.
 export const truthRow = z
   .object({
     item: z.string().min(1),
@@ -32,8 +38,22 @@ export const truthRow = z
     priceSen: z.number().int().nonnegative().nullable(),
     trap: z.enum(traps).optional(),
     optional: z.literal(true).optional(),
+    oldPriceSen: z.number().int().nonnegative().optional(),
+    alsoSen: z.array(z.number().int().nonnegative()).min(1).optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (t) =>
+      t.oldPriceSen === undefined ||
+      (t.trap === "corrected" && t.oldPriceSen !== t.priceSen),
+    { message: "oldPriceSen needs trap corrected and differs from priceSen" },
+  )
+  .refine(
+    (t) =>
+      t.alsoSen === undefined ||
+      (t.trap !== undefined && UNSURE.includes(t.trap)),
+    { message: "alsoSen needs an unsure trap" },
+  );
 export type TruthRow = z.infer<typeof truthRow>;
 
 // The parts of a read row and fact the score looks at (ReadRow and ReadFact
@@ -226,7 +246,8 @@ export type RowScore = {
   // Required truth rows with no read row.
   missed: number;
   // Unmatched read rows that repeat a truth item (already matched to
-  // another read row). Their prices are checked like matched rows.
+  // another read row), or carry a corrected row's old price. Their prices
+  // are checked like matched rows.
   duplicates: number;
   duplicateSamePrice: number;
   // Unmatched read rows that repeat no truth item.
@@ -291,12 +312,15 @@ export function scoreRows(truth: TruthRow[], read: ScoredRow[]): RowScore {
   });
   // The price checks shared by matched and duplicate rows; true when the
   // price equals truth.
+  // price equals truth, or is flagged at one of truth's other amounts.
   const judge = (ti: number, ri: number, duplicate: boolean): boolean => {
     const t = truth[ti]!;
     const r = read[ri]!;
     if (isUnsure(t) && r.priceSen !== null && !r.needsCheck)
       s.unsureUnflagged += 1;
     if (r.priceSen === t.priceSen) return true;
+    if (r.needsCheck && r.priceSen !== null && t.alsoSen?.includes(r.priceSen))
+      return true;
     if (r.priceSen === null) {
       if (!duplicate) s.nullPrice += 1;
       return false;
@@ -315,7 +339,15 @@ export function scoreRows(truth: TruthRow[], read: ScoredRow[]): RowScore {
   const matchedRead = new Set(pairs.map((p) => p.read));
   read.forEach((r, ri) => {
     if (matchedRead.has(ri)) return;
-    const ti = duplicateOf(truth, r);
+    // A row repeating no truth item by name, but carrying a corrected row's
+    // old price, is that item's old price.
+    const ti =
+      duplicateOf(truth, r) ??
+      (r.priceSen === null
+        ? null
+        : ((i) => (i < 0 ? null : i))(
+            truth.findIndex((t) => t.oldPriceSen === r.priceSen),
+          ));
     if (ti === null) {
       s.extra += 1;
       if (r.priceSen !== null && !r.needsCheck) s.extraUnflaggedPriced += 1;
@@ -426,9 +458,15 @@ export type DocResult = {
   nullPrice: number;
   unsureUnflagged: number;
   dropped: number;
+  // Rows the comparison of a photo's or PDF's two reads flagged: the reads
+  // gave different prices, or only one read found the row.
+  disagree: number;
+  oneRead: number;
   facts: number;
   flaggedRows: number;
   flaggedShare: number;
+  // Model calls the reader made (two per read of a photo or PDF).
+  calls: number;
   seconds: number;
   injection: string[] | null;
   personal: number | null;
@@ -476,8 +514,11 @@ const COLUMNS: [string, (d: DocResult) => string][] = [
   ["ok-fl", (d) => String(d.correctFlagged)],
   ["null", (d) => String(d.nullPrice)],
   ["drop", (d) => String(d.dropped)],
+  ["disagree", (d) => String(d.disagree)],
+  ["one-read", (d) => String(d.oneRead)],
   ["facts", (d) => String(d.facts)],
   ["flag%", (d) => `${Math.round(d.flaggedShare * 100)}`],
+  ["calls", (d) => String(d.calls)],
   ["sec", (d) => d.seconds.toFixed(1)],
   ["model", (d) => d.model || "-"],
   ["fallback", (d) => d.fallback],
@@ -503,8 +544,11 @@ const SUMMED = [
   "nullPrice",
   "unsureUnflagged",
   "dropped",
+  "disagree",
+  "oneRead",
   "facts",
   "flaggedRows",
+  "calls",
   "seconds",
 ] as const;
 export type Totals = Record<(typeof SUMMED)[number], number> & {
