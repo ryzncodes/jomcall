@@ -313,7 +313,11 @@ test("the review page shows price rows and uses the reader's check flag", () => 
   assert.match(review, /liveRows\(view\.items\)/);
   assert.match(review, /groupRows\(/);
   assert.match(review, /factFlagged\(item\)/);
-  assert.match(review, /checkReasonText\(item\.checkReason, w\)/);
+  // The reason follows "Reason:"; the reader's own words are marked English.
+  assert.match(review, /checkReason\(reason, w, price\)/);
+  assert.match(review, /price=\{false\}/);
+  assert.match(review, /<Reason reason=\{item\.checkReason\}/);
+  assert.match(review, /lang=\{r\.reader \? "en" : undefined\}/);
   assert.match(review, /w\("Prices and services", "Harga dan perkhidmatan"\)/);
   // The price field: decimal keyboard, a label naming the item, sent on
   // leave or Enter only (a changed price confirms the row).
@@ -337,10 +341,55 @@ test("the review page shows price rows and uses the reader's check flag", () => 
   assert.match(readFileSync(join(dir, "bring.tsx"), "utf8"), /export function RemoveFileConfirm/);
   // Apply sends the replace and counts from the planner, decided after the
   // last write, and is disabled over the limit.
-  assert.match(review, /base = store\.latest\(\);\s*const sent = store\.revision\(\);\s*const now = applySummary\(base, choices, w\)/);
+  assert.match(review, /base = store\.latest\(\);\s*const sent = store\.revision\(\);\s*const now = applySummary\(base, choices, w, summaryOpts\)/);
+  // The counts know this browser's senders and the packs (unknown facts).
+  assert.match(review, /summaryOpts = \{ senders: store\.uploads\.senders, packs \}/);
+  // Asked again when more would be left out than the question said.
+  assert.match(review, /askAgain\(asked, now\.counts\)/);
   assert.match(review, /onlyReadProgress\(base, fresh\)/);
   assert.match(review, /replace: now\.replace/);
-  assert.match(review, /disabled=\{busy \|\| blocked\}/);
+  assert.match(review, /disabled=\{locked \|\| blocked\}/);
+  assert.match(review, /locked = busy \|\| bulkRunning/);
+});
+
+test("price rows stay put for the visit; actions wait for their write; Remove all re-checks each row", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  // The order is worked out once (stableLayout over the previous layout),
+  // never by focus.
+  assert.match(review, /layoutRef\.current,\s*layoutOf\(groupRows\(/);
+  assert.doesNotMatch(review, /setHeld|rowSection\(/);
+  // Stable keys: one key per row id, whatever its look.
+  assert.match(review, /<PriceRow\s+key=\{id\}/);
+  // A removed row folds in place with Undo, then goes with focus moved to
+  // the status line.
+  assert.match(review, /`Undo removing \$\{name\}`/);
+  assert.match(review, /if \(row\?\.contains\(document\.activeElement\)\) focusStatus\(\)/);
+  // The Confirm slot stays after a confirm; buttons wait (aria-disabled,
+  // keeping focus) while their write runs or Remove all runs.
+  assert.match(review, /offered\.current &&/);
+  assert.match(review, /const off = busy \|\| locked/);
+  assert.match(review, /aria-disabled=\{off \|\| priceInvalid \|\| undefined\}/);
+  // Remove all: each row checked again from the latest view before its
+  // write, every action locked, progress shown, an early stop said.
+  assert.match(review, /bulkRemovable\(latest, priceReplace\(latest, choicesRef\.current\), id\)/);
+  assert.match(review, /onBulk\(true\)/);
+  assert.match(review, /bulkText\("progress", bulk, w\)/);
+  assert.match(review, /bulkText\("stopped"/);
+  assert.match(review, /setBulk\(\{ done: seen \+ 1, total \}\)/);
+  // A choice is keyed by the row and the saved price it matched.
+  assert.match(review, /choices\[choiceKey\(i\)\]/);
+  // The photo dialog closes on its backdrop only: no padding of its own.
+  assert.match(review, /className="setup-viewer-body"/);
+  const css = readFileSync("web/app/core.css", "utf8");
+  assert.match(css, /\.setup-viewer \{[^}]*padding: 0;/);
+});
+
+test("a price change is never sent when the tab is hidden", () => {
+  const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
+  assert.match(flow, /const onHide = sendsWhenHidden\(\{ debounce \}\)/);
+  assert.match(flow, /if \(onHide\) \{\s*document\.addEventListener\("visibilitychange", hide\);\s*window\.addEventListener\("pagehide", leave\);\s*\}/);
+  // Unmount still sends.
+  assert.match(flow, /flushers\.delete\(flush\);\s*void flush\(\);/);
 });
 
 test("the review page and its rules import only the price planner from domain", () => {

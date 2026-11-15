@@ -1610,10 +1610,34 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 0 4px;
+  gap: 8px;
 }
+/* At least 44px wide and 8px apart, so Edit and Remove are not mis-tapped. */
 .setup-price-actions .setup-link {
+  min-width: 44px;
+  padding: 0 8px;
   font-size: 13px;
+}
+/* Waiting for a write (or Remove all): still focusable, visibly unavailable. */
+.setup-prices [aria-disabled="true"],
+.setup-card [aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.setup-price-actions .setup-link-done {
+  text-decoration: none;
+}
+/* A row removed on this visit, folded in place with Undo. */
+.setup-price.setup-price-gone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 8px;
+  opacity: 0.8;
+}
+.setup-price-gone .setup-hint {
+  margin: 0;
 }
 .setup-price-extra {
   grid-column: 1 / -1;
@@ -1658,14 +1682,19 @@
 .setup-apply-ask {
   flex-wrap: wrap;
 }
+/* No padding on the dialog itself: a click whose target is the dialog is
+   on the backdrop. */
 .setup-viewer {
   border: 0;
   border-radius: var(--radius);
-  padding: 12px;
+  padding: 0;
   max-width: min(96vw, 900px);
   max-height: 92vh;
   background: var(--surface);
   color: var(--ink);
+}
+.setup-viewer-body {
+  padding: 12px;
 }
 .setup-viewer::backdrop {
   background: rgb(0 0 0 / 0.6);

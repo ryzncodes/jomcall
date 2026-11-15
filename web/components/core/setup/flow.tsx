@@ -32,6 +32,7 @@ import {
   pollDelay,
   quietRetry,
   readingNow,
+  sendsWhenHidden,
   type KnownUpload,
 } from "./rules";
 import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
@@ -119,8 +120,9 @@ export const useSetup = () => useContext(StoreContext);
 
 // A field's value is sent 600 ms after the last change, or at once when the
 // field is left or the owner moves on. With `debounce: false` a change is
-// only held until flush (the field is left, Enter, the owner moves on): a
-// price edit confirms its row, so a pause in typing must not send it.
+// only held until flush (the field is left, Enter, the flush before apply or
+// another stage, unmount): a price edit confirms its row, so neither a pause
+// in typing nor switching apps (sendsWhenHidden) sends it.
 export function useAutosave<T>(
   save: (value: T) => Promise<boolean>,
   { debounce = true }: { debounce?: boolean } = {},
@@ -140,6 +142,7 @@ export function useAutosave<T>(
     return ok;
   }, []);
   const { flushers } = store;
+  const onHide = sendsWhenHidden({ debounce });
   useEffect(() => {
     flushers.add(flush);
     // Text typed inside the debounce window is sent when the tab is hidden
@@ -148,15 +151,17 @@ export function useAutosave<T>(
       if (document.visibilityState === "hidden") void flush();
     };
     const leave = () => void flush();
-    document.addEventListener("visibilitychange", hide);
-    window.addEventListener("pagehide", leave);
+    if (onHide) {
+      document.addEventListener("visibilitychange", hide);
+      window.addEventListener("pagehide", leave);
+    }
     return () => {
       document.removeEventListener("visibilitychange", hide);
       window.removeEventListener("pagehide", leave);
       flushers.delete(flush);
       void flush();
     };
-  }, [flushers, flush]);
+  }, [flushers, flush, onHide]);
   return {
     change: (value: T) => {
       pending.current = { value };

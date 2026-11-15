@@ -29,36 +29,43 @@ import {
   applyButtonText,
   applyConfirmText,
   applySummary,
-  checkReasonText,
+  askAgain,
+  bulkRemovable,
+  bulkText,
+  checkReason,
+  choiceKey,
   chooseRow,
   conflictText,
   duplicateText,
   factFlagged,
   groupRows,
+  layoutOf,
   leftOutText,
   liveRows,
   needCheckIds,
   onlyReadProgress,
   overLimit,
   overLimitText,
+  priceReplace,
   readPrice,
   removeFailedText,
   rowActions,
   rowChanges,
   rowName,
   rowPayload,
-  rowSection,
   rowStatusText,
   senderShown,
   sendingLabel,
   splitPlan,
+  stableLayout,
   uploadLabel,
   uploadName,
   useThisSteps,
+  useThisText,
+  type ApplySummary,
   type RowActions,
   type RowEditValues,
-  type RowSection,
-  type ApplySummary,
+  type RowLayout,
 } from "./rules";
 import {
   HoursEditor,
@@ -117,13 +124,21 @@ export function Review({
   const [applyError, setApplyError] = useState<unknown>();
   // The 409 after apply came only from a document finishing its read.
   const [readMoved, setReadMoved] = useState(false);
-  const [asking, setAsking] = useState(false);
+  // The counts the question was asked with; null when no question is open.
+  const [asked, setAsked] = useState<ApplySummary["counts"] | null>(null);
+  // "Remove all that still need checking" is running: every row action and
+  // the apply buttons wait.
+  const [bulkRunning, setBulkRunning] = useState(false);
   const [fixFirst, setFixFirst] = useState(false);
   const [allMissing, setAllMissing] = useState(false);
   const [said, setSaid] = useState("");
   // Price fields whose text is not a price: apply waits until they are fixed.
   const invalid = useRef(new Set<string>());
   const backRef = useRef<HTMLButtonElement>(null);
+  // Focus goes here when the control the owner used goes away (a removed
+  // row, a removed file), never onto another row's button.
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  const focusStatus = () => statusRef.current?.focus();
   const heading = useLanding<HTMLHeadingElement>("review");
   const label = (i: SetupItem) => {
     const f = packs
@@ -145,11 +160,17 @@ export function Review({
   );
   // What the button will do, live: the planner re-plans price rows with
   // every "Use new" the owner picked.
-  const summary = applySummary(view, choices, w);
+  // Files still being sent from this browser count as not in yet; facts
+  // whose field is not in their pack are not counted (apply skips them).
+  const summaryOpts = { senders: store.uploads.senders, packs };
+  const summary = applySummary(view, choices, w, summaryOpts);
   const blocked = overLimit(summary.totals);
   const leftOut = leftOutText(summary.counts, w);
-  const question = asking ? applyConfirmText(summary.counts, w) : null;
+  const question = asked ? applyConfirmText(summary.counts, w) : null;
+  // The price section shows with price rows or files; without it the
+  // button keeps its old words.
   const showPrices = liveRows(view.items).length > 0 || view.uploads.length > 0;
+  const locked = busy || bulkRunning;
 
   // One polite line announces what changed: a file read, a row confirmed or
   // removed, a choice made.
@@ -168,11 +189,11 @@ export function Review({
     // Runs when an upload's state changes, not on every view.
   }, [uploadSig]);
   useEffect(() => {
-    if (asking && question) backRef.current?.focus();
+    if (asked && question) backRef.current?.focus();
     // Nothing left to ask (the owner fixed the rows): the question closes
     // for good, so a later poll cannot bring it back unprompted.
-    if (asking && !question) setAsking(false);
-  }, [asking, question !== null]);
+    if (asked && !question) setAsked(null);
+  }, [asked, question !== null]);
 
   const apply = async (sure: boolean) => {
     setApplyError(undefined);
@@ -193,13 +214,24 @@ export function Review({
       // Decided on the view as it is after the last write, not this render.
       base = store.latest();
       const sent = store.revision();
-      const now = applySummary(base, choices, w);
+      const now = applySummary(base, choices, w, summaryOpts);
       if (overLimit(now.totals)) return;
       if (!sure && applyConfirmText(now.counts, w)) {
-        setAsking(true);
+        setAsked(now.counts);
         return;
       }
-      setAsking(false);
+      // More would be left out than when the owner answered: ask again.
+      if (sure && asked && askAgain(asked, now.counts)) {
+        setAsked(now.counts);
+        announce(
+          w(
+            "More would be left out now. Check the question again.",
+            "Lebih banyak akan ditinggalkan sekarang. Semak soalan itu sekali lagi.",
+          ),
+        );
+        return;
+      }
+      setAsked(null);
       await client.execute("applySetup", {
         id: store.agentId,
         expectedRevision: sent,
@@ -219,7 +251,7 @@ export function Review({
         setReadMoved(
           e.code === "CONFLICT" && !!fresh && onlyReadProgress(base, fresh),
         );
-        setAsking(false);
+        setAsked(null);
       }
       setApplyError(e);
     } finally {
@@ -278,7 +310,7 @@ export function Review({
       : limitCode && summary.counts.prices > 0
         ? w(
             "Your agent would have too many prices or call types. Remove a file or some rows, or remove a call type on the Agent page, then try again.",
-            "Ejen anda akan mempunyai terlalu banyak harga atau jenis panggilan. Buang satu fail atau beberapa baris, atau buang satu jenis panggilan di halaman Ejen, kemudian cuba lagi.",
+            "Ejen anda akan ada terlalu banyak harga atau jenis panggilan. Buang satu fail atau beberapa baris, atau buang satu jenis panggilan di halaman Ejen, kemudian cuba lagi.",
           )
         : limitCode
           ? w(
@@ -306,7 +338,13 @@ export function Review({
         )}
       </header>
       <div className="setup-body">
-        <p className="sr-only" role="status" aria-live="polite">
+        <p
+          className="sr-only"
+          role="status"
+          aria-live="polite"
+          ref={statusRef}
+          tabIndex={-1}
+        >
           {said}
         </p>
         {showPrices && (
@@ -317,6 +355,9 @@ export function Review({
               for (const [k, v] of chooseRow(store.latest().items, id, c))
                 onChoice(k, v);
             }}
+            locked={bulkRunning}
+            onBulk={setBulkRunning}
+            focusStatus={focusStatus}
             announce={announce}
             onInvalid={(id, bad) => {
               if (bad) invalid.current.add(id);
@@ -456,7 +497,7 @@ export function Review({
           <div className="storage-warning" role="alert">
             {w(
               "Fix the prices marked in red first.",
-              "Betulkan harga yang ditanda merah dahulu.",
+              "Betulkan harga yang bertanda merah dahulu.",
             )}
           </div>
         )}
@@ -473,17 +514,17 @@ export function Review({
               <button
                 type="button"
                 className="button button-small button-dark"
-                disabled={busy || blocked}
+                disabled={locked || blocked}
                 onClick={() => void apply(true)}
               >
-                {applyButtonText(summary.counts, w)}
+                {applyButtonText(summary.counts, w, showPrices)}
               </button>
               <button
                 type="button"
                 ref={backRef}
                 className="button button-small secondary-button"
                 disabled={busy}
-                onClick={() => setAsking(false)}
+                onClick={() => setAsked(null)}
               >
                 {w("Go back and check", "Kembali dan semak")}
               </button>
@@ -494,12 +535,12 @@ export function Review({
           <button
             type="button"
             className="button button-dark"
-            disabled={busy || blocked}
+            disabled={locked || blocked}
             onClick={() => void apply(false)}
           >
             {busy
               ? w("Updating your draft…", "Mengemas kini draf…")
-              : applyButtonText(summary.counts, w)}
+              : applyButtonText(summary.counts, w, showPrices)}
           </button>
           {leftOut && <p className="setup-hint setup-nav-note">{leftOut}</p>}
         </div>
@@ -704,12 +745,12 @@ function WordsCard({
   );
 }
 
-// Sets the state of a staged item (confirm or remove) with the latest
-// revision.
+// Sets the state of a staged item (confirm, remove, or back to what it was
+// for Undo) with the latest revision.
 function useItemState() {
   const { client } = useCore(),
     store = useSetup();
-  return (itemId: string, state: "confirmed" | "removed") =>
+  return (itemId: string, state: "pending" | "confirmed" | "removed") =>
     store.write((expectedRevision) =>
       client.execute("saveSetupItem", {
         id: store.agentId,
@@ -718,6 +759,25 @@ function useItemState() {
         state,
       }),
     );
+}
+
+// The reader's reason after "Reason:"; its own words are English text.
+function Reason({
+  reason,
+  className,
+  price = true,
+}: {
+  reason: string | null;
+  className: string;
+  price?: boolean;
+}) {
+  const w = useWords();
+  const r = checkReason(reason, w, price);
+  return (
+    <p className={className}>
+      {r.label} <span lang={r.reader ? "en" : undefined}>{r.text}</span>
+    </p>
+  );
 }
 
 function FactRow({
@@ -739,6 +799,7 @@ function FactRow({
     w = useWords(),
     store = useSetup();
   const setState = useItemState();
+  const [busy, setBusy] = useState(false);
   const [text, setText] = useState(
     factText((item.payload as { value?: unknown })?.value),
   );
@@ -770,6 +831,15 @@ function FactRow({
   // A fact read from a document that the reader was unsure of: left out
   // unless the owner confirms it. Editing the text does not confirm it.
   const flagged = factFlagged(item);
+  const run = async (fn: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <li className="setup-card" data-check={flagged || undefined}>
       <div className="setup-card-row">
@@ -798,16 +868,19 @@ function FactRow({
       {flagged && !open && text.trim() && (
         <div className="setup-check">
           <p className="setup-check-title">{w("Please check", "Sila semak")}</p>
-          <p className="setup-hint">{checkReasonText(item.checkReason, w)}</p>
+          <Reason reason={item.checkReason} className="setup-hint" price={false} />
           <div className="setup-card-actions">
             <button
               type="button"
               className="button button-small button-dark"
               aria-label={w(`Confirm ${label}`, `Sahkan ${label}`)}
-              onClick={async () => {
-                if ((await auto.flush()) && (await setState(item.id, "confirmed")))
-                  announce(w(`${label} confirmed`, `${label} disahkan`));
-              }}
+              aria-disabled={busy || undefined}
+              onClick={() =>
+                void run(async () => {
+                  if ((await auto.flush()) && (await setState(item.id, "confirmed")))
+                    announce(w(`${label} confirmed`, `${label} disahkan`));
+                })
+              }
             >
               {w("Confirm", "Sahkan")}
             </button>
@@ -815,11 +888,14 @@ function FactRow({
               type="button"
               className="button button-small secondary-button"
               aria-label={w(`Remove ${label}`, `Buang ${label}`)}
-              onClick={async () => {
-                auto.cancel();
-                if (await setState(item.id, "removed"))
-                  announce(w(`${label} removed`, `${label} dibuang`));
-              }}
+              aria-disabled={busy || undefined}
+              onClick={() =>
+                void run(async () => {
+                  auto.cancel();
+                  if (await setState(item.id, "removed"))
+                    announce(w(`${label} removed`, `${label} dibuang`));
+                })
+              }
             >
               {w("Remove", "Buang")}
             </button>
@@ -849,16 +925,26 @@ function FactRow({
 
 // ---- Prices and services ---------------------------------------------------
 
+// How long a removed row stays folded in place with Undo.
+const UNDO_MS = 8000;
+
 function PriceSection({
   summary,
   choices,
   onChoice,
+  locked,
+  onBulk,
+  focusStatus,
   announce,
   onInvalid,
 }: {
   summary: ApplySummary;
   choices: Record<string, Choice>;
   onChoice: (id: string, choice: Choice) => void;
+  // "Remove all" is running: every row waits.
+  locked: boolean;
+  onBulk: (running: boolean) => void;
+  focusStatus: () => void;
   announce: (text: string) => void;
   onInvalid: (id: string, bad: boolean) => void;
 }) {
@@ -866,36 +952,146 @@ function PriceSection({
     store = useSetup();
   const { view, now, queuedSince } = store;
   const setState = useItemState();
-  // While the owner is in the list, each row keeps its section; leaving the
-  // list re-sorts.
-  const [held, setHeld] = useState<Map<string, RowSection> | null>(null);
   const [bulk, setBulk] = useState<
     "idle" | "asking" | { done: number; total: number }
   >("idle");
+  const [bulkNote, setBulkNote] = useState("");
   const bulkKeep = useRef<HTMLButtonElement>(null);
-  const live = new Map(summary.plans.map((p) => [p.id, p]));
-  const rows = liveRows(view.items);
-  const groups = groupRows(
-    view.items,
-    summary.plans,
-    view.uploads.map((u) => u.id),
-    held,
+  const choicesRef = useRef(choices);
+  choicesRef.current = choices;
+  // Rows removed on this visit, still folded in place with Undo, and the
+  // state each had before.
+  const [undo, setUndo] = useState<Map<string, "pending" | "confirmed">>(
+    () => new Map(),
   );
-  const attention = [...groups.check, ...groups.conflict, ...groups.duplicate];
+  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const all = timers.current;
+    return () => all.forEach((t) => clearTimeout(t));
+  }, []);
+  const live = new Map(summary.plans.map((p) => [p.id, p]));
+  // The order is stable for the whole visit (stableLayout): worked out when
+  // the page is entered; later rows are only added in their place.
+  const layoutRef = useRef<RowLayout | null>(null);
+  const positions = new Map(
+    view.items
+      .filter((i) => i.position !== undefined)
+      .map((i) => [i.id, i.position!] as const),
+  );
+  const layout = stableLayout(
+    layoutRef.current,
+    layoutOf(groupRows(view.items, summary.plans, view.uploads.map((u) => u.id))),
+    positions,
+  );
+  layoutRef.current = layout;
   const reading = view.uploads.filter(
     (u) => u.state === "queued" || u.state === "reading",
   );
   const unsure = needCheckIds(summary.plans);
   useEffect(() => {
     if (bulk === "asking") bulkKeep.current?.focus();
-  }, [bulk]);
-  // A focused control that went away (a removed row) fires no blur: once
-  // focus is outside the list, rows re-sort on the next view.
-  const sectionRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    if (held && !sectionRef.current?.contains(document.activeElement))
-      setHeld(null);
-  }, [view, held]);
+    // Nothing left to remove: no "Remove 0" question.
+    if (bulk === "asking" && !unsure.length) setBulk("idle");
+  }, [bulk, unsure.length]);
+
+  const folded = (id: string, prev: "pending" | "confirmed") => {
+    setUndo((m) => new Map(m).set(id, prev));
+    clearTimeout(timers.current.get(id));
+    timers.current.set(
+      id,
+      setTimeout(() => {
+        timers.current.delete(id);
+        // The row goes; focus inside it goes to the status line, never to
+        // another row's button.
+        const row = document.getElementById(`setup-row-${id}`);
+        if (row?.contains(document.activeElement)) focusStatus();
+        setUndo((m) => {
+          const next = new Map(m);
+          next.delete(id);
+          return next;
+        });
+      }, UNDO_MS),
+    );
+  };
+  const unfolded = (id: string) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    setUndo((m) => {
+      const next = new Map(m);
+      next.delete(id);
+      return next;
+    });
+  };
+
+  // Each row is checked again from the latest view just before its write:
+  // one the owner confirmed or priced meanwhile is kept.
+  const removeUnsure = async () => {
+    const ids = needCheckIds(summary.plans);
+    const total = ids.length;
+    let seen = 0,
+      removed = 0,
+      stopped = false;
+    setBulkNote("");
+    onBulk(true);
+    focusStatus();
+    try {
+      for (const id of ids) {
+        // Progress names the row being worked on: never "0 of N".
+        setBulk({ done: seen + 1, total });
+        const latest = store.latest().items;
+        if (bulkRemovable(latest, priceReplace(latest, choicesRef.current), id)) {
+          if (!(await setState(id, "removed"))) {
+            stopped = true;
+            break;
+          }
+          removed++;
+        }
+        seen++;
+      }
+    } finally {
+      onBulk(false);
+      setBulk("idle");
+    }
+    if (stopped) {
+      const note = bulkText("stopped", { done: removed, total }, w);
+      setBulkNote(note);
+      announce(note);
+    } else if (removed) announce(bulkText("done", { done: removed, total }, w));
+  };
+
+  const row = (id: string) => {
+    const i = view.items.find((x) => x.id === id);
+    if (!i) return null;
+    const isLive =
+      i.outcome !== undefined && (i.state === "pending" || i.state === "confirmed");
+    const gone = i.state === "removed" && undo.has(id);
+    if (!isLive && !gone) return null;
+    const plan = live.get(id);
+    const winner = plan?.duplicateOf
+      ? view.items.find((x) => x.id === plan.duplicateOf)
+      : undefined;
+    const p = rowPayload(i.payload);
+    return (
+      <PriceRow
+        key={id}
+        item={i}
+        actions={rowActions(i.outcome, plan?.outcome, i.state, !!p.item.trim())}
+        winner={winner ? rowPayload(winner.payload) : null}
+        choice={choices[choiceKey(i)] ?? "keep"}
+        onChoice={onChoice}
+        replace={summary.replace}
+        locked={locked}
+        gone={gone ? undo.get(id)! : null}
+        onRemoved={(prev) => folded(id, prev)}
+        onRestored={() => unfolded(id)}
+        announce={announce}
+        onInvalid={onInvalid}
+      />
+    );
+  };
+  const rows = (ids: string[]) => ids.map(row).filter((x) => x !== null);
+  const attention = rows([...layout.check, ...layout.conflict, ...layout.duplicate]);
+
   // While this browser is still sending a file (the owner moved on from the
   // bring stage), its progress shows, as there.
   const senderOf = (u: SetupUpload) => {
@@ -909,67 +1105,8 @@ function PriceSection({
       : uploadLabel(u, w, now, queuedSince.get(u.id));
   };
 
-  const removeUnsure = async () => {
-    const ids = needCheckIds(summary.plans);
-    let done = 0;
-    setBulk({ done: 0, total: ids.length });
-    for (const id of ids) {
-      const it = store.latest().items.find((i) => i.id === id);
-      if (it && (it.state === "pending" || it.state === "confirmed")) {
-        if (!(await setState(id, "removed"))) break;
-      }
-      setBulk({ done: ++done, total: ids.length });
-    }
-    setBulk("idle");
-    announce(
-      w(
-        done === 1 ? "1 price removed" : `${done} prices removed`,
-        `${done} harga dibuang`,
-      ),
-    );
-  };
-
-  const row = (i: SetupItem) => {
-    const plan = live.get(i.id);
-    const winner = plan?.duplicateOf
-      ? view.items.find((x) => x.id === plan.duplicateOf)
-      : undefined;
-    return (
-      <PriceRow
-        key={i.id}
-        item={i}
-        actions={rowActions(i.outcome, plan?.outcome, i.state)}
-        winner={winner ? rowPayload(winner.payload) : null}
-        choice={choices[i.id] ?? "keep"}
-        onChoice={onChoice}
-        replace={summary.replace}
-        announce={announce}
-        onInvalid={onInvalid}
-      />
-    );
-  };
-
   return (
-    <section
-      ref={sectionRef}
-      className="setup-section setup-prices"
-      aria-labelledby="setup-prices"
-      onFocus={() => {
-        if (held) return;
-        setHeld(
-          new Map(
-            rows.map((i) => [
-              i.id,
-              rowSection(i.outcome, live.get(i.id)?.outcome),
-            ]),
-          ),
-        );
-      }}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null))
-          setHeld(null);
-      }}
-    >
+    <section className="setup-section setup-prices" aria-labelledby="setup-prices">
       <h2 id="setup-prices">{w("Prices and services", "Harga dan perkhidmatan")}</h2>
       {reading.map((u) => (
         <p key={u.id} className="setup-hint setup-reading">
@@ -979,7 +1116,7 @@ function PriceSection({
           )}
         </p>
       ))}
-      {unsure.length > 1 && bulk === "idle" && (
+      {unsure.length > 1 && bulk === "idle" && !locked && (
         <button
           type="button"
           className="setup-link"
@@ -992,13 +1129,10 @@ function PriceSection({
           )}
         </button>
       )}
-      {bulk === "asking" && (
+      {bulk === "asking" && unsure.length > 0 && (
         <div className="setup-confirm" role="group" aria-labelledby="setup-bulk-ask">
           <p id="setup-bulk-ask" className="setup-hint">
-            {w(
-              `Remove ${unsure.length} prices that still need checking? They will not be saved.`,
-              `Buang ${unsure.length} harga yang masih perlu disemak? Harga itu tidak akan disimpan.`,
-            )}
+            {bulkText("ask", { done: 0, total: unsure.length }, w)}
           </p>
           <div className="setup-card-actions">
             <button
@@ -1020,33 +1154,34 @@ function PriceSection({
         </div>
       )}
       {typeof bulk === "object" && (
-        <p className="setup-hint">
-          {w(
-            `Removing ${bulk.done} of ${bulk.total}…`,
-            `Membuang ${bulk.done} daripada ${bulk.total}…`,
-          )}
-        </p>
+        <p className="setup-hint">{bulkText("progress", bulk, w)}</p>
       )}
+      {bulkNote && <p className="setup-error">{bulkNote}</p>}
       {attention.length > 0 && (
         <div className="setup-price-group">
           <h3 className="setup-group-title">
             {w("Needs your attention", "Perlu perhatian anda")}
           </h3>
           <PriceHead />
-          <ul className="setup-price-list">{attention.map(row)}</ul>
+          <ul className="setup-price-list">{attention}</ul>
         </div>
       )}
-      {groups.files.map((f) => {
-        const upload = view.uploads.find((u) => u.id === f.uploadId);
+      {layout.files.map((f) => {
+        const upload = f.uploadId
+          ? view.uploads.find((u) => u.id === f.uploadId)
+          : undefined;
+        const listed = rows(f.ids);
+        if (!upload && !listed.length) return null;
+        const s = upload ? senderOf(upload) : undefined;
         return (
           <div className="setup-price-group" key={f.uploadId ?? "earlier"}>
             {upload ? (
               <FileHead
                 upload={upload}
                 label={fileLabel(upload)}
-                sending={
-                  !!senderOf(upload) && senderOf(upload)?.phase !== "failed"
-                }
+                sending={!!s && s.phase !== "failed"}
+                locked={locked}
+                focusStatus={focusStatus}
                 announce={announce}
               />
             ) : (
@@ -1054,10 +1189,10 @@ function PriceSection({
                 {w("From a removed file", "Daripada fail yang dibuang")}
               </h3>
             )}
-            {f.rows.length > 0 && (
+            {listed.length > 0 && (
               <>
                 <PriceHead />
-                <ul className="setup-price-list">{f.rows.map(row)}</ul>
+                <ul className="setup-price-list">{listed}</ul>
               </>
             )}
           </div>
@@ -1086,12 +1221,16 @@ function FileHead({
   upload,
   label,
   sending,
+  locked,
+  focusStatus,
   announce,
 }: {
   upload: SetupUpload;
   label: string;
   // This browser is still sending it: not an interrupted upload.
   sending: boolean;
+  locked: boolean;
+  focusStatus: () => void;
   announce: (text: string) => void;
 }) {
   const w = useWords(),
@@ -1116,8 +1255,11 @@ function FileHead({
       uploadId: upload.id,
     });
     setRemoving(false);
-    if (ok) announce(w(`${name} removed`, `${name} dibuang`));
-    else {
+    if (ok) {
+      // This heading and its rows go: focus to the status line.
+      focusStatus();
+      announce(w(`${name} removed`, `${name} dibuang`));
+    } else {
       setFailed(true);
       setConfirming(false);
       removeRef.current?.focus();
@@ -1153,7 +1295,7 @@ function FileHead({
                 ? w(`Remove everything from ${name}`, `Buang semua daripada ${name}`)
                 : w(`Remove ${name}`, `Buang ${name}`)
             }
-            disabled={removing}
+            disabled={removing || locked}
             onClick={() => setConfirming(true)}
           >
             {done
@@ -1180,7 +1322,8 @@ function FileHead({
 
 // "View file" for a photo: its chunks are fetched in order and joined into
 // one JPEG (photos are always shrunk to JPEG before sending), shown in a
-// modal dialog that keeps focus inside and closes on Escape. The picture's
+// modal dialog that keeps focus inside and closes on Escape, the close
+// button or a tap on the backdrop (not inside the dialog). The picture's
 // address is freed on close.
 function ViewFile({ upload, name }: { upload: SetupUpload; name: string }) {
   const { client } = useCore(),
@@ -1194,7 +1337,7 @@ function ViewFile({ upload, name }: { upload: SetupUpload; name: string }) {
     if (url && dialog.current && !dialog.current.open)
       dialog.current.showModal();
   }, [url]);
-  // Leaving the page with the picture open frees it too.
+  // Closing (url back to null) or leaving the page frees the picture.
   useEffect(
     () => () => {
       if (url) URL.revokeObjectURL(url);
@@ -1248,20 +1391,23 @@ function ViewFile({ upload, name }: { upload: SetupUpload; name: string }) {
           aria-label={name}
           onClose={closed}
           onClick={(e) => {
-            // A tap on the backdrop closes it.
+            // The dialog has no padding of its own: a click whose target is
+            // the dialog itself is on the backdrop.
             if (e.target === dialog.current) dialog.current?.close();
           }}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt={w(`Photo: ${name}`, `Foto: ${name}`)} />
-          <button
-            type="button"
-            className="button button-dark"
-            autoFocus
-            onClick={() => dialog.current?.close()}
-          >
-            {w("Close", "Tutup")}
-          </button>
+          <div className="setup-viewer-body">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt={w(`Photo: ${name}`, `Foto: ${name}`)} />
+            <button
+              type="button"
+              className="button button-dark"
+              autoFocus
+              onClick={() => dialog.current?.close()}
+            >
+              {w("Close", "Tutup")}
+            </button>
+          </div>
         </dialog>
       )}
     </>
@@ -1270,7 +1416,9 @@ function ViewFile({ upload, name }: { upload: SetupUpload; name: string }) {
 
 // One price row: a card on a phone (name and price on the first line, unit,
 // state and actions on the second), a table row on wide screens. The price
-// is always editable; name, variant, unit and notes open with Edit.
+// is always editable; name, variant, unit and notes open with Edit. It keeps
+// its place for the visit: confirming or editing changes its look, not its
+// position; a removed row folds in place with Undo.
 function PriceRow({
   item,
   actions: a,
@@ -1278,6 +1426,10 @@ function PriceRow({
   choice,
   onChoice,
   replace,
+  locked,
+  gone,
+  onRemoved,
+  onRestored,
   announce,
   onInvalid,
 }: {
@@ -1287,6 +1439,11 @@ function PriceRow({
   choice: Choice;
   onChoice: (id: string, choice: Choice) => void;
   replace: string[];
+  locked: boolean;
+  // Removed on this visit: the state to restore with Undo.
+  gone: "pending" | "confirmed" | null;
+  onRemoved: (prev: "pending" | "confirmed") => void;
+  onRestored: () => void;
   announce: (text: string) => void;
   onInvalid: (id: string, bad: boolean) => void;
 }) {
@@ -1300,6 +1457,7 @@ function PriceRow({
   const [price, setPrice] = useState(amountText(p.priceSen));
   const [priceBad, setPriceBad] = useState(false);
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [fields, setFields] = useState({
     item: p.item,
     variant: p.variant,
@@ -1308,10 +1466,21 @@ function PriceRow({
   });
   const [nameBad, setNameBad] = useState(false);
   const focused = useRef(false);
+  const undoRef = useRef<HTMLButtonElement>(null);
+  const removeRef = useRef<HTMLButtonElement>(null);
+  const liRef = useRef<HTMLLIElement>(null);
+  // Once Confirm was offered, its place stays for the visit (a disabled
+  // "Confirmed" after it), so focus has somewhere to stay.
+  const offered = useRef(false);
+  if (a.confirm) offered.current = true;
+  // A row's actions wait while its own write is in flight or "Remove all"
+  // runs. aria-disabled, not disabled, so a focused button keeps focus.
+  const off = busy || locked;
+  const priceInvalid = readPrice(price) === "invalid";
 
-  // Sends only what changed against the row as last stored; nothing when
+  // Sends only what changed against the row as last stored: "same" when
   // nothing changed (decided again when the write's turn comes).
-  const send = (next: RowEditValues) => {
+  const send = async (next: RowEditValues): Promise<"same" | "sent" | "failed"> => {
     const change = () => {
       const cur = store.latest().items.find((i) => i.id === item.id);
       if (!cur || (cur.state !== "pending" && cur.state !== "confirmed"))
@@ -1319,10 +1488,12 @@ function PriceRow({
       const c = rowChanges(rowPayload(cur.payload), cur.state, next);
       return c === null || c === "NAME_REQUIRED" ? null : c;
     };
-    if (!change()) return Promise.resolve(true);
-    return store.write((expectedRevision) => {
+    if (!change()) return "same";
+    let sent = false;
+    const ok = await store.write((expectedRevision) => {
       const c = change();
       if (!c) return Promise.resolve(store.latest());
+      sent = true;
       return client.execute("saveSetupItem", {
         id: store.agentId,
         itemId: item.id,
@@ -1331,19 +1502,23 @@ function PriceRow({
         ...(c.state ? { state: c.state } : {}),
       });
     });
+    return !ok ? "failed" : sent ? "sent" : "same";
   };
   // The price is sent when the field is left or Enter is pressed (and
-  // before apply), never on a pause: a changed price confirms the row.
+  // before apply), never on a pause or when the tab is hidden: a changed
+  // price confirms the row.
   const priceSave = useAutosave(
     async (v: number | null) => {
-      const ok = await send({ priceSen: v });
-      if (ok)
+      const r = await send({ priceSen: v });
+      if (r === "sent")
         announce(w(`Price of ${name} saved`, `Harga ${name} disimpan`));
-      return ok;
+      return r !== "failed";
     },
     { debounce: false },
   );
-  const fieldSave = useAutosave((f: typeof fields) => send(f));
+  const fieldSave = useAutosave(
+    async (f: typeof fields) => (await send(f)) !== "failed",
+  );
 
   // A stored change (another write, a reload) shows unless the owner is
   // typing in the field.
@@ -1357,18 +1532,78 @@ function PriceRow({
     if (!open) setFields({ item: p.item, variant: p.variant, unit: p.unit, notes: p.notes });
   }, [open, p.item, p.variant, p.unit, p.notes]);
   useEffect(() => () => onInvalid(item.id, false), []);
+  // Folded after Remove: the Remove button is gone, so focus (on it, or
+  // dropped to the page) moves to Undo in the same row.
+  // Back after Undo: the Undo button is gone, so focus moves to Remove.
+  const wasGone = useRef(false);
+  useEffect(() => {
+    const active = document.activeElement;
+    const lost =
+      !active || active === document.body || !!liRef.current?.contains(active);
+    if (gone && lost) undoRef.current?.focus();
+    if (!gone && wasGone.current && lost) removeRef.current?.focus();
+    wasGone.current = gone !== null;
+  }, [gone !== null]);
 
+  const run = async (fn: () => Promise<void>) => {
+    if (off) return;
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
   const leavePrice = () => {
-    const v = readPrice(price);
-    if (v === "invalid") {
+    if (readPrice(price) === "invalid") {
       setPriceBad(true);
       return;
     }
     void priceSave.flush();
   };
 
+  if (gone)
+    return (
+      <li
+        id={`setup-row-${item.id}`}
+        ref={liRef}
+        className="setup-price setup-price-gone"
+      >
+        <p className="setup-hint">{w(`${name} removed.`, `${name} dibuang.`)}</p>
+        <div className="setup-price-actions">
+          <button
+            type="button"
+            ref={undoRef}
+            className="setup-link"
+            aria-label={w(`Undo removing ${name}`, `Batalkan buang ${name}`)}
+            aria-disabled={off || undefined}
+            onClick={() =>
+              void run(async () => {
+                if (await setState(item.id, gone)) {
+                  onRestored();
+                  announce(w(`${name} is back`, `${name} dikembalikan`));
+                }
+              })
+            }
+          >
+            {w("Undo", "Batal")}
+          </button>
+        </div>
+      </li>
+    );
+
+  const removes =
+    a.useThis &&
+    useThisSteps(store.view.items, replace, item.id).some((s) => s.state === "removed");
+
   return (
-    <li className="setup-price" data-status={a.status}>
+    <li
+      id={`setup-row-${item.id}`}
+      ref={liRef}
+      className="setup-price"
+      data-status={a.status}
+      aria-busy={busy || undefined}
+    >
       <div className="setup-price-name">
         <span className="setup-price-item">{p.item || name}</span>
         {p.variant && <span className="setup-price-variant">{p.variant}</span>}
@@ -1385,6 +1620,7 @@ function PriceRow({
           autoComplete="off"
           enterKeyHint="done"
           value={price}
+          readOnly={locked}
           placeholder={a.status === "no_price" ? "0.00" : undefined}
           aria-invalid={priceBad || undefined}
           aria-describedby={priceBad ? `${pid}-bad` : undefined}
@@ -1420,28 +1656,51 @@ function PriceRow({
         <span className="setup-price-unit">{p.unit}</span>
         <span className="setup-price-state">
           {rowStatusText(a, w)}
-          {a.confirmed && (
+          {a.confirmed && !offered.current && (
             <span className="setup-mark">{w("Confirmed", "Disahkan")}</span>
           )}
         </span>
       </div>
       <div className="setup-price-actions">
-        {a.confirm && (
-          <button
-            type="button"
-            className="setup-link"
-            aria-label={w(`Confirm ${name}`, `Sahkan ${name}`)}
-            onClick={async () => {
-              if (
-                (await priceSave.flush()) &&
-                (await setState(item.id, "confirmed"))
-              )
-                announce(w(`${name} confirmed`, `${name} disahkan`));
-            }}
-          >
-            {w("Confirm", "Sahkan")}
-          </button>
-        )}
+        {offered.current &&
+          (a.confirm ? (
+            <button
+              type="button"
+              className="setup-link"
+              aria-label={w(`Confirm ${name}`, `Sahkan ${name}`)}
+              aria-disabled={off || priceInvalid || undefined}
+              onClick={() => {
+                // Not with text the price field refused: that would confirm
+                // the stored price the owner is correcting.
+                if (priceInvalid) {
+                  setPriceBad(true);
+                  return;
+                }
+                void run(async () => {
+                  if (
+                    (await priceSave.flush()) &&
+                    (await setState(item.id, "confirmed"))
+                  )
+                    announce(w(`${name} confirmed`, `${name} disahkan`));
+                });
+              }}
+            >
+              {w("Confirm", "Sahkan")}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="setup-link setup-link-done"
+              aria-disabled="true"
+              aria-label={
+                a.confirmed
+                  ? w(`${name} confirmed`, `${name} disahkan`)
+                  : w(`Confirm ${name}`, `Sahkan ${name}`)
+              }
+            >
+              {a.confirmed ? w("Confirmed", "Disahkan") : w("Confirm", "Sahkan")}
+            </button>
+          ))}
         <button
           type="button"
           className="setup-link"
@@ -1452,27 +1711,42 @@ function PriceRow({
               ? w(`Done editing ${name}`, `Siap menyunting ${name}`)
               : w(`Edit ${name}`, `Sunting ${name}`)
           }
-          onClick={async () => {
-            if (open && !nameBad) await fieldSave.flush();
-            if (open && nameBad) {
-              fieldSave.cancel();
-              setNameBad(false);
-            }
-            setOpen(!open);
-          }}
+          aria-disabled={off || undefined}
+          onClick={() =>
+            void run(async () => {
+              if (open && !nameBad) await fieldSave.flush();
+              if (open && nameBad) {
+                fieldSave.cancel();
+                setNameBad(false);
+              }
+              setOpen(!open);
+            })
+          }
         >
           {open ? w("Done", "Siap") : w("Edit", "Sunting")}
         </button>
         <button
           type="button"
+          ref={removeRef}
           className="setup-link"
           aria-label={w(`Remove ${name}`, `Buang ${name}`)}
-          onClick={async () => {
-            priceSave.cancel();
-            fieldSave.cancel();
-            if (await setState(item.id, "removed"))
-              announce(w(`${name} removed`, `${name} dibuang`));
-          }}
+          aria-disabled={off || undefined}
+          onClick={() =>
+            void run(async () => {
+              priceSave.cancel();
+              fieldSave.cancel();
+              const prev = item.state === "confirmed" ? "confirmed" : "pending";
+              // Marked first, so the row folds in place (never unmounts)
+              // when the stored state turns to removed.
+              onRemoved(prev);
+              if (await setState(item.id, "removed")) {
+                onInvalid(item.id, false);
+                setPriceBad(false);
+                setPrice(amountText(p.priceSen));
+                announce(w(`${name} removed`, `${name} dibuang`));
+              } else onRestored();
+            })
+          }
         >
           {w("Remove", "Buang")}
         </button>
@@ -1486,20 +1760,18 @@ function PriceRow({
         </p>
       )}
       {a.status === "check" && (
-        <p className="setup-hint setup-price-extra">
-          {checkReasonText(item.checkReason, w)}
-        </p>
+        <Reason reason={item.checkReason} className="setup-hint setup-price-extra" />
       )}
       {a.status === "no_price" && (
         <p className="setup-hint setup-price-extra">
           {w(
             "Type a price to keep this row.",
-            "Taip harga untuk menyimpan baris ini.",
+            "Taip harga supaya baris ini disimpan.",
           )}
         </p>
       )}
       {a.choice && item.current && (
-        <fieldset className="setup-conflict setup-price-extra">
+        <fieldset className="setup-conflict setup-price-extra" disabled={locked}>
           <legend>{conflictText(item.current, p.priceSen, w)}</legend>
           <div className="setup-choice">
             {(["keep", "new"] as const).map((k) => (
@@ -1518,7 +1790,7 @@ function PriceRow({
                           )
                         : w(
                             `${name}: the current price is kept`,
-                            `${name}: harga semasa dikekalkan`,
+                            `${name}: harga sedia ada dikekalkan`,
                           ),
                     );
                   }}
@@ -1539,16 +1811,19 @@ function PriceRow({
           <button
             type="button"
             className="button button-small secondary-button"
-            aria-label={w(`Use ${name} instead`, `Guna ${name}`)}
-            onClick={async () => {
-              const steps = useThisSteps(store.latest().items, replace, item.id);
-              for (const s of steps)
-                if (!(await setState(s.id, s.state))) return;
-              if (steps.length)
-                announce(w(`${name} will be saved`, `${name} akan disimpan`));
-            }}
+            aria-label={w(`Use ${name} instead`, `Guna ${name} sebagai ganti`)}
+            aria-disabled={off || undefined}
+            onClick={() =>
+              void run(async () => {
+                const steps = useThisSteps(store.latest().items, replace, item.id);
+                for (const s of steps)
+                  if (!(await setState(s.id, s.state))) return;
+                if (steps.length)
+                  announce(w(`${name} will be saved`, `${name} akan disimpan`));
+              })
+            }
           >
-            {w("Use this one instead", "Guna yang ini")}
+            {useThisText(removes, w)}
           </button>
         </div>
       )}
@@ -1558,7 +1833,7 @@ function PriceRow({
             [
               ["item", w("Name", "Nama"), 200],
               ["variant", w("Variant or size", "Varian atau saiz"), 200],
-              ["unit", w("Unit, for example per kg", "Unit, contohnya sekilo"), 60],
+              ["unit", w("Unit, for example per kg", "Unit, contohnya per kg"), 60],
               ["notes", w("Notes", "Catatan"), 300],
             ] as const
           ).map(([k, text, max]) => (
@@ -1569,6 +1844,7 @@ function PriceRow({
                 className="setup-answer"
                 maxLength={max}
                 value={fields[k]}
+                readOnly={locked}
                 aria-invalid={(k === "item" && nameBad) || undefined}
                 aria-describedby={k === "item" && nameBad ? `${pid}-name-bad` : undefined}
                 onChange={(e) => {
