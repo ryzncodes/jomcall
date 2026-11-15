@@ -289,6 +289,8 @@ Note: Docker restarts a container that exits, not one marked unhealthy. Watch `d
 
 What the gate does not cover: it lives in the web app only. Supabase Auth itself still accepts sign-ups from anyone who holds the Supabase anonymous key. JomCall never sends that key to the browser, and an account made that way still cannot create a workspace or top up. Do not turn off "Allow new users to sign up" in Supabase: the web sign-up form, invitations included, would stop working. The engine and the other server services do not read `JOMCALL_SIGNUP_ALLOW`; nothing changes in `/etc/jomcall`.
 
+6. Look through the accounts (Supabase → Authentication → Users) and workspaces created on staging since Deployment Protection came off. The list stops new sign-ups only; accounts that already exist keep signing in and can top up workspaces they already have.
+
 [ROLLBACK] remove `JOMCALL_SIGNUP_ALLOW` and redeploy: sign-up is open again.
 
 ## Step 5. Voice on staging

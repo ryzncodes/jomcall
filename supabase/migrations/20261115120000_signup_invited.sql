@@ -3,6 +3,15 @@
 -- pending, unexpired invitation for it. The web login (jomcall_app) cannot see
 -- invitations before sign-in, so this narrow function answers yes or no for
 -- one address. It lists nothing and returns no invitation detail.
+--
+-- app.invitation forces row-level security, so the function's owner (the
+-- login that runs migrations) must bypass it, or the function would answer
+-- "no" for every address. Stop here, with a named code, if it cannot.
+do $$ begin
+ if not exists(select 1 from pg_roles where rolname=current_user and (rolsuper or rolbypassrls)) then
+  raise exception 'SIGNUP_INVITED_OWNER_NEEDS_BYPASSRLS';
+ end if;
+end $$;
 create function app_private.signup_invited(p_email text) returns boolean
 language sql stable security definer set search_path='' as $$
  select p_email is not null and exists(

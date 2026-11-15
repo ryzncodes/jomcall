@@ -13,16 +13,19 @@ Branch `claude/staging-safety-de5753`, pull request into `main` (not merged).
 - Migration `20261115120000_signup_invited.sql`: `app_private.signup_invited(email)` yes/no for the web login only.
 - `npm run hosted:readiness -- --service web`: fails on a Curlec key whose prefix does not match `CURLEC_ENVIRONMENT` (`CURLEC_KEY_MODE_MISMATCH`), on an unknown prefix (`CURLEC_KEY_MODE_UNKNOWN`), and on live keys on the `staging` namespace without `CURLEC_LIVE_ON_STAGING=1` and `JOMCALL_SIGNUP_ALLOW`.
 
-**Verified** — see the pull request body for the check counts.
+**Verified (2026-11-15, this worktree, local only)**
+- `npm run typecheck`: pass. `npm run test:guards`: 34 of 34. `npm run build:hosted` and `npm run build:mock`: pass. `npm run db:verify-migrations`: pass, 54 tables with row-level security.
+- `npm run check:core` (487 tests): first full run 486 of 487, the one failure `tests/engine/terminal.test.ts` because this worktree had no own `node_modules` (fixed by `npm ci`). Second full run 442 of 487: all 45 failures are phone, WhatsApp and core-tools tests, caused by `app_private.channel_admission` (code `NO_PHONE_ENTITLEMENT`) that the parallel usage-metering session's unmerged migration `20261115123000_channel_metering.sql` had put into the shared local database; not this branch. Rerun of the files this branch touches plus terminal, hosting, billing, auth and bootstrap: 111 of 111.
 
 **Not verified**
-- Nothing applied to staging. No person has tried the refusal message in a browser. The workspace-creation refusal has no automated hosted test (its two helpers are tested).
+- Nothing applied to staging. No person has tried the refusal message in a browser. Readiness only: nothing at run time stops live keys on staging without the list, so staging stays public with live keys until the owner sets the list and redeploys. The list stops new sign-ups only; existing accounts keep signing in and topping up their workspaces. Hosted Supabase's `postgres` login is assumed to bypass row-level security (the migration stops with `SIGNUP_INVITED_OWNER_NEEDS_BYPASSRLS` if not); checked locally only. The workspace-creation refusal has no automated hosted test (its two helpers are tested).
 - Curlec's documentation does not state key prefixes; `rzp_live_` / `rzp_test_` come from the owner's accounts.
 
 **Owner steps (staging)**
 1. `npm run hosted:migrate` (staging) for the new migration.
 2. Vercel staging environment: `JOMCALL_SIGNUP_ALLOW=<your addresses or @domain>` and `CURLEC_LIVE_ON_STAGING=1`; redeploy. Nothing changes in `/etc/jomcall`.
 3. `npm run hosted:readiness -- --service web --env-file <local copy>` prints `web: ready`.
+4. Review accounts and workspaces created on staging since Deployment Protection came off.
 
 ## 2026-11-15 — guided setup flow (interview door)
 
