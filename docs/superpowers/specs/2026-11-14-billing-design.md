@@ -241,7 +241,7 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
   - `includedVoiceSeconds`, which is on only while `charged`;
   - `usedIncludedSeconds`.
 
-  The function is granted to the worker and agent roles; `plan_summary(org)` is for owners and admins. The phone line does not read it yet.
+  The function is granted to the worker role (and, since section 13, to the owner of the agent functions instead of the agent login role); `plan_summary(org)` is for owners and admins. The phone line and the WhatsApp worker read it at admission (section 13).
 - **Roles.** Owners and admins of the organization read `org_plan` and `plan_period` (forced RLS). The app role cannot write them or charge a period. `billing_plan` is readable by any signed-in session.
 
 ### Tests (`tests/billing/plans.test.ts`, 7)
@@ -261,7 +261,57 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 
 ### Follow-ups (not built)
 
-- Wire `plan_entitlements` into the phone line: refuse to assign or answer on a number the plan does not cover.
+- ~~Wire `plan_entitlements` into the phone line~~: answering is gated since section 13. Refusing to *assign* a number the plan does not cover is still open.
 - Schedule `charge_due_plans` (daily) in the worker.
 - Retry the fee automatically when a top-up is credited during grace.
 - A plan picker and plan status on the local-app wallet screen (`choose_plan`, `plan_summary`).
+
+## 13. Metering and admission on the real channels (2026-11-15)
+
+Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `supabase/migrations/20261115123000_channel_metering.sql`; tests `tests/billing/phone-metering.test.ts` (8) and `tests/billing/whatsapp-metering.test.ts` (5). Everything was tested against the fake telephony, the fake WhatsApp provider and the local database only.
+
+### What was built
+
+- **Phone calls.** A call is billed `voice_second` once, with key `call:<call id>`, in the same transaction that ends it. There are two end paths:
+  - `agent_call('call_end')`: caller hang-up, transfer, and the worker's error path;
+  - `agent_call('maintain')`: a worker crash, through token expiry.
+
+  The quantity is the call row's `duration_seconds`, counted from `answered_at`. It is copied to `billed_seconds`, and `usage_event_id` links the bill. Never billed: a call never answered, a call of 0 seconds (`usage_state='free'`), a refused call, and browser test calls (section 4).
+- **A failed bill never blocks the end of a call.** The call ends with `usage_state='pending'`, and every `maintain` pass retries each owed call on its own. A duplicate or late end gets 401 because the token is already cleared. The idempotency key is a second guard.
+- **WhatsApp.**
+  - **Window:** one `app.conversation` row. A new one starts after 24 hours without a customer message (WhatsApp design §5).
+  - **Billing:** `whatsapp_conversation`, quantity 1, key `wa:<conversation id>`, when the first agent-authored message in the conversation reaches `sent` in `whatsapp_work('send_result')`. This includes the template that replaces it outside the 24-hour window, and a late `unknown` that becomes `sent`.
+  - **Not billed:** notices (opt-out, handoff, unsupported message), staff replies, and conversations the agent never answered.
+  - **A failed bill** leaves `usage_state='pending'` for `maintain` to retry.
+- **Admission.** `app_private.channel_admission(org, 'phone'|'whatsapp', at)` is internal, owned by `jomcall_agent_jobs` and granted to no role. It does three things in order:
+  1. starts or retries the current plan period (`charge_plan_period`; a failure is ignored);
+  2. reads `plan_entitlements`;
+  3. reads `wallet_state`.
+
+  It returns `NO_PHONE_ENTITLEMENT` or `NO_WHATSAPP_ENTITLEMENT`, then `WALLET_UNFUNDED` or `WALLET_EXHAUSTED`, or null. Grace is admitted.
+  - **Phone:** it runs inside `call_start`'s lock, after the configuration refusals (suspended, unpublished, disclosure) and before the caller limit and the busy-line guard. The plan period uses the agent process's clock, `at`, like opening hours.
+  - **WhatsApp:** it runs in `turn_claim` for agent turns, and only while the conversation has not been billed.
+- **Never cut off.** Nothing re-checks the plan or the wallet during a call, or in a conversation already answered in its window. Those keep going and are billed into grace or below.
+- **Roles.**
+  - `jomcall_agent_jobs`, the owner of `agent_call` and `whatsapp_work`, gained EXECUTE on `record_usage`, `wallet_state`, `plan_entitlements` and `charge_plan_period`.
+  - The login role `jomcall_agent` lost EXECUTE on `record_usage`, `wallet_state` and `plan_entitlements`. It can no longer bill an organization or read any balance; it learns only a refusal code for the number dialled.
+  - `jomcall_worker` is unchanged.
+- **Operator plan command.** `npm run billing:admin -- plan <org> <starter|growth|payg> "<operator>"` stands in for the missing plan picker:
+  - with no period running, it starts the plan now; otherwise the change takes effect next period;
+  - it records `billing.plan_set_by_operator` in the audit log, then starts or retries the period.
+
+### Deviations from this design and the channel designs
+
+1. **Metering runs in SQL, not through the TypeScript `recordUsage`.** Section 3 says the phone and WhatsApp sessions call `recordUsage` as `jomcall_agent`. They call the same `app_private.record_usage` from inside their own security-definer functions instead. This makes the bill atomic with the end or the send, so no ended-but-unbilled window exists outside a failed bill. It also lets the agent login role lose its direct grant.
+2. **What is measured.** Section 3 says to bill only after the provider confirms the event. No provider call-end record exists: phone design §11 lists "billing per provider-confirmed minute" as not built. Voice seconds are therefore measured by JomCall, from the worker's answer to the end the worker reports. After a crash they run to the last turn.
+3. **Refused calls are silent.** Section 4 says a refused call rings through to the business and the owner is told. Neither exists (phone design open decision 4). These refusals are silent like the other configuration refusals: the room is deleted and a refused row stays in the call log.
+4. **The WhatsApp unit.** WhatsApp design O7 says to bill per delivered message from Meta's `pricing` status. This follows section 12 instead: JomCall's own fee per conversation.
+5. **Lazy period start.** Section 12 expects `charge_due_plans` to start periods, but nothing schedules it. Admission starts or retries the period itself, so the first call or chat of a period can debit the monthly fee.
+
+### Open owner decisions
+
+- Silent refusal versus ringing the owner's own number when the plan or wallet does not allow a call (phone open decision 4).
+- Whether WhatsApp conversations longer than 24 hours of continuous activity should bill again per 24 hours. Today one conversation is one bill however long it stays active.
+- Whether the crash cut-off (the last turn) is acceptable, or whether a provider call-end time is required before real callers.
+- A plan picker on the wallet screen, and specific call-log text for the new refusals (currently "Not answered").
+
