@@ -1,5 +1,35 @@
 # Handoff
 
+## 2026-11-15 — setup document import door
+
+Branch `feat/setup-import` (pull request not yet open; the controller opens it). Plan: `docs/superpowers/plans/2026-11-15-setup-flow-import.md`. Reading evidence: `docs/qa/2026-11-15-setup-reader.md`. Design note: end of `docs/superpowers/specs/2026-11-14-setup-flow-design.md`.
+
+**Changed**
+- Migrations `20261116090000_setup_uploads.sql` and `20261116090100_setup_read_worker.sql` (re-runnable).
+- Upload commands (create, chunk put and get, finish, paste text, remove); uploads kept in Postgres in chunks; file bytes deleted 30 days after upload.
+- The reader (`packages/inference/src/setup-reader.ts`): photos and PDFs read twice, disagreements flagged; CSV and pasted text read once; no .xlsx (owner decision).
+- The read worker in the agent process (`engine/src/agent/setup-reader.ts`), behind the new switch `JOMCALL_SETUP_READER` (`disabled` default, `anthropic`).
+- Price rows through the review page and apply (one planner, `packages/domain/src/setup/rows.ts`); the bring stage and price table in `web/components/core/setup/`.
+- `npm run check:setup-reader` (needs `--paid` for any model call) with 15 made-up documents.
+
+**Verified (2026-11-15)**
+- `npm run typecheck` pass; `npm run test:guards` 69 of 69; `npm run check:core` 743 of 744 (the one failure, `tests/db/signup-invited.test.ts`, is the known local quirk "function signup_invited already exists"); `npm run db:verify-migrations` 58 tables with row-level security; `npm run build:mock` and `npm run build:hosted` pass.
+- Browser check, local app, 390 px, English, reader on, fake workspace: a photo, a CSV and pasted text read in about 30 seconds each; review page, double tap, price edit, Remove and Undo, apply question; a draft test answered a price from the new rows.
+- Three paid reading runs on 15 made-up documents, 57 model calls. Run 3 was clean: no wrong or unsure price unflagged; 34 of 250 rows flagged.
+
+**Not verified**
+- No person has used it. No real phone photo, handwriting or blur. Each paid run was done once, so how often a wrong price recurs is unknown. The double read's catch of a slipped line is shown by unit test only. Two reads that slip the same way are not caught. CSV and pasted text are read once.
+- Bahasa Melayu and dark theme on the new pages, View file, bulk remove, file-group remove, conflicts, duplicates, a real phone, upload interruption.
+- Nothing ran on hosted staging. The 48-case gates were not re-run.
+- Whether uploads must be covered by PDPA export and delete (a lawyer's question). No way to remove uploads after setup is applied.
+
+**Next (owner steps; never run by us)**
+1. Apply the two new migrations to staging from the clean release folder: `npm run hosted:migrate` (see `infra/hosted/RUNBOOK.md` step 12).
+2. Confirm in the SQL editor, with the runbook's role query, that `jomcall_agent_jobs` has `rolbypassrls = true` before relying on the reader there.
+3. Set `JOMCALL_SETUP_READER=anthropic` for the web service in Vercel staging and for the agent on the server (the Anthropic key is already there), then rebuild.
+4. Try the bring stage on staging with made-up documents only.
+5. Decide about the deferred items in the ledger (see the design note), for example a prompt line "each quantity tier is its own row", and a real-photo check.
+
 ## 2026-11-15 — WhatsApp inbox review fixes
 
 Branch `claude/whatsapp-inbox-341dbf`, pull request #25 (not merged). All 15 review points; list in `docs/superpowers/plans/2026-11-15-whatsapp-inbox.md` ("Review fixes").
