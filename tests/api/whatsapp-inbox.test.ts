@@ -14,6 +14,7 @@ import {
 import { createFakeProvider } from "../../packages/whatsapp/src/fake.ts";
 import { WhatsAppWorker } from "../../engine/src/whatsapp/worker.ts";
 import { displayName } from "../../web/lib/core/inbox-rules.ts";
+import { entitle } from "../helpers/billing.ts";
 
 const secret = "inbox-app-secret-" + randomUUID();
 const phone = String(100000000 + Math.floor(Math.random() * 899999999));
@@ -27,6 +28,9 @@ async function setup() {
   });
   const f = await createPhase2Harness();
   const { h } = f;
+  // A plan with the WhatsApp agent and wallet credit, so the agent process
+  // admits the conversation (billing design §13).
+  await entitle(h.cleanup, h.orgA.id);
   const version = (
     await h.cleanup.query(
       "insert into app.agent_version(org_id,agent_id,sequence,snapshot,actor_id)values($1,$2,1,$3,$4)returning id",
