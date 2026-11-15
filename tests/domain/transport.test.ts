@@ -8,7 +8,7 @@ import {
   failureOf,
   isResourceUnavailable,
 } from "../../web/lib/core/client.ts";
-import { statusKey, statusText } from "../../web/components/core/error-copy.ts";
+import { chooseCopy, errorKey, proxyKey } from "../../web/components/core/error-copy.ts";
 import { retryOffered, sendFailureText } from "../../web/components/core/setup/rules.ts";
 
 const en = (e: string) => e;
@@ -161,11 +161,44 @@ test("a non-JSON error body (a proxy's HTML page) is a ProxyError: never a CoreE
   // A JSON error from the app itself still may say a record is gone.
   assert.equal(isResourceUnavailable(new CoreError("NOT_FOUND", 404)), true);
 });
+// A piece of the shared table in state.tsx, as errorText passes it.
+const table: Record<string, [string, string]> = {
+  FORBIDDEN: ["Your role cannot make this change.", "Peranan anda tidak dibenarkan membuat perubahan ini."],
+  CONFLICT: [
+    "This record changed. Reload and review before saving again. Your input is preserved.",
+    "Rekod telah berubah. Muat semula dan semak sebelum menyimpan. Input anda dikekalkan.",
+  ],
+  OFFLINE: ["Connection interrupted. Your input is preserved.", "Sambungan terputus. Input anda dikekalkan."],
+};
+// errorText's choice before this branch: its own code, then the table, then
+// the code's words.
+const before = (e: CoreError): [string, string] =>
+  table[e.code] ?? [e.code.replaceAll("_", " "), e.code.replaceAll("_", " ")];
+const copyOf = (e: unknown) => chooseCopy(e, errorKey(e), table);
+test("an app error keeps the shared text it had before: an unknown code is never reworded by status", () => {
+  for (const e of [
+    new CoreError("NUMBER_IN_USE", 409),
+    new CoreError("BOOKING_CANCELLED", 409),
+    new CoreError("PROPOSAL_NOT_READY", 409),
+    new CoreError("CSRF_REJECTED", 403),
+    new CoreError("WHATSAPP_NOT_CONFIGURED", 503),
+    new CoreError("REQUEST_FAILED", 502),
+    new CoreError("REQUEST_BLOCKED", 400),
+    new CoreError("CONFLICT", 409),
+    new CoreError("FORBIDDEN", 403),
+  ]) {
+    assert.deepEqual(copyOf(e), before(e), e.code);
+  }
+  assert.deepEqual(copyOf(new CoreError("NUMBER_IN_USE", 409)), ["NUMBER IN USE", "NUMBER IN USE"]);
+  assert.deepEqual(copyOf(new CoreError("CSRF_REJECTED", 403)), ["CSRF REJECTED", "CSRF REJECTED"]);
+  // No answer at all: the connection sentence, as before.
+  assert.deepEqual(copyOf(new TypeError("Failed to fetch")), table.OFFLINE);
+});
 test("a proxy's HTML 502 reads as the old connection sentence, retryable, in both languages", () => {
   const e = new ProxyError(502);
-  assert.equal(statusKey(e.status, true), "OFFLINE");
+  assert.deepEqual(copyOf(e), table.OFFLINE);
   for (const status of [0, 200, 408, 429, 500, 503, 504])
-    assert.equal(statusKey(status, true), "OFFLINE", String(status));
+    assert.equal(proxyKey(status), "OFFLINE", String(status));
   assert.equal(retryOffered(502, failureOf(e).code), true);
   assert.equal(
     sendFailureText(502, "PROXY", "chunk", en),
@@ -177,51 +210,45 @@ test("a proxy's HTML 502 reads as the old connection sentence, retryable, in bot
   );
 });
 test("a proxy's HTML 403 is not 'signed out' or 'record gone': a plain sentence, no Retry", () => {
-  assert.equal(statusKey(403, true), "REQUEST_BLOCKED");
-  assert.equal(statusKey(401, true), "REQUEST_BLOCKED");
-  assert.equal(statusKey(404, true), "REQUEST_BLOCKED");
-  const [enText, msText] = statusText("REQUEST_BLOCKED")!;
-  assert.match(enText, /did not go through/);
-  assert.match(msText, /Permintaan tidak sampai/);
+  for (const status of [401, 403, 404, 410]) {
+    assert.equal(proxyKey(status), "REQUEST_BLOCKED", String(status));
+    const [enText, msText] = copyOf(new ProxyError(status));
+    assert.equal(enText, "The request did not go through. Reload the page and try again.");
+    assert.equal(msText, "Permintaan tidak berjaya dihantar. Muat semula halaman dan cuba lagi.");
+  }
   assert.equal(retryOffered(403, "PROXY"), false);
   assert.equal(
     sendFailureText(403, "PROXY", "chunk", en),
     "Something went wrong sending this file. Remove it and add it again.",
   );
 });
-test("a proxy's HTML 413 on an upload says the file is too large; elsewhere a plain sentence", () => {
-  assert.equal(
-    sendFailureText(413, "PROXY", "chunk", en),
-    "This file is larger than 10 MB. Split it into smaller files and add them one at a time.",
-  );
-  assert.equal(
-    sendFailureText(413, "PROXY", "create", ms),
-    "Fail ini lebih besar daripada 10 MB. Bahagikan kepada fail yang lebih kecil dan tambah satu demi satu.",
-  );
+test("a proxy's HTML 413 says too large for the connection, naming no size", () => {
+  const enText = "This file could not be sent because it is too large for the connection. Try a smaller file.";
+  const msText = "Fail ini tidak dapat dihantar kerana terlalu besar untuk sambungan ini. Cuba fail yang lebih kecil.";
+  assert.equal(sendFailureText(413, "PROXY", "chunk", en), enText);
+  assert.equal(sendFailureText(413, "PROXY", "create", en), enText);
+  assert.equal(sendFailureText(413, "PROXY", "finish", ms), msText);
+  assert.doesNotMatch(enText, /\d/);
   assert.equal(retryOffered(413, "PROXY"), false);
-  assert.equal(statusKey(413, true), "REQUEST_TOO_LARGE");
-  assert.ok(statusText("REQUEST_TOO_LARGE"));
+  // The app's own refusal still names the 10 MB limit.
+  assert.match(sendFailureText(413, "UPLOAD_TOO_LARGE", "create", en), /10 MB/);
+  // Elsewhere: a plain sentence by status.
+  assert.equal(proxyKey(413), "REQUEST_TOO_LARGE");
+  assert.deepEqual(copyOf(new ProxyError(413)), [
+    "This is too large to send. Make it smaller and try again.",
+    "Ini terlalu besar untuk dihantar. Kurangkan saiznya dan cuba lagi.",
+  ]);
 });
-test("an app code no table names is worded by its status, never shown raw", () => {
-  const cases: [number | null, string][] = [
-    [null, "OFFLINE"],
-    [401, "UNAUTHORIZED"],
-    [403, "FORBIDDEN"],
-    [404, "NOT_FOUND"],
-    [410, "NOT_FOUND"],
-    [409, "CONFLICT"],
-    [422, "VALIDATION_ERROR"],
-    [413, "REQUEST_TOO_LARGE"],
-    [429, "TRY_LATER"],
-    [500, "SERVICE_ERROR"],
-    [418, "REQUEST_REFUSED"],
-  ];
-  for (const [status, key] of cases) assert.equal(statusKey(status, false), key, String(status));
-  for (const key of ["REQUEST_BLOCKED", "REQUEST_TOO_LARGE", "TRY_LATER", "SERVICE_ERROR", "REQUEST_REFUSED"]) {
-    const copy = statusText(key);
-    assert.ok(copy, key);
-    for (const text of copy) assert.doesNotMatch(text, /[A-Z]{2,}_[A-Z]/, "no raw code");
-  }
+test("on upload calls the role sentence is only for code FORBIDDEN; any other 403 is the general sentence", () => {
+  assert.equal(sendFailureText(403, "FORBIDDEN", "create", en), "Only an owner or admin can add documents.");
+  for (const step of ["create", "chunk", "finish"] as const)
+    assert.equal(
+      sendFailureText(403, "CSRF_REJECTED", step, en),
+      "Something went wrong sending this file. Remove it and add it again.",
+      step,
+    );
+  assert.equal(sendFailureText(403, "CSRF_REJECTED", "remove", en), "Could not remove this file. Try again.");
+  assert.equal(sendFailureText(403, "CSRF_REJECTED", "paste", en), "Could not add the pasted text. Try again.");
 });
 test("create and finish pass their abort signal to the request and the CSRF read", async () => {
   const controller = new AbortController();

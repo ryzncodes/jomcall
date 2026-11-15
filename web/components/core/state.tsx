@@ -1,21 +1,14 @@
 "use client";
 import { HOSTED } from "@/lib/hosted";
-import { ZodError } from "zod";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import {
   HttpCoreClient,
   CoreError,
-  ProxyError,
   isResourceUnavailable,
 } from "@/lib/core/client";
 import type { Bootstrap, Session } from "../../../packages/contracts/src/core";
 import { useExperience } from "../experience";
-import {
-  contextCopy,
-  statusKey,
-  statusText,
-  type ErrorContext,
-} from "./error-copy";
+import { chooseCopy, errorKey, type ErrorContext } from "./error-copy";
 export const CoreContext = createContext<{
   client: HttpCoreClient;
   workspace: Bootstrap;
@@ -31,15 +24,8 @@ export function useWords() {
 }
 export function errorText(error: unknown, ms = false, context?: ErrorContext) {
   // A proxy's page (not JSON) is worded by its status, as the connection
-  // sentence whenever a later try may pass.
-  const code =
-    error instanceof CoreError
-      ? error.code
-      : error instanceof ProxyError
-        ? statusKey(error.status, true)
-        : error instanceof ZodError
-          ? "VALIDATION_ERROR"
-          : "OFFLINE";
+  // sentence whenever a later try may pass; an app error by its own code.
+  const code = errorKey(error);
   const messages: Record<string, [string, string]> = {
     VERIFICATION_FAILED: [
       "We could not confirm you are human. Complete the check and try again.",
@@ -194,18 +180,7 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Cawangan utama atau yang digunakan tidak boleh diarkibkan.",
     ],
   };
-  // A code no table names is worded by its status; never shown raw.
-  const byStatus = () => {
-    const key = statusKey(
-      error instanceof CoreError ? error.status : null,
-      false,
-    );
-    return messages[key] ?? statusText(key)!;
-  };
-  return (contextCopy(code, context) ??
-    messages[code] ??
-    statusText(code) ??
-    byStatus())[ms ? 1 : 0];
+  return chooseCopy(error, code, messages, context)[ms ? 1 : 0];
 }
 export function useResource<T>(load: () => Promise<T>, key: string) {
   const { epoch } = useCore();

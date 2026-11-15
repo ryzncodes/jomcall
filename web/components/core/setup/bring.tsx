@@ -104,7 +104,7 @@ export function BringStage({
   const labelOf = (r: Row) =>
     r.sender
       ? r.sender.phase === "failed" && r.sender.step === "remove"
-        ? w("Not removed", "Belum dibuang")
+        ? w("Not removed", "Gagal dibuang")
         : sendingLabel(r.sender, w)
       : r.upload
         ? uploadLabel(r.upload, w, now, queuedSince.get(r.upload.id))
@@ -483,6 +483,9 @@ function retryAllowed(s: Sender) {
   if (!s.step) return false;
   const f = failureOf(s.error);
   if (s.step === "remove")
-    return !(f.code !== "PROXY" && (f.status === 401 || f.status === 403));
+    return !(
+      f.code !== "PROXY" &&
+      (f.status === 401 || (f.status === 403 && f.code === "FORBIDDEN"))
+    );
   return retryOffered(f.status, f.code);
 }

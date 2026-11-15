@@ -312,9 +312,11 @@ export function requestErrorText(
 // `code` come from failureOf: both null when no answer came (offline,
 // timeout), code "PROXY" for an error page that is not JSON from the app.
 // - Removing and pasting have their own sentences, never the sending ones.
-// - 401/403 from the app: signed out, or a role that may not add documents.
-// - A proxy's page: 413 is "too large", a page a later try may pass is the
-//   connection sentence, any other the general one.
+// - 401 from the app: signed out. 403 with code FORBIDDEN: a role that may
+//   not add documents; any other 403 (CSRF_REJECTED) is the general one.
+// - A proxy's page: 413 is "too large for the connection" (no size named:
+//   a proxy's limit can be lower than ours), a page a later try may pass is
+//   the connection sentence, any other the general one.
 // - Any other refusal (CONFLICT, UPLOAD_INCOMPLETE, UPLOAD_SIZE_MISMATCH,
 //   EMPTY_CHUNK, PAYLOAD_TOO_LARGE, OCTET_STREAM_REQUIRED, NOT_FOUND) means
 //   this send cannot be fixed by Retry.
@@ -340,7 +342,7 @@ export function sendFailureText(
             "You are signed out. Sign in again, then add the file.",
             "Anda sudah log keluar. Log masuk semula, kemudian tambah fail itu.",
           );
-  if (app && status === 403)
+  if (app && status === 403 && code === "FORBIDDEN")
     return step === "remove"
       ? w(
           "Only an owner or admin can remove documents.",
@@ -359,7 +361,11 @@ export function sendFailureText(
       "Teks yang ditampal tidak dapat ditambah. Cuba lagi.",
     );
   if (!app) {
-    if (status === 413) return refusalText("SPLIT", w);
+    if (status === 413)
+      return w(
+        "This file could not be sent because it is too large for the connection. Try a smaller file.",
+        "Fail ini tidak dapat dihantar kerana terlalu besar untuk sambungan ini. Cuba fail yang lebih kecil.",
+      );
     return proxyRetryable(status) ? connectionText(w) : sendBrokenText(w);
   }
   return status === null || retryable(status)

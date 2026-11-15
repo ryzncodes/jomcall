@@ -509,8 +509,8 @@ test("every send failure has a plain sentence, never a raw code", () => {
   assert.equal(sendFailureText(403, "FORBIDDEN", "create", ms), "Hanya pemilik atau pentadbir boleh menambah dokumen.");
   // A proxy's page: 413 is "too large", a server error the connection
   // sentence, any other 4xx (also 401/403) the general one.
-  assert.equal(sendFailureText(413, "PROXY", "chunk", en), refusalText("SPLIT", en));
-  assert.equal(sendFailureText(413, "PROXY", "create", ms), refusalText("SPLIT", ms));
+  assert.equal(sendFailureText(413, "PROXY", "chunk", en), "This file could not be sent because it is too large for the connection. Try a smaller file.");
+  assert.equal(sendFailureText(413, "PROXY", "create", ms), "Fail ini tidak dapat dihantar kerana terlalu besar untuk sambungan ini. Cuba fail yang lebih kecil.");
   assert.equal(sendFailureText(502, "PROXY", "chunk", en), offline);
   assert.equal(sendFailureText(429, "PROXY", "finish", en), offline);
   assert.equal(sendFailureText(403, "PROXY", "chunk", en), broken);
@@ -996,7 +996,7 @@ test("a proxy's 502 page is retried like a server error; its 413 page is not", a
   });
   assert.equal(calls, 1);
   const f = failureOf(big.error);
-  assert.equal(sendFailureText(f.status, f.code, "chunk", en), refusalText("SPLIT", en));
+  assert.equal(sendFailureText(f.status, f.code, "chunk", en), "This file could not be sent because it is too large for the connection. Try a smaller file.");
 });
 
 // ---- Review: price rows -----------------------------------------------------
