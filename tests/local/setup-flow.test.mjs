@@ -366,7 +366,6 @@ test("price rows stay put for the visit; actions wait for their write; Remove al
   assert.match(review, /w\("Undo", "Kembalikan"\)/);
   assert.doesNotMatch(review, /UNDO_MS|setTimeout\(/);
   assert.match(review, /className="setup-price setup-price-gone"\s*style=\{fold\.style\}/);
-  assert.match(review, /if \(!fold\.ready\(\)\) return;/);
   assert.match(review, /height\.current = li\.current\.getBoundingClientRect\(\)\.height/);
   // Keep (and an emptied question) puts focus back on the link after it
   // renders again.
@@ -378,7 +377,8 @@ test("price rows stay put for the visit; actions wait for their write; Remove al
   assert.match(review, /onRemove\(s\.id\)/);
   // The Confirm slot stays after a confirm; buttons wait (aria-disabled,
   // keeping focus) while their write runs or Remove all runs.
-  assert.match(review, /offered\.current &&/);
+  assert.match(review, /const confirmSlot = a\.confirm \|\| offered\.current;/);
+  assert.match(review, /\{confirmSlot &&/);
   assert.match(review, /const off = busy \|\| locked/);
   assert.match(review, /aria-disabled=\{off \|\| priceInvalid \|\| undefined\}/);
   // Remove all: fields flushed first, then each row checked inside its own
@@ -395,13 +395,20 @@ test("price rows stay put for the visit; actions wait for their write; Remove al
   // The Remove all slot sits below the attention block and, once shown,
   // stays (disabled with a plain reason).
   assert.ok(review.indexOf('"Needs your attention"') < review.indexOf('className="setup-bulk"'));
-  assert.match(review, /if \(unsure\.length > 1\) slotShown\.current = true;/);
-  assert.match(review, /\{slotShown\.current && \(/);
+  // Rendered from the first render whenever a price row shows.
+  assert.doesNotMatch(review, /slotShown/);
+  assert.match(review, /const anyRow = attention\.length > 0 \|\| files\.some/);
+  assert.match(review, /\{anyRow && \(/);
+  // In the question, Keep comes first and Remove second.
+  assert.ok(
+    review.indexOf('{w("Keep", "Kekalkan")}') <
+      review.indexOf("settled(guard, () => void removeUnsure())"),
+  );
   assert.match(review, /bulkSlot\(unsure\.length, w\)/);
   // Confirm waits for a price save in flight and stops if it failed.
   assert.match(review, /if \(!\(await priceSave\.flush\(\)\)\) \{\s*announce\(/);
   // Answer cards keep their place: Confirmed stays, a removed card folds.
-  assert.match(review, /if \(flagged && !open && text\.trim\(\)\) shown\.current = true;/);
+  assert.match(review, /useEffect\(\(\) => \{\s*if \(checking\) shown\.current = true;\s*\}\);/);
   assert.match(review, /className="setup-card setup-card-gone" style=\{fold\.style\}/);
   // A choice is keyed by the row and the saved price it matched.
   assert.match(review, /choices\[choiceKey\(i\)\]/);
@@ -453,4 +460,59 @@ test("the review page keeps choices, offers Use new only on conflicts, and never
   // A conflict or limit refusal reloads the rows.
   assert.match(review, /e\.code === "CONFLICT" \|\| e\.code === "KNOWLEDGE_LIMIT"/);
   assert.match(review, /await store\.reload\(\)/);
+});
+
+test("every confirming or destructive control on the review page goes through the settle guard", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  // The one helper: does nothing while the layout settles, else touches.
+  assert.match(review, /function settled\(guard: Settle, act: \(\) => void\) \{\s*const now = performance\.now\(\);\s*if \(!guard\.ready\(now\)\) return;\s*guard\.touch\(now\);\s*act\(\);\s*\}/);
+  assert.doesNotMatch(review, /undoReady|fold\.ready/);
+  // Touched when the rows or their states change, and on any height change.
+  assert.match(review, /guard\.touch\(performance\.now\(\)\);\s*\}, \[guard, rowsKey\]\);/);
+  assert.match(review, /new ResizeObserver\(\(\) => guard\.touch\(performance\.now\(\)\)\)/);
+  assert.match(review, /guard\.touch\(performance\.now\(\)\);\s*\}, \[guard, bulk, bulkNote\]\);/);
+  // Each button named by these labels acts only through settled().
+  const labels = [
+    "`Confirm ${name}`",
+    "`Remove ${name}`",
+    "`Undo removing ${name}`",
+    "`Use ${name} instead`",
+    "`Confirm ${label}`",
+    "`Remove ${label}`",
+    "`Undo removing ${label}`",
+  ];
+  for (const l of labels) {
+    let at = review.indexOf(l);
+    assert.ok(at >= 0, l);
+    let acting = 0;
+    while (at >= 0) {
+      const button = review.slice(review.lastIndexOf("<button", at), review.indexOf("</button>", at));
+      if (/onClick=/.test(button)) {
+        acting++;
+        assert.match(button, /onClick=\{\(\) =>\s*(?:\{[^]*?)?settled\(\s*guard,/, l);
+      }
+      at = review.indexOf(l, at + 1);
+    }
+    assert.ok(acting > 0, l);
+  }
+  // The rest, pinned one by one.
+  for (const re of [
+    /onClick=\{\(\) => settled\(guard, \(\) => void apply\(true\)\)\}/,
+    /onClick=\{\(\) => settled\(guard, \(\) => void apply\(false\)\)\}/,
+    // Use new refuses while settling; Keep current always acts and touches.
+    /\(k === "new" \? settled : touched\)\(guard, \(\) => onChoice\(i\.id, k\)\)/,
+    /\(k === "new" \? settled : touched\)\(guard, \(\) => \{\s*onChoice\(item\.id, k\);/,
+    /function touched\(guard: Settle, act: \(\) => void\) \{\s*guard\.touch\(performance\.now\(\)\);\s*act\(\);\s*\}/,
+    /onClick=\{\(\) => settled\(guard, \(\) => void removeUnsure\(\)\)\}/,
+    /settled\(guard, \(\) => \{\s*setBulkNote\(""\);\s*setBulk\("asking"\);/,
+    /onClick=\{\(\) => settled\(guard, \(\) => setConfirming\(true\)\)\}/,
+    /onRemove=\{\(\) => settled\(guard, \(\) => void remove\(\)\)\}/,
+  ])
+    assert.match(review, re);
+  // A removed file leaves a placeholder at the group's height; "Use this
+  // one instead" keeps the panel's height; a skipped Remove is said.
+  assert.match(review, /getBoundingClientRect\(\)\.height \?\? 0;\s*setGoneFiles/);
+  assert.match(review, /w\("Using this one", "Menggunakan yang ini"\)/);
+  assert.match(review, /else if \(r === "skipped"\) announce\(skippedText\(name, w\)\)/);
+  assert.match(review, /else if \(r === "skipped"\) announce\(skippedText\(label, w\)\)/);
 });

@@ -63,8 +63,11 @@ import {
   sendsOnUnmount,
   sendsWhenHidden,
   stableLayout,
-  UNDO_GUARD_MS,
-  undoReady,
+  SETTLE_MS,
+  createSettle,
+  layoutKey,
+  settleReady,
+  skippedText,
   useThisText,
   needCheckIds,
   overLimit,
@@ -1512,7 +1515,7 @@ test("Remove all re-checks each row from the latest view", () => {
   assert.equal(bulkText("stopped", { done: 2, total: 5 }, ms), "Terhenti selepas membuang 2 daripada 5. Cuba lagi.");
   // Never a sentence with a zero count.
   assert.equal(bulkText("stopped", { done: 0, total: 5 }, en), "Could not remove them. Try again.");
-  assert.equal(bulkText("stopped", { done: 0, total: 5 }, ms), "Tiada harga yang dapat dibuang. Cuba lagi.");
+  assert.equal(bulkText("stopped", { done: 0, total: 5 }, ms), "Harga tidak dapat dibuang. Cuba lagi.");
   // Nothing removed and nothing failed: said plainly.
   assert.equal(bulkText("none", { done: 0, total: 3 }, en), "No prices were removed. They no longer need checking.");
   assert.equal(bulkText("none", { done: 0, total: 3 }, ms), "Tiada harga dibuang. Harga itu tidak lagi perlu disemak.");
@@ -1530,7 +1533,7 @@ test("Remove all re-checks each row from the latest view", () => {
   });
   assert.equal(bulkSlot(0, en).hint, "No prices need checking now.");
   assert.equal(bulkSlot(0, ms).hint, "Tiada harga yang perlu disemak sekarang.");
-  assert.equal(bulkSlot(1, ms).hint, "Hanya 1 harga masih perlu disemak. Guna Buang pada barisnya.");
+  assert.equal(bulkSlot(1, ms).hint, "Hanya 1 harga yang masih perlu disemak. Tekan Buang pada barisnya.");
   for (const n of [0, 1]) assert.doesNotMatch(bulkSlot(n, en).label, /\d/);
 });
 
@@ -1542,12 +1545,49 @@ test("only blur, Enter and explicit flushes send a price: hiding the tab or unmo
   assert.equal(sendsOnUnmount({ debounce: true }), true);
 });
 
-test("Undo ignores taps for 500 ms after a row folds", () => {
-  assert.equal(UNDO_GUARD_MS, 500);
-  assert.equal(undoReady(1000, 1000), false);
-  assert.equal(undoReady(1000, 1499), false);
-  assert.equal(undoReady(1000, 1500), true);
-  assert.equal(undoReady(1000, 9000), true);
+test("the review page ignores taps for 500 ms after the last touch", () => {
+  assert.equal(SETTLE_MS, 500);
+  assert.equal(settleReady(1000, 1000), false);
+  assert.equal(settleReady(1000, 1499), false);
+  assert.equal(settleReady(1000, 1500), true);
+  assert.equal(settleReady(-Infinity, 0), true);
+  const g = createSettle();
+  // Never touched: ready.
+  assert.equal(g.ready(0), true);
+  g.touch(100);
+  assert.equal(g.ready(599), false);
+  assert.equal(g.ready(600), true);
+  // Each touch restarts the wait; an older timestamp never shortens it.
+  g.touch(550);
+  assert.equal(g.ready(1000), false);
+  g.touch(200);
+  assert.equal(g.ready(1049), false);
+  assert.equal(g.ready(1050), true);
+});
+
+test("the layout key changes when rows or files change state, not otherwise", () => {
+  const items = [
+    priceRow("A", { id: "a", flag: true, outcome: "unconfirmed" }),
+    priceRow("B", { id: "b" }),
+  ];
+  const uploads = [{ id: FILE_A, state: "reading" as const }];
+  const k = layoutKey({ items, uploads });
+  assert.equal(layoutKey({ items: [...items], uploads: [...uploads] }), k);
+  // A different payload (a price typed) does not move anything.
+  assert.equal(
+    layoutKey({ items: items.map((i) => ({ ...i, payload: {} })), uploads }),
+    k,
+  );
+  for (const changed of [
+    { items: items.map((i) => (i.id === "a" ? { ...i, state: "removed" as const } : i)), uploads },
+    { items: items.map((i) => (i.id === "a" ? { ...i, needsCheck: false } : i)), uploads },
+    { items: items.map((i) => (i.id === "b" ? { ...i, outcome: "duplicate" as const } : i)), uploads },
+    { items: [...items, priceRow("C", { id: "c" })], uploads },
+    { items, uploads: [{ id: FILE_A, state: "done" as const }] },
+  ])
+    assert.notEqual(layoutKey(changed), k);
+  assert.equal(skippedText("Kopi", en), "Kopi was not removed: it changed meanwhile.");
+  assert.equal(skippedText("Kopi", ms), "Kopi tidak dibuang kerana telah berubah.");
 });
 
 test("prices typed with full-width digits are read; the decimal comma is still refused", () => {

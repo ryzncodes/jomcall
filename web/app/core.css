@@ -1618,11 +1618,23 @@
   padding: 0 8px;
   font-size: 13px;
 }
-/* Waiting for a write (or Remove all): still focusable, visibly unavailable. */
+/* Waiting for a write (or Remove all): still focusable, visibly unavailable.
+   Links use the secondary text token (about 5.8:1 light, 6.7:1 dark on the
+   card surface) rather than opacity, which fell under 4.5:1 on the dark
+   surface. */
 .setup-prices [aria-disabled="true"],
 .setup-card [aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.setup-prices .setup-link[aria-disabled="true"],
+.setup-card .setup-link[aria-disabled="true"] {
+  opacity: 1;
+  color: var(--secondary);
+}
+/* A file removed on this visit: its group's place is kept. */
+.setup-file-gone {
+  opacity: 0.8;
 }
 .setup-price-actions .setup-link-done {
   text-decoration: none;

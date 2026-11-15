@@ -4,7 +4,14 @@
 // missing, and a keep-or-replace choice for every value already set on the
 // agent. One button applies it all; price rows still unconfirmed are left
 // out and cannot be reached again from this flow.
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { CoreError } from "@/lib/core/client";
 import type {
   SetupItem,
@@ -55,6 +62,7 @@ import {
   rowName,
   rowPayload,
   rowStatusText,
+  skippedText,
   senderShown,
   sendingLabel,
   splitPlan,
@@ -63,8 +71,10 @@ import {
   uploadName,
   useThisSteps,
   useThisText,
-  undoReady,
+  createSettle,
+  layoutKey,
   type ApplySummary,
+  type Settle,
   type RowActions,
   type RowEditValues,
   type RowLayout,
@@ -85,6 +95,25 @@ import {
 
 type Words = (en: string, ms: string) => string;
 type Choice = "keep" | "new";
+
+// The review page's one settle guard (rules.ts: createSettle). Every
+// confirming or destructive control runs through settled(), which does
+// nothing while the layout is still settling (SETTLE_MS after the last
+// action or layout change) and otherwise touches the guard and acts.
+const SettleContext = createContext<Settle>(createSettle());
+const useSettle = () => useContext(SettleContext);
+function settled(guard: Settle, act: () => void) {
+  const now = performance.now();
+  if (!guard.ready(now)) return;
+  guard.touch(now);
+  act();
+}
+// A harmless page change (Keep current): it always acts, and touches the
+// guard because it can change what is shown.
+function touched(guard: Settle, act: () => void) {
+  guard.touch(performance.now());
+  act();
+}
 
 const factText = (v: unknown) =>
   typeof v === "string"
@@ -213,6 +242,23 @@ export function Review({
     if (asked && !question) setAsked(null);
   }, [asked, question !== null]);
 
+  // The settle guard: touched by every action (settled) and whenever the
+  // rows or their states change, or the page's height changes for any other
+  // reason (a fold, a slot, a file group, an edit panel, a wrap).
+  const [guard] = useState(createSettle);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const rowsKey = layoutKey(view);
+  useLayoutEffect(() => {
+    guard.touch(performance.now());
+  }, [guard, rowsKey]);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(() => guard.touch(performance.now()));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [guard]);
+
   const apply = async (sure: boolean) => {
     setApplyError(undefined);
     if (invalid.current.size) {
@@ -244,7 +290,7 @@ export function Review({
         announce(
           w(
             "More would be left out now. Check the question again.",
-            "Kini lebih banyak yang tidak dimasukkan. Semak soalan ini semula.",
+            "Sekarang lebih banyak yang tidak akan dimasukkan. Sila semak soalan ini sekali lagi.",
           ),
         );
         return;
@@ -303,7 +349,9 @@ export function Review({
                 type="radio"
                 name={name}
                 checked={value === k}
-                onChange={() => onChoice(i.id, k)}
+                onChange={() =>
+                  (k === "new" ? settled : touched)(guard, () => onChoice(i.id, k))
+                }
               />
               <span>
                 {k === "keep"
@@ -338,6 +386,7 @@ export function Review({
           : null;
 
   return (
+    <SettleContext.Provider value={guard}>
     <div className="setup-flow">
       <header className="setup-head">
         <h1 className="setup-title" ref={heading} tabIndex={-1}>
@@ -355,7 +404,7 @@ export function Review({
           </button>
         )}
       </header>
-      <div className="setup-body">
+      <div className="setup-body" ref={bodyRef}>
         <p
           className="sr-only"
           role="status"
@@ -553,7 +602,7 @@ export function Review({
                 type="button"
                 className="button button-small button-dark"
                 disabled={locked || blocked}
-                onClick={() => void apply(true)}
+                onClick={() => settled(guard, () => void apply(true))}
               >
                 {applyButtonText(summary.counts, w, showPrices)}
               </button>
@@ -574,7 +623,7 @@ export function Review({
             type="button"
             className="button button-dark"
             disabled={locked || blocked}
-            onClick={() => void apply(false)}
+            onClick={() => settled(guard, () => void apply(false))}
           >
             {busy
               ? w("Updating your draft…", "Mengemas kini draf…")
@@ -594,6 +643,7 @@ export function Review({
         </p>
       </div>
     </div>
+    </SettleContext.Provider>
   );
 }
 
@@ -837,26 +887,21 @@ function useRemove() {
 }
 
 // A removed row or card folds in place at the height it had (measured on
-// every render before it folds), so nothing below it moves. Undo ignores
-// taps for UNDO_GUARD_MS after the fold appears.
+// every render before it folds), so nothing below it moves. Taps on its Undo
+// go through the page's settle guard.
 function useFold(gone: boolean) {
   const li = useRef<HTMLLIElement>(null);
   const height = useRef(0);
-  const foldedAt = useRef(0);
   useLayoutEffect(() => {
     // The exact height (not offsetHeight's whole pixels), so a fold of an
     // 87.5px row moves nothing below it by even 1px.
     if (!gone && li.current)
       height.current = li.current.getBoundingClientRect().height;
   });
-  useLayoutEffect(() => {
-    if (gone) foldedAt.current = performance.now();
-  }, [gone]);
   return {
     li,
     style:
       gone && height.current ? { minHeight: `${height.current}px` } : undefined,
-    ready: () => undoReady(foldedAt.current, performance.now()),
   };
 }
 
@@ -905,6 +950,7 @@ function FactRow({
     w = useWords(),
     store = useSetup();
   const setState = useItemState();
+  const guard = useSettle();
   const [busy, setBusy] = useState(false);
   const fold = useFold(folded !== null);
   const undoRef = useRef<HTMLButtonElement>(null);
@@ -943,7 +989,10 @@ function FactRow({
   // Once shown, the check block keeps its place for the visit (Confirm then
   // reads a disabled "Confirmed"), so the next card never slides up.
   const shown = useRef(false);
-  if (flagged && !open && text.trim()) shown.current = true;
+  const checking = flagged && !open && !!text.trim();
+  useEffect(() => {
+    if (checking) shown.current = true;
+  });
   // Focus follows the fold: to Undo when folded, back to Remove after Undo.
   const wasFolded = useRef(false);
   useEffect(() => {
@@ -972,13 +1021,16 @@ function FactRow({
           className="setup-link setup-undo"
           aria-label={w(`Undo removing ${label}`, `Kembalikan ${label}`)}
           aria-disabled={busy || undefined}
-          onClick={() => {
-            if (!fold.ready()) return;
-            void run(async () => {
-              if (await onUndo())
-                announce(w(`${label} is back`, `${label} dikembalikan`));
-            });
-          }}
+          onClick={() =>
+            settled(
+              guard,
+              () =>
+                void run(async () => {
+                  if (await onUndo())
+                    announce(w(`${label} is back`, `${label} dikembalikan`));
+                }),
+            )
+          }
         >
           {w("Undo", "Kembalikan")}
         </button>
@@ -1010,12 +1062,15 @@ function FactRow({
           }}
         />
       </div>
-      {shown.current && !open && text.trim() && (
+      {(checking || (shown.current && !open && text.trim())) && (
         <div className="setup-check">
           <p className="setup-check-title">
             {flagged ? w("Please check", "Sila semak") : w("Checked", "Sudah disemak")}
           </p>
-          <Reason reason={item.checkReason} className="setup-hint" price={false} />
+          {/* Once confirmed the card says it was checked: no reason. */}
+          {flagged && (
+            <Reason reason={item.checkReason} className="setup-hint" price={false} />
+          )}
           <div className="setup-card-actions">
             {flagged ? (
               <button
@@ -1024,10 +1079,12 @@ function FactRow({
                 aria-label={w(`Confirm ${label}`, `Sahkan ${label}`)}
                 aria-disabled={busy || undefined}
                 onClick={() =>
-                  void run(async () => {
-                    if ((await auto.flush()) && (await setState(item.id, "confirmed")))
-                      announce(w(`${label} confirmed`, `${label} disahkan`));
-                  })
+                  settled(guard, () =>
+                    void run(async () => {
+                      if ((await auto.flush()) && (await setState(item.id, "confirmed")))
+                        announce(w(`${label} confirmed`, `${label} disahkan`));
+                    }),
+                  )
                 }
               >
                 {w("Confirm", "Sahkan")}
@@ -1049,11 +1106,17 @@ function FactRow({
               aria-label={w(`Remove ${label}`, `Buang ${label}`)}
               aria-disabled={busy || undefined}
               onClick={() =>
-                void run(async () => {
-                  auto.cancel();
-                  if ((await onRemove()) === "removed")
-                    announce(w(`${label} removed`, `${label} dibuang`));
-                })
+                settled(
+                  guard,
+                  () =>
+                    void run(async () => {
+                      auto.cancel();
+                      const r = await onRemove();
+                      if (r === "removed")
+                        announce(w(`${label} removed`, `${label} dibuang`));
+                      else if (r === "skipped") announce(skippedText(label, w));
+                    }),
+                )
               }
             >
               {w("Remove", "Buang")}
@@ -1109,6 +1172,7 @@ function PriceSection({
   const { view, now, queuedSince } = store;
   const setState = useItemState();
   const removeItem = useRemove();
+  const guard = useSettle();
   const [bulk, setBulk] = useState<
     "idle" | "asking" | { done: number; total: number }
   >("idle");
@@ -1147,6 +1211,25 @@ function PriceSection({
     unmark(id);
     return true;
   };
+  // Files removed on this visit: their group leaves a "<name> removed"
+  // placeholder at the height the group had when the removal was confirmed
+  // (no Undo: the server deletes the file's pending rows), so the next group
+  // does not slide up.
+  const groupEls = useRef(new Map<string, HTMLDivElement>());
+  const [goneFiles, setGoneFiles] = useState<
+    Map<string, { name: string; height: number }>
+  >(() => new Map());
+  const fileRemoving = (id: string, name: string) => {
+    const height =
+      groupEls.current.get(id)?.getBoundingClientRect().height ?? 0;
+    setGoneFiles((m) => new Map(m).set(id, { name, height }));
+  };
+  const fileKept = (id: string) =>
+    setGoneFiles((m) => {
+      const next = new Map(m);
+      next.delete(id);
+      return next;
+    });
   const live = new Map(summary.plans.map((p) => [p.id, p]));
   // The order is stable for the whole visit (stableLayout): worked out when
   // the page is entered; later rows are only added in their place.
@@ -1166,10 +1249,9 @@ function PriceSection({
     (u) => u.state === "queued" || u.state === "reading",
   );
   const unsure = needCheckIds(summary.plans);
-  // The "Remove all" slot: once shown on this visit it stays, so nothing
-  // above or below it moves; it keeps the tallest height it has had.
-  const slotShown = useRef(false);
-  if (unsure.length > 1) slotShown.current = true;
+  // The "Remove all" slot is there from the first render whenever a price
+  // row shows (disabled with its reason below 2), so it never appears later
+  // and pushes the file groups down; it keeps the tallest height it has had.
   const slotRef = useRef<HTMLDivElement>(null);
   const slotHeight = useRef(0);
   useLayoutEffect(() => {
@@ -1192,6 +1274,10 @@ function PriceSection({
       setBulk("idle");
     }
   }, [bulk, unsure.length]);
+  // A change of the slot (question, progress, note) moves its controls.
+  useLayoutEffect(() => {
+    guard.touch(performance.now());
+  }, [guard, bulk, bulkNote]);
   useEffect(() => {
     if (bulk !== "idle" || !refocusLink.current) return;
     refocusLink.current = false;
@@ -1270,6 +1356,8 @@ function PriceSection({
   };
   const rows = (ids: string[]) => ids.map(row).filter((x) => x !== null);
   const attention = rows([...layout.check, ...layout.conflict, ...layout.duplicate]);
+  const files = layout.files.map((f) => ({ f, listed: rows(f.ids) }));
+  const anyRow = attention.length > 0 || files.some((x) => x.listed.length > 0);
   const slot = bulkSlot(unsure.length, w);
   const running = typeof bulk === "object";
   const slotLine = running
@@ -1311,7 +1399,7 @@ function PriceSection({
           <ul className="setup-price-list">{attention}</ul>
         </div>
       )}
-      {slotShown.current && (
+      {anyRow && (
         <div
           ref={slotRef}
           className="setup-bulk"
@@ -1321,13 +1409,8 @@ function PriceSection({
           <div className="setup-card-actions">
             {bulk === "asking" ? (
               <>
-                <button
-                  type="button"
-                  className="button button-small button-dark"
-                  onClick={() => void removeUnsure()}
-                >
-                  {w("Remove", "Buang")}
-                </button>
+                {/* Keep first: the control under the finger that opened the
+                    question is the harmless one. */}
                 <button
                   type="button"
                   ref={bulkKeep}
@@ -1339,6 +1422,13 @@ function PriceSection({
                 >
                   {w("Keep", "Kekalkan")}
                 </button>
+                <button
+                  type="button"
+                  className="button button-small button-dark"
+                  onClick={() => settled(guard, () => void removeUnsure())}
+                >
+                  {w("Remove", "Buang")}
+                </button>
               </>
             ) : (
               <button
@@ -1348,10 +1438,11 @@ function PriceSection({
                 aria-expanded={false}
                 aria-disabled={!slot.enabled || running || locked || undefined}
                 onClick={() => {
-                  if (slot.enabled && !running && !locked) {
+                  if (!slot.enabled || running || locked) return;
+                  settled(guard, () => {
                     setBulkNote("");
                     setBulk("asking");
-                  }
+                  });
                 }}
               >
                 {slot.label}
@@ -1366,15 +1457,29 @@ function PriceSection({
           </p>
         </div>
       )}
-      {layout.files.map((f) => {
+      {files.map(({ f, listed }) => {
         const upload = f.uploadId
           ? view.uploads.find((u) => u.id === f.uploadId)
           : undefined;
-        const listed = rows(f.ids);
-        if (!upload && !listed.length) return null;
+        // Held from the moment the removal is confirmed, whether the rows
+        // and the file leave the view together or apart.
+        const noted = f.uploadId ? goneFiles.get(f.uploadId) : undefined;
+        const gone = !upload ? noted : undefined;
+        if (!upload && !gone && !listed.length) return null;
         const s = upload ? senderOf(upload) : undefined;
         return (
-          <div className="setup-price-group" key={f.uploadId ?? "earlier"}>
+          <div
+            className={
+              gone ? "setup-price-group setup-file-gone" : "setup-price-group"
+            }
+            key={f.uploadId ?? "earlier"}
+            style={noted?.height ? { minHeight: `${noted.height}px` } : undefined}
+            ref={(el) => {
+              if (!f.uploadId) return;
+              if (el) groupEls.current.set(f.uploadId, el);
+              else groupEls.current.delete(f.uploadId);
+            }}
+          >
             {upload ? (
               <FileHead
                 upload={upload}
@@ -1383,7 +1488,15 @@ function PriceSection({
                 locked={locked}
                 focusStatus={focusStatus}
                 announce={announce}
+                onRemoving={() =>
+                  fileRemoving(upload.id, uploadName(upload, w))
+                }
+                onKept={() => fileKept(upload.id)}
               />
+            ) : gone ? (
+              <h3 className="setup-group-title">
+                {w(`${gone.name} removed`, `${gone.name} dibuang`)}
+              </h3>
             ) : (
               <h3 className="setup-group-title">
                 {w("From a removed file", "Daripada fail yang dibuang")}
@@ -1424,6 +1537,8 @@ function FileHead({
   locked,
   focusStatus,
   announce,
+  onRemoving,
+  onKept,
 }: {
   upload: SetupUpload;
   label: string;
@@ -1432,9 +1547,14 @@ function FileHead({
   locked: boolean;
   focusStatus: () => void;
   announce: (text: string) => void;
+  // The removal is confirmed (the group's height is noted for its
+  // placeholder), or it failed (the placeholder is dropped).
+  onRemoving: () => void;
+  onKept: () => void;
 }) {
   const w = useWords(),
     store = useSetup();
+  const guard = useSettle();
   const [confirming, setConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -1448,6 +1568,7 @@ function FileHead({
     if (confirming) keepRef.current?.focus();
   }, [confirming]);
   const remove = async () => {
+    onRemoving();
     setRemoving(true);
     setFailed(false);
     const ok = await store.uploads.remove({
@@ -1460,6 +1581,7 @@ function FileHead({
       focusStatus();
       announce(w(`${name} removed`, `${name} dibuang`));
     } else {
+      onKept();
       setFailed(true);
       setConfirming(false);
       removeRef.current?.focus();
@@ -1496,7 +1618,7 @@ function FileHead({
                 : w(`Remove ${name}`, `Buang ${name}`)
             }
             disabled={removing || locked}
-            onClick={() => setConfirming(true)}
+            onClick={() => settled(guard, () => setConfirming(true))}
           >
             {done
               ? w("Remove everything from this file", "Buang semua daripada fail ini")
@@ -1509,7 +1631,7 @@ function FileHead({
           id={`setup-file-confirm-${upload.id}`}
           removing={removing}
           keepRef={keepRef}
-          onRemove={() => void remove()}
+          onRemove={() => settled(guard, () => void remove())}
           onKeep={() => {
             setConfirming(false);
             removeRef.current?.focus();
@@ -1672,11 +1794,25 @@ function PriceRow({
   const undoRef = useRef<HTMLButtonElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
   const fold = useFold(gone !== null);
+  const guard = useSettle();
+  // After "Use this one instead" the duplicate panel keeps its place and
+  // height for the visit ("Using this one"), so the row does not shrink
+  // under the finger.
+  const [used, setUsed] = useState(false);
+  const dupRef = useRef<HTMLDivElement>(null);
+  const dupHeight = useRef(0);
+  useLayoutEffect(() => {
+    if (a.useThis && dupRef.current)
+      dupHeight.current = dupRef.current.getBoundingClientRect().height;
+  });
   const liRef = fold.li;
   // Once Confirm was offered, its place stays for the visit (a disabled
   // "Confirmed" after it), so focus has somewhere to stay.
   const offered = useRef(false);
-  if (a.confirm) offered.current = true;
+  useEffect(() => {
+    if (a.confirm) offered.current = true;
+  });
+  const confirmSlot = a.confirm || offered.current;
   // A row's actions wait while its own write is in flight or "Remove all"
   // runs. aria-disabled, not disabled, so a focused button keeps focus.
   const off = busy || locked;
@@ -1783,13 +1919,16 @@ function PriceRow({
           className="setup-link setup-undo"
           aria-label={w(`Undo removing ${name}`, `Kembalikan ${name}`)}
           aria-disabled={off || undefined}
-          onClick={() => {
-            if (!fold.ready()) return;
-            void run(async () => {
-              if (await onUndo())
-                announce(w(`${name} is back`, `${name} dikembalikan`));
-            });
-          }}
+          onClick={() =>
+            settled(
+              guard,
+              () =>
+                void run(async () => {
+                  if (await onUndo())
+                    announce(w(`${name} is back`, `${name} dikembalikan`));
+                }),
+            )
+          }
         >
           {w("Undo", "Kembalikan")}
         </button>
@@ -1861,13 +2000,13 @@ function PriceRow({
         <span className="setup-price-unit">{p.unit}</span>
         <span className="setup-price-state">
           {rowStatusText(a, w)}
-          {a.confirmed && !offered.current && (
+          {a.confirmed && !confirmSlot && (
             <span className="setup-mark">{w("Confirmed", "Disahkan")}</span>
           )}
         </span>
       </div>
       <div className="setup-price-actions">
-        {offered.current &&
+        {confirmSlot &&
           (a.confirm ? (
             <button
               type="button"
@@ -1881,21 +2020,25 @@ function PriceRow({
                   setPriceBad(true);
                   return;
                 }
-                void run(async () => {
-                  // Waits for a price save already in flight on this row;
-                  // never confirms the old price if that save failed.
-                  if (!(await priceSave.flush())) {
-                    announce(
-                      w(
-                        `The price of ${name} was not saved, so it was not confirmed. Try again.`,
-                        `Harga ${name} tidak disimpan, jadi tidak disahkan. Cuba lagi.`,
-                      ),
-                    );
-                    return;
-                  }
-                  if (await setState(item.id, "confirmed"))
-                    announce(w(`${name} confirmed`, `${name} disahkan`));
-                });
+                settled(
+                  guard,
+                  () =>
+                    void run(async () => {
+                      // Waits for a price save already in flight on this row;
+                      // never confirms the old price if that save failed.
+                      if (!(await priceSave.flush())) {
+                        announce(
+                          w(
+                            `The price of ${name} was not saved, so it was not confirmed. Try again.`,
+                            `Harga ${name} tidak disimpan, jadi belum disahkan. Cuba lagi.`,
+                          ),
+                        );
+                        return;
+                      }
+                      if (await setState(item.id, "confirmed"))
+                        announce(w(`${name} confirmed`, `${name} disahkan`));
+                    }),
+                );
               }}
             >
               {w("Confirm", "Sahkan")}
@@ -1945,18 +2088,23 @@ function PriceRow({
           aria-label={w(`Remove ${name}`, `Buang ${name}`)}
           aria-disabled={off || undefined}
           onClick={() =>
-            void run(async () => {
-              priceSave.cancel();
-              fieldSave.cancel();
-              // The state Undo restores is read when this write's turn
-              // comes, after a price write that raced the tap has landed.
-              if ((await onRemove()) === "removed") {
-                onInvalid(item.id, false);
-                setPriceBad(false);
-                setPrice(amountText(p.priceSen));
-                announce(w(`${name} removed`, `${name} dibuang`));
-              }
-            })
+            settled(
+              guard,
+              () =>
+                void run(async () => {
+                  priceSave.cancel();
+                  fieldSave.cancel();
+                  // The state Undo restores is read when this write's turn
+                  // comes, after a price write that raced the tap has landed.
+                  const r = await onRemove();
+                  if (r === "removed") {
+                    onInvalid(item.id, false);
+                    setPriceBad(false);
+                    setPrice(amountText(p.priceSen));
+                    announce(w(`${name} removed`, `${name} dibuang`));
+                  } else if (r === "skipped") announce(skippedText(name, w));
+                }),
+            )
           }
         >
           {w("Remove", "Buang")}
@@ -1991,20 +2139,22 @@ function PriceRow({
                   type="radio"
                   name={`setup-choice-${item.id}`}
                   checked={choice === k}
-                  onChange={() => {
-                    onChoice(item.id, k);
-                    announce(
-                      k === "new"
-                        ? w(
-                            `${name}: the new price will be used`,
-                            `${name}: harga baharu akan digunakan`,
-                          )
-                        : w(
-                            `${name}: the current price is kept`,
-                            `${name}: harga sedia ada dikekalkan`,
-                          ),
-                    );
-                  }}
+                  onChange={() =>
+                    (k === "new" ? settled : touched)(guard, () => {
+                      onChoice(item.id, k);
+                      announce(
+                        k === "new"
+                          ? w(
+                              `${name}: the new price will be used`,
+                              `${name}: harga baharu akan digunakan`,
+                            )
+                          : w(
+                              `${name}: the current price is kept`,
+                              `${name}: harga sedia ada dikekalkan`,
+                            ),
+                      );
+                    })
+                  }
                 />
                 <span>
                   {k === "keep"
@@ -2017,7 +2167,7 @@ function PriceRow({
         </fieldset>
       )}
       {a.useThis && (
-        <div className="setup-price-extra setup-price-dup">
+        <div className="setup-price-extra setup-price-dup" ref={dupRef}>
           <p className="setup-hint">{duplicateText(winner, w)}</p>
           <button
             type="button"
@@ -2025,22 +2175,46 @@ function PriceRow({
             aria-label={w(`Use ${name} instead`, `Guna ${name} sebagai ganti`)}
             aria-disabled={off || undefined}
             onClick={() =>
-              void run(async () => {
-                const steps = useThisSteps(store.latest().items, replace, item.id);
-                // A copy this removes folds in place with Undo too.
-                for (const s of steps)
-                  if (
-                    s.state === "removed"
-                      ? (await onRemove(s.id)) === "failed"
-                      : !(await setState(s.id, s.state))
-                  )
-                    return;
-                if (steps.length)
+              settled(guard, () =>
+                void run(async () => {
+                  const steps = useThisSteps(store.latest().items, replace, item.id);
+                  if (!steps.length) return;
+                  // Reserved before the writes: the write that ends the
+                  // duplicate state never renders a row without its panel.
+                  setUsed(true);
+                  // A copy this removes folds in place with Undo too.
+                  for (const s of steps)
+                    if (
+                      s.state === "removed"
+                        ? (await onRemove(s.id)) === "failed"
+                        : !(await setState(s.id, s.state))
+                    ) {
+                      setUsed(false);
+                      return;
+                    }
                   announce(w(`${name} will be saved`, `${name} akan disimpan`));
-              })
+                }),
+              )
             }
           >
             {useThisText(removes, w)}
+          </button>
+        </div>
+      )}
+      {!a.useThis && used && (
+        <div
+          className="setup-price-extra setup-price-dup"
+          style={dupHeight.current ? { minHeight: `${dupHeight.current}px` } : undefined}
+        >
+          <p className="setup-hint">
+            {w("This one will be saved.", "Yang ini akan disimpan.")}
+          </p>
+          <button
+            type="button"
+            className="button button-small secondary-button"
+            aria-disabled="true"
+          >
+            {w("Using this one", "Menggunakan yang ini")}
           </button>
         </div>
       )}

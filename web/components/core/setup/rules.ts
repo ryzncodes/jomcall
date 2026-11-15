@@ -761,11 +761,41 @@ export const sendsWhenHidden = (o: { debounce: boolean }) => o.debounce;
 // only senders. A debounced field is sent on unmount.
 export const sendsOnUnmount = (o: { debounce: boolean }) => o.debounce;
 
-// A removed row or card folds in place with Undo, which ignores taps for
-// this long after the fold appears (a double tap on Remove must not undo).
-export const UNDO_GUARD_MS = 500;
-export const undoReady = (foldedAt: number, now: number) =>
-  now - foldedAt >= UNDO_GUARD_MS;
+// The review page ignores confirming and destructive taps while its layout
+// settles: for SETTLE_MS after the last touch (an action starting, or the
+// rows or their layout changing), so a tap meant for one control never lands
+// on whatever moved under the finger.
+export const SETTLE_MS = 500;
+export const settleReady = (lastTouch: number, now: number) =>
+  now - lastTouch >= SETTLE_MS;
+export type Settle = {
+  touch: (now: number) => void;
+  ready: (now: number) => boolean;
+};
+// The page's one guard; never touched yet means ready.
+export function createSettle(): Settle {
+  let last = -Infinity;
+  return {
+    touch: (now) => {
+      last = Math.max(last, now);
+    },
+    ready: (now) => settleReady(last, now),
+  };
+}
+// What the review page shows that moves its controls: the items with their
+// state, outcome and flag, and the files with their state. A change touches
+// the guard.
+export function layoutKey(
+  view: {
+    items: readonly Pick<SetupItem, "id" | "state" | "outcome" | "needsCheck">[];
+    uploads: readonly Pick<SetupUpload, "id" | "state">[];
+  },
+): string {
+  return [
+    ...view.items.map((i) => `${i.id}:${i.state}:${i.outcome ?? ""}:${i.needsCheck ? 1 : 0}`),
+    ...view.uploads.map((u) => `${u.id}:${u.state}`),
+  ].join("|");
+}
 
 // ---- Review: price rows ----------------------------------------------------
 
@@ -1527,10 +1557,18 @@ export function bulkText(
           )
         : w(
             "Could not remove them. Try again.",
-            "Tiada harga yang dapat dibuang. Cuba lagi.",
+            "Harga tidak dapat dibuang. Cuba lagi.",
           );
   }
 }
+
+// Remove tapped on a row or answer that its queued check then skipped: it
+// was removed or saved meanwhile.
+export const skippedText = (name: string, w: Words) =>
+  w(
+    `${name} was not removed: it changed meanwhile.`,
+    `${name} tidak dibuang kerana telah berubah.`,
+  );
 
 // The "Remove all" slot keeps its place once shown: the button's words, and
 // the plain line under it (why it is unavailable, or what it does).
@@ -1559,7 +1597,7 @@ export function bulkSlot(
       n === 1
         ? w(
             "Only 1 price still needs checking. Use Remove on its row.",
-            "Hanya 1 harga masih perlu disemak. Guna Buang pada barisnya.",
+            "Hanya 1 harga yang masih perlu disemak. Tekan Buang pada barisnya.",
           )
         : w(
             "No prices need checking now.",
