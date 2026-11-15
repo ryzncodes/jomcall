@@ -110,6 +110,45 @@ async def test_the_client_starts_and_ends_a_call_with_the_bearer_token():
     assert json.loads(reqs[3].body) == {"reason": "ended"}
 
 
+async def test_the_answer_report_is_retried_until_recorded():
+    statuses = [500, 503, 200]
+
+    async def handler(req):
+        return Reply(status=statuses.pop(0), headers={"content-type": "application/json"}, chunks=[b"{}"])
+
+    async with FakeServer(handler) as server:
+        client = phone.PhoneClient(server.url)
+        assert await client.answered(CALL, "tok", delay_s=0) is True
+        await client.aclose()
+        assert [r.path for r in server.requests] == [f"/phone/calls/{CALL}/answered"] * 3
+
+
+async def test_the_answer_report_gives_up_on_a_final_refusal_or_after_three_tries():
+    async def gone(req):
+        return Reply(status=401, headers={"content-type": "application/json"}, chunks=[b"{}"])
+
+    async with FakeServer(gone) as server:
+        client = phone.PhoneClient(server.url)
+        assert await client.answered(CALL, "tok", delay_s=0) is False
+        await client.aclose()
+        assert len(server.requests) == 1, "an ended call or a dead token is not retried"
+
+    async def down(req):
+        return Reply(status=500, headers={"content-type": "application/json"}, chunks=[b"{}"])
+
+    async with FakeServer(down) as server:
+        client = phone.PhoneClient(server.url)
+        assert await client.answered(CALL, "tok", delay_s=0) is False
+        await client.aclose()
+        assert len(server.requests) == 3
+
+
+async def test_the_answer_report_survives_an_unreachable_server():
+    client = phone.PhoneClient("http://127.0.0.1:9")
+    assert await client.answered(CALL, "tok", delay_s=0) is False
+    await client.aclose()
+
+
 async def test_a_refused_start_status_gives_none():
     async def handler(req):
         return Reply(status=403, headers={"content-type": "application/json"}, chunks=[b"{}"])

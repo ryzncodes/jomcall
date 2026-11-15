@@ -82,6 +82,14 @@ export class Database {
         },
     );
   }
+  // Before sign-up there is no identity: one yes-or-no question, nothing else.
+  async signupInvited(email: string): Promise<boolean> {
+    const result = await this.pool.query(
+      "select app_private.signup_invited($1) as invited",
+      [email],
+    );
+    return result.rows[0]?.invited === true;
+  }
   async organizations(identity: Identity) {
     return this.withIdentity(
       identity,

@@ -35,6 +35,14 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "We could not confirm you are human. Complete the check and try again.",
       "Kami tidak dapat mengesahkan anda manusia. Lengkapkan semakan dan cuba lagi.",
     ],
+    SIGNUP_NOT_ALLOWED: [
+      "Sign-up is by invitation only for now. Ask the JomCall team or your workspace owner for an invitation.",
+      "Pendaftaran kini hanya melalui jemputan. Minta jemputan daripada pasukan JomCall atau pemilik ruang kerja anda.",
+    ],
+    WORKSPACE_NOT_ALLOWED: [
+      "New workspaces are by invitation only for now. Ask the JomCall team for access, or open your invitation link.",
+      "Ruang kerja baharu kini hanya melalui jemputan. Minta akses daripada pasukan JomCall, atau buka pautan jemputan anda.",
+    ],
     SLOT_UNAVAILABLE: [
       "Someone booked this time. Choose another slot.",
       "Waktu ini telah ditempah. Pilih waktu lain.",

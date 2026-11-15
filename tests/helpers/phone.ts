@@ -1,5 +1,6 @@
 import { randomUUID, randomInt } from "node:crypto";
 import { bookingFixture } from "./booking.ts";
+import { entitle } from "./billing.ts";
 import { CallRepository } from "../../engine/src/agent/call-repository.ts";
 import {
   phonePolicy,
@@ -32,8 +33,13 @@ export const fakeNumber = () => "+6011" + String(randomInt(10_000_000, 99_999_99
 export const klAt = (day: string, hhmm: string) =>
   Date.parse(`${day}T${hhmm}:00+08:00`);
 
-export async function phoneFixture() {
+// Both organizations get a plan with a phone number and wallet credit, so
+// calls are admitted; `entitled: false` leaves them on pay-as-you-go with no
+// wallet, for the billing refusal tests.
+export async function phoneFixture(opts: { entitled?: boolean } = {}) {
   const f = await bookingFixture();
+  if (opts.entitled !== false)
+    for (const org of [f.h.orgA.id, f.h.orgB.id]) await entitle(f.h.cleanup, org);
   const calls = new CallRepository(f.h.namespace);
   const telephony = new FakeTelephony();
   let clock = klAt(f.day, "12:00");

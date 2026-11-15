@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { executeCoreTool } from "../../../packages/domain/src/knowledge/tools.ts";
 import { executeTestTool } from "../../../packages/domain/src/agent-test/tools.ts";
 import { toolCallSchema } from "../../../packages/contracts/src/agent-test.ts";
-import { VOICE_PRESETS } from "../../../packages/domain/src/agent-test/voice-session.ts";
+import { voiceFor } from "../../../packages/contracts/src/voices.ts";
 import { toE164 } from "../../../packages/domain/src/phone/numbers.ts";
 import type { Telephony } from "../../../packages/domain/src/phone/telephony.ts";
 import type { CallRepository } from "./call-repository.ts";
@@ -36,7 +36,11 @@ export type PhoneStart =
     }
   | { callId: string | null; refusal: string; busyLine: boolean };
 
-// Refusals the caller hears the busy line for; the others end the call silently.
+// Refusals the caller hears the busy line for; the others end the call silently,
+// including the plan and wallet refusals (NO_PHONE_ENTITLEMENT,
+// WALLET_UNFUNDED, WALLET_EXHAUSTED) decided by agent_call's call_start. A
+// failed billing check is not a refusal: the call is answered and marked
+// BILLING_CHECK_FAILED on its row (owner decision, 2026-11-15).
 const BUSY_LINE = new Set(["LINES_BUSY", "CALLER_LIMIT"]);
 
 // The server-side call start. The worker supplies only the room and the
@@ -79,7 +83,7 @@ export async function startPhoneCall(
     return { callId: result.callId, refusal: result.refusal, busyLine: BUSY_LINE.has(result.refusal) };
   const settings = result.settings ?? {};
   const text = (x: unknown) => (typeof x === "string" ? x.trim() : "");
-  const voice = VOICE_PRESETS.find((p) => p === settings.voicePreference) ?? VOICE_PRESETS[0];
+  const voice = voiceFor(settings.voicePreference);
   return {
     callId: result.callId,
     token,
