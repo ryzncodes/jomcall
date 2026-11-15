@@ -756,6 +756,16 @@ export function quietRetry(
 // goes away: a half-typed price would be sent and confirm its row. A
 // debounced field is sent then, so typed text is not lost.
 export const sendsWhenHidden = (o: { debounce: boolean }) => o.debounce;
+// The same field is not sent when it unmounts either: its value is dropped.
+// Blur, Enter and the explicit flush before apply or another stage are the
+// only senders. A debounced field is sent on unmount.
+export const sendsOnUnmount = (o: { debounce: boolean }) => o.debounce;
+
+// A removed row or card folds in place with Undo, which ignores taps for
+// this long after the fold appears (a double tap on Remove must not undo).
+export const UNDO_GUARD_MS = 500;
+export const undoReady = (foldedAt: number, now: number) =>
+  now - foldedAt >= UNDO_GUARD_MS;
 
 // ---- Review: price rows ----------------------------------------------------
 
@@ -783,12 +793,13 @@ export function amountText(sen: number | null): string {
 
 // The price field's text: empty (no price), a price in sen, or "invalid".
 // Full-width digits, letters and full stop (a Chinese keyboard) are read as
-// their plain forms first (NFKC). Accepts "80", "80.5", "80.50", "RM 80.50",
+// their plain forms first (NFKC), and the ideographic full stop as a point. Accepts "80", "80.5", "80.50", "RM 80.50",
 // "rm80", "1,200.50" (commas only in groups of three); refuses negatives, a
 // decimal comma, more than two decimals, a price above MAX_PRICE_SEN and
 // anything else.
 export function readPrice(text: string): number | null | "invalid" {
-  const t = text.normalize("NFKC").trim();
+  // The ideographic full stop (U+3002) is a decimal point too.
+  const t = text.normalize("NFKC").replace(/\u3002/g, ".").trim();
   if (!t) return null;
   const m = /^(?:rm\s*)?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?$/i.exec(t);
   if (!m) return "invalid";
@@ -1352,8 +1363,10 @@ export function applyConfirmText(c: Counts, w: Words): string | null {
   if (lost)
     parts.push(
       w(
-        "You cannot come back to them after this.",
-        "Anda tidak boleh kembali menyemaknya selepas ini.",
+        c.checkPrices + c.checkAnswers === 1
+          ? "You cannot come back to it after this."
+          : "You cannot come back to them after this.",
+        "Anda tidak boleh menyemaknya semula selepas ini.",
       ),
     );
   for (const name of c.sending)
@@ -1469,14 +1482,15 @@ export const useThisText = (removes: boolean, w: Words) =>
   removes
     ? w(
         "Use this one instead and remove the other copy",
-        "Guna yang ini dan buang salinan yang lain",
+        "Guna yang ini dan buang pendua yang satu lagi",
       )
     : w("Use this one instead", "Guna yang ini");
 
 // "Remove all N that still need checking": the question, the progress and
-// the end, each with its own singular.
+// the end, each with its own singular ("none": the run ended with nothing
+// removed and nothing failed).
 export function bulkText(
-  step: "ask" | "progress" | "done" | "stopped",
+  step: "ask" | "progress" | "done" | "stopped" | "none",
   n: { done: number; total: number },
   w: Words,
 ): string {
@@ -1500,6 +1514,11 @@ export function bulkText(
       return n.done === 1
         ? w("1 price removed", "1 harga dibuang")
         : w(`${n.done} prices removed`, `${n.done} harga dibuang`);
+    case "none":
+      return w(
+        "No prices were removed. They no longer need checking.",
+        "Tiada harga dibuang. Harga itu tidak lagi perlu disemak.",
+      );
     case "stopped":
       return n.done
         ? w(
@@ -1508,9 +1527,46 @@ export function bulkText(
           )
         : w(
             "Could not remove them. Try again.",
-            "Harga itu tidak dapat dibuang. Cuba lagi.",
+            "Tiada harga yang dapat dibuang. Cuba lagi.",
           );
   }
+}
+
+// The "Remove all" slot keeps its place once shown: the button's words, and
+// the plain line under it (why it is unavailable, or what it does).
+export function bulkSlot(
+  n: number,
+  w: Words,
+): { label: string; hint: string; enabled: boolean } {
+  if (n >= 2)
+    return {
+      label: w(
+        `Remove all ${n} that still need checking`,
+        `Buang semua ${n} yang masih perlu disemak`,
+      ),
+      hint: w(
+        "Prices removed here are not saved.",
+        "Harga yang dibuang di sini tidak disimpan.",
+      ),
+      enabled: true,
+    };
+  return {
+    label: w(
+      "Remove all that still need checking",
+      "Buang semua yang masih perlu disemak",
+    ),
+    hint:
+      n === 1
+        ? w(
+            "Only 1 price still needs checking. Use Remove on its row.",
+            "Hanya 1 harga masih perlu disemak. Guna Buang pada barisnya.",
+          )
+        : w(
+            "No prices need checking now.",
+            "Tiada harga yang perlu disemak sekarang.",
+          ),
+    enabled: false,
+  };
 }
 
 // The answer card's mark and check state for a fact read from a document.

@@ -32,6 +32,7 @@ import {
   pollDelay,
   quietRetry,
   readingNow,
+  sendsOnUnmount,
   sendsWhenHidden,
   type KnownUpload,
 } from "./rules";
@@ -121,8 +122,11 @@ export const useSetup = () => useContext(StoreContext);
 // A field's value is sent 600 ms after the last change, or at once when the
 // field is left or the owner moves on. With `debounce: false` a change is
 // only held until flush (the field is left, Enter, the flush before apply or
-// another stage, unmount): a price edit confirms its row, so neither a pause
-// in typing nor switching apps (sendsWhenHidden) sends it.
+// another stage): a price edit confirms its row, so neither a pause in
+// typing, switching apps (sendsWhenHidden) nor unmounting (sendsOnUnmount,
+// the value is dropped) sends it. flush waits for a save of this field
+// already in flight and reports its failure, so a Confirm right after the
+// field is left never confirms the old value.
 export function useAutosave<T>(
   save: (value: T) => Promise<boolean>,
   { debounce = true }: { debounce?: boolean } = {},
@@ -132,17 +136,27 @@ export function useAutosave<T>(
   saveRef.current = save;
   const pending = useRef<{ value: T } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const inflight = useRef<Promise<boolean> | null>(null);
   const flush = useCallback(async () => {
     clearTimeout(timer.current);
+    const running = inflight.current;
+    if (running && !(await running)) return false;
     const p = pending.current;
     if (!p) return true;
     pending.current = null;
-    const ok = await saveRef.current(p.value);
-    if (!ok && !pending.current) pending.current = p;
-    return ok;
+    const job: Promise<boolean> = saveRef.current(p.value).then((ok) => {
+      // Cleared before anyone awaiting it resumes: a later flush retries a
+      // failed value instead of reporting this failure again.
+      if (inflight.current === job) inflight.current = null;
+      if (!ok && !pending.current) pending.current = p;
+      return ok;
+    });
+    inflight.current = job;
+    return job;
   }, []);
   const { flushers } = store;
   const onHide = sendsWhenHidden({ debounce });
+  const onUnmount = sendsOnUnmount({ debounce });
   useEffect(() => {
     flushers.add(flush);
     // Text typed inside the debounce window is sent when the tab is hidden
@@ -159,9 +173,13 @@ export function useAutosave<T>(
       document.removeEventListener("visibilitychange", hide);
       window.removeEventListener("pagehide", leave);
       flushers.delete(flush);
-      void flush();
+      if (onUnmount) void flush();
+      else {
+        clearTimeout(timer.current);
+        pending.current = null;
+      }
     };
-  }, [flushers, flush, onHide]);
+  }, [flushers, flush, onHide, onUnmount]);
   return {
     change: (value: T) => {
       pending.current = { value };

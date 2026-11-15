@@ -47,6 +47,7 @@ import {
   applySummary,
   askAgain,
   bulkRemovable,
+  bulkSlot,
   bulkText,
   checkReason,
   choiceKey,
@@ -59,8 +60,11 @@ import {
   groupRows,
   layoutOf,
   leftOutText,
+  sendsOnUnmount,
   sendsWhenHidden,
   stableLayout,
+  UNDO_GUARD_MS,
+  undoReady,
   useThisText,
   needCheckIds,
   overLimit,
@@ -1402,7 +1406,16 @@ test("apply asks once before leaving rows out or while a file is still being rea
   );
   assert.equal(
     applyConfirmText(c, ms),
-    "3 harga tidak akan disimpan. Anda tidak boleh kembali menyemaknya selepas ini. Simpan selebihnya?",
+    "3 harga tidak akan disimpan. Anda tidak boleh menyemaknya semula selepas ini. Simpan selebihnya?",
+  );
+  // Exactly one left out: "it".
+  assert.equal(
+    applyConfirmText({ ...c, checkPrices: 1 }, en),
+    "1 price will not be saved. You cannot come back to it after this. Save the rest?",
+  );
+  assert.equal(
+    applyConfirmText({ ...c, checkPrices: 0, checkAnswers: 1 }, en),
+    "1 answer will not be saved. You cannot come back to it after this. Save the rest?",
   );
   assert.equal(
     applyConfirmText({ ...c, checkPrices: 0, reading: ["menu.jpg"] }, en),
@@ -1499,12 +1512,42 @@ test("Remove all re-checks each row from the latest view", () => {
   assert.equal(bulkText("stopped", { done: 2, total: 5 }, ms), "Terhenti selepas membuang 2 daripada 5. Cuba lagi.");
   // Never a sentence with a zero count.
   assert.equal(bulkText("stopped", { done: 0, total: 5 }, en), "Could not remove them. Try again.");
-  assert.equal(bulkText("stopped", { done: 0, total: 5 }, ms), "Harga itu tidak dapat dibuang. Cuba lagi.");
+  assert.equal(bulkText("stopped", { done: 0, total: 5 }, ms), "Tiada harga yang dapat dibuang. Cuba lagi.");
+  // Nothing removed and nothing failed: said plainly.
+  assert.equal(bulkText("none", { done: 0, total: 3 }, en), "No prices were removed. They no longer need checking.");
+  assert.equal(bulkText("none", { done: 0, total: 3 }, ms), "Tiada harga dibuang. Harga itu tidak lagi perlu disemak.");
+  // The slot keeps its place: never a zero or one count in the button.
+  assert.deepEqual(bulkSlot(3, en), {
+    label: "Remove all 3 that still need checking",
+    hint: "Prices removed here are not saved.",
+    enabled: true,
+  });
+  assert.equal(bulkSlot(3, ms).label, "Buang semua 3 yang masih perlu disemak");
+  assert.deepEqual(bulkSlot(1, en), {
+    label: "Remove all that still need checking",
+    hint: "Only 1 price still needs checking. Use Remove on its row.",
+    enabled: false,
+  });
+  assert.equal(bulkSlot(0, en).hint, "No prices need checking now.");
+  assert.equal(bulkSlot(0, ms).hint, "Tiada harga yang perlu disemak sekarang.");
+  assert.equal(bulkSlot(1, ms).hint, "Hanya 1 harga masih perlu disemak. Guna Buang pada barisnya.");
+  for (const n of [0, 1]) assert.doesNotMatch(bulkSlot(n, en).label, /\d/);
 });
 
-test("only blur, Enter and explicit flushes send a price: hiding the tab does not", () => {
+test("only blur, Enter and explicit flushes send a price: hiding the tab or unmounting does not", () => {
   assert.equal(sendsWhenHidden({ debounce: false }), false);
   assert.equal(sendsWhenHidden({ debounce: true }), true);
+  // A price field's value is dropped on unmount; a debounced field is sent.
+  assert.equal(sendsOnUnmount({ debounce: false }), false);
+  assert.equal(sendsOnUnmount({ debounce: true }), true);
+});
+
+test("Undo ignores taps for 500 ms after a row folds", () => {
+  assert.equal(UNDO_GUARD_MS, 500);
+  assert.equal(undoReady(1000, 1000), false);
+  assert.equal(undoReady(1000, 1499), false);
+  assert.equal(undoReady(1000, 1500), true);
+  assert.equal(undoReady(1000, 9000), true);
 });
 
 test("prices typed with full-width digits are read; the decimal comma is still refused", () => {
@@ -1516,6 +1559,12 @@ test("prices typed with full-width digits are read; the decimal comma is still r
   assert.equal(parsePrice("80,50"), null);
   assert.equal(readPrice("８０．５"), 8050);
   assert.equal(readPrice("８ｏ"), "invalid");
+  // The ideographic full stop is a decimal point too.
+  assert.equal(parsePrice("80。50"), 8050);
+  assert.equal(parsePrice("８０。５"), 8050);
+  assert.equal(parsePrice("1,200。50"), 120050);
+  assert.equal(parsePrice("80。505"), null);
+  assert.equal(readPrice("。5"), "invalid");
 });
 
 test("row words: status, reason, now-and-new, duplicate, in both languages", () => {
@@ -1543,7 +1592,7 @@ test("row words: status, reason, now-and-new, duplicate, in both languages", () 
   assert.equal(conflictText(cur, 8000, en), "Now: Kopi-O RM 70.00. New: RM 80.00");
   assert.equal(conflictText(cur, 8000, ms), "Sedia ada: Kopi-O RM 70.00. Baharu: RM 80.00");
   assert.equal(useThisText(true, en), "Use this one instead and remove the other copy");
-  assert.equal(useThisText(true, ms), "Guna yang ini dan buang salinan yang lain");
+  assert.equal(useThisText(true, ms), "Guna yang ini dan buang pendua yang satu lagi");
   assert.equal(useThisText(false, en), "Use this one instead");
   assert.equal(conflictText({ item: "Kopi-O", priceSen: null }, 8000, en), "Now: Kopi-O no price. New: RM 80.00");
   const win = rowPayload({ item: "Nasi Lemak", variant: "Biasa", priceSen: 650 });

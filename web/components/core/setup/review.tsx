@@ -4,7 +4,7 @@
 // missing, and a keep-or-replace choice for every value already set on the
 // agent. One button applies it all; price rows still unconfirmed are left
 // out and cannot be reached again from this flow.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CoreError } from "@/lib/core/client";
 import type {
   SetupItem,
@@ -31,6 +31,7 @@ import {
   applySummary,
   askAgain,
   bulkRemovable,
+  bulkSlot,
   bulkText,
   checkReason,
   choiceKey,
@@ -62,6 +63,7 @@ import {
   uploadName,
   useThisSteps,
   useThisText,
+  undoReady,
   type ApplySummary,
   type RowActions,
   type RowEditValues,
@@ -152,9 +154,25 @@ export function Review({
     view.conflicts.find((c) => c.itemId === i.id);
   const hours = view.items.find((i) => i.kind === "schedule");
   const words = view.items.find((i) => i.kind === "settings");
+  // Answers removed from their check block on this visit stay folded in
+  // place with Undo (the state each had then), so the next card never
+  // slides up under the owner's finger.
+  const [factFolds, setFactFolds] = useState<
+    Map<string, "pending" | "confirmed">
+  >(() => new Map());
+  const removeItem = useRemove();
+  const setItemState = useItemState();
   const facts = view.items.filter(
-    (i) => i.kind === "fact" && (i.state !== "removed" || i.id === editing),
+    (i) =>
+      i.kind === "fact" &&
+      (i.state !== "removed" || i.id === editing || factFolds.has(i.id)),
   );
+  const unfoldFact = (id: string) =>
+    setFactFolds((m) => {
+      const next = new Map(m);
+      next.delete(id);
+      return next;
+    });
   const missing = view.missing.filter(
     (m) => !dismissed.includes(`missing:${m.pack}:${m.key}`),
   );
@@ -226,7 +244,7 @@ export function Review({
         announce(
           w(
             "More would be left out now. Check the question again.",
-            "Lebih banyak akan ditinggalkan sekarang. Semak soalan itu sekali lagi.",
+            "Kini lebih banyak yang tidak dimasukkan. Semak soalan ini semula.",
           ),
         );
         return;
@@ -406,6 +424,22 @@ export function Review({
                   choice={(next) =>
                     choice(i, factText(conflictOf(i)?.current), next)
                   }
+                  folded={
+                    i.state === "removed" ? factFolds.get(i.id) ?? null : null
+                  }
+                  onRemove={async () => {
+                    const r = await removeItem(i.id, (prev) =>
+                      setFactFolds((m) => new Map(m).set(i.id, prev)),
+                    );
+                    if (r === "failed") unfoldFact(i.id);
+                    return r;
+                  }}
+                  onUndo={async () => {
+                    const prev = factFolds.get(i.id);
+                    if (!prev || !(await setItemState(i.id, prev))) return false;
+                    unfoldFact(i.id);
+                    return true;
+                  }}
                 />
               ))}
             </ul>
@@ -430,15 +464,19 @@ export function Review({
                       <button
                         type="button"
                         className="setup-link"
-                        onClick={() =>
-                          onAdd({
-                            id,
-                            kind: "fact",
-                            en: m.en,
-                            ms: m.ms,
-                            fills: ["facts." + m.key],
-                          })
-                        }
+                        onClick={async () => {
+                          // Fields still being typed are sent first, as
+                          // before "Add a document": a price field's value
+                          // is dropped when it unmounts.
+                          if (await store.flushAll())
+                            onAdd({
+                              id,
+                              kind: "fact",
+                              en: m.en,
+                              ms: m.ms,
+                              fills: ["facts." + m.key],
+                            });
+                        }}
                       >
                         {w("Add now", "Tambah sekarang")}
                       </button>
@@ -761,6 +799,67 @@ function useItemState() {
     );
 }
 
+// Removes a staged item when its write's turn in the queue comes, if it is
+// still pending or confirmed then (and `may` agrees, against the view at
+// that moment). The state it had then goes to `onPrev` before the request,
+// so the fold in place is ready before the view says removed, and Undo
+// restores exactly that state (a write that raced the tap has landed).
+function useRemove() {
+  const { client } = useCore(),
+    store = useSetup();
+  return async (
+    itemId: string,
+    onPrev: (prev: "pending" | "confirmed") => void,
+    may: (items: readonly SetupItem[]) => boolean = () => true,
+  ): Promise<"removed" | "skipped" | "failed"> => {
+    let sent = false;
+    const ok = await store.write((expectedRevision) => {
+      const items = store.latest().items;
+      const cur = items.find((i) => i.id === itemId);
+      sent = false;
+      if (
+        !cur ||
+        (cur.state !== "pending" && cur.state !== "confirmed") ||
+        !may(items)
+      )
+        return Promise.resolve(store.latest());
+      sent = true;
+      onPrev(cur.state);
+      return client.execute("saveSetupItem", {
+        id: store.agentId,
+        itemId,
+        expectedRevision,
+        state: "removed",
+      });
+    });
+    return !ok ? "failed" : sent ? "removed" : "skipped";
+  };
+}
+
+// A removed row or card folds in place at the height it had (measured on
+// every render before it folds), so nothing below it moves. Undo ignores
+// taps for UNDO_GUARD_MS after the fold appears.
+function useFold(gone: boolean) {
+  const li = useRef<HTMLLIElement>(null);
+  const height = useRef(0);
+  const foldedAt = useRef(0);
+  useLayoutEffect(() => {
+    // The exact height (not offsetHeight's whole pixels), so a fold of an
+    // 87.5px row moves nothing below it by even 1px.
+    if (!gone && li.current)
+      height.current = li.current.getBoundingClientRect().height;
+  });
+  useLayoutEffect(() => {
+    if (gone) foldedAt.current = performance.now();
+  }, [gone]);
+  return {
+    li,
+    style:
+      gone && height.current ? { minHeight: `${height.current}px` } : undefined,
+    ready: () => undoReady(foldedAt.current, performance.now()),
+  };
+}
+
 // The reader's reason after "Reason:"; its own words are English text.
 function Reason({
   reason,
@@ -787,6 +886,9 @@ function FactRow({
   onToggle,
   announce,
   choice,
+  folded,
+  onRemove,
+  onUndo,
 }: {
   item: SetupItem;
   label: string;
@@ -794,12 +896,19 @@ function FactRow({
   onToggle: () => void;
   announce: (text: string) => void;
   choice: (next: string) => React.ReactNode;
+  // Removed on this visit from its check block: the state Undo restores.
+  folded: "pending" | "confirmed" | null;
+  onRemove: () => Promise<"removed" | "skipped" | "failed">;
+  onUndo: () => Promise<boolean>;
 }) {
   const { client } = useCore(),
     w = useWords(),
     store = useSetup();
   const setState = useItemState();
   const [busy, setBusy] = useState(false);
+  const fold = useFold(folded !== null);
+  const undoRef = useRef<HTMLButtonElement>(null);
+  const removeRef = useRef<HTMLButtonElement>(null);
   const [text, setText] = useState(
     factText((item.payload as { value?: unknown })?.value),
   );
@@ -831,6 +940,20 @@ function FactRow({
   // A fact read from a document that the reader was unsure of: left out
   // unless the owner confirms it. Editing the text does not confirm it.
   const flagged = factFlagged(item);
+  // Once shown, the check block keeps its place for the visit (Confirm then
+  // reads a disabled "Confirmed"), so the next card never slides up.
+  const shown = useRef(false);
+  if (flagged && !open && text.trim()) shown.current = true;
+  // Focus follows the fold: to Undo when folded, back to Remove after Undo.
+  const wasFolded = useRef(false);
+  useEffect(() => {
+    const active = document.activeElement;
+    const lost =
+      !active || active === document.body || !!fold.li.current?.contains(active);
+    if (folded && lost) undoRef.current?.focus();
+    if (!folded && wasFolded.current && lost) removeRef.current?.focus();
+    wasFolded.current = folded !== null;
+  }, [folded !== null]);
   const run = async (fn: () => Promise<void>) => {
     if (busy) return;
     setBusy(true);
@@ -840,8 +963,30 @@ function FactRow({
       setBusy(false);
     }
   };
+  if (folded)
+    return (
+      <li ref={fold.li} className="setup-card setup-card-gone" style={fold.style}>
+        <button
+          type="button"
+          ref={undoRef}
+          className="setup-link setup-undo"
+          aria-label={w(`Undo removing ${label}`, `Kembalikan ${label}`)}
+          aria-disabled={busy || undefined}
+          onClick={() => {
+            if (!fold.ready()) return;
+            void run(async () => {
+              if (await onUndo())
+                announce(w(`${label} is back`, `${label} dikembalikan`));
+            });
+          }}
+        >
+          {w("Undo", "Kembalikan")}
+        </button>
+        <p className="setup-hint">{w(`${label} removed.`, `${label} dibuang.`)}</p>
+      </li>
+    );
   return (
-    <li className="setup-card" data-check={flagged || undefined}>
+    <li ref={fold.li} className="setup-card" data-check={flagged || undefined}>
       <div className="setup-card-row">
         <div>
           <h3 className="setup-card-label">{label}</h3>
@@ -865,34 +1010,48 @@ function FactRow({
           }}
         />
       </div>
-      {flagged && !open && text.trim() && (
+      {shown.current && !open && text.trim() && (
         <div className="setup-check">
-          <p className="setup-check-title">{w("Please check", "Sila semak")}</p>
+          <p className="setup-check-title">
+            {flagged ? w("Please check", "Sila semak") : w("Checked", "Sudah disemak")}
+          </p>
           <Reason reason={item.checkReason} className="setup-hint" price={false} />
           <div className="setup-card-actions">
+            {flagged ? (
+              <button
+                type="button"
+                className="button button-small button-dark"
+                aria-label={w(`Confirm ${label}`, `Sahkan ${label}`)}
+                aria-disabled={busy || undefined}
+                onClick={() =>
+                  void run(async () => {
+                    if ((await auto.flush()) && (await setState(item.id, "confirmed")))
+                      announce(w(`${label} confirmed`, `${label} disahkan`));
+                  })
+                }
+              >
+                {w("Confirm", "Sahkan")}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="button button-small button-dark"
+                aria-disabled="true"
+                aria-label={w(`${label} confirmed`, `${label} disahkan`)}
+              >
+                {w("Confirmed", "Disahkan")}
+              </button>
+            )}
             <button
               type="button"
-              className="button button-small button-dark"
-              aria-label={w(`Confirm ${label}`, `Sahkan ${label}`)}
-              aria-disabled={busy || undefined}
-              onClick={() =>
-                void run(async () => {
-                  if ((await auto.flush()) && (await setState(item.id, "confirmed")))
-                    announce(w(`${label} confirmed`, `${label} disahkan`));
-                })
-              }
-            >
-              {w("Confirm", "Sahkan")}
-            </button>
-            <button
-              type="button"
+              ref={removeRef}
               className="button button-small secondary-button"
               aria-label={w(`Remove ${label}`, `Buang ${label}`)}
               aria-disabled={busy || undefined}
               onClick={() =>
                 void run(async () => {
                   auto.cancel();
-                  if (await setState(item.id, "removed"))
+                  if ((await onRemove()) === "removed")
                     announce(w(`${label} removed`, `${label} dibuang`));
                 })
               }
@@ -925,9 +1084,6 @@ function FactRow({
 
 // ---- Prices and services ---------------------------------------------------
 
-// How long a removed row stays folded in place with Undo.
-const UNDO_MS = 8000;
-
 function PriceSection({
   summary,
   choices,
@@ -952,23 +1108,45 @@ function PriceSection({
     store = useSetup();
   const { view, now, queuedSince } = store;
   const setState = useItemState();
+  const removeItem = useRemove();
   const [bulk, setBulk] = useState<
     "idle" | "asking" | { done: number; total: number }
   >("idle");
   const [bulkNote, setBulkNote] = useState("");
   const bulkKeep = useRef<HTMLButtonElement>(null);
+  const bulkOpen = useRef<HTMLButtonElement>(null);
   const choicesRef = useRef(choices);
   choicesRef.current = choices;
-  // Rows removed on this visit, still folded in place with Undo, and the
-  // state each had before.
-  const [undo, setUndo] = useState<Map<string, "pending" | "confirmed">>(
+  // Rows removed on this visit and the state each had then. They stay folded
+  // in place with Undo for the whole visit (the server takes them back until
+  // apply); counts and apply skip them as removed.
+  const [removed, setRemoved] = useState<Map<string, "pending" | "confirmed">>(
     () => new Map(),
   );
-  const timers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  useEffect(() => {
-    const all = timers.current;
-    return () => all.forEach((t) => clearTimeout(t));
-  }, []);
+  const mark = (id: string, prev: "pending" | "confirmed") =>
+    setRemoved((m) => new Map(m).set(id, prev));
+  const unmark = (id: string) =>
+    setRemoved((m) => {
+      const next = new Map(m);
+      next.delete(id);
+      return next;
+    });
+  // Removes a row when its write's turn comes (the state it had then is kept
+  // for Undo); `may` decides against the view at that moment.
+  const removeRow = async (
+    id: string,
+    may?: (items: readonly SetupItem[]) => boolean,
+  ) => {
+    const r = await removeItem(id, (prev) => mark(id, prev), may);
+    if (r === "failed") unmark(id);
+    return r;
+  };
+  const restore = async (id: string) => {
+    const prev = removed.get(id);
+    if (!prev || !(await setState(id, prev))) return false;
+    unmark(id);
+    return true;
+  };
   const live = new Map(summary.plans.map((p) => [p.id, p]));
   // The order is stable for the whole visit (stableLayout): worked out when
   // the page is entered; later rows are only added in their place.
@@ -988,75 +1166,76 @@ function PriceSection({
     (u) => u.state === "queued" || u.state === "reading",
   );
   const unsure = needCheckIds(summary.plans);
+  // The "Remove all" slot: once shown on this visit it stays, so nothing
+  // above or below it moves; it keeps the tallest height it has had.
+  const slotShown = useRef(false);
+  if (unsure.length > 1) slotShown.current = true;
+  const slotRef = useRef<HTMLDivElement>(null);
+  const slotHeight = useRef(0);
+  useLayoutEffect(() => {
+    const el = slotRef.current;
+    if (!el) return;
+    if (el.offsetHeight > slotHeight.current) {
+      slotHeight.current = el.offsetHeight;
+      el.style.minHeight = `${slotHeight.current}px`;
+    }
+  });
+  // Leaving the question (Keep, or nothing left to ask) puts focus back on
+  // the link once it is rendered again; the end of a run does not (focus is
+  // on the status line then).
+  const refocusLink = useRef(false);
   useEffect(() => {
     if (bulk === "asking") bulkKeep.current?.focus();
     // Nothing left to remove: no "Remove 0" question.
-    if (bulk === "asking" && !unsure.length) setBulk("idle");
+    if (bulk === "asking" && unsure.length < 2) {
+      refocusLink.current = true;
+      setBulk("idle");
+    }
   }, [bulk, unsure.length]);
+  useEffect(() => {
+    if (bulk !== "idle" || !refocusLink.current) return;
+    refocusLink.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || slotRef.current?.contains(active))
+      bulkOpen.current?.focus();
+  }, [bulk]);
 
-  const folded = (id: string, prev: "pending" | "confirmed") => {
-    setUndo((m) => new Map(m).set(id, prev));
-    clearTimeout(timers.current.get(id));
-    timers.current.set(
-      id,
-      setTimeout(() => {
-        timers.current.delete(id);
-        // The row goes; focus inside it goes to the status line, never to
-        // another row's button.
-        const row = document.getElementById(`setup-row-${id}`);
-        if (row?.contains(document.activeElement)) focusStatus();
-        setUndo((m) => {
-          const next = new Map(m);
-          next.delete(id);
-          return next;
-        });
-      }, UNDO_MS),
-    );
-  };
-  const unfolded = (id: string) => {
-    clearTimeout(timers.current.get(id));
-    timers.current.delete(id);
-    setUndo((m) => {
-      const next = new Map(m);
-      next.delete(id);
-      return next;
-    });
-  };
-
-  // Each row is checked again from the latest view just before its write:
-  // one the owner confirmed or priced meanwhile is kept.
+  // Fields still being typed are sent first; then each row is checked again
+  // inside its own queued write, against the view at that moment: a row the
+  // owner confirmed or priced meanwhile is kept.
   const removeUnsure = async () => {
     const ids = needCheckIds(summary.plans);
     const total = ids.length;
-    let seen = 0,
-      removed = 0,
+    let done = 0,
       stopped = false;
     setBulkNote("");
     onBulk(true);
     focusStatus();
+    setBulk({ done: 1, total });
     try {
-      for (const id of ids) {
-        // Progress names the row being worked on: never "0 of N".
-        setBulk({ done: seen + 1, total });
-        const latest = store.latest().items;
-        if (bulkRemovable(latest, priceReplace(latest, choicesRef.current), id)) {
-          if (!(await setState(id, "removed"))) {
+      if (!(await store.flushAll())) stopped = true;
+      else
+        for (const [n, id] of ids.entries()) {
+          // Progress names the row being worked on: never "0 of N".
+          setBulk({ done: n + 1, total });
+          const r = await removeRow(id, (items) =>
+            bulkRemovable(items, priceReplace(items, choicesRef.current), id),
+          );
+          if (r === "failed") {
             stopped = true;
             break;
           }
-          removed++;
+          if (r === "removed") done++;
         }
-        seen++;
-      }
     } finally {
       onBulk(false);
       setBulk("idle");
     }
-    if (stopped) {
-      const note = bulkText("stopped", { done: removed, total }, w);
-      setBulkNote(note);
-      announce(note);
-    } else if (removed) announce(bulkText("done", { done: removed, total }, w));
+    const note = stopped
+      ? bulkText("stopped", { done, total }, w)
+      : bulkText(done ? "done" : "none", { done, total }, w);
+    if (stopped) setBulkNote(note);
+    announce(note);
   };
 
   const row = (id: string) => {
@@ -1064,7 +1243,7 @@ function PriceSection({
     if (!i) return null;
     const isLive =
       i.outcome !== undefined && (i.state === "pending" || i.state === "confirmed");
-    const gone = i.state === "removed" && undo.has(id);
+    const gone = i.state === "removed" ? removed.get(id) ?? null : null;
     if (!isLive && !gone) return null;
     const plan = live.get(id);
     const winner = plan?.duplicateOf
@@ -1081,9 +1260,9 @@ function PriceSection({
         onChoice={onChoice}
         replace={summary.replace}
         locked={locked}
-        gone={gone ? undo.get(id)! : null}
-        onRemoved={(prev) => folded(id, prev)}
-        onRestored={() => unfolded(id)}
+        gone={gone}
+        onRemove={(other) => removeRow(other ?? id)}
+        onUndo={() => restore(id)}
         announce={announce}
         onInvalid={onInvalid}
       />
@@ -1091,6 +1270,13 @@ function PriceSection({
   };
   const rows = (ids: string[]) => ids.map(row).filter((x) => x !== null);
   const attention = rows([...layout.check, ...layout.conflict, ...layout.duplicate]);
+  const slot = bulkSlot(unsure.length, w);
+  const running = typeof bulk === "object";
+  const slotLine = running
+    ? bulkText("progress", bulk, w)
+    : bulk === "asking"
+      ? bulkText("ask", { done: 0, total: unsure.length }, w)
+      : bulkNote || slot.hint;
 
   // While this browser is still sending a file (the owner moved on from the
   // bring stage), its progress shows, as there.
@@ -1116,47 +1302,6 @@ function PriceSection({
           )}
         </p>
       ))}
-      {unsure.length > 1 && bulk === "idle" && !locked && (
-        <button
-          type="button"
-          className="setup-link"
-          aria-expanded={false}
-          onClick={() => setBulk("asking")}
-        >
-          {w(
-            `Remove all ${unsure.length} that still need checking`,
-            `Buang semua ${unsure.length} yang masih perlu disemak`,
-          )}
-        </button>
-      )}
-      {bulk === "asking" && unsure.length > 0 && (
-        <div className="setup-confirm" role="group" aria-labelledby="setup-bulk-ask">
-          <p id="setup-bulk-ask" className="setup-hint">
-            {bulkText("ask", { done: 0, total: unsure.length }, w)}
-          </p>
-          <div className="setup-card-actions">
-            <button
-              type="button"
-              className="button button-small button-dark"
-              onClick={() => void removeUnsure()}
-            >
-              {w("Remove", "Buang")}
-            </button>
-            <button
-              type="button"
-              ref={bulkKeep}
-              className="button button-small secondary-button"
-              onClick={() => setBulk("idle")}
-            >
-              {w("Keep", "Kekalkan")}
-            </button>
-          </div>
-        </div>
-      )}
-      {typeof bulk === "object" && (
-        <p className="setup-hint">{bulkText("progress", bulk, w)}</p>
-      )}
-      {bulkNote && <p className="setup-error">{bulkNote}</p>}
       {attention.length > 0 && (
         <div className="setup-price-group">
           <h3 className="setup-group-title">
@@ -1164,6 +1309,61 @@ function PriceSection({
           </h3>
           <PriceHead />
           <ul className="setup-price-list">{attention}</ul>
+        </div>
+      )}
+      {slotShown.current && (
+        <div
+          ref={slotRef}
+          className="setup-bulk"
+          role="group"
+          aria-labelledby="setup-bulk-line"
+        >
+          <div className="setup-card-actions">
+            {bulk === "asking" ? (
+              <>
+                <button
+                  type="button"
+                  className="button button-small button-dark"
+                  onClick={() => void removeUnsure()}
+                >
+                  {w("Remove", "Buang")}
+                </button>
+                <button
+                  type="button"
+                  ref={bulkKeep}
+                  className="button button-small secondary-button"
+                  onClick={() => {
+                    refocusLink.current = true;
+                    setBulk("idle");
+                  }}
+                >
+                  {w("Keep", "Kekalkan")}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                ref={bulkOpen}
+                className="setup-link"
+                aria-expanded={false}
+                aria-disabled={!slot.enabled || running || locked || undefined}
+                onClick={() => {
+                  if (slot.enabled && !running && !locked) {
+                    setBulkNote("");
+                    setBulk("asking");
+                  }
+                }}
+              >
+                {slot.label}
+              </button>
+            )}
+          </div>
+          <p
+            id="setup-bulk-line"
+            className={bulkNote && !running && bulk === "idle" ? "setup-error" : "setup-hint"}
+          >
+            {slotLine}
+          </p>
         </div>
       )}
       {layout.files.map((f) => {
@@ -1428,8 +1628,8 @@ function PriceRow({
   replace,
   locked,
   gone,
-  onRemoved,
-  onRestored,
+  onRemove,
+  onUndo,
   announce,
   onInvalid,
 }: {
@@ -1440,10 +1640,13 @@ function PriceRow({
   onChoice: (id: string, choice: Choice) => void;
   replace: string[];
   locked: boolean;
-  // Removed on this visit: the state to restore with Undo.
+  // Removed on this visit: the state Undo restores (the state the row had
+  // when its remove write ran, after this row's earlier writes landed).
   gone: "pending" | "confirmed" | null;
-  onRemoved: (prev: "pending" | "confirmed") => void;
-  onRestored: () => void;
+  // Removes this row (or, for "Use this one instead", the other copy) and
+  // keeps it folded in place.
+  onRemove: (other?: string) => Promise<"removed" | "skipped" | "failed">;
+  onUndo: () => Promise<boolean>;
   announce: (text: string) => void;
   onInvalid: (id: string, bad: boolean) => void;
 }) {
@@ -1468,7 +1671,8 @@ function PriceRow({
   const focused = useRef(false);
   const undoRef = useRef<HTMLButtonElement>(null);
   const removeRef = useRef<HTMLButtonElement>(null);
-  const liRef = useRef<HTMLLIElement>(null);
+  const fold = useFold(gone !== null);
+  const liRef = fold.li;
   // Once Confirm was offered, its place stays for the visit (a disabled
   // "Confirmed" after it), so focus has somewhere to stay.
   const offered = useRef(false);
@@ -1562,33 +1766,34 @@ function PriceRow({
     void priceSave.flush();
   };
 
+  // Folded at the height the row had, so nothing below moves. Undo comes
+  // first, at the start of the row, away from where Remove was (the end),
+  // and ignores taps for UNDO_GUARD_MS after the fold appears.
   if (gone)
     return (
       <li
         id={`setup-row-${item.id}`}
         ref={liRef}
         className="setup-price setup-price-gone"
+        style={fold.style}
       >
+        <button
+          type="button"
+          ref={undoRef}
+          className="setup-link setup-undo"
+          aria-label={w(`Undo removing ${name}`, `Kembalikan ${name}`)}
+          aria-disabled={off || undefined}
+          onClick={() => {
+            if (!fold.ready()) return;
+            void run(async () => {
+              if (await onUndo())
+                announce(w(`${name} is back`, `${name} dikembalikan`));
+            });
+          }}
+        >
+          {w("Undo", "Kembalikan")}
+        </button>
         <p className="setup-hint">{w(`${name} removed.`, `${name} dibuang.`)}</p>
-        <div className="setup-price-actions">
-          <button
-            type="button"
-            ref={undoRef}
-            className="setup-link"
-            aria-label={w(`Undo removing ${name}`, `Batalkan buang ${name}`)}
-            aria-disabled={off || undefined}
-            onClick={() =>
-              void run(async () => {
-                if (await setState(item.id, gone)) {
-                  onRestored();
-                  announce(w(`${name} is back`, `${name} dikembalikan`));
-                }
-              })
-            }
-          >
-            {w("Undo", "Batal")}
-          </button>
-        </div>
       </li>
     );
 
@@ -1677,10 +1882,18 @@ function PriceRow({
                   return;
                 }
                 void run(async () => {
-                  if (
-                    (await priceSave.flush()) &&
-                    (await setState(item.id, "confirmed"))
-                  )
+                  // Waits for a price save already in flight on this row;
+                  // never confirms the old price if that save failed.
+                  if (!(await priceSave.flush())) {
+                    announce(
+                      w(
+                        `The price of ${name} was not saved, so it was not confirmed. Try again.`,
+                        `Harga ${name} tidak disimpan, jadi tidak disahkan. Cuba lagi.`,
+                      ),
+                    );
+                    return;
+                  }
+                  if (await setState(item.id, "confirmed"))
                     announce(w(`${name} confirmed`, `${name} disahkan`));
                 });
               }}
@@ -1735,16 +1948,14 @@ function PriceRow({
             void run(async () => {
               priceSave.cancel();
               fieldSave.cancel();
-              const prev = item.state === "confirmed" ? "confirmed" : "pending";
-              // Marked first, so the row folds in place (never unmounts)
-              // when the stored state turns to removed.
-              onRemoved(prev);
-              if (await setState(item.id, "removed")) {
+              // The state Undo restores is read when this write's turn
+              // comes, after a price write that raced the tap has landed.
+              if ((await onRemove()) === "removed") {
                 onInvalid(item.id, false);
                 setPriceBad(false);
                 setPrice(amountText(p.priceSen));
                 announce(w(`${name} removed`, `${name} dibuang`));
-              } else onRestored();
+              }
             })
           }
         >
@@ -1816,8 +2027,14 @@ function PriceRow({
             onClick={() =>
               void run(async () => {
                 const steps = useThisSteps(store.latest().items, replace, item.id);
+                // A copy this removes folds in place with Undo too.
                 for (const s of steps)
-                  if (!(await setState(s.id, s.state))) return;
+                  if (
+                    s.state === "removed"
+                      ? (await onRemove(s.id)) === "failed"
+                      : !(await setState(s.id, s.state))
+                  )
+                    return;
                 if (steps.length)
                   announce(w(`${name} will be saved`, `${name} akan disimpan`));
               })

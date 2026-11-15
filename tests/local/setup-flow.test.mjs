@@ -360,22 +360,49 @@ test("price rows stay put for the visit; actions wait for their write; Remove al
   assert.doesNotMatch(review, /setHeld|rowSection\(/);
   // Stable keys: one key per row id, whatever its look.
   assert.match(review, /<PriceRow\s+key=\{id\}/);
-  // A removed row folds in place with Undo, then goes with focus moved to
-  // the status line.
-  assert.match(review, /`Undo removing \$\{name\}`/);
-  assert.match(review, /if \(row\?\.contains\(document\.activeElement\)\) focusStatus\(\)/);
+  // A removed row folds in place with Undo for the whole visit (no timer),
+  // at the height it had, Undo first and guarded for 500 ms.
+  assert.match(review, /`Undo removing \$\{name\}`, `Kembalikan \$\{name\}`/);
+  assert.match(review, /w\("Undo", "Kembalikan"\)/);
+  assert.doesNotMatch(review, /UNDO_MS|setTimeout\(/);
+  assert.match(review, /className="setup-price setup-price-gone"\s*style=\{fold\.style\}/);
+  assert.match(review, /if \(!fold\.ready\(\)\) return;/);
+  assert.match(review, /height\.current = li\.current\.getBoundingClientRect\(\)\.height/);
+  // Keep (and an emptied question) puts focus back on the link after it
+  // renders again.
+  assert.match(review, /refocusLink\.current = true;\s*setBulk\("idle"\);/);
+  assert.match(review, /bulkOpen\.current\?\.focus\(\);\s*\}, \[bulk\]\);/);
+  // Bulk and "Use this one instead" removals fold too; the state Undo
+  // restores is read inside the queued write.
+  assert.match(review, /onPrev\(cur\.state\);/);
+  assert.match(review, /onRemove\(s\.id\)/);
   // The Confirm slot stays after a confirm; buttons wait (aria-disabled,
   // keeping focus) while their write runs or Remove all runs.
   assert.match(review, /offered\.current &&/);
   assert.match(review, /const off = busy \|\| locked/);
   assert.match(review, /aria-disabled=\{off \|\| priceInvalid \|\| undefined\}/);
-  // Remove all: each row checked again from the latest view before its
-  // write, every action locked, progress shown, an early stop said.
-  assert.match(review, /bulkRemovable\(latest, priceReplace\(latest, choicesRef\.current\), id\)/);
+  // Remove all: fields flushed first, then each row checked inside its own
+  // queued write against the view at that moment; every action locked,
+  // progress shown, an early stop or an empty run said.
+  assert.match(review, /if \(!\(await store\.flushAll\(\)\)\) stopped = true;/);
+  assert.match(review, /removeRow\(id, \(items\) =>\s*bulkRemovable\(items, priceReplace\(items, choicesRef\.current\), id\)/);
+  assert.match(review, /const items = store\.latest\(\)\.items;[^]*?!may\(items\)/);
   assert.match(review, /onBulk\(true\)/);
   assert.match(review, /bulkText\("progress", bulk, w\)/);
   assert.match(review, /bulkText\("stopped"/);
-  assert.match(review, /setBulk\(\{ done: seen \+ 1, total \}\)/);
+  assert.match(review, /bulkText\(done \? "done" : "none"/);
+  assert.match(review, /setBulk\(\{ done: n \+ 1, total \}\)/);
+  // The Remove all slot sits below the attention block and, once shown,
+  // stays (disabled with a plain reason).
+  assert.ok(review.indexOf('"Needs your attention"') < review.indexOf('className="setup-bulk"'));
+  assert.match(review, /if \(unsure\.length > 1\) slotShown\.current = true;/);
+  assert.match(review, /\{slotShown\.current && \(/);
+  assert.match(review, /bulkSlot\(unsure\.length, w\)/);
+  // Confirm waits for a price save in flight and stops if it failed.
+  assert.match(review, /if \(!\(await priceSave\.flush\(\)\)\) \{\s*announce\(/);
+  // Answer cards keep their place: Confirmed stays, a removed card folds.
+  assert.match(review, /if \(flagged && !open && text\.trim\(\)\) shown\.current = true;/);
+  assert.match(review, /className="setup-card setup-card-gone" style=\{fold\.style\}/);
   // A choice is keyed by the row and the saved price it matched.
   assert.match(review, /choices\[choiceKey\(i\)\]/);
   // The photo dialog closes on its backdrop only: no padding of its own.
@@ -384,12 +411,20 @@ test("price rows stay put for the visit; actions wait for their write; Remove al
   assert.match(css, /\.setup-viewer \{[^}]*padding: 0;/);
 });
 
-test("a price change is never sent when the tab is hidden", () => {
+test("a price change is never sent when the tab is hidden or the field unmounts", () => {
   const flow = readFileSync(join(dir, "flow.tsx"), "utf8");
   assert.match(flow, /const onHide = sendsWhenHidden\(\{ debounce \}\)/);
   assert.match(flow, /if \(onHide\) \{\s*document\.addEventListener\("visibilitychange", hide\);\s*window\.addEventListener\("pagehide", leave\);\s*\}/);
-  // Unmount still sends.
-  assert.match(flow, /flushers\.delete\(flush\);\s*void flush\(\);/);
+  // Unmount sends only a debounced field; a price field's value is dropped.
+  assert.match(flow, /const onUnmount = sendsOnUnmount\(\{ debounce \}\)/);
+  assert.match(flow, /flushers\.delete\(flush\);\s*if \(onUnmount\) void flush\(\);\s*else \{\s*clearTimeout\(timer\.current\);\s*pending\.current = null;\s*\}/);
+  // flush waits for a save of the field already in flight.
+  assert.match(flow, /if \(running && !\(await running\)\) return false;/);
+});
+
+test("Add now on the review page sends fields still being typed first", () => {
+  const review = readFileSync(join(dir, "review.tsx"), "utf8");
+  assert.match(review, /if \(await store\.flushAll\(\)\)\s*onAdd\(\{/);
 });
 
 test("the review page and its rules import only the price planner from domain", () => {
@@ -411,7 +446,9 @@ test("the review page keeps choices, offers Use new only on conflicts, and never
   assert.match(review, /chooseRow\(store\.latest\(\)\.items, id, c\)/);
   assert.match(review, /a\.choice && item\.current/);
   assert.doesNotMatch(review, /Confirm all/i);
-  assert.ok(review.includes("`Remove all ${unsure.length} that still need checking`"));
+  assert.ok(
+    readFileSync(join(dir, "rules.ts"), "utf8").includes("`Remove all ${n} that still need checking`"),
+  );
   assert.ok(review.includes('w("Remove everything from this file", "Buang semua daripada fail ini")'));
   // A conflict or limit refusal reloads the rows.
   assert.match(review, /e\.code === "CONFLICT" \|\| e\.code === "KNOWLEDGE_LIMIT"/);

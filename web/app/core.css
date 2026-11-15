@@ -1627,17 +1627,41 @@
 .setup-price-actions .setup-link-done {
   text-decoration: none;
 }
-/* A row removed on this visit, folded in place with Undo. */
-.setup-price.setup-price-gone {
+/* A row or answer card removed on this visit, folded in place with Undo for
+   the whole visit. Its height is held inline (the height it had), so nothing
+   below moves; Undo sits at the start, away from where Remove was. */
+.setup-price.setup-price-gone,
+.setup-card.setup-card-gone {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 0 8px;
   opacity: 0.8;
 }
-.setup-price-gone .setup-hint {
+.setup-price-gone .setup-hint,
+.setup-card-gone .setup-hint {
   margin: 0;
+}
+.setup-undo {
+  min-width: 44px;
+  padding: 0 8px;
+}
+/* "Remove all" keeps its slot once shown (min-height held inline at the
+   tallest it has been). */
+.setup-bulk {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+}
+.setup-bulk .setup-hint,
+.setup-bulk .setup-error {
+  margin: 0;
+}
+/* Two lines from the start: the question is longer than the hint and wraps
+   on a phone, and the slot must not grow at the owner's first tap. */
+#setup-bulk-line {
+  min-height: calc(2 * 1.6em);
 }
 .setup-price-extra {
   grid-column: 1 / -1;
