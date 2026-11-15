@@ -19,11 +19,11 @@ async function inTransaction(run: (client: pg.PoolClient) => Promise<void>) {
   const client = await pool.connect();
   try {
     await client.query("begin");
+    // Look for the function itself: a database can have it without a
+    // migration record (a migration applied by hand with psql).
     const applied = (
-      await client.query(
-        "select count(*)::int as n from supabase_migrations.schema_migrations where version='20261115120000'",
-      )
-    ).rows[0].n;
+      await client.query("select to_regprocedure('app_private.signup_invited(text)') is not null as ok")
+    ).rows[0].ok;
     if (!applied) await client.query(MIGRATION);
     await run(client);
   } finally {
