@@ -186,7 +186,7 @@ Written after the import door was built on branch `feat/setup-import`. Plan: `do
 **Later owner decisions (2026-11-15).**
 
 - No .xlsx file in the first release. The inputs are a photo, a PDF, a CSV file and pasted text; cells copied from a spreadsheet arrive as pasted text. "Spreadsheet" in sections 3 to 7 means CSV or pasted cells. A zip-signature upload is refused with a message that says to paste the cells or save as CSV or PDF.
-- After the first paid reading run, in which two documents had real wrong prices with no flag (three rows; the script counted four), the owner chose: read photos and PDFs twice and flag any row the two reads disagree on; an old and a new price give the new one, flagged; surcharges, add-ons, "from", conditional and "free above" amounts are flagged. Then re-run. The third run was clean.
+- In the first paid reading run, two documents had real wrong prices with no flag (three rows); the script counted four. After it, the owner chose: read photos and PDFs twice and flag any row the two reads disagree on; an old and a new price give the new one, flagged; surcharges, add-ons, "from", conditional and "free above" amounts are flagged. Then re-run. The third run was clean.
 
 **Build-time rulings that change what this design describes.**
 
