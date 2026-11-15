@@ -279,6 +279,9 @@ export type UploadNotice = {
   refusal?: Refusal | "NO_ROOM";
   error?: unknown;
   step?: UploadStep;
+  // Raised while the file waited its turn or was being sent, so possibly
+  // after the owner left the bring stage: shown on the other stages too.
+  late?: boolean;
 };
 export type UploadManager = {
   senders: Sender[];
@@ -289,6 +292,9 @@ export type UploadManager = {
   paste: (text: string) => Promise<boolean>;
   // The stable row key of an upload this browser added.
   rowKey: (uploadId: string) => string;
+  // After the setup is saved: stops every send and removes what it had
+  // created (best effort), so no file goes on into a closed setup.
+  stopAll: () => void;
 };
 
 type Job = {
@@ -466,11 +472,13 @@ export function useUploadManager(o: {
         // reason is listed by name.
         if (
           e instanceof CoreError &&
-          (e.code === "UPLOAD_XLSX" || e.code === "UPLOAD_TYPE")
+          (e.code === "UPLOAD_XLSX" ||
+            e.code === "UPLOAD_TYPE" ||
+            e.code === "UPLOAD_TOO_LONG")
         ) {
           drop(job.key);
           hold(uploadId, "removed");
-          problem({ name: job.name, error: e, step: "finish" });
+          problem({ name: job.name, error: e, step: "finish", late: true });
           void opts.current.refresh();
           return;
         }
@@ -569,7 +577,7 @@ export function useUploadManager(o: {
         if (job.removed) return;
         if (e instanceof Refused) {
           drop(job.key);
-          problem({ name: job.name, refusal: e.refusal });
+          problem({ name: job.name, refusal: e.refusal, late: true });
           return;
         }
         // Preparing the file broke (not a request): the general sentence,
@@ -734,5 +742,22 @@ export function useUploadManager(o: {
     [],
   );
 
-  return { senders, problems, addFiles, retry, remove, paste, rowKey };
+  const stopAll = useCallback(() => {
+    const { client, agentId } = opts.current;
+    queue.current = [];
+    for (const j of jobs.current.values()) {
+      j.removed = true;
+      // A create still in flight is removed when it lands (untilAborted).
+      j.controller.abort();
+      if (j.uploadId)
+        void client
+          .execute("removeSetupUpload", { id: agentId, uploadId: j.uploadId })
+          .catch(() => undefined);
+    }
+    jobs.current.clear();
+    setSenders([]);
+    setProblems([]);
+  }, []);
+
+  return { senders, problems, addFiles, retry, remove, paste, rowKey, stopAll };
 }

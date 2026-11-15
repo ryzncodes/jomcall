@@ -19,6 +19,7 @@ import {
   SetupNotice,
 } from "./flow";
 import { namePrefill } from "./rules";
+import { UploadProblems } from "./bring";
 
 type Words = (en: string, ms: string) => string;
 export type Day = { open: boolean; start: string; end: string };
@@ -294,9 +295,10 @@ export function Interview({
       )}
       {onBring && (
         <button type="button" className="setup-link" onClick={onBring}>
-          {w("Add a document", "Tambah dokumen")}
+          {w("Add a document", "Tambah fail atau senarai harga")}
         </button>
       )}
+      <UploadProblems />
       <QuestionScreen
         key={q.id}
         question={q}

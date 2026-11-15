@@ -38,9 +38,13 @@ type Words = (en: string, ms: string) => string;
 export function BringStage({
   onBack,
   onContinue,
+  fromReview = false,
 }: {
   onBack: () => void;
   onContinue: () => void;
+  // Opened from the review page's "Add a document": with no files, the
+  // way on goes back there.
+  fromReview?: boolean;
 }) {
   const w = useWords(),
     store = useSetup(),
@@ -173,8 +177,8 @@ export function BringStage({
         <p className="setup-hint setup-private setup-upload-notice" id={`${id}-notice`}>
           <Info size={16} aria-hidden="true" />
           {w(
-            "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. Files and pasted text are deleted after 30 days. You can also delete one now with the Remove button while setup is open.",
-            "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail dan teks yang ditampal dipadam selepas 30 hari. Anda juga boleh memadamnya sekarang dengan butang Buang semasa persediaan masih dibuka.",
+            "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. The file itself is deleted 30 days after you add it, or now with Remove while setup is open. Prices and details read from it stay in your setup until you remove them.",
+            "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail itu sendiri dipadam 30 hari selepas anda menambahnya, atau sekarang dengan butang Buang semasa persediaan masih dibuka. Harga dan butiran yang dibaca daripadanya kekal dalam persediaan anda sehingga anda membuangnya.",
           )}
         </p>
         <div className="setup-file-row">
@@ -212,8 +216,8 @@ export function BringStage({
         <p className="setup-hint" id={`${id}-limits`}>
           {left
             ? w(
-                "A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in each setup and 20 files a day for your workspace. Remove a file to make room for another.",
-                "Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi setiap persediaan dan 20 fail sehari bagi ruang kerja anda. Buang fail untuk memberi ruang kepada fail lain.",
+                "A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in each setup and 20 files in 24 hours for your workspace. Remove a file to make room for another.",
+                "Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi setiap persediaan dan 20 fail dalam tempoh 24 jam bagi ruang kerja anda. Buang fail untuk memberi ruang kepada fail lain.",
               )
             : w(
                 "This setup has 5 files. Remove one to add another.",
@@ -260,7 +264,7 @@ export function BringStage({
             <small id={`${id}-paste-hint`} className="setup-hint">
               {w(
                 "Up to 20,000 characters. Copy the cells from Excel or Google Sheets, or a price list from a chat.",
-                "Sehingga 20,000 aksara. Salin sel daripada Excel atau Google Sheets, atau senarai harga daripada sembang.",
+                "Sehingga 20,000 aksara. Salin sel daripada Excel atau Google Sheets, atau senarai harga daripada WhatsApp.",
               )}
             </small>
             <button
@@ -338,7 +342,7 @@ export function BringStage({
                                   `Try removing ${r.name} again`,
                                   `Cuba buang ${r.name} sekali lagi`,
                                 )
-                              : w(`Retry ${r.name}`, `Cuba lagi ${r.name}`)
+                              : w(`Retry ${r.name}`, `Hantar semula ${r.name}`)
                           }
                           disabled={removing}
                           onClick={() =>
@@ -397,7 +401,9 @@ export function BringStage({
         <button type="button" className="button button-dark" onClick={onContinue}>
           {rows.length
             ? w("Continue", "Teruskan")
-            : w("Answer questions instead", "Jawab soalan sahaja")}
+            : fromReview
+              ? w("Back to your answers", "Kembali ke jawapan anda")
+              : w("Answer questions instead", "Jawab soalan sahaja")}
         </button>
       </div>
     </div>
@@ -459,6 +465,25 @@ function kindOf(r: Row): string {
     : "waiting";
 }
 
+// Files refused after the owner left this stage (a photo that would not
+// shrink, a file the server refused at finish), on the interview and review
+// pages, each by name with its reason.
+export function UploadProblems() {
+  const w = useWords(),
+    { uploads } = useSetup();
+  const late = uploads.problems.filter((p) => p.late);
+  if (!late.length) return null;
+  return (
+    <div className="storage-warning" role="alert">
+      <ul className="setup-problems">
+        {late.map((p, i) => (
+          <li key={i}>{noticeText(p, w)}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 // The sentence for one refusal or failed request, with the file name.
 function noticeText(n: UploadNotice, w: Words): string {
   if (n.refusal === "NO_ROOM") return noRoomText(n.names ?? [], w);
@@ -471,7 +496,7 @@ function noticeText(n: UploadNotice, w: Words): string {
 
 // Why a send stopped, under "Sending failed". A failure while preparing
 // the file (no request step) gets the general sentence.
-function failDetail(s: Sender, w: Words): string {
+export function failDetail(s: Sender, w: Words): string {
   if (!s.step) return sendBrokenText(w);
   const f = failureOf(s.error);
   return sendFailureText(f.status, f.code, s.step, w);

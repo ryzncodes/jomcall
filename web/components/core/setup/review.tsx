@@ -30,13 +30,13 @@ import {
   SetupNotice,
   type PackInfo,
 } from "./flow";
-import { RemoveFileConfirm } from "./bring";
+import { RemoveFileConfirm, UploadProblems, failDetail } from "./bring";
 import {
   amountText,
   applyButtonText,
   applyConfirmText,
   applySummary,
-  askAgain,
+  askAgainWhy,
   bulkRemovable,
   bulkSlot,
   bulkText,
@@ -56,6 +56,7 @@ import {
   overLimitText,
   priceReplace,
   readPrice,
+  reasonParts,
   removeFailedText,
   rowActions,
   rowChanges,
@@ -157,6 +158,9 @@ export function Review({
   const [readMoved, setReadMoved] = useState(false);
   // The counts the question was asked with; null when no question is open.
   const [asked, setAsked] = useState<ApplySummary["counts"] | null>(null);
+  // Prices came in after the owner answered the question: said on the page,
+  // since the question itself may have nothing left to ask.
+  const [arrived, setArrived] = useState(false);
   // "Remove all that still need checking" is running: every row action and
   // the apply buttons wait.
   const [bulkRunning, setBulkRunning] = useState(false);
@@ -169,7 +173,8 @@ export function Review({
   // Focus goes here when the control the owner used goes away (a removed
   // row, a removed file), never onto another row's button.
   const statusRef = useRef<HTMLParagraphElement>(null);
-  const focusStatus = () => statusRef.current?.focus();
+  // preventScroll: the status line sits at the top of the page.
+  const focusStatus = () => statusRef.current?.focus({ preventScroll: true });
   const heading = useLanding<HTMLHeadingElement>("review");
   const label = (i: SetupItem) => {
     const f = packs
@@ -230,7 +235,7 @@ export function Review({
       for (const u of view.uploads) {
         const before = seen.current.get(u.id);
         if (before && before !== u.state && (u.state === "done" || u.state === "failed"))
-          setSaid(`${uploadName(u, w)}: ${uploadLabel(u, w)}`);
+          setSaid(`${uploadName(u, w)}: ${uploadLabel(u, w, undefined, undefined, true)}`);
       }
     seen.current = next;
     // Runs when an upload's state changes, not on every view.
@@ -261,6 +266,7 @@ export function Review({
 
   const apply = async (sure: boolean) => {
     setApplyError(undefined);
+    setArrived(false);
     if (invalid.current.size) {
       setFixFirst(true);
       document
@@ -284,15 +290,20 @@ export function Review({
         setAsked(now.counts);
         return;
       }
-      // More would be left out than when the owner answered: ask again.
-      if (sure && asked && askAgain(asked, now.counts)) {
+      // More would be left out than when the owner answered, or prices
+      // came in since (a file named as still being read finished, or more
+      // prices would be saved): ask again, so nothing is saved unseen.
+      const why = sure && asked ? askAgainWhy(asked, now.counts) : null;
+      if (why) {
         setAsked(now.counts);
-        announce(
-          w(
-            "More would be left out now. Check the question again.",
-            "Sekarang lebih banyak yang tidak akan dimasukkan. Sila semak soalan ini sekali lagi.",
-          ),
-        );
+        if (why === "arrived") setArrived(true);
+        else
+          announce(
+            w(
+              "More would be left out now. Check the question again.",
+              "Sekarang lebih banyak yang tidak akan dimasukkan. Sila semak soalan ini sekali lagi.",
+            ),
+          );
         return;
       }
       setAsked(null);
@@ -313,7 +324,9 @@ export function Review({
         // live in the flow, by item id).
         const fresh = await store.reload();
         setReadMoved(
-          e.code === "CONFLICT" && !!fresh && onlyReadProgress(base, fresh),
+          e.code === "CONFLICT" &&
+            !!fresh &&
+            onlyReadProgress(base, fresh, store.removedHere),
         );
         setAsked(null);
       }
@@ -400,9 +413,10 @@ export function Review({
         </p>
         {onBring && (
           <button type="button" className="setup-link" onClick={onBring}>
-            {w("Add a document", "Tambah dokumen")}
+            {w("Add a document", "Tambah fail atau senarai harga")}
           </button>
         )}
+        <UploadProblems />
       </header>
       <div className="setup-body" ref={bodyRef}>
         <p
@@ -426,6 +440,7 @@ export function Review({
             onBulk={setBulkRunning}
             focusStatus={focusStatus}
             announce={announce}
+            onBring={onBring}
             onInvalid={(id, bad) => {
               if (bad) invalid.current.add(id);
               else invalid.current.delete(id);
@@ -587,6 +602,14 @@ export function Review({
               "Betulkan harga yang bertanda merah dahulu.",
             )}
           </div>
+        )}
+        {arrived && (
+          <p className="setup-hint" role="status">
+            {w(
+              "New prices came in from your files. Check them, then save again.",
+              "Harga baharu masuk daripada fail anda. Semak harga itu, kemudian simpan semula.",
+            )}
+          </p>
         )}
         {question && (
           <div
@@ -905,7 +928,8 @@ function useFold(gone: boolean) {
   };
 }
 
-// The reader's reason after "Reason:"; its own words are English text.
+// The reader's reason after "Reason:"; its own words are English text, our
+// fixed sentences among them are translated (rules.ts: reasonParts).
 function Reason({
   reason,
   className,
@@ -917,9 +941,21 @@ function Reason({
 }) {
   const w = useWords();
   const r = checkReason(reason, w, price);
+  // Our own sentences in the page's language; the reader's words stay
+  // English and are marked so.
+  const parts = r.reader ? reasonParts(r.text, w) : [{ text: r.text, own: true }];
   return (
     <p className={className}>
-      {r.label} <span lang={r.reader ? "en" : undefined}>{r.text}</span>
+      {r.label}{" "}
+      {parts.map((x, i) =>
+        x.own ? (
+          <span key={i}>{x.text}</span>
+        ) : (
+          <span key={i} lang="en">
+            {x.text}
+          </span>
+        ),
+      )}
     </p>
   );
 }
@@ -1019,7 +1055,7 @@ function FactRow({
           type="button"
           ref={undoRef}
           className="setup-link setup-undo"
-          aria-label={w(`Undo removing ${label}`, `Kembalikan ${label}`)}
+          aria-label={w(`Undo removing ${label}`, `Buat asal: ${label}`)}
           aria-disabled={busy || undefined}
           onClick={() =>
             settled(
@@ -1032,7 +1068,7 @@ function FactRow({
             )
           }
         >
-          {w("Undo", "Kembalikan")}
+          {w("Undo", "Buat asal")}
         </button>
         <p className="setup-hint">{w(`${label} removed.`, `${label} dibuang.`)}</p>
       </li>
@@ -1155,6 +1191,7 @@ function PriceSection({
   onBulk,
   focusStatus,
   announce,
+  onBring,
   onInvalid,
 }: {
   summary: ApplySummary;
@@ -1165,6 +1202,8 @@ function PriceSection({
   onBulk: (running: boolean) => void;
   focusStatus: () => void;
   announce: (text: string) => void;
+  // Opens the bring stage, where a failed send can be retried.
+  onBring?: () => void;
   onInvalid: (id: string, bad: boolean) => void;
 }) {
   const w = useWords(),
@@ -1376,7 +1415,7 @@ function PriceSection({
     const s = senderOf(u);
     return s
       ? sendingLabel(s, w)
-      : uploadLabel(u, w, now, queuedSince.get(u.id));
+      : uploadLabel(u, w, now, queuedSince.get(u.id), true);
   };
 
   return (
@@ -1484,6 +1523,8 @@ function PriceSection({
               <FileHead
                 upload={upload}
                 label={fileLabel(upload)}
+                failure={s?.phase === "failed" ? failDetail(s, w) : null}
+                onBring={onBring}
                 sending={!!s && s.phase !== "failed"}
                 locked={locked}
                 focusStatus={focusStatus}
@@ -1533,6 +1574,8 @@ function PriceHead() {
 function FileHead({
   upload,
   label,
+  failure,
+  onBring,
   sending,
   locked,
   focusStatus,
@@ -1542,6 +1585,9 @@ function FileHead({
 }: {
   upload: SetupUpload;
   label: string;
+  // Why this browser's send of it failed, when it did.
+  failure: string | null;
+  onBring?: () => void;
   // This browser is still sending it: not an interrupted upload.
   sending: boolean;
   locked: boolean;
@@ -1562,7 +1608,9 @@ function FileHead({
   const removeRef = useRef<HTMLButtonElement>(null);
   const name = uploadName(upload, w);
   const bad =
-    upload.state === "failed" || (upload.state === "uploading" && !sending);
+    upload.state === "failed" ||
+    (upload.state === "uploading" && !sending) ||
+    failure !== null;
   const done = upload.state === "done";
   useEffect(() => {
     if (confirming) keepRef.current?.focus();
@@ -1595,6 +1643,12 @@ function FileHead({
             {w(`From: ${name}`, `Daripada: ${name}`)}
           </h3>
           <p className={bad ? "setup-error" : "setup-hint"}>{label}</p>
+          {failure && <p className="setup-error">{failure}</p>}
+          {failure && onBring && (
+            <button type="button" className="setup-link" onClick={onBring}>
+              {w("Add a document", "Tambah fail atau senarai harga")}
+            </button>
+          )}
           {failed && <p className="setup-error">{removeFailedText(w)}</p>}
         </div>
         <div className="setup-card-actions setup-file-actions">
@@ -1796,7 +1850,7 @@ function PriceRow({
   const fold = useFold(gone !== null);
   const guard = useSettle();
   // After "Use this one instead" the duplicate panel keeps its place and
-  // height for the visit ("Using this one"), so the row does not shrink
+  // height for the visit ("Chosen"), so the row does not shrink
   // under the finger.
   const [used, setUsed] = useState(false);
   const dupRef = useRef<HTMLDivElement>(null);
@@ -1917,7 +1971,7 @@ function PriceRow({
           type="button"
           ref={undoRef}
           className="setup-link setup-undo"
-          aria-label={w(`Undo removing ${name}`, `Kembalikan ${name}`)}
+          aria-label={w(`Undo removing ${name}`, `Buat asal: ${name}`)}
           aria-disabled={off || undefined}
           onClick={() =>
             settled(
@@ -1930,7 +1984,7 @@ function PriceRow({
             )
           }
         >
-          {w("Undo", "Kembalikan")}
+          {w("Undo", "Buat asal")}
         </button>
         <p className="setup-hint">{w(`${name} removed.`, `${name} dibuang.`)}</p>
       </li>
@@ -1965,7 +2019,6 @@ function PriceRow({
           enterKeyHint="done"
           value={price}
           readOnly={locked}
-          placeholder={a.status === "no_price" ? "0.00" : undefined}
           aria-invalid={priceBad || undefined}
           aria-describedby={priceBad ? `${pid}-bad` : undefined}
           onFocus={() => {
@@ -2214,7 +2267,7 @@ function PriceRow({
             className="button button-small secondary-button"
             aria-disabled="true"
           >
-            {w("Using this one", "Menggunakan yang ini")}
+            {w("Chosen", "Dipilih")}
           </button>
         </div>
       )}

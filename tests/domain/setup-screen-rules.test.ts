@@ -46,6 +46,8 @@ import {
   applyConfirmText,
   applySummary,
   askAgain,
+  askAgainWhy,
+  reasonParts,
   bulkRemovable,
   bulkSlot,
   bulkText,
@@ -287,22 +289,22 @@ test("upload labels for every state in both languages", () => {
   const cases: [Parameters<typeof uploadLabel>[0], string, string][] = [
     [
       { ...upload, state: "uploading" },
-      "This upload was interrupted. Remove it and add the file again.",
-      "Muat naik ini terputus. Buang dan tambah fail itu semula.",
+      "Sending this file was interrupted. Remove it and add the file again.",
+      "Muat naik fail ini terputus. Buang, kemudian tambah fail itu semula.",
     ],
     [{ ...upload, state: "queued" }, "Waiting to be read", "Menunggu untuk dibaca"],
     [{ ...upload, state: "reading" }, "Reading…", "Sedang dibaca…"],
-    [upload, "12 prices and 3 facts found", "12 harga dan 3 butiran ditemui"],
+    [upload, "12 prices and 3 details found", "12 harga dan 3 butiran ditemui"],
     [
       { ...upload, rowCount: 1, factCount: 1 },
-      "1 price and 1 fact found",
+      "1 price and 1 detail found",
       "1 harga dan 1 butiran ditemui",
     ],
     [{ ...upload, factCount: 0 }, "12 prices found", "12 harga ditemui"],
-    [{ ...upload, rowCount: 0 }, "3 facts found", "3 butiran ditemui"],
+    [{ ...upload, rowCount: 0 }, "3 details found", "3 butiran ditemui"],
     [
       { ...upload, droppedCount: 2 },
-      "12 prices and 3 facts found · 2 rows could not be read",
+      "12 prices and 3 details found · 2 rows could not be read",
       "12 harga dan 3 butiran ditemui · 2 baris tidak dapat dibaca",
     ],
     [
@@ -318,14 +320,69 @@ test("upload labels for every state in both languages", () => {
   }
 });
 
+test("on the review page, file lines drop the bring stage's offers; a CSV or text file is not a photo", () => {
+  const t = Date.UTC(2026, 10, 15, 9);
+  const queued = { ...upload, state: "queued" as const };
+  assert.equal(uploadLabel(queued, en, t + 11 * 60_000, t, true), "Still waiting to be read.");
+  assert.equal(uploadLabel(queued, ms, t + 11 * 60_000, t, true), "Masih menunggu untuk dibaca.");
+  const none = { ...upload, rowCount: 0, factCount: 0 };
+  assert.equal(
+    uploadLabel(none, en, undefined, undefined, true),
+    "Nothing found in this file. Try a clearer photo.",
+  );
+  assert.equal(
+    uploadLabel(none, ms, undefined, undefined, true),
+    "Tiada apa-apa ditemui dalam fail ini. Cuba foto yang lebih jelas.",
+  );
+  for (const kind of ["sheet", "text"] as const)
+    for (const review of [false, true]) {
+      assert.equal(
+        uploadLabel({ ...none, kind }, en, undefined, undefined, review),
+        "Nothing found in this file. Check the file and add it again, or paste the text.",
+      );
+      assert.equal(
+        uploadLabel({ ...none, kind }, ms, undefined, undefined, review),
+        "Tiada apa-apa ditemui dalam fail ini. Semak fail itu dan tambah semula, atau tampal teksnya.",
+      );
+      assert.equal(
+        failText("UNREADABLE", en, { kind, review }),
+        "Could not read this file. Check the file and add it again, or paste the text.",
+      );
+      assert.equal(
+        failText("UNREADABLE", ms, { kind, review }),
+        "Fail ini tidak dapat dibaca. Semak fail itu dan tambah semula, atau tampal teksnya.",
+      );
+    }
+  const failed = { ...upload, state: "failed" as const, failCode: "READ_FAILED" };
+  assert.equal(
+    uploadLabel(failed, en, undefined, undefined, true),
+    "Could not read this file. Remove it and try again.",
+  );
+  assert.equal(
+    uploadLabel(failed, ms, undefined, undefined, true),
+    "Fail ini tidak dapat dibaca. Buang dan cuba lagi.",
+  );
+  // A photo keeps the photo advice on review.
+  assert.equal(
+    failText("UNREADABLE", en, { kind: "image", review: true }),
+    "Could not read this file. Try a clearer photo, or paste the text.",
+  );
+});
+
 test("a failed read has one plain sentence per fail code, in both languages", () => {
   const codes: [string | null, string, string][] = [
-    ["TOO_LONG", "Too long to read. Split it into smaller files.", "Terlalu panjang untuk dibaca. Bahagikan kepada fail yang lebih kecil."],
+    ["TOO_LONG", "Too long to read. Split it into smaller files.", "Terlalu panjang untuk dibaca. Pecahkan kepada beberapa fail yang lebih kecil."],
     ["UNREADABLE", "Could not read this file. Try a clearer photo, or paste the text.", "Fail ini tidak dapat dibaca. Cuba foto yang lebih jelas, atau tampal teksnya."],
     ["REFUSED", "Could not read this file. Remove it and try again, or answer the questions instead.", "Fail ini tidak dapat dibaca. Buang dan cuba lagi, atau jawab soalan sahaja."],
     ["READ_FAILED", "Could not read this file. Remove it and try again, or answer the questions instead.", "Fail ini tidak dapat dibaca. Buang dan cuba lagi, atau jawab soalan sahaja."],
     ["READER_OFF", "Document reading is not available right now.", "Pembacaan dokumen tidak tersedia buat masa ini."],
-    ["ABANDONED", "This upload was interrupted. Add it again.", "Muat naik ini terputus. Tambah semula."],
+    ["ABANDONED", "Sending this file was interrupted. Remove it and add the file again.", "Muat naik fail ini terputus. Buang, kemudian tambah fail itu semula."],
+    [
+      "SESSION_CLOSED",
+      "Setup was saved before this file finished reading, so nothing from it was added.",
+      "Persediaan disimpan sebelum fail ini habis dibaca, jadi tiada apa-apa daripadanya ditambah.",
+    ],
+    ["UPLOAD_TOO_LONG", refusalText("LIST_TOO_LONG", en), refusalText("LIST_TOO_LONG", ms)],
     ["UPLOAD_TYPE", "This kind of file is not supported. Use a photo, a PDF or a CSV file.", "Jenis fail ini tidak disokong. Gunakan foto, PDF atau fail CSV."],
     ["UPLOAD_XLSX", refusalText("EXCEL", en), refusalText("EXCEL", ms)],
     [null, "Could not read this file.", "Fail ini tidak dapat dibaca."],
@@ -509,9 +566,15 @@ test("every send failure has a plain sentence, never a raw code", () => {
   assert.equal(sendFailureText(502, "REQUEST_FAILED", "chunk", en), offline);
   assert.equal(
     sendFailureText(null, null, "chunk", ms),
-    "Penghantaran terhenti. Semak sambungan anda, kemudian cuba lagi.",
+    "Muat naik terhenti. Semak sambungan internet anda, kemudian cuba lagi.",
   );
   assert.equal(sendFailureText(429, "UPLOAD_RATE", "chunk", en), requestErrorText("UPLOAD_RATE", "chunk", en));
+  // Delimited text over 1 MiB, refused at finish: the list's own sentence.
+  assert.equal(sendFailureText(422, "UPLOAD_TOO_LONG", "finish", en), refusalText("LIST_TOO_LONG", en));
+  assert.equal(
+    refusalText("LIST_TOO_LONG", ms),
+    "Senarai ini terlalu panjang. Tampal lajur harga sahaja, atau pecahkan kepada beberapa fail yang lebih kecil.",
+  );
   assert.equal(sendFailureText(422, "UPLOAD_XLSX", "finish", en), refusalText("EXCEL", en));
   // Signed out or not allowed, from the app itself.
   assert.equal(
@@ -594,7 +657,7 @@ test("a very long picture (more than 4 to 1) is not uploaded", () => {
   assert.equal(tooLong(4000, 3000), false);
   assert.equal(
     refusalText("PHOTO_TOO_LONG", en),
-    "This picture is very long. Crop it into shorter parts and add each part.",
+    "This photo is very long. Crop it into shorter parts and add each part.",
   );
   assert.equal(
     refusalText("PHOTO_TOO_LONG", ms),
@@ -884,6 +947,96 @@ const viewOf = (over: Partial<Pick<Setup, "session" | "uploads" | "items">> = {}
   uploads: [up("u", "reading")],
   items: [item("i1")],
   ...over,
+});
+
+test("a file this window removed is not another window's change", () => {
+  const row = (id: string, uploadId: string, state: SetupItem["state"] = "pending") =>
+    item(id, { kind: "catalogue_row", key: `${uploadId}:${id}`, source: "import", state, payload: { uploadId, item: id } });
+  const before = viewOf({
+    uploads: [up("u", "done"), up("v", "done")],
+    items: [item("i1"), row("r1", "u"), row("r2", "u", "removed"), row("r3", "u", "confirmed"), row("r4", "v")],
+  });
+  // Removing u deleted its pending and removed rows and its upload row.
+  const after = viewOf({
+    session: { ...session, revision: 5 },
+    uploads: [up("v", "done")],
+    items: [item("i1"), row("r3", "u", "confirmed"), row("r4", "v")],
+  });
+  assert.equal(onlyReadProgress(before, after, new Set(["u"])), true);
+  assert.equal(quietRetry(before, 4, after, new Set(["u"])), true);
+  // Not removed here: another window's change.
+  assert.equal(onlyReadProgress(before, after), false);
+  assert.equal(quietRetry(before, 4, after), false);
+  // The view had already dropped the removed upload (held as removed).
+  assert.equal(onlyReadProgress({ ...before, uploads: [up("v", "done")] }, after, new Set(["u"])), true);
+  // A confirmed row of the removed file, or a row of another file, gone: not ours.
+  assert.equal(
+    onlyReadProgress(before, { ...after, items: [item("i1"), row("r4", "v")] }, new Set(["u"])),
+    false,
+  );
+  assert.equal(
+    onlyReadProgress(before, { ...after, items: [item("i1"), row("r3", "u", "confirmed")] }, new Set(["u"])),
+    false,
+  );
+});
+
+test("Retry is never offered while reading is switched off", () => {
+  assert.equal(retryOffered(503, "READER_OFF"), false);
+  assert.equal(retryOffered(503, "INTERNAL"), true);
+});
+
+test("our own reason sentences are said in Bahasa Melayu; the reader's words stay English", () => {
+  const say = (r: string, w = ms) => reasonParts(r, w);
+  assert.deepEqual(say("Only one of two readings found this row. Please check."), [
+    { text: "Hanya satu daripada dua bacaan menemui baris ini. Sila semak.", own: true },
+  ]);
+  // Amounts kept; "no price" translated.
+  assert.deepEqual(
+    say("Two readings of this document gave different prices (RM 5.00 and no price). Please check."),
+    [{ text: "Dua bacaan dokumen ini memberi harga yang berbeza (RM 5.00 dan tiada harga). Sila semak.", own: true }],
+  );
+  // The comparison's sentence, then the model's own words.
+  assert.deepEqual(
+    say("Two readings of this document gave different prices (RM 1,200.00 and RM 12.00). Please check. the 0 is smudged"),
+    [
+      { text: "Dua bacaan dokumen ini memberi harga yang berbeza (RM 1,200.00 dan RM 12.00). Sila semak.", own: true },
+      { text: " ", own: true },
+      { text: "the 0 is smudged", own: false },
+    ],
+  );
+  assert.deepEqual(
+    say("Two readings of this document gave different units for this price (per kg and per pack). Please check."),
+    [{ text: "Dua bacaan dokumen ini memberi unit yang berbeza bagi harga ini (per kg dan per pack). Sila semak.", own: true }],
+  );
+  assert.deepEqual(say("The two readings named this row differently. Please check the name."), [
+    { text: "Dua bacaan menamakan baris ini secara berbeza. Sila semak nama.", own: true },
+  ]);
+  assert.deepEqual(say("This document could only be read once. Please check every price."), [
+    { text: "Dokumen ini hanya dapat dibaca sekali. Sila semak setiap harga.", own: true },
+  ]);
+  // The normaliser joins with "; ", setup_read adds "; listed twice".
+  assert.deepEqual(say("price faded; No price was found for this item.; listed twice"), [
+    { text: "price faded", own: false },
+    { text: "; ", own: true },
+    { text: "Tiada harga ditemui bagi item ini.", own: true },
+    { text: "; ", own: true },
+    { text: "disenaraikan dua kali", own: true },
+  ]);
+  assert.deepEqual(say("listed twice"), [{ text: "disenaraikan dua kali", own: true }]);
+  assert.deepEqual(say("The price is outside the allowed range."), [
+    { text: "Harga ini di luar julat yang dibenarkan.", own: true },
+  ]);
+  assert.deepEqual(say("JomCall was not sure about this row."), [
+    { text: "JomCall kurang pasti tentang baris ini.", own: true },
+  ]);
+  assert.deepEqual(say("The reader was not sure about this value."), [
+    { text: "JomCall kurang pasti tentang jawapan ini.", own: true },
+  ]);
+  // The model's words alone stay as they are.
+  assert.deepEqual(say("menu photo is blurry"), [{ text: "menu photo is blurry", own: false }]);
+  // English: our sentences unchanged.
+  const r = "Two readings of this document gave different prices (RM 5.00 and RM 6.00). Please check.; listed twice";
+  assert.equal(say(r, en).map((x) => x.text).join(""), r);
 });
 
 test("a save conflict is retried quietly only when a document's read is all that changed", () => {
@@ -1443,14 +1596,20 @@ test("apply asks once before leaving rows out or while a file is still being rea
   // Duplicates alone do not ask: the same item is saved.
   assert.equal(applyConfirmText({ ...c, checkPrices: 0 }, en), null);
   assert.match(overLimitText(en), /More than 500 prices/);
-  assert.match(overLimitText(ms), /^Lebih 500 harga akan disimpan serentak\. Had bagi satu persediaan ialah 500\./);
+  assert.match(overLimitText(ms), /^Lebih daripada 500 harga akan disimpan serentak\. Had bagi satu persediaan ialah 500\./);
 });
 
 test("apply asks again when more would be left out than the question said", () => {
   const c = { prices: 14, answers: 6, checkPrices: 3, checkAnswers: 0, duplicates: 2, reading: ["a.pdf"], sending: [] as string[] };
   assert.equal(askAgain(c, c), false);
-  // Fewer left out, or a named file now read: no need to ask again.
-  assert.equal(askAgain(c, { ...c, checkPrices: 1, reading: [] }), false);
+  // Fewer left out: no need to ask again.
+  assert.equal(askAgain(c, { ...c, checkPrices: 1 }), false);
+  assert.equal(askAgainWhy(c, { ...c, checkPrices: 1, prices: 13 }), null);
+  // A file named as still being read has finished, or more prices would be
+  // saved: asked again, so no price is saved unseen.
+  assert.equal(askAgainWhy(c, { ...c, reading: [] }), "arrived");
+  assert.equal(askAgainWhy(c, { ...c, prices: 15 }), "arrived");
+  assert.equal(askAgainWhy(c, { ...c, checkPrices: 4, reading: [] }), "left_out");
   assert.equal(askAgain(c, { ...c, checkPrices: 4 }), true);
   assert.equal(askAgain(c, { ...c, checkAnswers: 1 }), true);
   assert.equal(askAgain(c, { ...c, reading: ["a.pdf", "b.pdf"] }), true);

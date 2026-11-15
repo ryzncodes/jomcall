@@ -206,7 +206,7 @@ test("a proxy's HTML 502 reads as the old connection sentence, retryable, in bot
   );
   assert.equal(
     sendFailureText(502, "PROXY", "chunk", ms),
-    "Penghantaran terhenti. Semak sambungan anda, kemudian cuba lagi.",
+    "Muat naik terhenti. Semak sambungan internet anda, kemudian cuba lagi.",
   );
 });
 test("a proxy's HTML 403 is not 'signed out' or 'record gone': a plain sentence, no Retry", () => {

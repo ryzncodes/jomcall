@@ -115,6 +115,10 @@ type Store = {
   now: number;
   // When this browser first saw each upload queued, on its own clock.
   queuedSince: ReadonlyMap<string, number>;
+  // Uploads this window removed: their deleted rows are not "another
+  // window's change" when a save is refused as stale (rules.ts:
+  // onlyReadProgress).
+  removedHere: ReadonlySet<string>;
 };
 const StoreContext = createContext<Store>({} as never);
 export const useSetup = () => useContext(StoreContext);
@@ -355,7 +359,9 @@ function SetupStages({
   const [bringing, setBringing] = useState(() => bringFirst(initial.view));
   // How the owner reached it: Back returns to the interview or review when
   // they came through "Add a document", else to the business type.
-  const [bringVia, setBringVia] = useState<"start" | "link">("start");
+  const [bringVia, setBringVia] = useState<"start" | "interview" | "review">(
+    "start",
+  );
 
   // Every view request takes a number from this counter, and so does every
   // upload change this browser makes, so mergeUploads can tell an older
@@ -370,6 +376,7 @@ function SetupStages({
   }>({ session: null, uploads: new Map() });
   // When this browser first saw each upload queued (see stalled).
   const queuedSince = useRef<Map<string, number>>(new Map());
+  const removedHere = useRef<Set<string>>(new Set());
   const show = useCallback((next: Setup, at: number) => {
     let v = next;
     if (v.session) {
@@ -404,6 +411,7 @@ function SetupStages({
       if (known.current.session !== v.session.id)
         known.current = { session: v.session.id, uploads: new Map() };
       known.current.uploads.set(id, { upload, at: ++requests.current });
+      if (upload === "removed") removedHere.current.add(id);
       show(v, at);
     },
     [show],
@@ -447,7 +455,10 @@ function SetupStages({
             // that is all that changed since this save's own baseline, the
             // save goes again once, quietly, with the fresh revision.
             const fresh = await reload();
-            if (fresh && quietRetry(base, sent, latestView.current)) {
+            if (
+              fresh &&
+              quietRetry(base, sent, latestView.current, removedHere.current)
+            ) {
               try {
                 return await attempt();
               } catch (again) {
@@ -590,17 +601,19 @@ function SetupStages({
     uploads,
     now,
     queuedSince: queuedSince.current,
+    removedHere: removedHere.current,
   };
   // "Add a document" on the interview and review pages: answers typed so
   // far are sent first.
-  const openBring = readerOn
-    ? async () => {
-        if (await flushAll()) {
-          setBringVia("link");
-          setBringing(true);
+  const openBring = (from: "interview" | "review") =>
+    readerOn
+      ? async () => {
+          if (await flushAll()) {
+            setBringVia(from);
+            setBringing(true);
+          }
         }
-      }
-    : undefined;
+      : undefined;
   // Leaving the bring stage for the questions: a fresh interview queue,
   // because reads may have answered questions and the owner may have come
   // here in the middle of it.
@@ -634,8 +647,9 @@ function SetupStages({
         />
       ) : stage === "bring" ? (
         <BringStage
-          onBack={bringVia === "link" ? leaveBring : () => setOverride("type")}
+          onBack={bringVia !== "start" ? leaveBring : () => setOverride("type")}
           onContinue={leaveBring}
+          fromReview={bringVia === "review"}
         />
       ) : stage === "interview" ? (
         snapshot && interviewing ? (
@@ -643,7 +657,7 @@ function SetupStages({
             key={interviewKey}
             queue={snapshot.queue}
             total={snapshot.total}
-            onBring={openBring}
+            onBring={openBring("interview")}
             onBack={() => setOverride("type")}
             onDone={() => {
               setInterviewing(false);
@@ -669,9 +683,12 @@ function SetupStages({
           choices={choices}
           onChoice={(id, c) => setChoices((s) => ({ ...s, [id]: c }))}
           onAdd={(q) => setAdding(q)}
-          onBring={openBring}
+          onBring={openBring("review")}
           onDismiss={(id) => setDismissed((d) => [...d, id])}
           onApplied={() => {
+            // Nothing may keep sending into the closed setup, and no
+            // leave-page warning may follow onto the finish stage.
+            uploads.stopAll();
             setView({ ...view, session: null, questions: [], finish: true });
           }}
         />

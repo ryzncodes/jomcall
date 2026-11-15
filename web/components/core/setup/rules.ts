@@ -7,6 +7,26 @@ import {
 } from "../../../../packages/contracts/src/setup-upload";
 import type { Setup, SetupItem } from "../../../../packages/contracts/src/setup";
 import { LIMITS } from "../../../../packages/contracts/src/knowledge";
+import {
+  READER_BAD_FIELD,
+  READER_DISAGREE_PREFIX,
+  READER_FACT_BAD_FIELD,
+  READER_FACT_CUT,
+  READER_FACT_DISAGREE_PREFIX,
+  READER_FACT_UNSURE,
+  READER_LISTED_TWICE,
+  READER_NO_PRICE,
+  READER_NO_PRICE_AMOUNT,
+  READER_ONE_READ_FACT,
+  READER_ONE_READ_ROW,
+  READER_PRICE_NOT_WHOLE,
+  READER_PRICE_RANGE,
+  READER_PRICE_UNREAD,
+  READER_READ_ONCE,
+  READER_RENAMED_ROW,
+  READER_ROW_UNSURE,
+  READER_UNIT_DISAGREE_PREFIX,
+} from "../../../../packages/contracts/src/setup-reasons";
 // The one domain module the setup screens use: the price-row planner, which
 // has no server imports (tests/api/setup-rows.test.ts guards that).
 import {
@@ -235,12 +255,12 @@ export function refusalText(r: Refusal, w: Words): string {
     case "SPLIT":
       return w(
         "This file is larger than 10 MB. Split it into smaller files and add them one at a time.",
-        "Fail ini lebih besar daripada 10 MB. Bahagikan kepada fail yang lebih kecil dan tambah satu demi satu.",
+        "Fail ini lebih besar daripada 10 MB. Pecahkan kepada beberapa fail yang lebih kecil dan tambah satu demi satu.",
       );
     case "LIST_TOO_LONG":
       return w(
         "This list is too long. Paste only the price columns, or split it into smaller files.",
-        "Senarai ini terlalu panjang. Tampal lajur harga sahaja, atau bahagikan kepada fail yang lebih kecil.",
+        "Senarai ini terlalu panjang. Tampal lajur harga sahaja, atau pecahkan kepada beberapa fail yang lebih kecil.",
       );
     case "PHOTO_FORMAT":
       return w(
@@ -250,11 +270,11 @@ export function refusalText(r: Refusal, w: Words): string {
     case "PHOTO_TOO_BIG":
       return w(
         "This photo is still too large after making it smaller. Take a screenshot of it and add that instead.",
-        "Foto ini masih terlalu besar walaupun sudah dikecilkan. Ambil tangkapan skrin foto itu, kemudian tambah tangkapan skrin tersebut.",
+        "Foto ini masih terlalu besar walaupun sudah dikecilkan. Ambil tangkapan skrin foto itu dan tambah tangkapan skrin itu.",
       );
     case "PHOTO_TOO_LONG":
       return w(
-        "This picture is very long. Crop it into shorter parts and add each part.",
+        "This photo is very long. Crop it into shorter parts and add each part.",
         "Gambar ini terlalu panjang. Potong kepada beberapa bahagian yang lebih pendek dan tambah setiap bahagian.",
       );
   }
@@ -286,6 +306,9 @@ export function requestErrorText(
       return refusalText("TYPE", w);
     case "UPLOAD_TOO_LARGE":
       return refusalText("SPLIT", w);
+    // Delimited text over 1 MiB, refused at finish.
+    case "UPLOAD_TOO_LONG":
+      return refusalText("LIST_TOO_LONG", w);
     case "UPLOAD_LIMIT":
       return w(
         "You can add up to 5 files to one setup. Remove one to add another.",
@@ -375,7 +398,7 @@ export function sendFailureText(
 const connectionText = (w: Words) =>
   w(
     "Sending stopped. Check your connection, then try again.",
-    "Penghantaran terhenti. Semak sambungan anda, kemudian cuba lagi.",
+    "Muat naik terhenti. Semak sambungan internet anda, kemudian cuba lagi.",
   );
 export const removeFailedText = (w: Words) =>
   w(
@@ -390,31 +413,61 @@ export const sendBrokenText = (w: Words) =>
 
 // Retry is offered only when sending the same thing again can work: no
 // answer, a timeout or a server error (or a proxy's page a later try may
-// pass), and never after the write cap.
+// pass), and never after the write cap or while reading is switched off.
 export function retryOffered(status: number | null, code: string | null) {
-  if (code === "UPLOAD_RATE") return false;
+  if (code === "UPLOAD_RATE" || code === "READER_OFF") return false;
   if (code === "PROXY") return proxyRetryable(status);
   return retryable(status);
 }
 
+// Where a file's line is shown: the bring stage offers the questions
+// instead; the review page comes after them.
+export type LabelPlace = { review?: boolean; kind?: SetupUpload["kind"] };
+// A CSV, text file or pasted text is not a photo.
+const textKind = (kind: SetupUpload["kind"] | undefined) =>
+  kind === "sheet" || kind === "text";
+const checkFileText = (w: Words) =>
+  w(
+    "Check the file and add it again, or paste the text.",
+    "Semak fail itu dan tambah semula, atau tampal teksnya.",
+  );
+
 // One plain sentence per reason a read failed.
-export function failText(code: string | null, w: Words): string {
+export function failText(
+  code: string | null,
+  w: Words,
+  o: LabelPlace = {},
+): string {
   switch (code) {
     case "TOO_LONG":
       return w(
         "Too long to read. Split it into smaller files.",
-        "Terlalu panjang untuk dibaca. Bahagikan kepada fail yang lebih kecil.",
+        "Terlalu panjang untuk dibaca. Pecahkan kepada beberapa fail yang lebih kecil.",
       );
     case "UNREADABLE":
-      return w(
-        "Could not read this file. Try a clearer photo, or paste the text.",
-        "Fail ini tidak dapat dibaca. Cuba foto yang lebih jelas, atau tampal teksnya.",
-      );
+      return textKind(o.kind)
+        ? w("Could not read this file.", "Fail ini tidak dapat dibaca.") +
+            " " +
+            checkFileText(w)
+        : w(
+            "Could not read this file. Try a clearer photo, or paste the text.",
+            "Fail ini tidak dapat dibaca. Cuba foto yang lebih jelas, atau tampal teksnya.",
+          );
     case "REFUSED":
     case "READ_FAILED":
+      return o.review
+        ? w(
+            "Could not read this file. Remove it and try again.",
+            "Fail ini tidak dapat dibaca. Buang dan cuba lagi.",
+          )
+        : w(
+            "Could not read this file. Remove it and try again, or answer the questions instead.",
+            "Fail ini tidak dapat dibaca. Buang dan cuba lagi, atau jawab soalan sahaja.",
+          );
+    case "SESSION_CLOSED":
       return w(
-        "Could not read this file. Remove it and try again, or answer the questions instead.",
-        "Fail ini tidak dapat dibaca. Buang dan cuba lagi, atau jawab soalan sahaja.",
+        "Setup was saved before this file finished reading, so nothing from it was added.",
+        "Persediaan disimpan sebelum fail ini habis dibaca, jadi tiada apa-apa daripadanya ditambah.",
       );
     case "READER_OFF":
       return w(
@@ -422,18 +475,23 @@ export function failText(code: string | null, w: Words): string {
         "Pembacaan dokumen tidak tersedia buat masa ini.",
       );
     case "ABANDONED":
-      return w(
-        "This upload was interrupted. Add it again.",
-        "Muat naik ini terputus. Tambah semula.",
-      );
+      return interruptedText(w);
     case "UPLOAD_TYPE":
       return refusalText("TYPE", w);
     case "UPLOAD_XLSX":
       return refusalText("EXCEL", w);
+    case "UPLOAD_TOO_LONG":
+      return refusalText("LIST_TOO_LONG", w);
     default:
       return w("Could not read this file.", "Fail ini tidak dapat dibaca.");
   }
 }
+
+const interruptedText = (w: Words) =>
+  w(
+    "Sending this file was interrupted. Remove it and add the file again.",
+    "Muat naik fail ini terputus. Buang, kemudian tambah fail itu semula.",
+  );
 
 const plural = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`;
@@ -441,7 +499,7 @@ const plural = (n: number, one: string, many: string) =>
 type UploadView = Pick<
   SetupUpload,
   "state" | "failCode" | "rowCount" | "factCount" | "droppedCount"
->;
+> & { kind?: SetupUpload["kind"] };
 
 // An upload this browser has seen queued for longer than QUEUE_PATIENCE_MS:
 // the screen stops polling for it and says the owner can come back later.
@@ -472,30 +530,33 @@ export function firstSeenQueued(
 // The state line under one upload, from the server's record alone. While
 // this browser is sending it, the screen shows sendingLabel instead; an
 // upload still "uploading" without a sender here was cut off (a reload or a
-// closed tab) and cannot be resumed.
+// closed tab) and cannot be resumed. On the review page (`review`), lines
+// that only make sense on the bring stage drop their offer of the questions
+// or of coming back later.
 export function uploadLabel(
   u: UploadView,
   w: Words,
   now?: number,
   since?: number,
+  review = false,
 ): string {
+  const place = { review, kind: u.kind };
   switch (u.state) {
     case "uploading":
-      return w(
-        "This upload was interrupted. Remove it and add the file again.",
-        "Muat naik ini terputus. Buang dan tambah fail itu semula.",
-      );
+      return interruptedText(w);
     case "queued":
       return now !== undefined && stalled(u, now, since)
-        ? w(
-            "Still waiting to be read. You can go on and come back later.",
-            "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
-          )
+        ? review
+          ? w("Still waiting to be read.", "Masih menunggu untuk dibaca.")
+          : w(
+              "Still waiting to be read. You can go on and come back later.",
+              "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
+            )
         : w("Waiting to be read", "Menunggu untuk dibaca");
     case "reading":
       return w("Reading…", "Sedang dibaca…");
     case "failed":
-      return failText(u.failCode, w);
+      return failText(u.failCode, w, place);
     case "removed":
       return w("Removed", "Dibuang");
     case "done": {
@@ -504,7 +565,7 @@ export function uploadLabel(
       const found =
         prices && facts
           ? w(
-              `${plural(prices, "price", "prices")} and ${plural(facts, "fact", "facts")} found`,
+              `${plural(prices, "price", "prices")} and ${plural(facts, "detail", "details")} found`,
               `${prices} harga dan ${facts} butiran ditemui`,
             )
           : prices
@@ -514,13 +575,25 @@ export function uploadLabel(
               )
             : facts
               ? w(
-                  `${plural(facts, "fact", "facts")} found`,
+                  `${plural(facts, "detail", "details")} found`,
                   `${facts} butiran ditemui`,
                 )
-              : w(
-                  "Nothing found in this file. Try a clearer photo, or answer the questions instead.",
-                  "Tiada apa-apa ditemui dalam fail ini. Cuba foto yang lebih jelas, atau jawab soalan sahaja.",
-                );
+              : textKind(u.kind)
+                ? w(
+                    "Nothing found in this file.",
+                    "Tiada apa-apa ditemui dalam fail ini.",
+                  ) +
+                  " " +
+                  checkFileText(w)
+                : review
+                  ? w(
+                      "Nothing found in this file. Try a clearer photo.",
+                      "Tiada apa-apa ditemui dalam fail ini. Cuba foto yang lebih jelas.",
+                    )
+                  : w(
+                      "Nothing found in this file. Try a clearer photo, or answer the questions instead.",
+                      "Tiada apa-apa ditemui dalam fail ini. Cuba foto yang lebih jelas, atau jawab soalan sahaja.",
+                    );
       if (!u.droppedCount) return found;
       return (
         found +
@@ -698,14 +771,17 @@ const itemShape = (i: SetupItem) =>
   ]);
 
 // After a save is refused as stale: was the only change between the view
-// the save was based on and the fresh one a document being read? Same
-// session and packs; no upload added or gone; uploads only moved from
-// queued or reading on to reading, done or failed; every earlier item
-// unchanged; new items only from an import. Then the save is sent once more
-// with the fresh revision, quietly.
+// the save was based on and the fresh one a document being read, or a file
+// this window removed (`removedHere`, by upload id)? Same session and packs;
+// no other upload added or gone; uploads only moved from queued or reading
+// on to reading, done or failed; every earlier item unchanged, except the
+// pending or removed rows and facts of a file removed here, which the
+// removal deleted; new items only from an import. Then the save is sent once
+// more with the fresh revision, quietly.
 export function onlyReadProgress(
   before: Pick<Setup, "session" | "uploads" | "items">,
   after: Pick<Setup, "session" | "uploads" | "items">,
+  removedHere: ReadonlySet<string> = new Set(),
 ): boolean {
   const b = before.session,
     a = after.session;
@@ -715,20 +791,34 @@ export function onlyReadProgress(
     b.extraPacks.join(",") !== a.extraPacks.join(",")
   )
     return false;
-  if (before.uploads.length !== after.uploads.length) return false;
+  const kept = (u: { id: string }) => !removedHere.has(u.id);
+  const beforeUploads = before.uploads.filter(kept);
+  const afterUploads = after.uploads.filter(kept);
+  if (beforeUploads.length !== afterUploads.length) return false;
   const moved: Record<string, string[]> = {
     queued: ["reading", "done", "failed"],
     reading: ["done", "failed"],
   };
-  for (const u of after.uploads) {
-    const old = before.uploads.find((x) => x.id === u.id);
+  for (const u of afterUploads) {
+    const old = beforeUploads.find((x) => x.id === u.id);
     if (!old) return false;
     if (old.state !== u.state && !moved[old.state]?.includes(u.state))
       return false;
   }
   const fresh = new Map(after.items.map((i) => [i.id, i]));
+  // What removing a file deletes (removeSetupUpload).
+  const removedWithFile = (i: SetupItem) => {
+    const id = (i.payload as { uploadId?: unknown } | null)?.uploadId;
+    return (
+      (i.kind === "catalogue_row" || i.kind === "fact") &&
+      (i.state === "pending" || i.state === "removed") &&
+      typeof id === "string" &&
+      removedHere.has(id)
+    );
+  };
   for (const i of before.items) {
     const now = fresh.get(i.id);
+    if (!now && removedWithFile(i)) continue;
     if (!now || itemShape(now) !== itemShape(i)) return false;
   }
   const old = new Set(before.items.map((i) => i.id));
@@ -746,8 +836,12 @@ export function quietRetry(
   base: Pick<Setup, "session" | "uploads" | "items">,
   sentRevision: number,
   fresh: Pick<Setup, "session" | "uploads" | "items">,
+  removedHere: ReadonlySet<string> = new Set(),
 ): boolean {
-  return base.session?.revision === sentRevision && onlyReadProgress(base, fresh);
+  return (
+    base.session?.revision === sentRevision &&
+    onlyReadProgress(base, fresh, removedHere)
+  );
 }
 
 
@@ -1298,7 +1392,7 @@ export const overLimit = (totals: Pick<RowTotals, "willWrite">) =>
 export const overLimitText = (w: Words) =>
   w(
     `More than ${APPLY_ROW_LIMIT} prices would be saved at once, the most one setup allows. Remove a file or some rows first.`,
-    `Lebih ${APPLY_ROW_LIMIT} harga akan disimpan serentak. Had bagi satu persediaan ialah ${APPLY_ROW_LIMIT}. Buang satu fail atau beberapa baris dahulu.`,
+    `Lebih daripada ${APPLY_ROW_LIMIT} harga akan disimpan serentak. Had bagi satu persediaan ialah ${APPLY_ROW_LIMIT}. Buang satu fail atau beberapa baris dahulu.`,
   );
 
 type Counts = ApplySummary["counts"];
@@ -1419,16 +1513,31 @@ export function applyConfirmText(c: Counts, w: Words): string | null {
 }
 
 // After the owner answers the question: ask again (with the new counts)
-// when more would now be left out than when it was asked: more prices or
-// answers that still need checking, or a file not in yet that was not named.
-export function askAgain(asked: Counts, now: Counts): boolean {
+// when more would now be left out than when it was asked ("left_out": more
+// prices or answers that still need checking, or a file not in yet that was
+// not named), or when prices came in since ("arrived": a file named as still
+// being read has finished, or more prices would be saved), so none is saved
+// unseen. Null: apply as answered.
+export function askAgainWhy(
+  asked: Counts,
+  now: Counts,
+): "left_out" | "arrived" | null {
   const named = new Set([...asked.reading, ...asked.sending]);
-  return (
+  if (
     now.checkPrices > asked.checkPrices ||
     now.checkAnswers > asked.checkAnswers ||
     [...now.reading, ...now.sending].some((n) => !named.has(n))
-  );
+  )
+    return "left_out";
+  if (
+    asked.reading.some((n) => !now.reading.includes(n)) ||
+    now.prices > asked.prices
+  )
+    return "arrived";
+  return null;
 }
+export const askAgain = (asked: Counts, now: Counts) =>
+  askAgainWhy(asked, now) !== null;
 
 // The status words of one row.
 export function rowStatusText(
@@ -1475,6 +1584,108 @@ export function checkReason(
             ),
         reader: false,
       };
+}
+
+// A flag's reason in parts: our own fixed sentences (packages/contracts/
+// src/setup-reasons.ts), said in the page's language, and the reader's own
+// words between them, which stay English (`own: false`, shown lang="en").
+// Separators ("; ", spaces) stay with the text around them.
+export type ReasonPart = { text: string; own: boolean };
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const amount = (a: string, w: Words) =>
+  a === READER_NO_PRICE_AMOUNT ? w("no price", "tiada harga") : a;
+type Fixed = { re: string; say: (m: RegExpExecArray, w: Words) => string };
+const FIXED: Fixed[] = [
+  {
+    re: `${escapeRe(READER_DISAGREE_PREFIX)} \\((RM [0-9,]+\\.[0-9]{2}|${READER_NO_PRICE_AMOUNT}) and (RM [0-9,]+\\.[0-9]{2}|${READER_NO_PRICE_AMOUNT})\\)\\. Please check\\.`,
+    say: (m, w) =>
+      w(
+        m[0],
+        `Dua bacaan dokumen ini memberi harga yang berbeza (${amount(m[1]!, w)} dan ${amount(m[2]!, w)}). Sila semak.`,
+      ),
+  },
+  {
+    re: `${escapeRe(READER_UNIT_DISAGREE_PREFIX)} \\((.*?) and (.*?)\\)\\. Please check\\.`,
+    say: (m, w) =>
+      w(
+        m[0],
+        `Dua bacaan dokumen ini memberi unit yang berbeza bagi harga ini (${m[1]} dan ${m[2]}). Sila semak.`,
+      ),
+  },
+  {
+    re: `${escapeRe(READER_FACT_DISAGREE_PREFIX)}: (".*?") and (".*?")\\. Please check\\.`,
+    say: (m, w) =>
+      w(
+        m[0],
+        `Dua bacaan memberi jawapan yang berbeza: ${m[1]} dan ${m[2]}. Sila semak.`,
+      ),
+  },
+  ...(
+    [
+      [READER_ONE_READ_ROW, "Hanya satu daripada dua bacaan menemui baris ini. Sila semak."],
+      [READER_RENAMED_ROW, "Dua bacaan menamakan baris ini secara berbeza. Sila semak nama."],
+      [READER_ONE_READ_FACT, "Hanya satu daripada dua bacaan menemui jawapan ini. Sila semak."],
+      [READER_READ_ONCE, "Dokumen ini hanya dapat dibaca sekali. Sila semak setiap harga."],
+      [READER_NO_PRICE, "Tiada harga ditemui bagi item ini."],
+      [READER_BAD_FIELD, "Sebahagian baris ini tidak dapat dibaca."],
+      [READER_PRICE_UNREAD, "Harga ini tidak dapat dibaca."],
+      [READER_PRICE_NOT_WHOLE, "Harga ini bukan nombor bulat dalam sen."],
+      [READER_PRICE_RANGE, "Harga ini di luar julat yang dibenarkan."],
+      [READER_ROW_UNSURE, "JomCall kurang pasti tentang baris ini."],
+      // The same sentence as written before 2026-11-15.
+      ["The reader was not sure about this row.", "JomCall kurang pasti tentang baris ini."],
+      [READER_FACT_BAD_FIELD, "Sebahagian jawapan ini tidak dapat dibaca."],
+      [READER_FACT_CUT, "Jawapan ini terlalu panjang dan telah dipendekkan."],
+      [READER_FACT_UNSURE, "JomCall kurang pasti tentang jawapan ini."],
+      ["The reader was not sure about this value.", "JomCall kurang pasti tentang jawapan ini."],
+    ] as const
+  ).map(
+    ([en, ms]): Fixed => ({ re: escapeRe(en), say: (_m, w) => w(en, ms) }),
+  ),
+];
+const TWICE_TAIL = `; ${READER_LISTED_TWICE}`;
+export function reasonParts(reason: string, w: Words): ReasonPart[] {
+  let text = reason;
+  let twice = false;
+  if (text === READER_LISTED_TWICE) {
+    text = "";
+    twice = true;
+  } else if (text.endsWith(TWICE_TAIL)) {
+    text = text.slice(0, -TWICE_TAIL.length);
+    twice = true;
+  }
+  const parts: ReasonPart[] = [];
+  // The reader's words, with the separators around them ("; ", spaces) as
+  // parts of their own, so only the words are marked English.
+  const free = (t: string) => {
+    const m = /^([\s;]*)([\s\S]*?)([\s;]*)$/.exec(t)!;
+    for (const [x, own] of [
+      [m[1]!, true],
+      [m[2]!, false],
+      [m[3]!, true],
+    ] as const)
+      if (x) parts.push({ text: x, own });
+  };
+  let at = 0;
+  while (at < text.length) {
+    let best: { index: number; m: RegExpExecArray; f: Fixed } | null = null;
+    for (const f of FIXED) {
+      const re = new RegExp(f.re, "gu");
+      re.lastIndex = at;
+      const m = re.exec(text);
+      if (m && (!best || m.index < best.index)) best = { index: m.index, m, f };
+    }
+    if (!best) break;
+    free(text.slice(at, best.index));
+    parts.push({ text: best.f.say(best.m, w), own: true });
+    at = best.index + best.m[0].length;
+  }
+  free(text.slice(at));
+  if (twice) {
+    if (parts.length) parts.push({ text: "; ", own: true });
+    parts.push({ text: w(READER_LISTED_TWICE, "disenaraikan dua kali"), own: true });
+  }
+  return parts;
 }
 
 // "Now: Kopi O RM 70.00. New: RM 80.00" for a row matching a saved price.

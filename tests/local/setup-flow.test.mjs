@@ -166,9 +166,9 @@ test("workspace creation keeps the owner's own words for Something else", () => 
 test("the bring stage shows the notice in both languages, unconditionally, above the file buttons", () => {
   const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
   const en =
-    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. Files and pasted text are deleted after 30 days. You can also delete one now with the Remove button while setup is open.";
+    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. The file itself is deleted 30 days after you add it, or now with Remove while setup is open. Prices and details read from it stay in your setup until you remove them.";
   const ms =
-    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail dan teks yang ditampal dipadam selepas 30 hari. Anda juga boleh memadamnya sekarang dengan butang Buang semasa persediaan masih dibuka.";
+    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail itu sendiri dipadam 30 hari selepas anda menambahnya, atau sekarang dengan butang Buang semasa persediaan masih dibuka. Harga dan butiran yang dibaca daripadanya kekal dalam persediaan anda sehingga anda membuangnya.";
   assert.ok(bring.includes(en), "English notice");
   assert.ok(bring.includes(ms), "BM notice");
   // The notice paragraph is the first thing directly inside .setup-body:
@@ -265,7 +265,7 @@ test("the flow opens the bring stage only with reading on, and links to it from 
   assert.match(flow, /useState\(\(\) => bringFirst\(initial\.view\)\)/);
   assert.match(flow, /setBringing\(bringFirst\(v\)\)/);
   assert.match(flow, /bringing && readerOn/);
-  assert.match(flow, /const openBring = readerOn/);
+  assert.match(flow, /const openBring = \(from: "interview" \| "review"\) =>\s*readerOn/);
   assert.match(flow, /readingNow\(view\.uploads, now, queuedSince\.current\)/);
   // The conflict check uses the save's own baseline, taken just before it
   // is sent, and the revision it carried; never a view read afterwards.
@@ -273,15 +273,16 @@ test("the flow opens the bring stage only with reading on, and links to it from 
     flow,
     /base = latestView\.current;\s*sent = revision\.current;\s*setView\(await fn\(sent\), at\)/,
   );
-  assert.match(flow, /quietRetry\(base, sent, latestView\.current\)/);
+  assert.match(flow, /quietRetry\(base, sent, latestView\.current, removedHere\.current\)/);
   assert.doesNotMatch(flow, /onlyReadProgress\(before/);
-  assert.match(flow, /bringVia === "link" \? leaveBring/);
+  assert.match(flow, /bringVia !== "start" \? leaveBring/);
+  assert.match(flow, /fromReview=\{bringVia === "review"\}/);
   assert.match(flow, /document\.visibilityState === "visible"/);
   assert.match(flow, /pollDelay\(/);
   for (const f of ["interview.tsx", "review.tsx"]) {
     const text = readFileSync(join(dir, f), "utf8");
     assert.match(text, /\{onBring && \(/, f);
-    assert.ok(text.includes('w("Add a document", "Tambah dokumen")'), f);
+    assert.ok(text.includes('w("Add a document", "Tambah fail atau senarai harga")'), f);
   }
 });
 
@@ -317,7 +318,9 @@ test("the review page shows price rows and uses the reader's check flag", () => 
   assert.match(review, /checkReason\(reason, w, price\)/);
   assert.match(review, /price=\{false\}/);
   assert.match(review, /<Reason reason=\{item\.checkReason\}/);
-  assert.match(review, /lang=\{r\.reader \? "en" : undefined\}/);
+  // Fixed sentences are translated (reasonParts); the rest stays English.
+  assert.match(review, /r\.reader \? reasonParts\(r\.text, w\)/);
+  assert.match(review, /<span key=\{i\} lang="en">/);
   assert.match(review, /w\("Prices and services", "Harga dan perkhidmatan"\)/);
   // The price field: decimal keyboard, a label naming the item, sent on
   // leave or Enter only (a changed price confirms the row).
@@ -337,7 +340,7 @@ test("the review page shows price rows and uses the reader's check flag", () => 
   assert.match(review, /upload\.kind === "image"/);
   assert.match(review, /upload\.bytesDeletedAt/);
   // Removing a file reuses the bring stage's confirmation.
-  assert.match(review, /import \{ RemoveFileConfirm \} from "\.\/bring"/);
+  assert.match(review, /import \{ RemoveFileConfirm, UploadProblems, failDetail \} from "\.\/bring"/);
   assert.match(readFileSync(join(dir, "bring.tsx"), "utf8"), /export function RemoveFileConfirm/);
   // Apply sends the replace and counts from the planner, decided after the
   // last write, and is disabled over the limit.
@@ -345,8 +348,9 @@ test("the review page shows price rows and uses the reader's check flag", () => 
   // The counts know this browser's senders and the packs (unknown facts).
   assert.match(review, /summaryOpts = \{ senders: store\.uploads\.senders, packs \}/);
   // Asked again when more would be left out than the question said.
-  assert.match(review, /askAgain\(asked, now\.counts\)/);
-  assert.match(review, /onlyReadProgress\(base, fresh\)/);
+  assert.match(review, /askAgainWhy\(asked, now\.counts\)/);
+  assert.match(review, /if \(why === "arrived"\) setArrived\(true\)/);
+  assert.match(review, /onlyReadProgress\(base, fresh, store\.removedHere\)/);
   assert.match(review, /replace: now\.replace/);
   assert.match(review, /disabled=\{locked \|\| blocked\}/);
   assert.match(review, /locked = busy \|\| bulkRunning/);
@@ -362,8 +366,8 @@ test("price rows stay put for the visit; actions wait for their write; Remove al
   assert.match(review, /<PriceRow\s+key=\{id\}/);
   // A removed row folds in place with Undo for the whole visit (no timer),
   // at the height it had, Undo first and guarded for 500 ms.
-  assert.match(review, /`Undo removing \$\{name\}`, `Kembalikan \$\{name\}`/);
-  assert.match(review, /w\("Undo", "Kembalikan"\)/);
+  assert.match(review, /`Undo removing \$\{name\}`, `Buat asal: \$\{name\}`/);
+  assert.match(review, /w\("Undo", "Buat asal"\)/);
   assert.doesNotMatch(review, /UNDO_MS|setTimeout\(/);
   assert.match(review, /className="setup-price setup-price-gone"\s*style=\{fold\.style\}/);
   assert.match(review, /height\.current = li\.current\.getBoundingClientRect\(\)\.height/);
@@ -512,7 +516,7 @@ test("every confirming or destructive control on the review page goes through th
   // A removed file leaves a placeholder at the group's height; "Use this
   // one instead" keeps the panel's height; a skipped Remove is said.
   assert.match(review, /getBoundingClientRect\(\)\.height \?\? 0;\s*setGoneFiles/);
-  assert.match(review, /w\("Using this one", "Menggunakan yang ini"\)/);
+  assert.match(review, /w\("Chosen", "Dipilih"\)/);
   assert.match(review, /else if \(r === "skipped"\) announce\(skippedText\(name, w\)\)/);
   assert.match(review, /else if \(r === "skipped"\) announce\(skippedText\(label, w\)\)/);
 });

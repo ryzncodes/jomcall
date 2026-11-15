@@ -2,6 +2,25 @@ import { randomBytes } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { sheetToText } from "./sheet-text.ts";
+import {
+  READER_BAD_FIELD,
+  READER_DISAGREE_PREFIX,
+  READER_FACT_BAD_FIELD,
+  READER_FACT_CUT,
+  READER_FACT_DISAGREE_PREFIX,
+  READER_FACT_UNSURE,
+  READER_NO_PRICE,
+  READER_NO_PRICE_AMOUNT,
+  READER_ONE_READ_FACT,
+  READER_ONE_READ_ROW,
+  READER_PRICE_NOT_WHOLE,
+  READER_PRICE_RANGE,
+  READER_PRICE_UNREAD,
+  READER_READ_ONCE,
+  READER_RENAMED_ROW,
+  READER_ROW_UNSURE,
+  READER_UNIT_DISAGREE_PREFIX,
+} from "../../contracts/src/setup-reasons.ts";
 
 // Guided setup document reader. Turns one upload (price-list photo, PDF,
 // delimited text such as a CSV file or cells pasted from a spreadsheet, or
@@ -275,7 +294,7 @@ function textField(v: unknown): { value: string; bad: boolean } {
   return { value: "", bad: true };
 }
 
-const BAD_FIELD = "Part of this row could not be read.";
+const BAD_FIELD = READER_BAD_FIELD;
 
 function normaliseRow(raw: unknown): ReadRow | null {
   const parsed = record.safeParse(raw);
@@ -309,19 +328,19 @@ function normaliseRow(raw: unknown): ReadRow | null {
     priceSen = null;
     flagged = true;
     if (!modelFlag || !reason.value)
-      reasons.push("No price was found for this item.");
+      reasons.push(READER_NO_PRICE);
   } else if (typeof r.priceSen !== "number") {
     priceSen = null;
     flagged = true;
-    reasons.push("The price could not be read.");
+    reasons.push(READER_PRICE_UNREAD);
   } else if (!Number.isInteger(r.priceSen)) {
     priceSen = null;
     flagged = true;
-    reasons.push("The price was not a whole number of sen.");
+    reasons.push(READER_PRICE_NOT_WHOLE);
   } else if (r.priceSen < 0 || r.priceSen > READER_LIMITS.maxPriceSen) {
     priceSen = null;
     flagged = true;
-    reasons.push("The price is outside the allowed range.");
+    reasons.push(READER_PRICE_RANGE);
   } else {
     priceSen = r.priceSen;
   }
@@ -336,7 +355,7 @@ function normaliseRow(raw: unknown): ReadRow | null {
     checkReason: reasonText(
       flagged,
       [...new Set(reasons)],
-      "The reader was not sure about this row.",
+      READER_ROW_UNSURE,
     ),
   };
 }
@@ -366,9 +385,9 @@ function normaliseFact(raw: unknown, allowed: Set<string>): ReadFact | null {
   const reasons: string[] = [];
   if (modelFlag && reason.value) reasons.push(reason.value);
   if (typeof f.needsCheck !== "boolean" || reason.bad)
-    reasons.push("Part of this value could not be read.");
+    reasons.push(READER_FACT_BAD_FIELD);
   const wasCut = value !== whole;
-  if (wasCut) reasons.push("The value was too long and was cut short.");
+  if (wasCut) reasons.push(READER_FACT_CUT);
   const flagged = modelFlag || wasCut || reason.bad;
   return {
     packId,
@@ -378,7 +397,7 @@ function normaliseFact(raw: unknown, allowed: Set<string>): ReadFact | null {
     checkReason: reasonText(
       flagged,
       reasons,
-      "The reader was not sure about this value.",
+      READER_FACT_UNSURE,
     ),
   };
 }
@@ -655,23 +674,19 @@ export const DOUBLE_READ_KINDS: readonly ReaderInput["kind"][] = [
 ];
 export const isDoubleRead = (input: ReaderInput) =>
   DOUBLE_READ_KINDS.includes(input.kind);
-// Reasons the comparison writes; the reading check counts rows by them. A
-// reason the model gave is kept after the comparison's own.
-export const READER_DISAGREE_PREFIX =
-  "Two readings of this document gave different prices";
-export const READER_UNIT_DISAGREE_PREFIX =
-  "Two readings of this document gave different units for this price";
-export const READER_ONE_READ_ROW =
-  "Only one of two readings found this row. Please check.";
-export const READER_RENAMED_ROW =
-  "The two readings named this row differently. Please check the name.";
-export const READER_FACT_DISAGREE_PREFIX =
-  "Two readings gave different answers";
-export const READER_ONE_READ_FACT =
-  "Only one of two readings found this answer. Please check.";
-export const READER_READ_ONCE =
-  "This document could only be read once. Please check every price.";
-const NO_PRICE = "No price was found for this item.";
+// Reasons the comparison writes (packages/contracts/src/setup-reasons.ts);
+// the reading check counts rows by them. A reason the model gave is kept
+// after the comparison's own.
+export {
+  READER_DISAGREE_PREFIX,
+  READER_UNIT_DISAGREE_PREFIX,
+  READER_ONE_READ_ROW,
+  READER_RENAMED_ROW,
+  READER_FACT_DISAGREE_PREFIX,
+  READER_ONE_READ_FACT,
+  READER_READ_ONCE,
+};
+const NO_PRICE = READER_NO_PRICE;
 
 // Separator-free key: NFKC, lower case, only letters, digits and combining
 // marks, plus a "." between two digits ("Teh-O Ais" and "teh o ais" agree;
@@ -696,7 +711,7 @@ const words = (text: string) =>
 const unitKey = (unit: string) => readerKey(unit).replace(/^per(?=.)/, "");
 
 function ringgit(sen: number | null): string {
-  if (sen === null) return "no price";
+  if (sen === null) return READER_NO_PRICE_AMOUNT;
   const cents = String(sen % 100).padStart(2, "0");
   return `RM ${Math.floor(sen / 100)}.${cents}`;
 }
