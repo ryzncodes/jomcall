@@ -35,6 +35,7 @@
 - Model ids: `claude-haiku-5-5` and `claude-sonnet-5-5`. Confirm ids and the structured-output call shape against the `claude-api` skill before coding; the spike's call (`spikes/knowledge-intake/extraction/run.ts:94-100`) is the starting reference, not an authority. Do not import from `spikes/`.
 - Mock mode never calls these commands.
 - New migrations use timestamps from `20261116090000` upward (other branches use `202611151xxxxx`). Never edit a migration already on `main`. Migrations are re-runnable.
+  - Note (2026-11-15, final review): the two migrations were renamed to `20261116110000_setup_uploads.sql` and `20261116110100_setup_read_worker.sql`, because hosted staging already has `20261116100000` (from `main`) applied and `supabase db push` refuses a local migration dated before the newest applied one.
 - After adding commands run `npm run contracts:generate`.
 - Never run `check:hosted-model`, `check:voice-model` or anything `hosted:*`. The paid step in Task 8 is run only on the owner's go.
 - Feature branch, small Conventional Commits, pull request into `main`.
@@ -69,7 +70,7 @@
 ### Task 2: Upload store and commands
 
 **Files:**
-- Create: `supabase/migrations/20261116090000_setup_uploads.sql`
+- Create: `supabase/migrations/20261116110000_setup_uploads.sql`
 - Create: `packages/contracts/src/setup-upload.ts`, `packages/domain/src/setup/uploads.ts`
 - Modify: `packages/contracts/src/core.ts`, `web/lib/server/api.ts`, `web/lib/server/http.ts` (a raw-body reader), `packages/contracts/openapi.json` (generated)
 - Test: `tests/api/setup-upload.test.ts`, `tests/db/` (RLS case in the existing style)
@@ -148,7 +149,7 @@
 ### Task 4: The read worker in the agent process
 
 **Files:**
-- Create: `supabase/migrations/20261116090100_setup_read_worker.sql`, `engine/src/agent/setup-reader.ts`
+- Create: `supabase/migrations/20261116110100_setup_read_worker.sql`, `engine/src/agent/setup-reader.ts`
 - Modify: `engine/src/agent/index.ts` (tick the worker), `packages/contracts/src/hosted-env.ts` (`JOMCALL_SETUP_READER`; `ANTHROPIC_API_KEY` required for `agent` when it is `anthropic`), `infra/hosted/.env.hosted.example`, `scripts/hosted/readiness.ts` if it lists switches
 - Test: `tests/engine/setup-reader.test.ts`, `tests/hosting/readiness.test.ts` (one case)
 

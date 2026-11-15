@@ -35,7 +35,7 @@ Branch `claude/billing-followups`, pull request open (not merged). Pull request 
 Branch `feat/setup-import` (pull request not yet open; the controller opens it). Plan: `docs/superpowers/plans/2026-11-15-setup-flow-import.md`. Reading evidence: `docs/qa/2026-11-15-setup-reader.md`. Design note: end of `docs/superpowers/specs/2026-11-14-setup-flow-design.md`.
 
 **Changed**
-- Migrations `20261116090000_setup_uploads.sql` and `20261116090100_setup_read_worker.sql` (re-runnable).
+- Migrations `20261116110000_setup_uploads.sql` and `20261116110100_setup_read_worker.sql` (re-runnable).
 - Upload commands (create, chunk put and get, finish, paste text, remove); uploads kept in Postgres in chunks; file bytes deleted 30 days after upload.
 - The reader (`packages/inference/src/setup-reader.ts`): photos and PDFs read twice, disagreements flagged; CSV and pasted text read once; no .xlsx (owner decision).
 - The read worker in the agent process (`engine/src/agent/setup-reader.ts`), behind the new switch `JOMCALL_SETUP_READER` (`disabled` default, `anthropic`).
