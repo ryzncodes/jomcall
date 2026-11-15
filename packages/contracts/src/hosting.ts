@@ -363,6 +363,68 @@ export function turnstileSettings(
   return { siteKey, secret, hostname: new URL(appOrigin(env)).hostname };
 }
 
+// --- Sign-up allow-list -----------------------------------------------------
+//
+// Hosted mode only, and off unless JOMCALL_SIGNUP_ALLOW is set. The value is a
+// comma-separated list of entries, compared in lower case:
+//   name@example.com   one exact address
+//   @example.com       every address at exactly that domain (no subdomains)
+// A value that is set but holds a blank entry, a bare word, a wildcard or any
+// other shape throws SIGNUP_ALLOW_INVALID, so a typo closes sign-up instead of
+// opening it. Mock and local modes ignore the setting.
+
+export type SignupAllow = { addresses: Set<string>; domains: Set<string> };
+
+const DOMAIN =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
+const LOCAL_PART = /^[a-z0-9.!#$%&'+/=?^_`{|}~-]{1,64}$/;
+
+export function signupAllow(env: Env = process.env): SignupAllow | null {
+  if (!isHosted(env)) return null;
+  const raw = env.JOMCALL_SIGNUP_ALLOW?.trim() ?? "";
+  if (!raw) return null;
+  const allow: SignupAllow = { addresses: new Set(), domains: new Set() };
+  for (const part of raw.split(",")) {
+    const entry = part.trim().toLowerCase();
+    const at = entry.indexOf("@");
+    if (at < 0 || at !== entry.lastIndexOf("@"))
+      throw Error("SIGNUP_ALLOW_INVALID: JOMCALL_SIGNUP_ALLOW");
+    const local = entry.slice(0, at);
+    const domain = entry.slice(at + 1);
+    if (!DOMAIN.test(domain) || (local && !LOCAL_PART.test(local)))
+      throw Error("SIGNUP_ALLOW_INVALID: JOMCALL_SIGNUP_ALLOW");
+    if (local) allow.addresses.add(entry);
+    else allow.domains.add(domain);
+  }
+  return allow;
+}
+
+export function signupAllowed(allow: SignupAllow, email: string): boolean {
+  // The list itself is ASCII only. Lower-casing maps some look-alike
+  // characters to ASCII (U+212A KELVIN SIGN becomes "k"), so a non-ASCII
+  // address never matches.
+  if (/[^\x00-\x7f]/.test(email)) return false;
+  const address = email.trim().toLowerCase();
+  const at = address.lastIndexOf("@");
+  if (at <= 0) return false;
+  return (
+    allow.addresses.has(address) || allow.domains.has(address.slice(at + 1))
+  );
+}
+
+// --- Curlec key mode -----------------------------------------------------------
+//
+// Curlec's documentation (checked 2026-11-15) does not state key prefixes. The
+// two below are the ones seen on the owner's Curlec accounts. A key with
+// neither prefix is "unknown" and the readiness report refuses it.
+
+export function curlecKeyMode(keyId: string): "live" | "test" | null {
+  const key = keyId.trim();
+  if (key.startsWith("rzp_live_")) return "live";
+  if (key.startsWith("rzp_test_")) return "test";
+  return null;
+}
+
 // --- Voice turn endpoint ---------------------------------------------------
 
 export const VOICE_PORT = 54633;

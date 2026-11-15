@@ -129,6 +129,34 @@ test("payments are off unless configured; fake is local only; Curlec needs every
   assert.throws(() => createProvider({}), /PAYMENTS_DISABLED/);
 });
 
+test("run time refuses unknown key prefixes and unacknowledged live keys on hosted staging", () => {
+  const base = {
+    JOMCALL_PAYMENT_PROVIDER: "curlec", CURLEC_KEY_SECRET: "s", CURLEC_WEBHOOK_SECRET: "w",
+    JOMCALL_MODE: "hosted", APP_ORIGIN: "https://app.example.invalid",
+  };
+  // Same prefix rule as hosted:readiness.
+  assert.equal(paymentReadiness({ ...base, CURLEC_KEY_ID: "key_Abc12345" }).reason, "CURLEC_KEY_MODE_UNKNOWN");
+  const live = { ...base, CURLEC_KEY_ID: "rzp_live_Abc123", CURLEC_ENVIRONMENT: "live" };
+  const staging = { ...live, JOMCALL_QUEUE_NAMESPACE: "staging" };
+  assert.equal(paymentReadiness(staging).reason, "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED");
+  assert.equal(paymentReadiness({ ...staging, CURLEC_LIVE_ON_STAGING: "true" }).reason, "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED");
+  const acknowledged = { ...staging, CURLEC_LIVE_ON_STAGING: "1" };
+  assert.equal(paymentReadiness(acknowledged).reason, "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING");
+  assert.equal(paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: " " }).reason, "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING");
+  // An invalid list counts as no list; it never reaches the reason.
+  const invalid = paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: "owner@example.test," });
+  assert.equal(invalid.reason, "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING");
+  assert.deepEqual(paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: "owner@example.test" }), {
+    provider: "curlec", configured: true, sandbox: false, reason: null,
+  });
+  // Test keys on staging, live keys on prod, and local mode need neither.
+  assert.equal(paymentReadiness({ ...base, CURLEC_KEY_ID: "rzp_test_Abc123", JOMCALL_QUEUE_NAMESPACE: "staging" }).configured, true);
+  assert.equal(paymentReadiness({ ...live, JOMCALL_QUEUE_NAMESPACE: "prod" }).configured, true);
+  const { JOMCALL_MODE: _, APP_ORIGIN: __, ...localLive } = staging;
+  assert.equal(paymentReadiness({ ...localLive, JOMCALL_PUBLIC_ORIGIN: "https://app.example.invalid" }).configured, true);
+  assert.throws(() => createProvider(staging), /LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED/);
+});
+
 test("Curlec client sends the documented requests", async () => {
   const calls: { url: string; init: RequestInit }[] = [];
   let reply: unknown = {};
