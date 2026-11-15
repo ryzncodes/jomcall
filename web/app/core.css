@@ -1583,6 +1583,14 @@
   font-size: 12px;
   font-weight: 600;
 }
+.wa-size {
+  display: block;
+  font-size: 12px;
+}
+.wa-size.warn {
+  font-weight: 600;
+  color: var(--danger, #b42318);
+}
 .wa-system {
   justify-self: center;
   text-align: center;

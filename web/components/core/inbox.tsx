@@ -8,6 +8,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, ChatCircleDots } from "@phosphor-icons/react";
 import { CoreError } from "@/lib/core/client";
+import {
+  displayName,
+  keepAttempt,
+  maskedNumber,
+  nextAttempt,
+  replyByteLimit,
+  snippet,
+  utf8Bytes,
+  type ReplyAttempt,
+} from "@/lib/core/inbox-rules";
 import type {
   ChatMessage,
   ConversationDetail,
@@ -34,7 +44,7 @@ const attentionWords: Record<string, Pair> = {
   CUSTOMER_REPLIED: ["Customer replied", "Pelanggan membalas"],
   BOOKING_PROPOSED: ["Agent proposed a booking", "Ejen mencadangkan tempahan"],
   MESSAGE_LEFT: ["Customer left a message", "Pelanggan meninggalkan mesej"],
-  OPTED_OUT: ["Customer opted out", "Pelanggan menarik diri"],
+  OPTED_OUT: ["Customer opted out", "Pelanggan tidak mahu terima mesej lagi"],
   UNSUPPORTED_MESSAGE: [
     "Sent something the agent cannot read",
     "Menghantar sesuatu yang ejen tidak boleh baca",
@@ -75,7 +85,7 @@ const refusalWords: Record<string, Pair> = {
   ],
   OPTED_OUT: [
     "The customer opted out on WhatsApp, so nothing more is sent.",
-    "Pelanggan telah menarik diri di WhatsApp, jadi tiada mesej lagi dihantar.",
+    "Pelanggan tidak mahu terima mesej lagi di WhatsApp, jadi tiada mesej lagi dihantar.",
   ],
   WINDOW_CLOSED: [
     "More than 24 hours since the customer last wrote, and there is no approved reply-request template to send instead.",
@@ -97,12 +107,16 @@ const refusalWords: Record<string, Pair> = {
     "The template is not approved.",
     "Templat belum diluluskan.",
   ],
+  REPLY_REQUEST_SENT: [
+    "The reply-request template already went out after the customer's last message.",
+    "Templat minta-balas sudah dihantar selepas mesej terakhir pelanggan.",
+  ],
 };
 
 const noticeWords: Record<string, Pair> = {
   notice_opt_out: [
     "Customer said STOP. Opt-out recorded; this confirmation is the last message.",
-    "Pelanggan menaip STOP. Penolakan direkodkan; pengesahan ini mesej terakhir.",
+    "Pelanggan menaip STOP. Permintaan berhenti direkodkan; pengesahan ini mesej terakhir.",
   ],
   notice_handoff: [
     "Customer asked for staff. The agent stopped answering.",
@@ -140,7 +154,7 @@ function outlookWords(o: ReplyOutlook): Pair {
     ],
     OPTED_OUT: [
       "The customer opted out on WhatsApp. Nothing more can be sent.",
-      "Pelanggan telah menarik diri di WhatsApp. Tiada mesej lagi boleh dihantar.",
+      "Pelanggan tidak mahu terima mesej lagi di WhatsApp. Tiada mesej lagi boleh dihantar.",
     ],
     WINDOW_CLOSED: [
       "More than 24 hours since the customer last wrote. WhatsApp allows only approved templates now, and this business has no approved reply-request template. An owner or admin can add one in WhatsApp settings.",
@@ -157,6 +171,10 @@ function outlookWords(o: ReplyOutlook): Pair {
     CONTACT_UNAVAILABLE: [
       "This contact is being deleted. Nothing can be sent.",
       "Kenalan ini sedang dipadam. Tiada apa-apa boleh dihantar.",
+    ],
+    REPLY_REQUEST_SENT: [
+      "The reply-request template already went out after the customer's last message. Wait for them to reply; sending again would only repeat it.",
+      "Templat minta-balas sudah dihantar selepas mesej terakhir pelanggan. Tunggu mereka membalas; menghantar lagi hanya akan mengulanginya.",
     ],
   };
   return (
@@ -176,12 +194,6 @@ function refusal(code: string | null): Pair | null {
       `WhatsApp menolak mesej ini (${code}).`,
     ];
   return [`Not sent (${code}).`, `Tidak dihantar (${code}).`];
-}
-
-// Shows the country code and the last four digits only.
-export function maskedNumber(waId: string) {
-  const d = waId.replace(/\D/g, "");
-  return d.length > 6 ? `+${d.slice(0, 2)} •••• ${d.slice(-4)}` : "+••••";
 }
 
 // Picks the English or BM half of a wording pair.
@@ -229,11 +241,26 @@ export function LocalInbox() {
     { href } = useExperience();
   const query = useSearchParams();
   const [selected, setSelected] = useState(query.get("conversation") ?? "");
+  // Opening a chat adds a history entry, so the phone's Back button returns
+  // to the list.
+  useEffect(() => {
+    const sync = () =>
+      setSelected(
+        new URL(location.href).searchParams.get("conversation") ?? "",
+      );
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
+  }, []);
   const choose = (id: string) => {
+    if (!id && history.state?.inboxChat) {
+      history.back();
+      return;
+    }
     const url = new URL(location.href);
     if (id) url.searchParams.set("conversation", id);
     else url.searchParams.delete("conversation");
-    history.replaceState(null, "", url);
+    if (id && !selected) history.pushState({ inboxChat: id }, "", url);
+    else history.replaceState(id ? { inboxChat: id } : null, "", url);
     setSelected(id);
   };
   const overview = useResource(
@@ -379,6 +406,14 @@ function ConversationList({
           `${items.length} perbualan, ${waiting} menunggu staf`,
         )}
       </p>
+      {items.length >= 100 && (
+        <p className="editor-note">
+          {w(
+            "Showing the 100 most recent chats. Older chats are not shown.",
+            "Memaparkan 100 perbualan terkini. Perbualan lebih lama tidak dipaparkan.",
+          )}
+        </p>
+      )}
       <ul>
         {items.map((c) => {
           const reason = c.attention_reason
@@ -395,14 +430,16 @@ function ConversationList({
                 onClick={() => choose(c.id)}
               >
                 <span className="wa-row-top">
-                  <strong>{c.contact_name || maskedNumber(c.wa_id)}</strong>
+                  <strong dir="auto">
+                    {displayName(c.contact_name, c.wa_id)}
+                  </strong>
                   <time dateTime={c.last_message_at}>
                     {time(c.last_message_at)}
                   </time>
                 </span>
-                <span className="wa-snippet">
+                <span className="wa-snippet" dir="auto">
                   {c.last_body
-                    ? c.last_body.slice(0, 90)
+                    ? snippet(c.last_body)
                     : w("No messages", "Tiada mesej")}
                 </span>
                 <span className="wa-tags">
@@ -446,25 +483,43 @@ function ConversationView({
     time = useKlTime(),
     visible = usePageVisible(),
     say = usePair(),
-    action = useAction();
+    headerAction = useAction(),
+    replyAction = useAction();
   const [detail, setDetail] = useState<ConversationDetail>();
   const [error, setError] = useState<unknown>();
   const [draft, setDraft] = useState("");
-  // Resolving closes replies until the customer writes again, so it asks
-  // once more before acting.
+  // Resolving closes the chat; a new customer message starts a new one. It
+  // asks once more before acting.
   const [confirmResolve, setConfirmResolve] = useState(false);
   const alive = useRef(true);
-  const load = useCallback(async () => {
-    try {
-      const d = await client.execute("conversation", { id });
-      if (alive.current) {
-        setDetail(d);
-        setError(undefined);
+  // Each read and each command result gets a number; an answer older than
+  // the last one shown is dropped, so a slow poll cannot undo newer data.
+  const sequence = useRef(0),
+    shown = useRef(0),
+    loading = useRef(false);
+  // The reply being sent, kept until it succeeds or the draft changes.
+  const attempt = useRef<ReplyAttempt | null>(null);
+  const show = useCallback((d: ConversationDetail, at: number) => {
+    if (!alive.current || at < shown.current) return;
+    shown.current = at;
+    setDetail(d);
+    setError(undefined);
+  }, []);
+  const load = useCallback(
+    async (poll = false) => {
+      if (poll && loading.current) return;
+      loading.current = true;
+      const at = ++sequence.current;
+      try {
+        show(await client.execute("conversation", { id }), at);
+      } catch (e) {
+        if (alive.current && at >= shown.current) setError(e);
+      } finally {
+        loading.current = false;
       }
-    } catch (e) {
-      if (alive.current) setError(e);
-    }
-  }, [client, id]);
+    },
+    [client, id, show],
+  );
   useEffect(() => {
     alive.current = true;
     void load();
@@ -476,7 +531,7 @@ function ConversationView({
   // states appear without a reload.
   useEffect(() => {
     if (!visible) return;
-    const timer = setInterval(() => void load(), 5000);
+    const timer = setInterval(() => void load(true), 5000);
     return () => clearInterval(timer);
   }, [visible, load]);
   const act = async (
@@ -486,31 +541,64 @@ function ConversationView({
       | "resolveConversation",
   ) => {
     if (!detail) return;
-    const done = await action.run(() =>
+    const at = ++sequence.current;
+    const done = await headerAction.run(() =>
       client.execute(kind, { id, expectedRevision: detail.revision }),
     );
-    if (done) setDetail(done);
+    if (done) show(done, at);
     else void load();
     changed();
   };
+  const bytes = utf8Bytes(draft),
+    tooLong = bytes > replyByteLimit;
   const send = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!detail || !draft.trim()) return;
-    const done = await action.run(() =>
-      client.execute("replyConversation", {
-        id,
-        text: draft,
-        expectedRevision: detail.revision,
-      }),
+    if (!detail || !draft.trim() || tooLong) return;
+    const request = nextAttempt(attempt.current, draft, detail.revision, () =>
+      crypto.randomUUID(),
     );
+    attempt.current = request;
+    const at = ++sequence.current;
+    let failure: unknown;
+    const done = await replyAction.run(async () => {
+      try {
+        return await client.execute(
+          "replyConversation",
+          {
+            id,
+            text: request.text,
+            expectedRevision: request.expectedRevision,
+          },
+          request.key,
+        );
+      } catch (err) {
+        failure = err;
+        throw err;
+      }
+    });
     // The draft is kept on any refusal; it is never resent by itself.
     if (done) {
-      setDetail(done);
+      attempt.current = null;
+      show(done, at);
       setDraft("");
-    } else void load();
+    } else {
+      if (!keepAttempt(failure)) attempt.current = null;
+      void load();
+    }
     changed();
   };
   const forbidden = error instanceof CoreError && error.status === 403;
+  const replyRefusal =
+    replyAction.error instanceof CoreError &&
+    replyAction.error.status === 409 &&
+    refusalWords[replyAction.error.code]
+      ? outlookWords({
+          allow: false,
+          mode: null,
+          fallback: false,
+          reason: replyAction.error.code,
+        })
+      : null;
   return (
     <section className="wa-view" aria-label={w("Conversation", "Perbualan")}>
       <button className="wa-back core-back" onClick={back}>
@@ -519,8 +607,8 @@ function ConversationView({
       {forbidden ? (
         <p className="storage-warning" role="alert">
           {w(
-            "Your role cannot see the messages in this chat. Ask an owner or admin.",
-            "Peranan anda tidak boleh melihat mesej dalam perbualan ini. Minta pemilik atau pentadbir.",
+            "You no longer have access to this workspace. Ask an owner to check your membership.",
+            "Anda tiada lagi akses kepada ruang kerja ini. Minta pemilik menyemak keahlian anda.",
           )}
         </p>
       ) : !detail ? (
@@ -541,7 +629,9 @@ function ConversationView({
         <>
           <header className="wa-head">
             <div>
-              <h2>{detail.contact_name || maskedNumber(detail.wa_id)}</h2>
+              <h2 dir="auto">
+                {displayName(detail.contact_name, detail.wa_id)}
+              </h2>
               <p>
                 {maskedNumber(detail.wa_id)} ·{" "}
                 {detail.state === "closed"
@@ -556,7 +646,7 @@ function ConversationView({
                 {detail.owner === "agent" ? (
                   <button
                     className="button secondary-button"
-                    disabled={action.busy}
+                    disabled={headerAction.busy}
                     onClick={() => void act("takeoverConversation")}
                   >
                     {w("Take over", "Ambil alih")}
@@ -564,7 +654,7 @@ function ConversationView({
                 ) : (
                   <button
                     className="button secondary-button"
-                    disabled={action.busy}
+                    disabled={headerAction.busy}
                     onClick={() => void act("handbackConversation")}
                   >
                     {w("Hand back to agent", "Serah semula kepada ejen")}
@@ -574,24 +664,24 @@ function ConversationView({
                   <>
                     <button
                       className="button button-dark"
-                      disabled={action.busy}
+                      disabled={headerAction.busy}
                       onClick={() => {
                         setConfirmResolve(false);
                         void act("resolveConversation");
                       }}
                     >
                       {w(
-                        "Yes, resolve. Replies close until the customer writes again",
-                        "Ya, selesaikan. Balasan ditutup sehingga pelanggan menulis semula",
+                        "Yes, resolve. A new message from the customer starts a new chat",
+                        "Ya, selesaikan. Mesej baharu daripada pelanggan memulakan perbualan baharu",
                       )}
                     </button>
                     <button onClick={() => setConfirmResolve(false)}>
-                      {w("Keep open", "Kekalkan terbuka")}
+                      {w("Keep open", "Biarkan terbuka")}
                     </button>
                   </>
                 ) : (
                   <button
-                    disabled={action.busy}
+                    disabled={headerAction.busy}
                     onClick={() => setConfirmResolve(true)}
                   >
                     {w("Mark resolved", "Tanda selesai")}
@@ -600,12 +690,21 @@ function ConversationView({
               </div>
             )}
           </header>
+          <Notice error={headerAction.error} />
           {error ? <Notice error={error} /> : null}
           <Compliance
             detail={detail}
             contactHref={href(`/app/contacts?contact=${detail.contact_id}`)}
           />
           <Proposals items={detail.proposals} />
+          {detail.messages.length >= 200 && (
+            <p className="editor-note">
+              {w(
+                "Only the latest 200 messages are shown. Older messages are not shown.",
+                "Hanya 200 mesej terkini dipaparkan. Mesej lebih lama tidak dipaparkan.",
+              )}
+            </p>
+          )}
           <ol className="wa-messages">
             {detail.messages.map((m) => (
               <Message key={m.id} m={m} time={time} />
@@ -639,14 +738,39 @@ function ConversationView({
               <label htmlFor={`reply-${id}`}>
                 {w("Reply as staff", "Balas sebagai staf")}
               </label>
+              {/* Stays editable when sending is refused, so the draft is
+                  never trapped; only Send is disabled. */}
               <textarea
                 id={`reply-${id}`}
                 rows={3}
-                maxLength={4000}
+                dir="auto"
                 value={draft}
-                disabled={!detail.reply_outlook.allow}
-                onChange={(e) => setDraft(e.target.value)}
+                aria-invalid={tooLong || undefined}
+                aria-describedby={`reply-size-${id}`}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  // An edited draft is a new reply with a new key.
+                  if (
+                    attempt.current &&
+                    attempt.current.text !== e.target.value
+                  )
+                    attempt.current = null;
+                }}
               />
+              <small
+                id={`reply-size-${id}`}
+                className={tooLong ? "wa-size warn" : "wa-size"}
+              >
+                {tooLong
+                  ? w(
+                      `Too long: ${bytes} of ${replyByteLimit} bytes. Emoji and some letters count as more than one byte. Shorten the reply to send it.`,
+                      `Terlalu panjang: ${bytes} daripada ${replyByteLimit} bait. Emoji dan sesetengah huruf dikira lebih daripada satu bait. Pendekkan balasan untuk menghantarnya.`,
+                    )
+                  : w(
+                      `${bytes} of ${replyByteLimit} bytes`,
+                      `${bytes} daripada ${replyByteLimit} bait`,
+                    )}
+              </small>
               {detail.owner === "agent" && detail.reply_outlook.allow && (
                 <small>
                   {w(
@@ -655,11 +779,20 @@ function ConversationView({
                   )}
                 </small>
               )}
-              <Notice error={action.error} />
+              {replyRefusal ? (
+                <p className="storage-warning" role="alert">
+                  {say(replyRefusal)}
+                </p>
+              ) : (
+                <Notice error={replyAction.error} />
+              )}
               <button
                 className="button button-dark"
                 disabled={
-                  action.busy || !draft.trim() || !detail.reply_outlook.allow
+                  replyAction.busy ||
+                  !draft.trim() ||
+                  tooLong ||
+                  !detail.reply_outlook.allow
                 }
               >
                 {w("Send", "Hantar")}
@@ -722,10 +855,18 @@ function Compliance({
     v === true
       ? ["Agreed", "Bersetuju"]
       : v === false
-        ? ["Opted out", "Menarik diri"]
+        ? ["Opted out", "Tidak mahu terima mesej lagi"]
         : ["Not recorded", "Tiada rekod"];
   return (
     <dl className="wa-compliance">
+      {c.deletion_pending && (
+        <div>
+          <dt>{w("Deletion", "Pemadaman")}</dt>
+          <dd className="warn">
+            {w("Contact is being deleted", "Kenalan sedang dipadam")}
+          </dd>
+        </div>
+      )}
       <div>
         <dt>{w("Do-not-contact", "Jangan hubungi")}</dt>
         <dd className={c.do_not_contact ? "warn" : undefined}>
@@ -780,10 +921,16 @@ function Message({
         <span className="wa-meta">
           {say(author)} ·{" "}
           <time dateTime={m.created_at}>{time(m.created_at, true)}</time>
-          {m.kind === "template" &&
-            ` · ${w("sent as reply-request template", "dihantar sebagai templat minta-balas")}`}
         </span>
-        <p>{m.body}</p>
+        <p dir="auto">{m.body}</p>
+        {m.reply_request && (
+          <span className="wa-why">
+            {w(
+              "Customer got the reply-request template; this text was not delivered.",
+              "Pelanggan menerima templat minta-balas; teks ini tidak dihantar.",
+            )}
+          </span>
+        )}
         {m.direction === "outbound" && (
           <span className="wa-status">{say(status)}</span>
         )}
