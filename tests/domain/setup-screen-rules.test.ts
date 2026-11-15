@@ -11,6 +11,7 @@ import {
   fitSize,
   isExcel,
   jpegName,
+  mergeUploads,
   namePrefill,
   pollDelay,
   readingNow,
@@ -28,6 +29,7 @@ import {
   uploadName,
 } from "../../web/components/core/setup/rules.ts";
 import { sendChunks } from "../../web/components/core/setup/upload.ts";
+import type { SetupUploadState } from "../../packages/contracts/src/setup-upload.ts";
 import { CoreError } from "../../web/lib/core/client.ts";
 
 const done = [{ state: "completed" }];
@@ -461,4 +463,53 @@ test("a removed upload stops sending before the next chunk", async () => {
   assert.deepEqual(seen, [0]);
   assert.equal(r.stopped, true);
   assert.equal(r.next, 1);
+});
+
+const up = (id: string, state: SetupUploadState) => ({
+  id,
+  kind: "pdf" as const,
+  name: id + ".pdf",
+  bytes: 10,
+  state,
+  failCode: null,
+  rowCount: 0,
+  factCount: 0,
+  droppedCount: 0,
+  bytesDeletedAt: null,
+  createdAt: "2026-11-15T00:00:00Z",
+});
+
+test("an older view never moves an upload this browser just changed backwards", () => {
+  // Finished here (queued), but a save's answer built earlier says uploading.
+  let r = mergeUploads([up("a", "uploading")], new Map([["a", up("a", "queued")]]));
+  assert.deepEqual(r.uploads.map((u) => u.state), ["queued"]);
+  assert.equal(r.held.size, 1);
+  // The server catches up (or goes further): its copy wins, the hold ends.
+  r = mergeUploads([up("a", "reading")], r.held);
+  assert.deepEqual(r.uploads.map((u) => u.state), ["reading"]);
+  assert.equal(r.held.size, 0);
+  // Equal is caught up too.
+  r = mergeUploads([up("b", "uploading")], new Map([["b", up("b", "uploading")]]));
+  assert.equal(r.held.size, 0);
+});
+
+test("a just-pasted upload missing from an older view stays, after the server's own", () => {
+  const r = mergeUploads([up("a", "done")], new Map([["p", up("p", "queued")]]));
+  assert.deepEqual(r.uploads.map((u) => u.id), ["a", "p"]);
+  assert.equal(r.held.size, 1);
+});
+
+test("a removed upload does not come back from an older view", () => {
+  let r = mergeUploads(
+    [up("a", "done"), up("b", "queued")],
+    new Map([["b", "removed" as const]]),
+  );
+  assert.deepEqual(r.uploads.map((u) => u.id), ["a"]);
+  assert.equal(r.held.size, 1);
+  // Once the server no longer lists it, nothing is held.
+  r = mergeUploads([up("a", "done")], r.held);
+  assert.deepEqual(r.uploads.map((u) => u.id), ["a"]);
+  assert.equal(r.held.size, 0);
+  // Nothing held: the server's list is shown as it is.
+  assert.deepEqual(mergeUploads([up("a", "failed")], new Map()).uploads, [up("a", "failed")]);
 });

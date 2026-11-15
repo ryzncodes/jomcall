@@ -424,3 +424,43 @@ export function bringFirst(view: {
 // all (offline, lost response), a server error, or a timeout.
 export const retryable = (status: number | null) =>
   status === null || status === 408 || status >= 500;
+
+// How far an upload has got; a view never moves one backwards.
+const UPLOAD_RANK: Record<SetupUpload["state"], number> = {
+  uploading: 0,
+  queued: 1,
+  reading: 2,
+  done: 3,
+  failed: 3,
+  removed: 4,
+};
+
+// Uploads this browser knows more about than a given view: one it just
+// created, finished, pasted or removed. Create, finish and paste do not
+// raise the session revision, so a view the server built just before one
+// of them (a poll, a save's answer) can still list the upload as it was,
+// or not at all. The held copy wins until the server lists the upload at
+// least as far along (or, for a removal, no longer lists it); then the
+// entry is dropped. Returns the uploads to show and the entries still held.
+export function mergeUploads(
+  server: readonly SetupUpload[],
+  held: ReadonlyMap<string, SetupUpload | "removed">,
+): { uploads: SetupUpload[]; held: Map<string, SetupUpload | "removed"> } {
+  const still = new Map(held);
+  const uploads: SetupUpload[] = [];
+  for (const u of server) {
+    const h = still.get(u.id);
+    if (h === undefined) uploads.push(u);
+    else if (h === "removed") continue;
+    else if (UPLOAD_RANK[u.state] >= UPLOAD_RANK[h.state]) {
+      still.delete(u.id);
+      uploads.push(u);
+    } else uploads.push(h);
+  }
+  for (const [id, h] of still) {
+    if (server.some((u) => u.id === id)) continue;
+    if (h === "removed") still.delete(id);
+    else uploads.push(h);
+  }
+  return { uploads, held: still };
+}

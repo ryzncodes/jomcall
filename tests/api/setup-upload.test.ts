@@ -1006,3 +1006,45 @@ test("a chunk PUT from staff, a stranger or for a closed upload is refused befor
     }
   }));
 
+
+test("the web client's raw chunk calls work against the route; a lost answer re-sent counts once", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    try {
+      const { HttpCoreClient } = await import("../../web/lib/core/client.ts");
+      let lose = true;
+      const client = new HttpCoreClient({
+        orgId: x.f.h.orgA.id,
+        fetch: async (url, init) => {
+          const u = String(url);
+          if (u === "/api/auth/csrf")
+            return Response.json({ ok: true, data: { token: "unused" } });
+          const h = new Headers(init?.headers);
+          const body = init?.body
+            ? new Uint8Array(await (init.body as Blob).arrayBuffer())
+            : undefined;
+          // The harness supplies its own CSRF token; the client's content
+          // type and idempotency key go through as sent.
+          const r = await x.f.api.raw(x.f.h.alice, x.f.h.orgA.id, init?.method ?? "GET", u, body, {
+            ...(h.get("content-type") ? { "content-type": h.get("content-type")! } : {}),
+            ...(h.get("idempotency-key") ? { "idempotency-key": h.get("idempotency-key")! } : {}),
+          });
+          if (init?.method === "PUT" && lose) {
+            lose = false;
+            throw Error("LOST_RESPONSE_AFTER_COMMIT");
+          }
+          return new Response(r.bytes as BodyInit, { status: r.status, headers: r.headers });
+        },
+      });
+      const id = (await x.create({ bytes: 50 })).body.data.id as string;
+      const bytes = new Blob([pdf(50)]);
+      const input = { id: x.agentId, uploadId: id, seq: 0 };
+      await assert.rejects(client.putChunk(input, bytes), /LOST_RESPONSE/);
+      assert.deepEqual(await client.putChunk(input, bytes), { received: 50 });
+      assert.equal((await x.row(id)).writes, 1, "the re-send replayed the receipt");
+      assert.deepEqual([...(await client.getChunk(input))], [...pdf(50)]);
+      assert.equal((await x.finish(id)).status, 200);
+    } finally {
+      await x.f.close();
+    }
+  }));

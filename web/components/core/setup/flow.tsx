@@ -25,7 +25,8 @@ import { Review } from "./review";
 import { FinishStage, LiveStage } from "./finish";
 import { BringStage } from "./bring";
 import { useUploadManager, type UploadManager } from "./upload";
-import { bringFirst, pollDelay, readingNow } from "./rules";
+import { bringFirst, mergeUploads, pollDelay, readingNow } from "./rules";
+import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
 
 // The pack every agent has; kept here so the client never loads pack data.
 export const BASE_PACK = "every-business";
@@ -311,11 +312,36 @@ function SetupStages({
   // An upload added on the stage does not move the owner on.
   const [bringing, setBringing] = useState(() => bringFirst(initial.view));
 
-  const setView = useCallback((v: Setup) => {
+  // Uploads this browser just changed, kept over any older view (see
+  // mergeUploads); scoped to one session.
+  const held = useRef<{
+    session: string | null;
+    uploads: Map<string, SetupUpload | "removed">;
+  }>({ session: null, uploads: new Map() });
+  const setView = useCallback((next: Setup) => {
+    let v = next;
+    if (v.session) {
+      if (held.current.session !== v.session.id)
+        held.current = { session: v.session.id, uploads: new Map() };
+      const merged = mergeUploads(v.uploads, held.current.uploads);
+      held.current.uploads = merged.held;
+      v = { ...v, uploads: merged.uploads };
+    }
     latestView.current = v;
     setViewState(v);
     if (v.session) revision.current = v.session.revision;
   }, []);
+  const holdUpload = useCallback(
+    (id: string, upload: SetupUpload | "removed") => {
+      const v = latestView.current;
+      if (!v.session) return;
+      if (held.current.session !== v.session.id)
+        held.current = { session: v.session.id, uploads: new Map() };
+      held.current.uploads.set(id, upload);
+      setView(v);
+    },
+    [setView],
+  );
   const reload = useCallback(async () => {
     try {
       const v = await client.execute("setup", { id: agentId });
@@ -364,8 +390,7 @@ function SetupStages({
     client,
     agentId,
     uploads: view.uploads,
-    latest: () => latestView.current,
-    setView,
+    hold: holdUpload,
     refresh,
   });
   // While a document waits for the reader or is being read, the view is

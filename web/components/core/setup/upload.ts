@@ -7,7 +7,6 @@ import {
   UPLOAD_LIMITS,
   type SetupUpload,
 } from "../../../../packages/contracts/src/setup-upload";
-import type { Setup } from "../../../../packages/contracts/src/setup";
 import {
   IMAGE_BYTES,
   SHRINK_STEPS,
@@ -201,8 +200,9 @@ export function useUploadManager(o: {
   client: HttpCoreClient;
   agentId: string;
   uploads: SetupUpload[];
-  latest: () => Setup;
-  setView: (v: Setup) => void;
+  // Shows a known change to one upload at once (created, finished, pasted,
+  // removed) and keeps it over older views until the server agrees.
+  hold: (id: string, upload: SetupUpload | "removed") => void;
   // Reads the view again without showing an error; a failure waits for
   // the next read.
   refresh: () => Promise<void>;
@@ -222,13 +222,9 @@ export function useUploadManager(o: {
     jobs.current.delete(key);
     setSenders((all) => all.filter((s) => s.key !== key));
   }, []);
-  // Applies a known change to the view's uploads at once (a new upload, a
-  // finished send, a removal); the next read confirms it.
-  const patchUploads = useCallback(
-    (fn: (uploads: SetupUpload[]) => SetupUpload[]) => {
-      const v = opts.current.latest();
-      if (v.session) opts.current.setView({ ...v, uploads: fn(v.uploads) });
-    },
+  const hold = useCallback(
+    (id: string, upload: SetupUpload | "removed") =>
+      opts.current.hold(id, upload),
     [],
   );
 
@@ -287,7 +283,7 @@ export function useUploadManager(o: {
             (e.code === "UPLOAD_XLSX" || e.code === "UPLOAD_TYPE")
           ) {
             drop(key);
-            patchUploads((us) => us.filter((u) => u.id !== job.uploadId));
+            hold(job.uploadId, "removed");
             setNotice({ name: job.name, error: e, step: "finish" });
             void opts.current.refresh();
             return;
@@ -298,17 +294,13 @@ export function useUploadManager(o: {
         if (job.cancelled) return;
         jobs.current.delete(key);
         update(key, { phase: "sent", error: null });
-        patchUploads((us) =>
-          us.some((u) => u.id === finished.id)
-            ? us.map((u) => (u.id === finished.id ? finished : u))
-            : [...us, finished],
-        );
+        hold(finished.id, finished);
         void opts.current.refresh();
       } finally {
         job.running = false;
       }
     },
-    [update, drop, patchUploads],
+    [update, drop, hold],
   );
 
   const addFile = useCallback(
@@ -382,10 +374,10 @@ export function useUploadManager(o: {
         running: false,
       });
       update(key, { uploadId: created.id, total: sizes.length });
-      patchUploads((us) => [...us, created]);
+      hold(created.id, created);
       await run(key);
     },
-    [drop, update, patchUploads, run],
+    [drop, update, hold, run],
   );
 
   const addFiles = useCallback(
@@ -426,11 +418,11 @@ export function useUploadManager(o: {
       for (const [k, j] of jobs.current)
         if (j.uploadId === uploadId) jobs.current.delete(k);
       setSenders((all) => all.filter((s) => s.uploadId !== uploadId));
-      patchUploads((us) => us.filter((u) => u.id !== uploadId));
+      hold(uploadId, "removed");
       void opts.current.refresh();
       return true;
     },
-    [patchUploads],
+    [hold],
   );
 
   const paste = useCallback(
@@ -442,7 +434,7 @@ export function useUploadManager(o: {
           id: agentId,
           text,
         });
-        patchUploads((us) => [...us, created]);
+        hold(created.id, created);
         void opts.current.refresh();
         return true;
       } catch (e) {
@@ -450,7 +442,7 @@ export function useUploadManager(o: {
         return false;
       }
     },
-    [patchUploads],
+    [hold],
   );
 
   return {
