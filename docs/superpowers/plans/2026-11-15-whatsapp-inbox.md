@@ -33,4 +33,6 @@ Date: 2026-11-15. Branch `claude/whatsapp-inbox-341dbf`. Design: [WhatsApp chann
 
 ## Deviations
 
-Recorded here as they happen.
+- The Send button is disabled while the server's outlook says the reply would be refused, so staff do not queue a message that is certain to be blocked. A refusal can still come from the agent process if the facts change between the check and the send (for example the 24-hour window closes); the screen then shows the blocked message with its reason. Checked in the browser by pausing the agent process.
+- "Mark resolved" was added because the `resolveConversation` command exists and a closed chat needs a visible end; the screen explains that a new customer message starts a new chat.
+- The disclosure flag also marks a fixed notice (for example the handoff acknowledgement) when that notice was the first message to carry the AI introduction. The system line says "The reply below starts with the AI introduction" in both cases.
