@@ -14,9 +14,9 @@ Branch `claude/billing-followups`, pull request open (not merged). Pull request 
 
 **Verified (2026-11-16, local database and fakes only)**
 - typecheck: pass.
-- guards: 44 of 44.
+- guards: 55 of 55 (after merging main at 71b2bb2).
 - check:billing: 63 of 63 (3 new in `admission-timeout.test.ts`).
-- check:core: 540 of 540.
+- check:core: 569 of 569 (after merging main at 71b2bb2).
 - verify-migrations: pass (scratch replay, 56 RLS tables).
 - build:hosted: pass.
 - voice pytest: 295 passed (1 new).
