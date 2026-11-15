@@ -209,6 +209,20 @@ export function queueNamespace(env: Env = process.env): string {
   return validNamespace(value, env);
 }
 
+// --- Setup document reader ---------------------------------------------------
+
+// The setup document reader switch. Unset, empty or "disabled" means off;
+// "anthropic" lets the agent process send uploads to Anthropic. Anything else
+// throws, naming the variable and never its value. The web process reads only
+// this switch, never a model key. Lives here so the hosted readiness report
+// checks it with the same rule.
+export function setupReader(env: Env = process.env): "disabled" | "anthropic" {
+  const value = env.JOMCALL_SETUP_READER || "disabled";
+  if (value !== "disabled" && value !== "anthropic")
+    throw Error("SETUP_READER_UNKNOWN: JOMCALL_SETUP_READER");
+  return value;
+}
+
 // --- Cookies ---------------------------------------------------------------
 
 // Hosted names carry the `__Host-` prefix: browsers accept such a cookie only

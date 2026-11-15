@@ -40,7 +40,11 @@ function mapError(error: unknown): Error {
 const toolNames = new Set(voiceTools.map((t) => t.name));
 const coreToolNames = new Set(coreVoiceTools.map((t) => t.name));
 let shared: Anthropic | undefined;
-const sharedClient = () => (shared ??= new Anthropic());
+// Also used by the setup document reader in the same process (key from
+// ANTHROPIC_API_KEY). Built on first use, so nothing is constructed until a
+// real call is made.
+export const sharedAnthropicClient = () => (shared ??= new Anthropic());
+const sharedClient = sharedAnthropicClient;
 
 export async function* streamVoiceModel(
   input: {

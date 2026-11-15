@@ -1,7 +1,11 @@
 import { AgentRunner } from "./runner.ts";
 import { AgentRepository } from "./repository.ts";
 import { startVoiceServer } from "./voice-server.ts";
-import { agentVoiceProvider } from "../../../packages/inference/src/provider.ts";
+import {
+  agentSetupReader,
+  agentVoiceProvider,
+} from "../../../packages/inference/src/provider.ts";
+import { SetupReadWorker } from "./setup-reader.ts";
 import {
   queueNamespace,
   voiceListen,
@@ -36,6 +40,9 @@ const provider = agentVoiceProvider();
 // EMBEDDING_PROVIDER_INVALID / EMBEDDING_KEY_MISSING stop the process here.
 // Off (null) unless JOMCALL_EMBEDDING_PROVIDER=google.
 const embedder = createEmbedder();
+// SETUP_READER_UNKNOWN for an unknown value, SETUP_READER_KEY_MISSING for
+// "anthropic" without ANTHROPIC_API_KEY (even when voice is off).
+const readerChoice = agentSetupReader();
 const listen = provider === "hosted" ? voiceListen() : undefined;
 const runner = await AgentRunner.create(ns, undefined, embedder);
 let lastTickAt = 0;
@@ -49,6 +56,14 @@ async function startWhatsApp() {
     choice === "cloud" ? createCloudProvider() : createFakeProvider();
   return new WhatsAppWorker(ns, { provider: sender });
 }
+// Setup document reads. Uploads go to Anthropic only when the switch is
+// "anthropic". The worker runs in both modes: with the switch off it still
+// clears abandoned uploads and old bytes, and fails any queued upload with
+// READER_OFF. It has its own loop, because one read can take two minutes and
+// must not hold up typed turns, WhatsApp replies or the health check.
+const setupRead = await SetupReadWorker.create(ns, {
+  enabled: readerChoice === "anthropic",
+});
 // Spoken turns are served only when the owner opted into the hosted model.
 let voiceRepository: AgentRepository | undefined;
 let voice: Awaited<ReturnType<typeof startVoiceServer>> | undefined;
@@ -86,6 +101,7 @@ if (provider === "hosted") {
     await phone?.close();
     await callRepository?.close();
     await voiceRepository?.close();
+    await setupRead.close();
     await runner.close();
     throw error;
   }
@@ -108,10 +124,23 @@ async function stop() {
   await voice?.close();
   await voiceRepository?.close();
   await whatsapp?.close();
+  // Aborts a read in progress (retried later) and waits for its tick.
+  await setupRead.close();
+  await setupLoop;
   await runner.close();
 }
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
+const setupLoop = (async () => {
+  while (!stopping) {
+    try {
+      await setupRead.tick();
+    } catch {
+      console.error("SETUP_READ_TICK_FAILED");
+    }
+    if (!stopping) await new Promise((r) => setTimeout(r, 1000));
+  }
+})();
 while (!stopping) {
   try {
     await runner.tick();

@@ -13,6 +13,7 @@ import {
   mailSettings,
   queueNamespace,
   serviceSecret,
+  setupReader,
   signupAllow,
   supabaseUrl,
   turnstileSettings,
@@ -42,6 +43,7 @@ export type Setting = {
 };
 
 const voiceOn = (env: Env) => env.JOMCALL_VOICE_PROVIDER === "hosted";
+const readerOn = (env: Env) => env.JOMCALL_SETUP_READER === "anthropic";
 const whatsappOn = (env: Env) =>
   !["", "disabled"].includes(env.JOMCALL_WHATSAPP_PROVIDER?.trim() ?? "");
 const cloudflareMail = (env: Env) =>
@@ -166,6 +168,14 @@ export const SETTINGS: Setting[] = [
     services: ["web", "agent"],
     secret: false,
     description: "disabled or hosted (browser voice tests)",
+  },
+  {
+    name: "JOMCALL_SETUP_READER",
+    services: ["web", "agent"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: disabled (default) or anthropic; the agent reads setup uploads with Anthropic. Same value in web and agent",
   },
   {
     name: "LIVEKIT_URL",
@@ -370,8 +380,9 @@ export const SETTINGS: Setting[] = [
     name: "ANTHROPIC_API_KEY",
     services: ["agent"],
     secret: true,
-    required: voiceOn,
-    description: "Spoken-path model key (when JOMCALL_VOICE_PROVIDER=hosted)",
+    required: (env) => voiceOn(env) || readerOn(env),
+    description:
+      "Spoken-path and setup-reader model key (when JOMCALL_VOICE_PROVIDER=hosted or JOMCALL_SETUP_READER=anthropic)",
   },
   {
     name: "JOMCALL_VOICE_BIND",
@@ -669,6 +680,8 @@ export function readiness(service: Service, env: Env): Finding[] {
     });
   if (["web", "engine", "agent"].includes(service))
     check("JOMCALL_QUEUE_NAMESPACE", () => queueNamespace(hostedEnv));
+  if (service === "web" || service === "agent")
+    check("JOMCALL_SETUP_READER", () => setupReader(hostedEnv));
   if (service === "web") {
     check("TURNSTILE_SITE_KEY", () => turnstileSettings(hostedEnv));
     check("JOMCALL_SIGNUP_ALLOW", () => signupAllow(hostedEnv));

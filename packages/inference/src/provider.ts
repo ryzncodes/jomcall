@@ -1,4 +1,7 @@
-import { liveKitUrlProblem } from "../../contracts/src/hosting.ts";
+import {
+  liveKitUrlProblem,
+  setupReader,
+} from "../../contracts/src/hosting.ts";
 import type {
   Readiness,
   VoiceReadiness,
@@ -121,14 +124,16 @@ export function agentVoiceProvider(env: Env = process.env) {
   return provider;
 }
 
-// The setup document reader switch. Unset, empty or "disabled" means off;
-// "anthropic" lets the agent process send uploads to Anthropic. Anything else
-// throws, naming the variable and never its value. The web process reads only
-// this switch, never a model key.
-export function setupReader(env: Env = process.env): "disabled" | "anthropic" {
-  const value = env.JOMCALL_SETUP_READER || "disabled";
-  if (value !== "disabled" && value !== "anthropic")
-    throw Error("SETUP_READER_UNKNOWN: JOMCALL_SETUP_READER");
+// The setup document reader switch (defined beside the other hosted guards).
+export { setupReader };
+
+// What the agent process reads uploads with. The reader calls Anthropic
+// directly, so "anthropic" without the key would fail every read: refuse at
+// start instead, even when voice is off. Never echoes a value.
+export function agentSetupReader(env: Env = process.env) {
+  const value = setupReader(env);
+  if (value === "anthropic" && !env.ANTHROPIC_API_KEY?.trim())
+    throw Error("SETUP_READER_KEY_MISSING: ANTHROPIC_API_KEY");
   return value;
 }
 
