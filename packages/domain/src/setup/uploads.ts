@@ -83,13 +83,11 @@ function sniff(head: Uint8Array): { kind: SetupUpload["kind"]; mime: string } | 
   if (starts(head, ascii("RIFF")) && starts(head, ascii("WEBP"), 8))
     return { kind: "image", mime: "image/webp" };
   if (starts(head, ascii("%PDF-"))) return { kind: "pdf", mime: "application/pdf" };
-  if (starts(head, [0x50, 0x4b, 0x03, 0x04]))
-    return {
-      kind: "sheet",
-      mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    };
   return null;
 }
+// A zip (an .xlsx, or anything else zip-based) is refused with its own code:
+// Excel files are not read in this release (owner decision, 2026-11-15).
+const isZip = (head: Uint8Array) => starts(head, [0x50, 0x4b, 0x03, 0x04]);
 // CSV: the whole file is valid UTF-8 text with no NUL byte. One streaming
 // decoder runs over the chunks in order (no joined copy), so a character
 // split across two chunks is not refused.
@@ -446,8 +444,10 @@ export async function setupUploadRoute(
             [ctx.orgId, u.id],
           )
         ).rows.map((r) => r.head as Buffer);
-        let found = sniff(Buffer.concat(heads).subarray(0, 16));
-        if (!found && u.kind === "sheet") {
+        const head = Buffer.concat(heads).subarray(0, 16);
+        const zip = isZip(head);
+        let found = zip ? null : sniff(head);
+        if (!found && !zip && u.kind === "sheet") {
           const all = (
             await tx.query(
               "select data from app.setup_upload_chunk where org_id=$1 and upload_id=$2 order by seq",
@@ -459,20 +459,21 @@ export async function setupUploadRoute(
         if (!found) {
           // Refused: the bytes are deleted. The row stays as removed, so the
           // 24-hour cap still counts it and the session slot is freed.
+          const code = zip ? "UPLOAD_XLSX" : "UPLOAD_TYPE";
           await tx.query(
             "delete from app.setup_upload_chunk where org_id=$1 and upload_id=$2",
             [ctx.orgId, u.id],
           );
           await tx.query(
-            "update app.setup_upload set state='removed',fail_code='UPLOAD_TYPE' where org_id=$1 and id=$2",
-            [ctx.orgId, u.id],
+            "update app.setup_upload set state='removed',fail_code=$3 where org_id=$1 and id=$2",
+            [ctx.orgId, u.id, code],
           );
           await audit(tx, ctx, "setup.upload.refused", "setup_upload", u.id, {
-            code: "UPLOAD_TYPE",
+            code,
           });
           return {
-            ref: { id: u.id, refused: "UPLOAD_TYPE" },
-            data: new AppError("UPLOAD_TYPE", 422),
+            ref: { id: u.id, refused: code },
+            data: new AppError(code, 422),
           };
         }
         const row = (

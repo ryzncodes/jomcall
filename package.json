@@ -60,7 +60,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "1.8.0",
     "@supabase/supabase-js": "2.118.0",
-    "exceljs": "4.4.0",
     "livekit-server-sdk": "2.19.2",
     "nodemailer": "10.1.1",
     "pg": "8.23.1",

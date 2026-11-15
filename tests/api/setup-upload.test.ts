@@ -484,12 +484,6 @@ test("type is checked by leading bytes, not by name", () =>
       await x.q("update app.setup_upload set state='removed' where session_id=$1", [
         x.sessionId,
       ]);
-      const sheet = await x.upload([xlsx], { kind: "image", name: "a.png" });
-      assert.equal(sheet.done.body.data.kind, "sheet");
-      assert.equal(
-        (await x.row(sheet.id)).mime,
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      );
       // CSV text declared as a sheet, with a Chinese character split across
       // the chunk boundary.
       const csv = enc("Item,Harga\n剪发,25\n");
@@ -507,12 +501,17 @@ test("type is checked by leading bytes, not by name", () =>
       ]);
 
       // Refused: CSV text declared as an image, a GIF, text with a NUL byte,
-      // and bytes that are not UTF-8 text.
-      for (const [bytes, kind] of [
-        [csv, "image"],
-        [cat(enc("GIF89a"), fill(20)), "image"],
-        [cat(enc("a,b\n"), new Uint8Array([0]), enc("c")), "sheet"],
-        [new Uint8Array([0xc3, 0x28, 0x41]), "sheet"],
+      // bytes that are not UTF-8 text, and any zip (an .xlsx) whatever it is
+      // declared as: Excel files have their own code so the screen can say so.
+      const zipText = cat(new Uint8Array([0x50, 0x4b, 0x03, 0x04]), enc("a,b,c\n"));
+      for (const [bytes, kind, code] of [
+        [csv, "image", "UPLOAD_TYPE"],
+        [cat(enc("GIF89a"), fill(20)), "image", "UPLOAD_TYPE"],
+        [cat(enc("a,b\n"), new Uint8Array([0]), enc("c")), "sheet", "UPLOAD_TYPE"],
+        [new Uint8Array([0xc3, 0x28, 0x41]), "sheet", "UPLOAD_TYPE"],
+        [xlsx, "sheet", "UPLOAD_XLSX"],
+        [xlsx, "image", "UPLOAD_XLSX"],
+        [zipText, "sheet", "UPLOAD_XLSX"],
       ] as const) {
         const total = bytes.length;
         const cr = await x.create({ kind, bytes: total, name: "x.csv" });
@@ -528,13 +527,13 @@ test("type is checked by leading bytes, not by name", () =>
         assert.equal(r.status, 422);
         assert.equal(
           JSON.parse(Buffer.from(r.bytes).toString()).error.code,
-          "UPLOAD_TYPE",
+          code,
         );
         // The refused upload's bytes are gone and it is no longer listed;
         // its row stays as removed so the 24-hour cap still counts it.
         const stored = await x.row(id);
         assert.equal(stored.state, "removed");
-        assert.equal(stored.fail_code, "UPLOAD_TYPE");
+        assert.equal(stored.fail_code, code);
         assert.equal(await x.chunks(id), 0);
         assert.equal(await x.reads(id), 0);
         assert.ok(!(await x.view()).uploads.some((u: any) => u.id === id));
@@ -548,7 +547,7 @@ test("type is checked by leading bytes, not by name", () =>
         assert.equal(replay.status, 422);
         assert.equal(
           JSON.parse(Buffer.from(replay.bytes).toString()).error.code,
-          "UPLOAD_TYPE",
+          code,
         );
       }
     } finally {
