@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
   readDocument,
@@ -12,7 +13,10 @@ import {
   READER_CONDITION_RULE,
   READER_DISAGREE_PREFIX,
   READER_ONE_READ_ROW,
-  READER_FACT_DISAGREE,
+  READER_FACT_DISAGREE_PREFIX,
+  READER_UNIT_DISAGREE_PREFIX,
+  READER_RENAMED_ROW,
+  READER_READ_ONCE,
   READER_ONE_READ_FACT,
   READER_LIMITS,
   readDocumentChecked,
@@ -878,11 +882,34 @@ test("system text carries the line, new-price and condition rules", async () => 
   // The two earlier rules are still there, unchanged.
   assert.ok(system.includes(READER_DATA_RULE));
   assert.ok(system.includes(READER_PRICE_RULE));
-  assert.match(READER_LINE_RULE, /same line/i);
+  assert.equal(
+    READER_LINE_RULE,
+    "Take each price from its item's own line or table cell. If a price is not on its item's line, or you cannot tell which item it belongs to, set needsCheck.",
+  );
+  assert.doesNotMatch(READER_LINE_RULE, /above or below|neighbour/i);
+  assert.match(
+    READER_NEW_PRICE_RULE,
+    /^Only when the document marks a price as replaced/,
+  );
   assert.match(READER_NEW_PRICE_RULE, /ONE row with the new price/);
-  assert.match(READER_NEW_PRICE_RULE, /never return the old price/i);
-  for (const word of [/surcharge/i, /from/i, /condition/i, /free above/i])
+  assert.match(READER_NEW_PRICE_RULE, /never return the replaced price/i);
+  assert.match(READER_NEW_PRICE_RULE, /Runcit and Borong/);
+  assert.match(READER_NEW_PRICE_RULE, /are not old and new prices/);
+  for (const word of [
+    /surcharge/i,
+    /starting/i,
+    /free if repaired/,
+    /free above/i,
+    /late fee/,
+  ])
     assert.match(READER_CONDITION_RULE, word);
+  assert.match(
+    READER_CONDITION_RULE,
+    /A minimum order or a quantity tier on its own is not such a condition: return that price without needsCheck and put the minimum in notes\./,
+  );
+  assert.doesNotMatch(READER_CONDITION_RULE, /min\. 50 pax/);
+  // The notes instruction agrees: a minimum order goes in notes.
+  assert.match(system, /- notes: [^\n]*minimum order/);
 });
 
 const rr = (
@@ -942,7 +969,10 @@ test("reconcile: identical reads come back unchanged and unflagged", () => {
     answer(rows, facts),
     answer(structuredClone(rows), structuredClone(facts)),
   );
-  assert.deepEqual(out, answer(rows, facts));
+  assert.deepEqual(out, {
+    ...answer(rows, facts),
+    pairing: { exact: 2, reworded: 0, renamed: 0 },
+  });
   assert.equal(out.flaggedShare, 0);
 });
 
@@ -970,7 +1000,7 @@ test("reconcile: a price slipped one line down is flagged on every row it touche
   assert.equal(pedi!.priceSen, null);
   assert.equal(
     pedi!.checkReason,
-    "Two readings of this document gave different prices (no price and RM 8.00). Please check.",
+    "Two readings of this document gave different prices (no price and RM 8.00). Please check. No price was found for this item.",
   );
   assert.equal(thread!.needsCheck, true);
   assert.equal(thread!.priceSen, 800);
@@ -1100,7 +1130,10 @@ test("reconcile: facts agree after spacing, disagree, or come from one read", ()
   assert.equal(by("opening_hours").value, " Isnin-Sabtu  10pg-8mlm ");
   assert.equal(by("walk_in").value, "Ya");
   assert.equal(by("walk_in").needsCheck, true);
-  assert.equal(by("walk_in").checkReason, READER_FACT_DISAGREE);
+  assert.equal(
+    by("walk_in").checkReason,
+    `${READER_FACT_DISAGREE_PREFIX}: "Ya" and "Tidak". Please check.`,
+  );
   assert.equal(by("deposit").needsCheck, true);
   assert.equal(by("deposit").checkReason, "Faint.");
   assert.equal(by("parking").needsCheck, true);
@@ -1128,7 +1161,7 @@ test("reconcile: never more than the row cap; read-B-only rows past it count as 
     1,
   );
   const b = answer(
-    Array.from({ length: 5 }, (_, i) => rr(`B ${i}`, 100)),
+    Array.from({ length: 5 }, (_, i) => rr(`B ${i}`, 200)),
     [],
     0,
   );
@@ -1242,16 +1275,58 @@ test("checked read: sheet and text are read once", async () => {
   }
 });
 
-test("checked read: either read failing fails it; both failing gives the first read's code", async () => {
+test("checked read: one read failing for good leaves the other, every row and fact flagged", async () => {
+  const good = {
+    json: {
+      rows: [
+        row(),
+        row({
+          item: "Cuci rambut",
+          priceSen: 1250,
+          needsCheck: true,
+          checkReason: "Blurred.",
+        }),
+      ],
+      facts: [fact()],
+    },
+  };
+  for (const bad of [
+    { stop_reason: "refusal" },
+    { text: "not json" },
+    { stop_reason: "max_tokens" },
+    { fail: Object.assign(Error("x"), { status: 400 }) },
+  ] as Reply[]) {
+    for (const order of [
+      [good, bad],
+      [bad, good],
+    ]) {
+      const out = ok(
+        await readDocumentChecked(jpeg, fields, {
+          client: sequence(...order).client,
+        }),
+      );
+      assert.equal(out.rows.length, 2);
+      assert.ok(out.rows.every((r) => r.needsCheck));
+      assert.ok(out.facts.every((f) => f.needsCheck));
+      assert.equal(out.rows[0]!.checkReason, READER_READ_ONCE);
+      assert.equal(out.rows[1]!.checkReason, `${READER_READ_ONCE} Blurred.`);
+      assert.equal(out.facts[0]!.checkReason, READER_READ_ONCE);
+      assert.equal(out.flaggedShare, 1);
+    }
+  }
+});
+
+test("checked read: a retryable failure of either read is returned; both failing gives the first read's code", async () => {
   const good = { json: { rows: [row()], facts: [] } };
+  const retry = { fail: Object.assign(Error("x"), { status: 503 }) };
   let r = await readDocumentChecked(jpeg, fields, {
-    client: sequence(good, { stop_reason: "refusal" }).client,
+    client: sequence(good, retry).client,
   });
-  assert.deepEqual(r, { ok: false, code: "REFUSED" });
-  r = await readDocumentChecked(jpeg, fields, {
-    client: sequence({ text: "not json" }, good).client,
+  assert.deepEqual(r, { ok: false, code: "FAILED" });
+  r = await readDocumentChecked(pdfInput, fields, {
+    client: sequence(retry, good).client,
   });
-  assert.deepEqual(r, { ok: false, code: "UNREADABLE" });
+  assert.deepEqual(r, { ok: false, code: "FAILED" });
   r = await readDocumentChecked(pdfInput, fields, {
     client: sequence(
       { stop_reason: "max_tokens" },
@@ -1259,7 +1334,11 @@ test("checked read: either read failing fails it; both failing gives the first r
     ).client,
   });
   assert.deepEqual(r, { ok: false, code: "TOO_LONG" });
-  // A document refused before any request is refused once, not sent at all.
+  r = await readDocumentChecked(pdfInput, fields, {
+    client: sequence({ stop_reason: "refusal" }, retry).client,
+  });
+  assert.deepEqual(r, { ok: false, code: "REFUSED" });
+  // A document refused before any request is sent nowhere.
   const { client, seen } = sequence(good);
   r = await readDocumentChecked(
     { kind: "image", mime: "image/png", data: Buffer.from("nope") },
@@ -1268,4 +1347,350 @@ test("checked read: either read failing fails it; both failing gives the first r
   );
   assert.deepEqual(r, { ok: false, code: "UNREADABLE" });
   assert.equal(seen.length, 0);
+});
+
+// ---- Round 2: rows worded differently, units, keys ----
+
+test("readerKey keeps a dot between digits and nothing else", () => {
+  assert.notEqual(readerKey("Beras 2.5kg"), readerKey("Beras 25kg"));
+  assert.notEqual(readerKey("Servis", "1.5HP"), readerKey("Servis", "15HP"));
+  assert.equal(readerKey("Servis", "1.5 HP"), readerKey("servis 1.5hp"));
+  assert.equal(readerKey("Teh O. Ais"), readerKey("teh o ais"));
+  assert.equal(readerKey("1. Kopi"), readerKey("1 kopi"));
+  assert.equal(readerKey("...", "--"), "");
+});
+
+test("reconcile: the d05 shape (brand in the variant in one read, in the notes in the other) pairs every row unflagged", () => {
+  // d05's truth: 18 parts, each for Myvi and for Saga, one Saga price TBA.
+  const truth = JSON.parse(
+    readFileSync(
+      new URL("../fixtures/setup-reader/truth.json", import.meta.url),
+      "utf8",
+    ),
+  ).documents.find((d: { id: string }) => d.id === "d05").rows as {
+    item: string;
+    variant: string;
+    priceSen: number | null;
+  }[];
+  assert.equal(truth.length, 36);
+  const brands = ["Kyoro", "ProGrip", "ori", "Nexa"];
+  const build = (prices: (number | null)[]) => {
+    const rowsA: ReadRow[] = [];
+    const rowsB: ReadRow[] = [];
+    truth.forEach((t, k) => {
+      const brand = brands[k % brands.length]!;
+      rowsA.push(
+        rr(t.item, prices[k]!, {
+          variant: t.variant,
+          notes: `${brand}, ada stok`,
+        }),
+      );
+      rowsB.push(
+        rr(t.item, prices[k]!, {
+          variant: `${t.variant} - ${brand}`,
+          notes: `Part No X${k}; ada stok`,
+        }),
+      );
+    });
+    return reconcileReads(answer(rowsA), answer(rowsB));
+  };
+  const check = (out: ReadOk, prices: (number | null)[]) => {
+    assert.equal(out.rows.length, 36);
+    assert.deepEqual(out.pairing, { exact: 0, reworded: 36, renamed: 0 });
+    out.rows.forEach((r, k) => {
+      assert.ok(!r.checkReason.startsWith(READER_ONE_READ_ROW), r.item);
+      // Only the row the model left without a price stays flagged.
+      assert.equal(r.needsCheck, r.priceSen === null, r.item);
+      assert.equal(r.priceSen, prices[k]);
+      assert.ok(
+        r.variant.startsWith(truth[k]!.variant),
+        `${r.item} ${r.variant}`,
+      );
+    });
+  };
+  const real = truth.map((t) => t.priceSen);
+  check(build(real), real);
+  assert.equal(real.filter((p) => p === null).length, 1);
+  // Even with a part at the same price for both cars, each pairs with its own.
+  const same = real.map((p, k) => (truth[k]!.item === "Oil filter" ? 1200 : p));
+  check(build(same), same);
+  const out = build(real);
+  // The longer variant and read A's notes are kept.
+  assert.equal(out.rows[0]!.variant, "Myvi 1.3/1.5 2018+ (G3) - Kyoro");
+  assert.equal(out.rows[0]!.notes, "Kyoro, ada stok");
+});
+
+test("reconcile: stage 2 never pairs another car model, a different price or a different unit", () => {
+  const a = answer([rr("Brake pad depan", 5600, { variant: "Myvi 2018" })]);
+  const b = answer([rr("Brake pad depan", 5600, { variant: "Saga 2016" })]);
+  const out = reconcileReads(a, b);
+  // Not the same variant: at best a flagged rename next to each other.
+  assert.equal(out.rows.length, 1);
+  assert.equal(out.rows[0]!.checkReason, READER_RENAMED_ROW);
+  const price = reconcileReads(
+    answer([rr("Kopi", 200, { variant: "Ais" }), rr("Teh", 300)]),
+    answer([rr("Kopi", 250, { variant: "Ais besar" }), rr("Teh", 300)]),
+  );
+  assert.deepEqual(
+    price.rows.map((r) => [r.item, r.variant, r.checkReason]),
+    [
+      ["Kopi", "Ais besar", READER_ONE_READ_ROW],
+      ["Kopi", "Ais", READER_ONE_READ_ROW],
+      ["Teh", "", ""],
+    ],
+  );
+  const unit = reconcileReads(
+    answer([rr("Cuci", 300, { variant: "Biasa", unit: "per kg" })]),
+    answer([rr("Cuci", 300, { variant: "Biasa sahaja", unit: "per pasang" })]),
+  );
+  assert.equal(unit.rows[0]!.checkReason, READER_RENAMED_ROW);
+});
+
+test("reconcile: an empty variant pairs by containment only when the item has no other row at that price", () => {
+  const out = reconcileReads(
+    answer([rr("Kek Lapis Sarawak", 15000), rr("Roti", 200)]),
+    answer([
+      rr("Kek Lapis Sarawak", 15000, { variant: "loyang", unit: "/loyang" }),
+      rr("Roti", 200),
+    ]),
+  );
+  assert.equal(out.rows.length, 2);
+  assert.equal(out.rows[0]!.needsCheck, false);
+  assert.equal(out.rows[0]!.variant, "loyang");
+  assert.equal(out.rows[0]!.unit, "/loyang");
+  // Two read-B rows of the item at that price: no stage-2 pairing.
+  const crowded = reconcileReads(
+    answer([rr("Teh", 200), rr("Kopi", 500)]),
+    answer([
+      rr("Teh", 200, { variant: "Panas" }),
+      rr("Teh", 200, { variant: "Ais" }),
+      rr("Kopi", 500),
+    ]),
+  );
+  assert.ok(crowded.rows.every((r) => r.item === "Kopi" || r.needsCheck));
+});
+
+test("reconcile: names worded differently fall to stage 3, one row flagged as renamed", () => {
+  // "Package A 经济套餐" and "Package A": item keys differ, so stage 3.
+  const pkg = reconcileReads(
+    answer([rr("Package A 经济套餐", 1200), rr("Package B", 1600)]),
+    answer([rr("Package A", 1200), rr("Package B", 1600)]),
+  );
+  assert.deepEqual(
+    pkg.rows.map((r) => [r.item, r.needsCheck, r.checkReason]),
+    [
+      ["Package A 经济套餐", true, READER_RENAMED_ROW],
+      ["Package B", false, ""],
+    ],
+  );
+  const order = reconcileReads(
+    answer([
+      rr("Pedicure", 3500),
+      rr("Threading Kening", 800, { needsCheck: true, checkReason: "Faint." }),
+      rr("Bridal", 45000),
+    ]),
+    answer([
+      rr("Pedicure", 3500),
+      rr("Kening Threading", 800),
+      rr("Bridal", 45000),
+    ]),
+  );
+  assert.equal(order.rows.length, 3);
+  assert.equal(order.rows[1]!.item, "Threading Kening");
+  assert.equal(order.rows[1]!.checkReason, `${READER_RENAMED_ROW} Faint.`);
+  // At the end of the list, anchored from the back.
+  const tail = reconcileReads(
+    answer([rr("Pedicure", 3500), rr("Threading Kening", 800)]),
+    answer([rr("Pedicure", 3500), rr("Kening Threading", 800)]),
+  );
+  assert.equal(tail.rows.length, 1 + 1);
+  assert.deepEqual(tail.pairing, { exact: 1, reworded: 0, renamed: 1 });
+});
+
+test("reconcile: two neighbouring one-read rows at different prices stay two flagged rows", () => {
+  const out = reconcileReads(
+    answer([
+      rr("Pedicure", 3500),
+      rr("Threading Kening", 800),
+      rr("Bridal", 45000),
+    ]),
+    answer([
+      rr("Pedicure", 3500),
+      rr("Kening Threading", 900),
+      rr("Bridal", 45000),
+    ]),
+  );
+  assert.deepEqual(
+    out.rows.map((r) => [r.item, r.checkReason]),
+    [
+      ["Pedicure", ""],
+      ["Kening Threading", READER_ONE_READ_ROW],
+      ["Threading Kening", READER_ONE_READ_ROW],
+      ["Bridal", ""],
+    ],
+  );
+  // Rows that are not next to each other do not pair by price.
+  const far = reconcileReads(
+    answer([rr("X satu", 800), rr("Pedicure", 3500), rr("Bridal", 45000)]),
+    answer([rr("Pedicure", 3500), rr("Bridal", 45000), rr("Y dua", 800)]),
+  );
+  assert.equal(far.rows.length, 4);
+  assert.equal(
+    far.rows.filter((r) => r.checkReason === READER_ONE_READ_ROW).length,
+    2,
+  );
+});
+
+test("reconcile: same key and price, different units: flagged with both units", () => {
+  const out = reconcileReads(
+    answer([
+      rr("Cuci", 300, { unit: "per kg" }),
+      rr("Baju kurung", 1200, { unit: "per pasang" }),
+    ]),
+    answer([
+      rr("Cuci", 300, { unit: "per pasang" }),
+      rr("Baju kurung", 1200, { unit: "/pasang" }),
+    ]),
+  );
+  assert.equal(out.rows[0]!.needsCheck, true);
+  assert.equal(
+    out.rows[0]!.checkReason,
+    `${READER_UNIT_DISAGREE_PREFIX} (per kg and per pasang). Please check.`,
+  );
+  // "per pasang" and "/pasang" agree; one empty unit agrees too.
+  assert.equal(out.rows[1]!.needsCheck, false);
+  const empty = reconcileReads(
+    answer([rr("Cuci", 300, { unit: "per kg" })]),
+    answer([rr("Cuci", 300)]),
+  );
+  assert.equal(empty.rows[0]!.needsCheck, false);
+});
+
+test("reconcile: an empty key never pairs", () => {
+  // Side by side at the same price: still two one-read rows.
+  const out = reconcileReads(
+    answer([rr("—", 500), rr("Kopi", 200)]),
+    answer([rr("...", 500), rr("Kopi", 200)]),
+  );
+  assert.deepEqual(
+    out.rows.map((r) => [r.item, r.checkReason]),
+    [
+      ["...", READER_ONE_READ_ROW],
+      ["—", READER_ONE_READ_ROW],
+      ["Kopi", ""],
+    ],
+  );
+  assert.deepEqual(out.pairing, { exact: 1, reworded: 0, renamed: 0 });
+  // An empty-key row stops stage 3 from reaching past it (here the walk
+  // from the back stops at two different prices).
+  const past = reconcileReads(
+    answer([
+      rr("Teh", 300),
+      rr("—", 500),
+      rr("Threading Kening", 800),
+      rr("Waxing", 900),
+    ]),
+    answer([rr("Teh", 300), rr("Kening Threading", 800), rr("Wax", 950)]),
+  );
+  assert.equal(past.pairing!.renamed, 0);
+  // From the back it may still meet its neighbour.
+  const back = reconcileReads(
+    answer([
+      rr("Teh", 300),
+      rr("—", 500),
+      rr("Threading Kening", 800),
+      rr("Bridal", 45000),
+    ]),
+    answer([rr("Teh", 300), rr("Kening Threading", 800), rr("Bridal", 45000)]),
+  );
+  assert.equal(back.pairing!.renamed, 1);
+  assert.equal(back.rows.length, 4);
+});
+
+test("reconcile: stage 2 compares whole words of the variant", () => {
+  for (const [va, vb] of [
+    ["6 inci", "16 inci"],
+    ["S", "XS"],
+    ["1kg", "11kg"],
+  ]) {
+    const out = reconcileReads(
+      answer([
+        rr("Teh", 300),
+        rr("Kek X", 5500, { variant: va }),
+        rr("Roti", 200),
+      ]),
+      answer([
+        rr("Teh", 300),
+        rr("Kek X", 5500, { variant: vb }),
+        rr("Roti", 200),
+      ]),
+    );
+    assert.equal(out.pairing!.reworded, 0, `${va} / ${vb}`);
+    // Neighbours: one row, flagged as named differently, read A's variant.
+    assert.equal(out.rows.length, 3);
+    assert.equal(out.rows[1]!.variant, va);
+    assert.equal(out.rows[1]!.checkReason, READER_RENAMED_ROW);
+  }
+  const ok2 = reconcileReads(
+    answer([rr("Kek X", 5500, { variant: "6 inci" })]),
+    answer([rr("Kek X", 5500, { variant: "6 inci (bulat)" })]),
+  );
+  assert.equal(ok2.pairing!.reworded, 1);
+  assert.equal(ok2.rows[0]!.needsCheck, false);
+});
+
+test("reconcile: a row without a price is always flagged", () => {
+  const out = reconcileReads(
+    answer([rr("Radiator", null, { needsCheck: false, checkReason: "" })]),
+    answer([rr("Radiator", null, { needsCheck: false, checkReason: "" })]),
+  );
+  assert.equal(out.rows[0]!.needsCheck, true);
+  assert.equal(out.rows[0]!.checkReason, "No price was found for this item.");
+});
+
+test("reconcile: the model's own reason follows the comparison's, cut to 500", () => {
+  const long = "Tulisan kabur. " + "x".repeat(600);
+  const out = reconcileReads(
+    answer([
+      rr("Kopi", 200, { needsCheck: true, checkReason: long }),
+      rr("Teh", 300, { needsCheck: true, checkReason: "Faint." }),
+    ]),
+    answer([rr("Kopi", 250)]),
+  );
+  assert.ok(
+    out.rows[0]!.checkReason.startsWith(
+      `${READER_DISAGREE_PREFIX} (RM 2.00 and RM 2.50). Please check. Tulisan kabur.`,
+    ),
+  );
+  assert.equal(out.rows[0]!.checkReason.length, 500);
+  assert.equal(out.rows[1]!.checkReason, `${READER_ONE_READ_ROW} Faint.`);
+  const emoji = reconcileReads(
+    answer([
+      rr("Teh", 300, { needsCheck: true, checkReason: "😀".repeat(300) }),
+    ]),
+    answer([]),
+  );
+  assert.ok(emoji.rows[0]!.checkReason.length <= 500);
+  assert.ok([...emoji.rows[0]!.checkReason].length <= 500);
+  assert.ok(emoji.rows[0]!.checkReason.endsWith("😀"));
+});
+
+test("reconcile: a fact disagreement shows both values, cut to fit", () => {
+  const out = reconcileReads(
+    answer(
+      [],
+      [
+        ff("opening_hours", "a".repeat(2000), {
+          needsCheck: true,
+          checkReason: "Faint.",
+        }),
+      ],
+    ),
+    answer([], [ff("opening_hours", "b".repeat(2000))]),
+  );
+  const reason = out.facts[0]!.checkReason;
+  assert.ok(reason.startsWith(`${READER_FACT_DISAGREE_PREFIX}: "aaa`));
+  assert.match(reason, /" and "bbb/);
+  assert.ok(reason.length <= 500);
+  assert.equal(out.facts[0]!.value, "a".repeat(2000));
 });

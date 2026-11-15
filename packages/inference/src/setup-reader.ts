@@ -62,6 +62,9 @@ export type ReadResult =
       flaggedShare: number;
       // Rows the model returned that could not be used at all.
       dropped: number;
+      // Set when two reads were compared: rows paired by stage (see
+      // reconcileReads). Counts only, for the reading check.
+      pairing?: { exact: number; reworded: number; renamed: number };
     }
   | { ok: false; code: ReadFailCode };
 
@@ -80,14 +83,14 @@ export const READER_DATA_RULE =
 export const READER_PRICE_RULE =
   "If you are not sure of a price, set needsCheck to true and say why in checkReason; never guess a price, and use null when you cannot read one.";
 // Prices that slip onto the wrong line, old prices kept beside new ones, and
-// amounts that are not plain prices were the misses of the paid check
-// (2026-11-15).
+// amounts that are not plain prices were the misses of the first paid check
+// (2026-11-15); the second narrowed the last two rules.
 export const READER_LINE_RULE =
-  "Take each price from the same line or table cell as its item; in a photo a price can sit a little above or below its item. If you cannot tell which price belongs to which item, set needsCheck on those rows.";
+  "Take each price from its item's own line or table cell. If a price is not on its item's line, or you cannot tell which item it belongs to, set needsCheck.";
 export const READER_NEW_PRICE_RULE =
-  'When one item shows an old and a new price (one crossed out, marked "harga baru" or "new price", in a later column, or written over as a correction), return ONE row with the new price, set needsCheck, and give both prices in checkReason, for example "RM 90 crossed out, new price RM 95". Never return the old price as a row of its own.';
+  'Only when the document marks a price as replaced (crossed out, a handwritten correction, or a column or line headed as a new or updated price, such as "Harga baru" or "New price from November"), return ONE row with the new price, set needsCheck, and give both prices in checkReason, for example "RM 90 crossed out, new price RM 95"; never return the replaced price as a row of its own. Several price columns for different sizes, quantities or customer types (such as Runcit and Borong, or 6 / 8 / 10 inci) are not old and new prices: each is its own row, with the column as the variant.';
 export const READER_CONDITION_RULE =
-  'Set needsCheck, and write the condition in checkReason, on any amount that is not a plain price: an add-on or surcharge ("+15 rambut panjang", "add RM2 for cheese", "tambah RM2"), a "from" or "starting" price ("dari RM30"), a price that holds only under a condition ("min. 50 pax"), or "free above" an amount ("free delivery above RM1500").';
+  'Set needsCheck, and write the condition in checkReason, on an amount that is not a plain price for the item: an add-on or surcharge ("+15", "tambah RM2", a late fee), a "from" or "starting" price ("dari RM30"), or an amount that changes or falls away under a condition ("free if repaired", "free above RM1500", "RM30 if no artwork"). A minimum order or a quantity tier on its own is not such a condition: return that price without needsCheck and put the minimum in notes.';
 
 export const READER_LIMITS = {
   rows: 300,
@@ -641,23 +644,45 @@ export const DOUBLE_READ_KINDS: readonly ReaderInput["kind"][] = [
 ];
 export const isDoubleRead = (input: ReaderInput) =>
   DOUBLE_READ_KINDS.includes(input.kind);
-// Reasons the comparison writes; the reading check counts rows by them.
+// Reasons the comparison writes; the reading check counts rows by them. A
+// reason the model gave is kept after the comparison's own.
 export const READER_DISAGREE_PREFIX =
   "Two readings of this document gave different prices";
+export const READER_UNIT_DISAGREE_PREFIX =
+  "Two readings of this document gave different units for this price";
 export const READER_ONE_READ_ROW =
   "Only one of two readings found this row. Please check.";
-export const READER_FACT_DISAGREE = "Two readings gave different answers.";
+export const READER_RENAMED_ROW =
+  "The two readings named this row differently. Please check the name.";
+export const READER_FACT_DISAGREE_PREFIX =
+  "Two readings gave different answers";
 export const READER_ONE_READ_FACT =
   "Only one of two readings found this answer. Please check.";
+export const READER_READ_ONCE =
+  "This document could only be read once. Please check every price.";
+const NO_PRICE = "No price was found for this item.";
 
-// Separator-free key of item plus variant: NFKC, lower case, only letters,
-// digits and combining marks ("Teh-O Ais" and "teh o ais" agree).
+// Separator-free key: NFKC, lower case, only letters, digits and combining
+// marks, plus a "." between two digits ("Teh-O Ais" and "teh o ais" agree;
+// "2.5kg" and "25kg" do not, nor "1.5HP" and "15HP").
 export function readerKey(item: string, variant = ""): string {
   return `${item} ${variant}`
     .normalize("NFKC")
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\p{M}]/gu, "");
+    .replace(/((?<=\d)\.(?=\d))|[^\p{L}\p{N}\p{M}]/gu, (_m, dot) =>
+      dot ? "." : "",
+    );
 }
+// The words of a variant: NFKC, lower case, split at separators and between
+// digits and letters, a "." between two digits kept ("Myvi 1.3/1.5 2018+"
+// is myvi, 1.3, 1.5, 2018; "16inci" is 16, inci).
+const words = (text: string) =>
+  text
+    .normalize("NFKC")
+    .toLowerCase()
+    .match(/\d+(?:\.\d+)*|[\p{L}\p{M}]+|\p{N}+/gu) ?? [];
+// A unit key: "per kg", "/kg" and "kg" agree.
+const unitKey = (unit: string) => readerKey(unit).replace(/^per(?=.)/, "");
 
 function ringgit(sen: number | null): string {
   if (sen === null) return "no price";
@@ -668,103 +693,303 @@ function ringgit(sen: number | null): string {
 const sameText = (a: string, b: string) =>
   a.trim().replace(/\s+/g, " ") === b.trim().replace(/\s+/g, " ");
 
-// Compares two reads of the same document. Rows pair one to one by
-// readerKey, each read-A row taking the first unused read-B row with its key,
-// in document order. A pair with the same price keeps read A's row, flagged
-// if either read flagged it. A pair with different prices keeps read A's
-// text, has no price when either read had none, and is flagged with both
-// prices. A row only one read found is kept and flagged. Read A's order is
-// kept; a read-B-only row goes straight after the read-A row paired with its
-// nearest earlier paired read-B row, or first when no earlier read-B row was
-// paired. Rows over READER_LIMITS.rows (read-B-only rows, last first) are
-// left out and counted in `dropped`. Facts pair by packId and fieldKey the
-// same way; read-B-only facts follow read A's.
+// The comparison's reason, then the model's own, cut to the reason limit
+// (UTF-16 units, never inside a character, so never over 500 code points).
+const withOwn = (reason: string, own: string) =>
+  cut(own ? `${reason} ${own}` : reason, READER_LIMITS.checkReason);
+const firstReason = (...rs: string[]) => rs.find((r) => r) ?? "";
+
+// Compares two reads of the same document; rows pair one to one, in three
+// stages, each over the rows still unpaired, in document order:
+//  1. Same readerKey of item plus variant (never an empty key). Same price:
+//     read A's row, flagged if either read flagged it, unless the units
+//     differ (flagged, both units named). Different price: read A's text,
+//     no price when either read had none, flagged with both prices.
+//  2. Same row, worded differently, safe to accept: same item key, the same
+//     price (or no price in both; such a row stays flagged for its missing
+//     price), units equal or one empty, and every word of one variant in
+//     the other. Both reads independently agree on the item and the price; only
+//     the wording of the variant differs (a brand moved from the notes into
+//     the variant, say). An empty variant counts as inside the other only
+//     when no other unpaired row of that item at that price exists in
+//     either read. The row takes the longer variant, read A's unit (else
+//     read B's) and read A's notes, flagged only if either read flagged it.
+//  3. Probably the same row, not certain: a read-A row and a read-B row
+//     next to each other (nothing unpaired between them and the rows
+//     already paired around them) at the same price, neither with an empty
+//     key. Read A's text, always
+//     flagged as named differently.
+// A row still unpaired is kept and flagged as found by one read. Read A's
+// order is kept; a read-B-only row goes straight after the read-A row
+// paired with its nearest earlier paired read-B row, or first when no
+// earlier read-B row was paired. Rows over READER_LIMITS.rows (read-B-only
+// rows, last first) are left out and counted in `dropped`. A row without a
+// price is always flagged. Facts pair by packId and fieldKey; read-B-only
+// facts follow read A's.
 export function reconcileReads(a: ReadOk, b: ReadOk): ReadOk {
-  const bKeys = b.rows.map((r) => readerKey(r.item, r.variant));
-  const used = new Set<number>();
+  const A = a.rows;
+  const B = b.rows;
+  const fullA = A.map((r) => readerKey(r.item, r.variant));
+  const fullB = B.map((r) => readerKey(r.item, r.variant));
+  const itemA = A.map((r) => readerKey(r.item));
+  const itemB = B.map((r) => readerKey(r.item));
   const pairOf = new Map<number, number>(); // read-B index to read-A index
-  const merged: ReadRow[] = a.rows.map((ra, ai) => {
-    const key = readerKey(ra.item, ra.variant);
-    const bi = bKeys.findIndex((k, i) => !used.has(i) && k === key);
-    if (bi < 0)
-      return { ...ra, needsCheck: true, checkReason: READER_ONE_READ_ROW };
-    used.add(bi);
+  const partner = new Map<number, number>(); // read-A index to read-B index
+  const stage = new Map<number, 1 | 2 | 3>(); // by read-A index
+  const pair = (ai: number, bi: number, how: 1 | 2 | 3) => {
+    partner.set(ai, bi);
     pairOf.set(bi, ai);
-    const rb = b.rows[bi]!;
-    if (ra.priceSen === rb.priceSen)
+    stage.set(ai, how);
+  };
+  const freeA = (ai: number) => !partner.has(ai);
+  const freeB = (bi: number) => !pairOf.has(bi);
+
+  // Stage 1.
+  A.forEach((_, ai) => {
+    if (!fullA[ai]) return;
+    const bi = fullB.findIndex((k, i) => freeB(i) && k === fullA[ai]);
+    if (bi >= 0) pair(ai, bi, 1);
+  });
+
+  // Stage 2. Stage 3 needs a price; stage 2 also takes no price in both.
+  const samePrice = (x: ReadRow, y: ReadRow) =>
+    x.priceSen !== null && x.priceSen === y.priceSen;
+  const agree = (x: ReadRow, y: ReadRow) => x.priceSen === y.priceSen;
+  const unitsFit = (x: ReadRow, y: ReadRow) => {
+    const [u, v] = [unitKey(x.unit), unitKey(y.unit)];
+    return !u || !v || u === v;
+  };
+  // Another unpaired row of this item at this price, other than the two.
+  const crowded = (ai: number, bi: number) =>
+    A.some(
+      (r, i) =>
+        i !== ai && freeA(i) && itemA[i] === itemA[ai] && agree(r, A[ai]!),
+    ) ||
+    B.some(
+      (r, i) =>
+        i !== bi && freeB(i) && itemB[i] === itemB[bi] && agree(r, B[bi]!),
+    );
+  // Whole words only: "6 inci" is not inside "16 inci", nor "S" in "XS".
+  const variantsFit = (ai: number, bi: number) => {
+    const [u, v] = [words(A[ai]!.variant), words(B[bi]!.variant)];
+    if (!u.length || !v.length) return !crowded(ai, bi);
+    const [short, long] = u.length <= v.length ? [u, v] : [v, u];
+    const have = new Set(long);
+    return short.every((w) => have.has(w));
+  };
+  A.forEach((ra, ai) => {
+    if (!freeA(ai) || !itemA[ai]) return;
+    const bi = B.findIndex(
+      (rb, i) =>
+        freeB(i) &&
+        itemB[i] === itemA[ai] &&
+        agree(ra, rb) &&
+        unitsFit(ra, rb) &&
+        variantsFit(ai, i),
+    );
+    if (bi >= 0) pair(ai, bi, 2);
+  });
+
+  // Stage 3: within each gap between paired rows, from the front and then
+  // from the back, while the facing rows have the same price. A row with an
+  // empty key never pairs and stops the walk.
+  const gapOfA = (ai: number) => {
+    for (let j = ai - 1; j >= 0; j--) if (!freeA(j)) return j;
+    return -1;
+  };
+  const gapOfB = (bi: number) => {
+    for (let j = bi - 1; j >= 0; j--) {
+      const ai = pairOf.get(j);
+      if (ai !== undefined) return ai;
+    }
+    return -1;
+  };
+  const gaps = new Map<number, { as: number[]; bs: number[] }>();
+  const gap = (g: number) => {
+    let x = gaps.get(g);
+    if (!x) gaps.set(g, (x = { as: [], bs: [] }));
+    return x;
+  };
+  A.forEach((_, ai) => freeA(ai) && gap(gapOfA(ai)).as.push(ai));
+  B.forEach((_, bi) => freeB(bi) && gap(gapOfB(bi)).bs.push(bi));
+  for (const { as, bs } of gaps.values()) {
+    let front = 0;
+    const fits = (ai: number, bi: number) =>
+      !!fullA[ai] && !!fullB[bi] && samePrice(A[ai]!, B[bi]!);
+    while (
+      front < as.length &&
+      front < bs.length &&
+      fits(as[front]!, bs[front]!)
+    ) {
+      pair(as[front]!, bs[front]!, 3);
+      front += 1;
+    }
+    let ea = as.length - 1;
+    let eb = bs.length - 1;
+    while (ea >= front && eb >= front && fits(as[ea]!, bs[eb]!)) {
+      pair(as[ea]!, bs[eb]!, 3);
+      ea -= 1;
+      eb -= 1;
+    }
+  }
+
+  const merged: ReadRow[] = A.map((ra, ai) => {
+    const bi = partner.get(ai);
+    if (bi === undefined)
       return {
         ...ra,
+        needsCheck: true,
+        checkReason: withOwn(READER_ONE_READ_ROW, ra.checkReason),
+      };
+    const rb = B[bi]!;
+    const own = firstReason(ra.checkReason, rb.checkReason);
+    const how = stage.get(ai)!;
+    if (how === 3)
+      return {
+        ...ra,
+        needsCheck: true,
+        checkReason: withOwn(READER_RENAMED_ROW, own),
+      };
+    if (how === 2)
+      return {
+        ...ra,
+        variant:
+          rb.variant.length > ra.variant.length ? rb.variant : ra.variant,
+        unit: ra.unit || rb.unit,
         needsCheck: ra.needsCheck || rb.needsCheck,
-        checkReason: ra.checkReason || rb.checkReason,
+        checkReason: own,
+      };
+    if (ra.priceSen !== rb.priceSen)
+      return {
+        ...ra,
+        priceSen:
+          ra.priceSen === null || rb.priceSen === null ? null : ra.priceSen,
+        needsCheck: true,
+        checkReason: withOwn(
+          `${READER_DISAGREE_PREFIX} (${ringgit(ra.priceSen)} and ${ringgit(rb.priceSen)}). Please check.`,
+          own,
+        ),
+      };
+    if (!unitsFit(ra, rb))
+      return {
+        ...ra,
+        needsCheck: true,
+        checkReason: withOwn(
+          `${READER_UNIT_DISAGREE_PREFIX} (${ra.unit} and ${rb.unit}). Please check.`,
+          own,
+        ),
       };
     return {
       ...ra,
-      priceSen:
-        ra.priceSen === null || rb.priceSen === null ? null : ra.priceSen,
-      needsCheck: true,
-      checkReason: `${READER_DISAGREE_PREFIX} (${ringgit(ra.priceSen)} and ${ringgit(rb.priceSen)}). Please check.`,
+      needsCheck: ra.needsCheck || rb.needsCheck,
+      checkReason: own,
     };
   });
 
-  const onlyB = b.rows.flatMap((r, bi) => (used.has(bi) ? [] : [bi]));
+  const onlyB = B.flatMap((_, bi) => (freeB(bi) ? [bi] : []));
   const room = Math.max(0, READER_LIMITS.rows - merged.length);
   const kept = onlyB.slice(0, room);
   const overflow = onlyB.length - kept.length;
   // Slot -1 is before read A's first row.
   const after = new Map<number, ReadRow[]>();
   for (const bi of kept) {
-    let slot = -1;
-    for (let j = bi - 1; j >= 0; j--) {
-      const ai = pairOf.get(j);
-      if (ai !== undefined) {
-        slot = ai;
-        break;
-      }
-    }
+    const slot = gapOfB(bi);
     const list = after.get(slot) ?? [];
     list.push({
-      ...b.rows[bi]!,
+      ...B[bi]!,
       needsCheck: true,
-      checkReason: READER_ONE_READ_ROW,
+      checkReason: withOwn(READER_ONE_READ_ROW, B[bi]!.checkReason),
     });
     after.set(slot, list);
   }
   const rows: ReadRow[] = [...(after.get(-1) ?? [])];
   merged.forEach((r, ai) => rows.push(r, ...(after.get(ai) ?? [])));
+  for (const [i, r] of rows.entries())
+    if (r.priceSen === null && !r.needsCheck)
+      rows[i] = {
+        ...r,
+        needsCheck: true,
+        checkReason: r.checkReason || NO_PRICE,
+      };
 
   const factKey = (f: ReadFact) => `${f.packId}\u0000${f.fieldKey}`;
   const bFacts = new Map(b.facts.map((f) => [factKey(f), f]));
+  // Each value cut so both fit in one reason.
+  const quote = (v: string) => `"${cut(v.trim().replace(/\s+/g, " "), 200)}"`;
   const facts: ReadFact[] = a.facts.map((fa) => {
     const fb = bFacts.get(factKey(fa));
     bFacts.delete(factKey(fa));
     if (!fb)
-      return { ...fa, needsCheck: true, checkReason: READER_ONE_READ_FACT };
+      return {
+        ...fa,
+        needsCheck: true,
+        checkReason: withOwn(READER_ONE_READ_FACT, fa.checkReason),
+      };
+    const own = firstReason(fa.checkReason, fb.checkReason);
     if (!sameText(fa.value, fb.value))
-      return { ...fa, needsCheck: true, checkReason: READER_FACT_DISAGREE };
+      return {
+        ...fa,
+        needsCheck: true,
+        checkReason: withOwn(
+          `${READER_FACT_DISAGREE_PREFIX}: ${quote(fa.value)} and ${quote(fb.value)}. Please check.`,
+          own,
+        ),
+      };
     return {
       ...fa,
       needsCheck: fa.needsCheck || fb.needsCheck,
-      checkReason: fa.checkReason || fb.checkReason,
+      checkReason: own,
     };
   });
   for (const fb of bFacts.values())
-    facts.push({ ...fb, needsCheck: true, checkReason: READER_ONE_READ_FACT });
+    facts.push({
+      ...fb,
+      needsCheck: true,
+      checkReason: withOwn(READER_ONE_READ_FACT, fb.checkReason),
+    });
 
+  const count = (how: 1 | 2 | 3) =>
+    [...stage.values()].filter((x) => x === how).length;
+  return {
+    ...summed(rows, facts, a.model, Math.max(a.dropped, b.dropped) + overflow),
+    pairing: { exact: count(1), reworded: count(2), renamed: count(3) },
+  };
+}
+
+function summed(
+  rows: ReadRow[],
+  facts: ReadFact[],
+  model: string,
+  dropped: number,
+): ReadOk {
   const flagged = rows.filter((r) => r.needsCheck).length;
   return {
     ok: true,
     rows,
     facts,
-    model: a.model,
+    model,
     flaggedShare: rows.length ? flagged / rows.length : 0,
-    dropped: Math.max(a.dropped, b.dropped) + overflow,
+    dropped,
   };
+}
+
+// The one read that worked, every row and fact flagged.
+function readOnce(r: ReadOk): ReadOk {
+  const flag = <T extends { checkReason: string }>(x: T): T => ({
+    ...x,
+    needsCheck: true,
+    checkReason: withOwn(READER_READ_ONCE, x.checkReason),
+  });
+  return summed(r.rows.map(flag), r.facts.map(flag), r.model, r.dropped);
 }
 
 // readDocument, but a photo or PDF is read twice at once (two separate
 // requests, same model, same abort signal) and the answers are compared with
-// reconcileReads. Either read failing fails the whole, with the first read's
-// code when both fail. Delimited and pasted text are read once.
+// reconcileReads. When one read fails: a retryable failure (FAILED) is
+// returned so the upload is tried again; a final one (TOO_LONG, UNREADABLE,
+// REFUSED, REJECTED) leaves the other read, with every row and fact flagged,
+// so one bad sample cannot fail an upload for good. Both failing gives the
+// first read's failure. Delimited and pasted text are read once.
 export async function readDocumentChecked(
   input: ReaderInput,
   fields: ReaderField[],
@@ -775,7 +1000,10 @@ export async function readDocumentChecked(
     readDocument(input, fields, opts),
     readDocument(input, fields, opts),
   ]);
-  if (!a.ok) return a;
-  if (!b.ok) return b;
-  return reconcileReads(a, b);
+  if (a.ok && b.ok) return reconcileReads(a, b);
+  if (!a.ok && !b.ok) return a;
+  const failed = a.ok ? b : a;
+  const good = (a.ok ? a : b) as ReadOk;
+  if (!failed.ok && failed.code === "FAILED") return failed;
+  return readOnce(good);
 }
