@@ -13,6 +13,7 @@ import {
 } from "../../packages/whatsapp/src/index.ts";
 import { createFakeProvider } from "../../packages/whatsapp/src/fake.ts";
 import { WhatsAppWorker } from "../../engine/src/whatsapp/worker.ts";
+import { entitle } from "../helpers/billing.ts";
 import type { ModelDecision } from "../../packages/contracts/src/agent-test.ts";
 
 const secret = "test-app-secret-" + randomUUID();
@@ -25,7 +26,7 @@ const catalogueRows = [
 
 // With `core`, a real publish with a pattern pack and a confirmed catalogue,
 // so the frozen snapshot carries `packs`; without it, the minimal version.
-async function setup(opts: { core?: boolean } = {}) {
+async function setup(opts: { core?: boolean; entitled?: boolean } = {}) {
   Object.assign(process.env, {
     JOMCALL_WHATSAPP_PROVIDER: "fake",
     WHATSAPP_APP_SECRET: secret,
@@ -33,6 +34,8 @@ async function setup(opts: { core?: boolean } = {}) {
   });
   const f = await createPhase2Harness();
   const { h } = f;
+  // A plan with the WhatsApp agent and wallet credit (billing design §13).
+  if (opts.entitled !== false) await entitle(h.cleanup, h.orgA.id);
   // Publish a minimal agent version directly; publishing rules are tested elsewhere.
   if (opts.core) {
     const path = `/agents/${h.orgA.agentId}`;
