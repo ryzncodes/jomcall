@@ -41,6 +41,9 @@ import { z } from "zod";
 import {
   topupInput,
   billingPages,
+  planChoice,
+  type PlanChoice,
+  type PlanSummary,
   type Wallet,
   type LedgerEntry,
   type UsageEvent,
@@ -685,6 +688,8 @@ export const commands = {
     id,
     out<Topup>(),
   ),
+  plan: route("GET", "/billing/plan", empty, out<PlanSummary>()),
+  choosePlan: route("POST", "/billing/plan", planChoice, out<PlanChoice>()),
   channels: route("GET", "/channels", empty, out<Channels>()),
   phoneNumbers: route("GET", "/phone-numbers", empty, out<PhoneNumbers>()),
   createPhoneNumber: route(
