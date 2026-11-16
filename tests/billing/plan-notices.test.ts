@@ -82,6 +82,7 @@ test("fee due: queued within three days of the next fee when the wallet is short
         balanceSen: 1500,
         dueDate: "2027-02-28",
         payBy: null,
+        whatsappAgent: false,
       },
     ]);
     assert.deepEqual(await notices(b), [], "the wallet holds the next fee");
@@ -137,6 +138,7 @@ test("fee unpaid: queued once while in grace, with the last day to pay; not when
         dueDate: "2027-01-31",
         // Grace ends at 00:00 on 7 February: the 6th is the last full day.
         payBy: "2027-02-06",
+        whatsappAgent: false,
       },
     ]);
     assert.deepEqual(await notices(b), []);
@@ -367,6 +369,172 @@ test("a plan stopped notice is skipped when the owner started a plan again the s
     assert.equal(started.outcome, "started");
     await settle();
     assert.ok((await states()).every((r) => r.delivery_state === "skipped"), JSON.stringify(await states()));
+    assert.deepEqual(await mailTo(h.alice.confirmedEmail), []);
+  } finally {
+    await close();
+  }
+});
+
+// This organization's plan notice states, oldest first.
+const planStates = async (h: H, org: string) =>
+  (
+    await h.cleanup.query("select delivery_state from app.billing_notice where org_id=$1 and channel='plan' order by created_at,reason", [org])
+  ).rows.map((r) => r.delivery_state as string);
+// A real-clock Kuala Lumpur date, days from today (the plans take effect
+// from 14 November 2026, so a period cannot start earlier than that).
+const klDate = async (h: H, days = 0) =>
+  (await h.cleanup.query("select ((now() at time zone 'Asia/Kuala_Lumpur')::date+$1::int)::text d", [days])).rows[0].d as string;
+
+test("fee unpaid: not queued when the wallet already holds the fee; a queued one is skipped once it does", async () => {
+  const { h, worker, adjust, subscribe, queue, notices, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    for (const org of [a, b]) {
+      await subscribe(org);
+      assert.equal((await chargePlanPeriod(worker, org, kl("2027-02-01"))).periodState, "unpaid");
+    }
+    // A is credited but not charged: the next run takes the fee by itself.
+    await adjust(a, 4900);
+    await queue(kl("2027-02-01"));
+    assert.deepEqual(await notices(a), []);
+    // B was short when queued and is credited (not charged) before the send.
+    await adjust(b, 4900);
+    assert.deepEqual(await notices(b), [null]);
+    assert.deepEqual(await planStates(h, b), ["skipped"]);
+  } finally {
+    await close();
+  }
+});
+
+test("fee unpaid: not queued once grace has ended; skipped at send time when grace ended meanwhile", async () => {
+  const { h, worker, subscribe, queue, notices, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    await subscribe(a);
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-01"))).periodState, "unpaid");
+    // Grace ends at 00:00 on 7 February; the period has not been moved on yet.
+    await queue(kl("2027-02-07"));
+    assert.deepEqual(await notices(a), []);
+    await queue(kl("2027-02-06", "23:00:00"));
+    assert.deepEqual((await notices(a)).map((n) => n.reason), ["PLAN_FEE_UNPAID"]);
+    // The send-time check compares grace with the real clock, so B uses a
+    // real-clock period: queued while in grace, sent after it ended with the
+    // period not yet moved on (grace is brought forward to stand for the days
+    // in between).
+    await subscribe(b, "starter", await klDate(h));
+    assert.equal((await chargePlanPeriod(worker, b)).periodState, "unpaid");
+    await queue(new Date());
+    assert.deepEqual(await planStates(h, b), ["pending"]);
+    await h.cleanup.query("update app.plan_period set grace_until=now() where org_id=$1 and state='unpaid'", [b]);
+    assert.deepEqual(await notices(b), [null]);
+    assert.deepEqual(await planStates(h, b), ["skipped"]);
+  } finally {
+    await close();
+  }
+});
+
+test("plan stopped: not queued for a period whose grace ended more than two days before", async () => {
+  const { h, worker, subscribe, queue, notices, close } = await setup();
+  try {
+    const a = h.orgA.id;
+    await subscribe(a);
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-01"))).periodState, "unpaid");
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-07"))).periodState, "downgraded");
+    // Grace ended at 00:00 on 7 February.
+    await queue(kl("2027-02-09"));
+    assert.deepEqual(await notices(a), [], "too late to announce");
+    await queue(kl("2027-02-08", "23:00:00"));
+    assert.deepEqual((await notices(a)).map((n) => n.reason), ["PLAN_STOPPED"]);
+  } finally {
+    await close();
+  }
+});
+
+test("fee due: skipped at send time after a change to pay as you go; sent with the new plan and fee after a change to another paid plan", async () => {
+  const { h, worker, adjust, subscribe, queue, notices, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    for (const org of [a, b]) {
+      await subscribe(org);
+      await adjust(org, 6400);
+      assert.equal((await chargePlanPeriod(worker, org, kl("2027-02-01"))).periodState, "charged");
+    }
+    await queue(kl("2027-02-25"));
+    const stored = await h.cleanup.query(
+      "select plan_code,amount_sen::int from app.billing_notice where org_id=any($1) and channel='plan' order by org_id=$2 desc",
+      [[a, b], a],
+    );
+    assert.deepEqual(stored.rows, [
+      { plan_code: "starter", amount_sen: 4900 },
+      { plan_code: "starter", amount_sen: 4900 },
+    ]);
+    await h.cleanup.query("update app.org_plan set pending_plan_code='payg' where org_id=$1", [a]);
+    await h.cleanup.query("update app.org_plan set pending_plan_code='growth' where org_id=$1", [b]);
+    assert.deepEqual(await notices(a), [null], "no fee is due on pay as you go");
+    assert.deepEqual(await planStates(h, a), ["skipped"]);
+    assert.deepEqual((await notices(b)).map(brief), [
+      {
+        channel: "plan",
+        reason: "PLAN_FEE_DUE",
+        emails: [h.bob.confirmedEmail],
+        plan: "growth",
+        amountSen: 12900,
+        balanceSen: 1500,
+        dueDate: "2027-02-28",
+        payBy: null,
+        whatsappAgent: true,
+      },
+    ]);
+  } finally {
+    await close();
+  }
+});
+
+test("queue_plan_notices: one organization's failing notice does not stop another's", async () => {
+  const { h, worker, subscribe, queue, notices, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    for (const org of [a, b]) {
+      await subscribe(org);
+      assert.equal((await chargePlanPeriod(worker, org, kl("2027-02-01"))).periodState, "unpaid");
+    }
+    // A period no notice can carry (pay as you go, yet unpaid): its insert
+    // breaks billing_notice_plan_shape.
+    await h.cleanup.query("update app.plan_period set plan_code='payg' where org_id=$1", [a]);
+    assert.ok((await queue(kl("2027-02-01"))) >= 1);
+    assert.deepEqual(await notices(a), []);
+    assert.deepEqual((await notices(b)).map((n) => n.reason), ["PLAN_FEE_UNPAID"]);
+  } finally {
+    await close();
+  }
+});
+
+test("a plan stopped notice is skipped when the owner picks a plan on a later day (the stopped period is cut short, not reused)", async () => {
+  const { h, worker, a, adjust, subscribe, queue, states, settle, close } = await skipSetup();
+  try {
+    // A real-clock period that began yesterday; its grace ends in six days.
+    const start = await klDate(h, -1);
+    await subscribe(a, "starter", start);
+    assert.equal((await chargePlanPeriod(worker, a, kl(start))).periodState, "unpaid");
+    const later = new Date(Date.now() + 7 * 86_400_000);
+    assert.equal((await chargePlanPeriod(worker, a, later)).periodState, "downgraded");
+    await queue(later);
+    assert.deepEqual(await states(), [{ reason: "PLAN_STOPPED", delivery_state: "pending" }]);
+    await adjust(a, 4900);
+    const started = (
+      await h.sqlAsApp(h.alice, a, async (tx) => (await tx.query("select app_private.choose_plan($1,'starter') v", [a])).rows[0].v)
+    ) as { outcome: string };
+    assert.equal(started.outcome, "started");
+    // The stopped period stays downgraded and now ends today; a new period starts today.
+    const old = (
+      await h.cleanup.query(
+        "select state,period_end=(now() at time zone 'Asia/Kuala_Lumpur')::date ends_today from app.plan_period where org_id=$1 and period_start=$2",
+        [a, start],
+      )
+    ).rows[0];
+    assert.deepEqual(old, { state: "downgraded", ends_today: true });
+    await settle();
+    assert.deepEqual(await states(), [{ reason: "PLAN_STOPPED", delivery_state: "skipped" }]);
     assert.deepEqual(await mailTo(h.alice.confirmedEmail), []);
   } finally {
     await close();
