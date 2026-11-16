@@ -319,6 +319,50 @@ test("ceiling notice: once a Kuala Lumpur day while reached, null under it; the 
   }
 });
 
+test("stored-bytes notice: once a Kuala Lumpur day from 80 percent of the ceiling, null under it; the worker role only", async () => {
+  const h = await createHarness();
+  try {
+    await queuedUpload(h, h.orgA, h.alice.userId, 5);
+    await rolledBack(h, async (c) => {
+      const notice = async () => (await c.query("select app_private.setup_bytes_notice() as value")).rows[0].value;
+      const day = (await c.query("select ((now() at time zone 'Asia/Kuala_Lumpur')::date)::text as d")).rows[0].d;
+      const stored = Number(
+        (
+          await c.query(
+            "select coalesce(sum(bytes),0)::bigint as n from app.setup_upload where bytes_deleted_at is null and state<>'removed'",
+          )
+        ).rows[0].n,
+      );
+      assert.ok(stored >= 5);
+      // Exactly 80 percent: noticed.
+      const at80 = Math.floor((stored * 5) / 4);
+      await c.query("update app.setup_read_limit set stored_bytes_max=$1, bytes_noticed_day=null", [at80]);
+      assert.deepEqual(await notice(), { day, storedBytes: stored, maxBytes: at80 });
+      assert.equal(await notice(), null, "once a day");
+      assert.equal((await c.query("select bytes_noticed_day::text as d from app.setup_read_limit")).rows[0].d, day);
+      // Just under 80 percent, with the day not yet noticed: null.
+      await c.query("update app.setup_read_limit set stored_bytes_max=$1, bytes_noticed_day=null", [at80 + 1]);
+      assert.equal(await notice(), null, "under 80 percent");
+    });
+    await asLogin("WORKER_DATABASE_URL", async (w) => {
+      await w.query("begin");
+      try {
+        await w.query("select app_private.setup_bytes_notice()");
+      } finally {
+        await w.query("rollback");
+      }
+    });
+    for (const url of ["APP_DATABASE_URL", "AGENT_DATABASE_URL"] as const)
+      await assert.rejects(
+        asLogin(url, (x) => x.query("select app_private.setup_bytes_notice()")),
+        /permission denied/,
+        url,
+      );
+  } finally {
+    await h.close();
+  }
+});
+
 test("the web, agent and worker roles cannot read or change app.setup_read_limit", async () => {
   const h = await createHarness();
   try {

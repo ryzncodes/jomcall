@@ -20,3 +20,27 @@ export function readCeilingMail(n: ReadCeilingNotice) {
       "To raise the ceiling: update app.setup_read_limit set daily_reads = <n>. No file has failed.",
   };
 }
+
+// The operator email sent when stored setup uploads (declared sizes of files
+// whose bytes are still held) reach 80 percent of the service-wide ceiling
+// (app.setup_read_limit.stored_bytes_max). The database answers
+// app_private.setup_bytes_notice() at most once per Kuala Lumpur day, and
+// marks the day before this is sent. English only; counts only. MB are whole
+// numbers rounded down (1 MB = 1,048,576 bytes), so the stored figure is
+// never overstated.
+export type BytesCeilingNotice = {
+  day: string;
+  storedBytes: number;
+  maxBytes: number;
+};
+
+const MB = 1_048_576;
+export function bytesCeilingMail(n: BytesCeilingNotice) {
+  return {
+    subject: "JomCall: stored setup uploads are near the ceiling",
+    text:
+      `Stored setup uploads hold ${Math.floor(n.storedBytes / MB)} MB of ${Math.floor(n.maxBytes / MB)} MB. ` +
+      "New files are refused when the ceiling is reached. File bytes are deleted 7 days after upload. " +
+      "To raise the ceiling: update app.setup_read_limit set stored_bytes_max = <bytes>.",
+  };
+}

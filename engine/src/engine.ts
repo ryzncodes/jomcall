@@ -9,7 +9,12 @@ import {
 import { createMailSender, type MailSender } from "./mail.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
 import { billingNoticeMail, parseBillingNotice } from "./billing-notice.ts";
-import { readCeilingMail, type ReadCeilingNotice } from "./read-ceiling.ts";
+import {
+  bytesCeilingMail,
+  readCeilingMail,
+  type BytesCeilingNotice,
+  type ReadCeilingNotice,
+} from "./read-ceiling.ts";
 const payload = z
   .object({
     outboxId: z.uuid(),
@@ -88,6 +93,9 @@ async function chargePlan(pool: pg.Pool, orgId: string) {
 // SETUP_READ_CEILING is always logged with the counts; the operator gets one
 // email when JOMCALL_OPERATOR_EMAIL is set. The database marks the day before
 // the email goes out, so a failed send is logged and not retried that day.
+// The ceiling on stored upload bytes is checked the same way, on its own
+// timer (app_private.setup_bytes_notice(), code SETUP_BYTES_CEILING, from 80
+// percent of the ceiling).
 export type ReadCeilingOptions = {
   firstAfterMs?: number;
   everyMs?: number;
@@ -95,6 +103,7 @@ export type ReadCeilingOptions = {
   retryMs?: number;
   now?: () => number;
   notice?: (pool: pg.Pool) => Promise<ReadCeilingNotice | null>;
+  bytesNotice?: (pool: pg.Pool) => Promise<BytesCeilingNotice | null>;
   // Defaults to JOMCALL_OPERATOR_EMAIL; null sends nothing.
   operatorEmail?: string | null;
 };
@@ -102,6 +111,13 @@ async function readCeilingNotice(pool: pg.Pool) {
   return (
     await pool.query<{ value: ReadCeilingNotice | null }>(
       "select app_private.setup_read_ceiling_notice() as value",
+    )
+  ).rows[0].value;
+}
+async function bytesCeilingNotice(pool: pg.Pool) {
+  return (
+    await pool.query<{ value: BytesCeilingNotice | null }>(
+      "select app_private.setup_bytes_notice() as value",
     )
   ).rows[0].value;
 }
@@ -124,6 +140,7 @@ export class Engine {
   private planCounts = { ok: 0, failed: 0 };
   private ceiling: Required<ReadCeilingOptions>;
   private ceilingDueAt: number;
+  private bytesDueAt: number;
   private constructor(
     readonly namespace: string,
     plans: PlanChargeOptions = {},
@@ -149,11 +166,13 @@ export class Engine {
       retryMs: 300_000,
       now: Date.now,
       notice: readCeilingNotice,
+      bytesNotice: bytesCeilingNotice,
       // An invalid address stops the engine at start, naming the setting.
       operatorEmail: operatorEmail(),
       ...ceiling,
     };
     this.ceilingDueAt = this.ceiling.now() + this.ceiling.firstAfterMs;
+    this.bytesDueAt = this.ceilingDueAt;
     // Local mode: Mailpit on loopback. Hosted mode: SMTP with TLS, or
     // Cloudflare Email Service when JOMCALL_MAIL_PROVIDER=cloudflare.
     this.mail = mail ?? createMailSender();
@@ -290,10 +309,40 @@ export class Engine {
       console.error("SETUP_READ_CEILING_MAIL_FAILED");
     }
   }
+  // The stored-uploads ceiling, with the same cadence and error handling.
+  private async noticeBytesCeiling() {
+    const now = this.ceiling.now();
+    if (now < this.bytesDueAt) return;
+    let n: BytesCeilingNotice | null;
+    try {
+      n = await this.ceiling.bytesNotice(this.pool);
+    } catch {
+      this.bytesDueAt = now + this.ceiling.retryMs;
+      console.error("SETUP_BYTES_CEILING_CHECK_FAILED");
+      return;
+    }
+    this.bytesDueAt = now + this.ceiling.everyMs;
+    if (!n) return;
+    console.error(
+      "SETUP_BYTES_CEILING",
+      `stored=${n.storedBytes} max=${n.maxBytes}`,
+    );
+    if (!this.ceiling.operatorEmail) return;
+    try {
+      await this.mail.send({
+        to: this.ceiling.operatorEmail,
+        ...bytesCeilingMail(n),
+        operationId: `setup-bytes-ceiling-${n.day}`,
+      });
+    } catch {
+      console.error("SETUP_BYTES_CEILING_MAIL_FAILED");
+    }
+  }
   async tick(failAt?: "after-enqueue" | "before-commit") {
     if (failAt && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
     await this.chargeDuePlans();
     await this.noticeReadCeiling();
+    await this.noticeBytesCeiling();
     await this.pool.query("select app_private.maintain_jobs($1)", [
       this.namespace,
     ]);
