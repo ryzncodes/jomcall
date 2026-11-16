@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useSearchParams } from "next/navigation";
 import { ContactBookings } from "./bookings";
 import { useState } from "react";
@@ -625,8 +626,12 @@ export function JobRow({ job: j }: { job: Job }) {
     a = useAction();
   const labels = {
     pending: w(
-      "Pending · local engine will process this",
-      "Menunggu · enjin setempat akan memproses",
+      HOSTED
+        ? "Pending · will be processed shortly"
+        : "Pending · local engine will process this",
+      HOSTED
+        ? "Menunggu · akan diproses sebentar lagi"
+        : "Menunggu · enjin setempat akan memproses",
     ),
     completed: w("Completed", "Selesai"),
     failed: w("Failed · retry available", "Gagal · boleh cuba lagi"),
