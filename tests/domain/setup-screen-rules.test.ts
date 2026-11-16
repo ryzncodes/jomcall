@@ -1032,6 +1032,28 @@ test("Retry is never offered while reading is switched off", () => {
   assert.equal(retryOffered(503, "INTERNAL"), true);
 });
 
+test("stored uploads at the ceiling: its own sentence, the review page drops the questions offer, no Retry", () => {
+  for (const step of ["create", "paste"] as const) {
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, en),
+      "JomCall cannot take new files right now. Answer the questions instead, or try again tomorrow.",
+    );
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, ms),
+      "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan dahulu, atau cuba lagi esok.",
+    );
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, en, true),
+      "JomCall cannot take new files right now. Try again tomorrow.",
+    );
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, ms, true),
+      "JomCall tidak dapat menerima fail baharu buat masa ini. Cuba lagi esok.",
+    );
+  }
+  assert.equal(retryOffered(503, "UPLOAD_STORE_FULL"), false);
+});
+
 test("our own reason sentences are said in Bahasa Melayu; the reader's words stay English", () => {
   const say = (r: string, w = ms) => reasonParts(r, w);
   assert.deepEqual(say("Only one of two readings found this row. Please check."), [

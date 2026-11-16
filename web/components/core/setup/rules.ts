@@ -335,6 +335,17 @@ export function requestErrorText(
             );
     case "READER_OFF":
       return failText("READER_OFF", w);
+    // The service-wide ceiling on stored uploads: not the owner's file.
+    case "UPLOAD_STORE_FULL":
+      return review
+        ? w(
+            "JomCall cannot take new files right now. Try again tomorrow.",
+            "JomCall tidak dapat menerima fail baharu buat masa ini. Cuba lagi esok.",
+          )
+        : w(
+            "JomCall cannot take new files right now. Answer the questions instead, or try again tomorrow.",
+            "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan dahulu, atau cuba lagi esok.",
+          );
     default:
       return null;
   }
@@ -425,9 +436,11 @@ export const sendBrokenText = (w: Words) =>
 
 // Retry is offered only when sending the same thing again can work: no
 // answer, a timeout or a server error (or a proxy's page a later try may
-// pass), and never after the write cap or while reading is switched off.
+// pass), and never after the write cap, while reading is switched off or
+// while stored uploads are at the ceiling.
 export function retryOffered(status: number | null, code: string | null) {
-  if (code === "UPLOAD_RATE" || code === "READER_OFF") return false;
+  if (code === "UPLOAD_RATE" || code === "READER_OFF" || code === "UPLOAD_STORE_FULL")
+    return false;
   if (code === "PROXY") return proxyRetryable(status);
   return retryable(status);
 }

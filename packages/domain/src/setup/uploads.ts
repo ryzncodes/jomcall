@@ -276,6 +276,15 @@ export async function setupUploadRoute(
     ).rows[0].n as number;
     if (recent >= UPLOAD_LIMITS.perOrgPerDay) throw new AppError("UPLOAD_RATE", 429);
   };
+  // The service-wide ceiling on stored upload bytes (declared sizes of every
+  // workspace's files still held). Advisory: two racing uploads may both
+  // pass; the ceiling is a guard for the database's size, not an exact cap.
+  const checkRoom = async (bytes: number) => {
+    const room = (
+      await tx.query("select app_private.setup_upload_room($1) as ok", [bytes])
+    ).rows[0].ok as boolean;
+    if (!room) throw new AppError("UPLOAD_STORE_FULL", 503);
+  };
   const queueRead = (id: string) =>
     tx.query(
       "insert into app.outbox(org_id,namespace,kind,resource_id) values($1,$2,'setup.read',$3)",
@@ -321,6 +330,7 @@ export async function setupUploadRoute(
           await lockAgent();
           const s = await openSession();
           await checkCaps(s.id);
+          await checkRoom(v.bytes);
           // Kind and mime start as the client's hints; finish replaces both
           // with what the leading bytes say.
           const row = (
@@ -349,6 +359,7 @@ export async function setupUploadRoute(
         const s = await openSession();
         await checkCaps(s.id);
         const data = Buffer.from(v.text, "utf8");
+        await checkRoom(data.length);
         const row = (
           await tx.query(
             "insert into app.setup_upload(org_id,session_id,kind,name,mime,bytes,chunks,state,created_by) values($1,$2,'text','Pasted text','text/plain; charset=utf-8',$3,1,'queued',$4) returning *",
