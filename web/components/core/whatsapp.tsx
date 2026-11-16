@@ -7,6 +7,8 @@ import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import {
   mappedProviderStatuses,
+  providerStatusMap,
+  providerStatusNotFound,
   type WhatsAppOverview,
   type WhatsAppTemplate,
 } from "../../../packages/contracts/src/whatsapp";
@@ -162,6 +164,7 @@ function WhatsAppBody({
           templates={data.templates}
           syncedAt={channel.templates_synced_at}
           syncReason={channel.templates_sync_reason}
+          connected={channel.state === "connected"}
           reload={reload}
         />
       )}
@@ -337,11 +340,13 @@ function Templates({
   templates,
   syncedAt,
   syncReason,
+  connected,
   reload,
 }: {
   templates: WhatsAppTemplate[];
   syncedAt: string | null;
   syncReason: string | null;
+  connected: boolean;
   reload: () => void;
 }) {
   const w = useWords(),
@@ -387,7 +392,16 @@ function Templates({
     )
       reload();
   };
-  const line = syncLine(syncedAt, syncReason);
+  // Disabled without staff having done it, with a WhatsApp status the map
+  // does not know: switching on restores it by hand.
+  const stuckOff = (t: WhatsAppTemplate) =>
+    t.status === "disabled" &&
+    !t.disabled_by_staff &&
+    t.provider_status !== null &&
+    (t.provider_status === providerStatusNotFound ||
+      !(t.provider_status in providerStatusMap));
+  const now = new Date();
+  const line = syncLine(syncedAt, syncReason, connected, now);
   return (
     <section className="core-panel">
       <h2>{w("Message templates", "Templat mesej")}</h2>
@@ -431,7 +445,7 @@ function Templates({
           // Seen at the provider: its status is the truth, so staff do not
           // record one by hand.
           const synced = t.provider_status !== null;
-          const note = templateNote(t, syncedAt, syncReason);
+          const note = templateNote(t, syncedAt, syncReason, connected, now);
           return (
             <div className="core-record" key={t.id}>
               <div>
@@ -483,7 +497,7 @@ function Templates({
                 )}
               </div>
               <div className="core-actions">
-                {t.disabled_by_staff ? (
+                {t.disabled_by_staff || stuckOff(t) ? (
                   <button
                     className="button secondary-button"
                     disabled={action.busy}

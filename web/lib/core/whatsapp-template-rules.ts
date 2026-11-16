@@ -6,13 +6,27 @@ import { providerStatusNotFound } from "../../../packages/contracts/src/whatsapp
 // not been answered yet.
 export const syncPendingReason = "TEMPLATE_SYNC_PENDING";
 
-// The line about the last check with WhatsApp, for the whole list.
+// A check claimed longer ago than this without an answer reads as failed.
+export const syncPendingLimitMs = 5 * 60 * 1000;
+
+// The line about the last check with WhatsApp, for the whole list. `claimedAt`
+// is the claim time (templates_synced_at) while a check is pending; `now` is
+// passed in so tests can fix it. Nothing is said when the channel is not
+// connected.
 export type SyncLine = "checking" | "failed" | "checked" | null;
 export function syncLine(
   syncedAt: string | null,
   reason: string | null,
+  connected: boolean,
+  now: Date,
 ): SyncLine {
-  if (reason === syncPendingReason) return "checking";
+  if (!connected) return null;
+  if (reason === syncPendingReason) {
+    const t = syncedAt ? Date.parse(syncedAt) : NaN;
+    return Number.isFinite(t) && now.getTime() - t <= syncPendingLimitMs
+      ? "checking"
+      : "failed";
+  }
   if (reason) return "failed";
   return syncedAt ? "checked" : null;
 }
@@ -26,8 +40,10 @@ export function templateNote(
   t: { provider_status: string | null },
   syncedAt: string | null,
   reason: string | null,
+  connected: boolean,
+  now: Date,
 ): TemplateNote {
   if (t.provider_status === providerStatusNotFound) return "not_found";
   if (t.provider_status !== null) return "from_provider";
-  return syncLine(syncedAt, reason) === "checked" ? "not_listed" : null;
+  return syncLine(syncedAt, reason, connected, now) === "checked" ? "not_listed" : null;
 }
