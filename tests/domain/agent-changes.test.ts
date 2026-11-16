@@ -109,6 +109,13 @@ test("rules: pack rules by id; owner rules by text", () => {
   const long = "x".repeat(300);
   assert.equal(d(base, { rules: [own(long)] as any })[0].label.length, 120);
 });
+test("an owner rule whose kind changes but not its text is a change", () => {
+  const own = (kind: string) => ({ kind, text: "Same text", packId: null, ruleId: null });
+  assert.deepEqual(d({ ...base, rules: [own("must")] }, { rules: [own("never")] as any }), [
+    { kind: "rule", op: "removed", label: "Same text" },
+    { kind: "rule", op: "added", label: "Same text" },
+  ]);
+});
 test("a published closed date now in the past is not a change", () => {
   const pub = { ...base, hours: [{ ...hq, closures: [{ date: "2026-01-01", reason: "" }] }] };
   assert.deepEqual(d(pub, { hours: [{ ...hq, closures: [] }] }), []);

@@ -179,16 +179,17 @@ function diffRules(pub: CoreRule[], draft: CoreRule[]): AgentChange[] {
   for (const [k, r] of pubPack)
     if (!draftPack.has(k))
       out.push({ kind: "rule", op: "removed", label: text120(r.text) });
-  const own = (rs: CoreRule[]) => rs.filter((r) => !r.packId).map((r) => r.text);
-  const pubOwn = own(pub);
-  const draftOwn = [...own(draft)];
-  for (const t of pubOwn) {
-    const i = draftOwn.indexOf(t);
+  // Owner rules are keyed on kind and text: a changed kind is a remove plus an add.
+  const own = (rs: CoreRule[]) =>
+    rs.filter((r) => !r.packId).map((r) => ({ key: `${r.kind}\u0000${r.text}`, text: r.text }));
+  const draftOwn = own(draft);
+  for (const o of own(pub)) {
+    const i = draftOwn.findIndex((x) => x.key === o.key);
     if (i >= 0) draftOwn.splice(i, 1);
-    else out.push({ kind: "rule", op: "removed", label: text120(t) });
+    else out.push({ kind: "rule", op: "removed", label: text120(o.text) });
   }
-  for (const t of draftOwn)
-    out.push({ kind: "rule", op: "added", label: text120(t) });
+  for (const o of draftOwn)
+    out.push({ kind: "rule", op: "added", label: text120(o.text) });
   return out;
 }
 
