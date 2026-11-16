@@ -93,10 +93,6 @@ begin
   return jsonb_build_object('requeued', v_requeued, 'abandoned', v_abandoned, 'marked', v_marked, 'swept', v_swept);
 
  elsif p_action = 'claim' then
-  -- Daily ceiling for the whole service: when this many files have started
-  -- reading in the last 24 hours, nothing new starts until some age out.
-  -- Files stay queued; nothing fails.
-  if app_private.setup_read_ceiling_hit() then return null; end if;
   -- Reading uploads are left alone (their row stays for a later re-queue).
   for o in
    select b.* from app.outbox b left join app.setup_upload y on y.org_id = b.org_id and y.id = b.resource_id
@@ -121,6 +117,11 @@ begin
     update app.outbox set delivered_at = now(), lease_until = null where id = o.id;
     continue;
    end if;
+   -- Daily ceiling for the whole service: when this many files have started
+   -- reading in the last 24 hours, nothing new starts until some age out.
+   -- Files stay queued; nothing fails. Checked here, after the loop has
+   -- closed files that will never be read, so those do not wait behind it.
+   if app_private.setup_read_ceiling_hit() then return null; end if;
    update app.setup_upload set state = 'reading', attempts = attempts + 1, lease_token = gen_random_uuid(), lease_until = now() + interval '8 minutes',
     first_claimed_at = coalesce(first_claimed_at, now())
    where id = u.id returning * into u;
