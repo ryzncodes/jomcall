@@ -19,6 +19,27 @@ Branch `feat/reading-limits`, pull request not yet open, not merged. Nothing on 
 - Known limit: while the ceiling holds, a queued file whose setup was saved stays queued (counted in `waiting`) until the next claim fails it `SESSION_CLOSED`.
 - Uploads still live in the database; Supabase Storage is a separate change. No browser check and no real email yet.
 
+## 2026-11-16 — plan picker leftovers
+
+Branch `feat/plan-leftovers`, pull request not yet open, not merged. Nothing on hosted staging.
+
+**Changed**
+- Migration `20261116130000_plan_notices.sql` (by the controller): `queue_plan_notices` queues owner emails about the fee (`PLAN_FEE_DUE`, `PLAN_FEE_UNPAID`, `PLAN_STOPPED`) on the refusal-email queue; `billing_notice_payload` carries plan, amount, balance and dates; `plan_entitlements` follows the late-clock rule.
+- After an independent review: unpaid is queued only while the wallet is short and grace has not ended; stopped only while on pay as you go and within two days of grace ending; fee due at the price in force on the due day; one organization's failed insert does not stop the others. `billing_notice_payload` checks each plan notice again at send time and marks it `skipped` when no longer true; the email carries the plan, fee and balance true then, plus `whatsappAgent`. Emails name WhatsApp only when the plan includes it, name the page Billing / Bil & penggunaan, and the BM wording was revised.
+- Engine: the hourly run calls `queue_plan_notices` after its charging pass (failure logs `PLAN_NOTICE_RUN_FAILED`, stops nothing); `engine/src/billing-notice.ts` parses the payload with zod and writes the three emails, English then BM, RM amounts, "16 Dec 2026" / "16 Dis 2026".
+- Operator `plan` command (`scripts/billing/plan-admin.ts`) mirrors `choose_plan`: starts a first paid plan today with the fee, refuses a short wallet with exit 1 and no change, schedules changes from a paid plan. Tests compare it with `choose_plan` side by side.
+- Tests: `tests/billing/plan-notices.test.ts`, `tests/billing/plan-admin.test.ts`, `tests/engine/billing-notice.test.ts`, late-clock admission in `tests/billing/plans.test.ts`, notify timing in `tests/engine/plan-charge.test.ts`.
+- Docs: AGENTS.md, billing design §13 (leftovers note, operator command), RUNBOOK step 13.
+
+**Verified (2026-11-16, local database, Mailpit and fakes only)**
+- After the review changes: typecheck: pass. guards: 69 of 69. plan-notices + engine billing-notice tests: 20 of 20. check:core: 814 of 815 on two runs (intermittent `tests/local/model.test.mjs` "runtime ownership"; passed alone 2 of 2). verify-migrations: pass (58 RLS tables). build:hosted: pass (build:mock not re-run).
+
+**Next**
+- Owner: apply migration `20261116130000_plan_notices.sql` on staging BEFORE rebuilding the engine (RUNBOOK step 13); without it the hourly run logs `PLAN_NOTICE_RUN_FAILED` and sends no fee emails.
+- The first hourly run after deploy emails owners whose plan is unpaid in grace, and those whose plan stopped in the last two days. Do not roll the engine back to a build from before this change while plan notices are queued (the old sender does not know the `plan` channel).
+- No real mail service was used and no person has read the emails; someone should read all three in both languages.
+- Open the pull request.
+
 ## 2026-11-16 — plan picker, after review
 
 Branch `feat/plan-picker`, pull request not yet open, not merged. Nothing on hosted staging.

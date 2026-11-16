@@ -27,7 +27,9 @@ test("the engine charges due plans through the worker role", async () => {
   try {
     const org = h.orgA.id;
     await starter(h, org, 10000);
-    engine = await Engine.create(h.namespace, { plans: { firstAfterMs: 0 } });
+    // The fee emails read every organization in the database: stubbed here
+    // (tests/billing/plan-notices.test.ts covers them).
+    engine = await Engine.create(h.namespace, { plans: { firstAfterMs: 0, notify: async () => {} } });
     // Other organizations in the shared database may be due too: a list
     // longer than one batch carries on at the next ticks.
     for (let i = 0; i < 10 && !(await period(h, org)).length; i++) await engine.tick();
@@ -44,6 +46,7 @@ test("plan charging runs once an hour, retries after five minutes, never stops t
   try {
     let t = 1_000_000,
       runs = 0,
+      notices = 0,
       fail = false;
     const minute = 60_000;
     engine = await Engine.create(h.namespace, {
@@ -57,27 +60,30 @@ test("plan charging runs once an hour, retries after five minutes, never stops t
           if (fail) throw Error("DATABASE_DOWN");
           return [];
         },
+        notify: async () => void notices++,
       },
     });
-    const step = async (minutes: number, expected: number) => {
+    // Each run that listed its organizations queues the fee emails once.
+    const step = async (minutes: number, expected: number, emails: number) => {
       t += minutes * minute;
       await engine!.tick();
       assert.equal(runs, expected, `after +${minutes} min`);
+      assert.equal(notices, emails, `emails after +${minutes} min`);
     };
-    await step(0, 0);
-    await step(1, 1);
-    await step(10, 1);
-    await step(49, 1);
-    await step(1, 2);
+    await step(0, 0, 0);
+    await step(1, 1, 1);
+    await step(10, 1, 1);
+    await step(49, 1, 1);
+    await step(1, 2, 2);
     fail = true;
     engine.lastTickAt = 0;
-    await step(60, 3);
+    await step(60, 3, 2);
     assert.ok(engine.lastTickAt > 0, "the tick ran to the end after a failed run");
-    await step(4, 3);
+    await step(4, 3, 2);
     fail = false;
-    await step(1, 4);
-    await step(59, 4);
-    await step(1, 5);
+    await step(1, 4, 3);
+    await step(59, 4, 3);
+    await step(1, 5, 4);
   } finally {
     await engine?.close();
     await h.close();
@@ -107,6 +113,7 @@ test("each organization is charged alone: a held wallet lock fails only that one
           lists++;
           return [a, b];
         },
+        notify: async () => {},
       },
     });
     console.error = (...args: unknown[]) => void errors.push(args);
@@ -150,6 +157,7 @@ test("one tick charges at most 25 organizations; the rest carry over to the next
   try {
     const ids = Array.from({ length: 60 }, (_, i) => `org-${i}`);
     const charged: string[] = [];
+    const emailsAt: number[] = [];
     let t = 1_000_000,
       lists = 0;
     const hour = 3_600_000;
@@ -163,6 +171,7 @@ test("one tick charges at most 25 organizations; the rest carry over to the next
           return [...ids];
         },
         charge: async (_pool, id) => void charged.push(id),
+        notify: async () => void emailsAt.push(charged.length),
       },
     });
     for (const expected of [25, 50, 60]) {
@@ -171,6 +180,7 @@ test("one tick charges at most 25 organizations; the rest carry over to the next
       t += 1000;
     }
     assert.deepEqual(charged, ids);
+    assert.deepEqual(emailsAt, [60], "fee emails once, after the last batch");
     assert.equal(lists, 1, "one list per run");
     await engine.tick();
     assert.equal(charged.length, 60, "the next run waits for the hour");
@@ -178,6 +188,55 @@ test("one tick charges at most 25 organizations; the rest carry over to the next
     await engine.tick();
     assert.deepEqual([lists, charged.length], [2, 85]);
   } finally {
+    await engine?.close();
+    await h.close();
+  }
+});
+
+test("fee emails are queued after the charges, with the engine's namespace; a failure is logged without ids and stops nothing", async () => {
+  const h = await createHarness();
+  const errors: unknown[][] = [];
+  const log = console.error;
+  let engine: Engine | undefined;
+  try {
+    const events: string[] = [];
+    let t = 1_000_000,
+      broken = true;
+    const hour = 3_600_000;
+    engine = await Engine.create(h.namespace, {
+      plans: {
+        firstAfterMs: 0,
+        everyMs: hour,
+        now: () => t,
+        due: async () => ["org-a", "org-b"],
+        charge: async (_pool, id) => {
+          events.push("charge " + id);
+          if (id === "org-a") throw Error("LOCK_TIMEOUT");
+        },
+        notify: async (_pool, namespace) => {
+          events.push("notify " + (namespace === h.namespace ? "own namespace" : namespace));
+          if (broken) throw Error("NOTICE_FAILED org-a");
+        },
+      },
+    });
+    console.error = (...args: unknown[]) => void errors.push(args);
+    engine.lastTickAt = 0;
+    await engine.tick();
+    assert.ok(engine.lastTickAt > 0, "the tick ran to the end");
+    // One organization failing to charge does not silence the others' emails.
+    assert.deepEqual(events, ["charge org-a", "charge org-b", "notify own namespace"]);
+    assert.deepEqual(
+      errors.map((e) => e[0]),
+      ["PLAN_NOTICE_RUN_FAILED", "PLAN_CHARGE_RUN_FAILED"],
+    );
+    assert.deepEqual(errors[0], ["PLAN_NOTICE_RUN_FAILED"], "a fixed code, no ids");
+    assert.ok(!JSON.stringify(errors).includes("org-"), "no organization ids logged");
+    broken = false;
+    t += hour;
+    await engine.tick();
+    assert.deepEqual(events.slice(3), ["charge org-a", "charge org-b", "notify own namespace"]);
+  } finally {
+    console.error = log;
     await engine?.close();
     await h.close();
   }

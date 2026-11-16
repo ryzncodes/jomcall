@@ -8,7 +8,7 @@ import {
 } from "../../packages/contracts/src/hosting.ts";
 import { createMailSender, type MailSender } from "./mail.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
-import { billingNoticeMail } from "./billing-notice.ts";
+import { billingNoticeMail, parseBillingNotice } from "./billing-notice.ts";
 import { readCeilingMail, type ReadCeilingNotice } from "./read-ceiling.ts";
 const payload = z
   .object({
@@ -34,6 +34,10 @@ function dsn(name: "WORKER_DATABASE_URL" | "QUEUE_DATABASE_URL") {
 // namespace: each environment's engine runs them on its own database. Safe
 // to run from several engines at once (one fee per period).
 // app_private.charge_due_plans stays in the database for manual use only.
+// After the charging pass the run queues the owner emails about the fee
+// (app_private.queue_plan_notices: fee due soon, fee unpaid, plan stopped),
+// so a fee that could be charged is never announced as unpaid. A failure
+// there is logged and never stops the run or the tick.
 export type PlanChargeOptions = {
   // Delay before the first run after start, the gap after a run that
   // worked, and the gap after one that failed.
@@ -48,6 +52,8 @@ export type PlanChargeOptions = {
   // Lists the organizations due; charges one of them.
   due?: (pool: pg.Pool) => Promise<string[]>;
   charge?: (pool: pg.Pool, orgId: string) => Promise<void>;
+  // Queues the plan fee emails once the run's charges are done.
+  notify?: (pool: pg.Pool, namespace: string) => Promise<unknown>;
 };
 async function plansDue(pool: pg.Pool) {
   return (
@@ -99,6 +105,9 @@ async function readCeilingNotice(pool: pg.Pool) {
     )
   ).rows[0].value;
 }
+async function queuePlanNotices(pool: pg.Pool, namespace: string) {
+  await pool.query("select app_private.queue_plan_notices($1)", [namespace]);
+}
 export class Engine {
   private pool: pg.Pool;
   private boss: PgBoss;
@@ -130,6 +139,7 @@ export class Engine {
       now: Date.now,
       due: plansDue,
       charge: chargePlan,
+      notify: queuePlanNotices,
       ...plans,
     };
     this.plansDueAt = this.plans.now() + this.plans.firstAfterMs;
@@ -230,7 +240,18 @@ export class Engine {
         this.planCounts.failed++;
       }
     }
-    if (!this.planQueue.length) this.endPlanRun(now, false);
+    if (!this.planQueue.length) {
+      // Charges first, then the emails, in their own statement. Queued
+      // even when some charges failed, so one stuck organization does not
+      // silence the others; skipped when the list itself failed (the retry
+      // run queues them).
+      try {
+        await this.plans.notify(this.pool, this.namespace);
+      } catch {
+        console.error("PLAN_NOTICE_RUN_FAILED");
+      }
+      this.endPlanRun(now, false);
+    }
   }
   private endPlanRun(now: number, listFailed: boolean) {
     const { ok, failed } = this.planCounts;
@@ -327,7 +348,7 @@ export class Engine {
               )
             ).rows[0].value;
             if (p) {
-              const mail = billingNoticeMail(p, this.mail.inviteBase);
+              const mail = billingNoticeMail(parseBillingNotice(p), this.mail.inviteBase);
               for (const [i, to] of (p.emails as string[]).entries())
                 await this.mail.send({
                   to,

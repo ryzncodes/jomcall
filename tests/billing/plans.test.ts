@@ -570,6 +570,29 @@ test("a late clock never creates a period before the monthly date or a second fe
   }
 });
 
+test("a call start just behind a first pick is admitted: entitlements read the monthly date's midnight", async () => {
+  const { h, worker, adjust, choose, close } = await setup();
+  try {
+    const org = h.orgA.id;
+    await adjust(org, 20000);
+    assert.equal((await choose(h.alice, org, "starter")).outcome, "started");
+    // One second before today's midnight in Kuala Lumpur: a call start whose
+    // transaction began before the pick moved the monthly date to today.
+    const late = (
+      await h.cleanup.query("select ((now() at time zone 'Asia/Kuala_Lumpur')::date::timestamp at time zone 'Asia/Kuala_Lumpur')-interval '1 second' t")
+    ).rows[0].t as Date;
+    const ent = await planEntitlements(worker, org, late);
+    assert.deepEqual([ent.plan, ent.periodState, ent.phoneNumbers], ["starter", "charged", 1]);
+    const admitted = (await h.cleanup.query("select app_private.channel_admission($1,'phone',$2,$3) v", [org, late, h.namespace])).rows[0].v;
+    assert.equal(admitted, null);
+    assert.equal(await count(h, "select count(*)::int n from app.plan_period where org_id=$1", [org]), 1, "no backdated period");
+    assert.deepEqual(await fees(h, org), [-4900]);
+    assert.equal(await count(h, "select count(*)::int n from app.billing_notice where org_id=$1", [org]), 0, "no refusal email");
+  } finally {
+    await close();
+  }
+});
+
 test("a waiting first plan with no period is dropped by the scheduler, with or without money", async () => {
   const { h, worker, balance, subscribe, today, close } = await setup();
   try {
