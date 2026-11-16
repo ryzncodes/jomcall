@@ -70,7 +70,7 @@ Builder settings extend the setup draft. Contacts, inbox, bookings, consent, cal
 
 See `docs/frontend/contacts-bookings-integrations.md` for the connected operations screens, migration rules and QA evidence.
 
-Phone routing, channel quality, template approval, payments and usage extend the same setup store. Inbox sends use the shared channel/template gates; billing draws sample activity from the CRM store. See `docs/frontend/phone-whatsapp-billing.md` for behavior, migration and QA.
+Phone routing, channel quality, template approval, payments and usage extend the same setup store. Inbox sends use the shared channel/template gates; billing draws sample activity from the CRM store. See `docs/frontend/phone-whatsapp-billing.md` for behavior, migration and QA. In the local and hosted apps only (never this preview), the wallet screen at `/app/billing` also has a plan card (`components/core/plan-card.tsx`, rules in `lib/core/plan-rules.ts`) through the `plan` and `choosePlan` commands: owners and admins start a first paid plan at once from the wallet, change or cancel a change for the next period, and see unpaid and stopped warnings; staff get no card.
 
 Home metrics and owner-summary previews derive from shared call, booking and wallet records. Settings extend the setup store with branches, sample memberships, summary preferences, recording retention and non-functional key metadata. CRM and setup changes append local audit entries. Existing `/app?call=...` links still open the call log. See `docs/frontend/home-and-settings.md` for supported workflows and production boundaries.
 

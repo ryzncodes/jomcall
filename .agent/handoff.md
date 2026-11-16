@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-11-16 — plan picker, after review
+
+Branch `feat/plan-picker`, pull request not yet open, not merged. Nothing on hosted staging.
+
+**Changed**
+- Migration `20261116120000_plan_picker.sql`: a first paid plan starts now with the full fee and a new monthly date, or not at all on a short wallet (`wallet_short`); changes between plans wait for the next period; a credited top-up retries an unpaid fee; `charge_plan_period` never creates a period before the monthly date and a paid plan waiting on a payg row starts only with the fee (`billing.plan_start_skipped` otherwise); new `plan_orgs_due` for the engine.
+- Engine: lists due organizations hourly and charges each with `charge_plan_period` in its own transaction (1 s lock timeout, 25 per tick, rest carried over; failures log `PLAN_CHARGE_RUN_FAILED ok=<n> failed=<n>` and retry after 5 minutes). `charge_due_plans` is manual only.
+- Web: plan card on `/app/billing` (one idempotency key per plan code, kept only when no answer came from JomCall; a paid plan with no period yet shows the first-fee line), BM wording fixes, link on setup's finish stage.
+- Docs: AGENTS.md, billing design §12 and §13 (plan picker note), RUNBOOK step 13, web README.
+
+**Verified (2026-11-16, local database and fakes only)**
+- typecheck: pass. guards: 69 of 69. check:core: 788 of 788. verify-migrations: pass (58 RLS tables). build:local, build:mock, build:hosted: pass.
+- Browser check by the controller at 390 px (English, BM, dark) before this review's card changes; those changes are unit-tested only.
+
+**Next**
+- Owner: apply the migration on staging BEFORE the engine is rebuilt (the new engine calls `plan_orgs_due`); RUNBOOK step 13 has a read-only query to run first.
+- **Warning for the owner:** the first hourly pass after deploy charges or downgrades every organization that has a plan row, including ones with no traffic yet. An organization whose period began more than 7 days ago with a short wallet falls back to pay as you go at once, without an email.
+- Open the pull request; a person should try the unpaid warning, the stopped-plan notice, the top-up retry and the staff view.
+
 ## 2026-11-16 — billing follow-ups after the channel metering review
 
 Branch `claude/billing-followups`, pull request open (not merged). Pull request #26 is merged (`99b9b43`) and its migration is on staging, so `20261115123000_channel_metering.sql` must not be edited.
@@ -117,7 +136,7 @@ Branch `claude/usage-metering-e13eb4`, pull request #26 (not merged). Design: bi
   - **Decision B:** phone is admitted while a charged period has unused included minutes, whatever the wallet. WhatsApp unchanged.
   - **Decision C:** the four plan or wallet refusals queue one owner email per org, reason and KL day through the engine outbox (kind `billing.refusal_notice`; `engine/src/billing-notice.ts`). The agent process never sends mail and its login role gained nothing.
 - **Roles:** the agent login role lost `record_usage`, `wallet_state` and `plan_entitlements`. The web role lost the billing columns on `app.call` (column grants) and has no access to the two new tables. `app.conversation` grants are unchanged.
-- **Operator commands:** `npm run billing:admin -- plan <org> <code> "<operator>"` (the only way to give a workspace a plan today); `usage-pending` (owed calls and windows, plus check-failed calls and turns of 7 days) and `usage-retry <call or window id>`. All local only; on staging the owner uses the SQL in the pull request body.
+- **Operator commands:** `npm run billing:admin -- plan <org> <code> "<operator>"` (the only way to give a workspace a plan until the plan picker, branch `feat/plan-picker`, 2026-11-16); `usage-pending` (owed calls and windows, plus check-failed calls and turns of 7 days) and `usage-retry <call or window id>`. All local only; on staging the owner uses the SQL in the pull request body.
 
 **Verified (2026-11-15, fakes, local engine, local mail catcher and local database only)**
 - typecheck: pass.
@@ -137,9 +156,9 @@ Branch `claude/usage-metering-e13eb4`, pull request #26 (not merged). Design: bi
 - Paid model gates were not re-run; no prompt or tool list changed.
 
 **Next**
-- Plan picker on the wallet screen.
+- ~~Plan picker on the wallet screen~~ (branch `feat/plan-picker`, 2026-11-16).
 - Specific call-log and inbox text for the new codes.
-- Schedule `charge_due_plans`.
+- ~~Schedule `charge_due_plans`~~ (the engine visits due organizations hourly, branch `feat/plan-picker`).
 - Move admission out of the global call-start lock.
 - Reconcile lost `billing.refusal_notice` jobs (today only invitations are reconciled).
 
