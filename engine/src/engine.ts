@@ -22,28 +22,46 @@ const payload = z
 function dsn(name: "WORKER_DATABASE_URL" | "QUEUE_DATABASE_URL") {
   return databaseConnection(process.env[name], name, process.env, "LOCAL_ONLY");
 }
-// Monthly plan fees (billing design §13). app_private.charge_due_plans
-// starts or retries the current period of every organization that has a
-// plan. It takes no namespace argument because plans are per database, not
-// per queue namespace: each environment's engine runs it on its own
-// database. Safe to run from several engines at once (one fee per period).
+// Monthly plan fees (billing design §13). Once an hour the engine lists the
+// organizations whose plan needs attention (app_private.plan_orgs_due: no
+// period covering now, or an unpaid one) and starts or retries each one's
+// current period with app_private.charge_plan_period in its own short
+// transaction, so one organization's wallet lock is never held while
+// another is charged and each charge reads its own clock. Neither function
+// takes a namespace argument because plans are per database, not per queue
+// namespace: each environment's engine runs them on its own database. Safe
+// to run from several engines at once (one fee per period).
+// app_private.charge_due_plans stays in the database for manual use only.
 export type PlanChargeOptions = {
   // Delay before the first run after start, the gap after a run that
   // worked, and the gap after one that failed.
   firstAfterMs?: number;
   everyMs?: number;
   retryMs?: number;
+  // Most organizations charged in one tick. The rest are charged by the
+  // next ticks, without waiting for the next run, so a list of busy wallets
+  // (up to a second each) cannot stall the tick past its health check.
+  batch?: number;
   now?: () => number;
-  run?: (pool: pg.Pool) => Promise<void>;
+  // Lists the organizations due; charges one of them.
+  due?: (pool: pg.Pool) => Promise<string[]>;
+  charge?: (pool: pg.Pool, orgId: string) => Promise<void>;
 };
-async function chargeDuePlans(pool: pg.Pool) {
+async function plansDue(pool: pg.Pool) {
+  return (
+    await pool.query<{ id: string }>(
+      "select id from app_private.plan_orgs_due() as id",
+    )
+  ).rows.map((r) => r.id);
+}
+async function chargePlan(pool: pg.Pool, orgId: string) {
   const c = await pool.connect();
   try {
     await c.query("begin");
-    // An organization whose wallet lock is held (a call starting) is
-    // skipped after a second and retried by the next run.
+    // An organization whose wallet lock is held (a call starting) fails
+    // after a second; the run then retries at the short interval.
     await c.query("set local lock_timeout='1s'");
-    await c.query("select app_private.charge_due_plans()");
+    await c.query("select app_private.charge_plan_period($1,now())", [orgId]);
     await c.query("commit");
   } catch (e) {
     await c.query("rollback").catch(() => {});
@@ -63,6 +81,9 @@ export class Engine {
   private reconciliationCursor: string | null = null;
   private plans: Required<PlanChargeOptions>;
   private plansDueAt: number;
+  // The organizations the current run has still to charge, and its counts.
+  private planQueue: string[] = [];
+  private planCounts = { ok: 0, failed: 0 };
   private constructor(
     readonly namespace: string,
     plans: PlanChargeOptions = {},
@@ -72,8 +93,10 @@ export class Engine {
       firstAfterMs: 60_000,
       everyMs: 3_600_000,
       retryMs: 300_000,
+      batch: 25,
       now: Date.now,
-      run: chargeDuePlans,
+      due: plansDue,
+      charge: chargePlan,
       ...plans,
     };
     this.plansDueAt = this.plans.now() + this.plans.firstAfterMs;
@@ -133,18 +156,36 @@ export class Engine {
     this.reconciliationCursor =
       pending.rows.length === 20 ? pending.rows.at(-1)!.id : null;
   }
-  // At most once per interval; a failure is logged and retried sooner, and
-  // never stops the tick.
+  // At most once per interval; a run whose list is longer than one batch
+  // carries on at the next ticks. A failure is logged with counts only and
+  // retried sooner, and never stops the tick.
   private async chargeDuePlans() {
     const now = this.plans.now();
-    if (now < this.plansDueAt) return;
-    try {
-      await this.plans.run(this.pool);
-      this.plansDueAt = now + this.plans.everyMs;
-    } catch {
-      this.plansDueAt = now + this.plans.retryMs;
-      console.error("PLAN_CHARGE_RUN_FAILED");
+    if (!this.planQueue.length) {
+      if (now < this.plansDueAt) return;
+      try {
+        this.planQueue = await this.plans.due(this.pool);
+      } catch {
+        return this.endPlanRun(now, true);
+      }
     }
+    for (const orgId of this.planQueue.splice(0, this.plans.batch)) {
+      try {
+        await this.plans.charge(this.pool, orgId);
+        this.planCounts.ok++;
+      } catch {
+        this.planCounts.failed++;
+      }
+    }
+    if (!this.planQueue.length) this.endPlanRun(now, false);
+  }
+  private endPlanRun(now: number, listFailed: boolean) {
+    const { ok, failed } = this.planCounts;
+    this.planCounts = { ok: 0, failed: 0 };
+    if (listFailed || failed > 0) {
+      this.plansDueAt = now + this.plans.retryMs;
+      console.error("PLAN_CHARGE_RUN_FAILED", `ok=${ok} failed=${failed}`);
+    } else this.plansDueAt = now + this.plans.everyMs;
   }
   async tick(failAt?: "after-enqueue" | "before-commit") {
     if (failAt && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
