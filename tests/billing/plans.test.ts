@@ -541,3 +541,114 @@ test("plan_summary: plans on offer, balance and a pending change", async () => {
     await close();
   }
 });
+
+test("a late clock never creates a period before the monthly date or a second fee", async () => {
+  const { h, worker, adjust, balance, choose, today, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    // Five seconds before today's midnight in Kuala Lumpur: a transaction
+    // that began just before a first pick moved the monthly date to today.
+    const late = (
+      await h.cleanup.query("select ((now() at time zone 'Asia/Kuala_Lumpur')::date::timestamp at time zone 'Asia/Kuala_Lumpur')-interval '5 seconds' t")
+    ).rows[0].t as Date;
+    await adjust(a, 20000);
+    await setBalance(h.cleanup, b, 4900);
+    for (const [org, who, left] of [[a, h.alice, 15100], [b, h.bob, 0]] as const) {
+      assert.equal((await choose(who, org, "starter")).outcome, "started");
+      const again = await chargePlanPeriod(worker, org, late);
+      assert.deepEqual([again.plan, again.periodState, again.duplicate], ["starter", "charged", true]);
+      // Every period, not only the current one: a backdated one would not contain now.
+      assert.equal(await count(h, "select count(*)::int n from app.plan_period where org_id=$1", [org]), 1);
+      const periods = await current(h, org);
+      assert.deepEqual([periods.length, periods[0].state, periods[0].s], [1, "charged", await today()]);
+      assert.deepEqual(await fees(h, org), [-4900]);
+      assert.equal((await h.cleanup.query("select plan_code from app.org_plan where org_id=$1", [org])).rows[0].plan_code, "starter");
+      assert.equal(await balance(org), left);
+    }
+  } finally {
+    await close();
+  }
+});
+
+test("a waiting first plan with no period starts only with the fee, never in grace", async () => {
+  const { h, worker, balance, subscribe, today, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    for (const org of [a, b]) {
+      await subscribe(org, "payg", await today());
+      await h.cleanup.query("update app.org_plan set pending_plan_code='starter' where org_id=$1", [org]);
+    }
+    const skipped = "select count(*)::int n from app.audit_log where org_id=$1 and action='billing.plan_start_skipped'";
+    // An empty wallet: the waiting plan is dropped and the organization stays on payg.
+    const empty = await chargePlanPeriod(worker, a);
+    assert.deepEqual([empty.plan, empty.periodState], ["payg", "free"]);
+    assert.deepEqual((await h.cleanup.query("select plan_code,pending_plan_code from app.org_plan where org_id=$1", [a])).rows[0], {
+      plan_code: "payg",
+      pending_plan_code: null,
+    });
+    assert.equal(await count(h, "select count(*)::int n from app.plan_period where org_id=$1 and state='unpaid'", [a]), 0);
+    assert.equal((await planEntitlements(worker, a)).phoneNumbers, 0);
+    assert.equal(await count(h, skipped, [a]), 1);
+    assert.deepEqual(await fees(h, a), []);
+    // Exactly the fee: the plan starts and is charged in the same call.
+    await setBalance(h.cleanup, b, 4900);
+    const started = await chargePlanPeriod(worker, b);
+    assert.deepEqual([started.plan, started.periodState], ["starter", "charged"]);
+    assert.deepEqual((await h.cleanup.query("select plan_code,pending_plan_code from app.org_plan where org_id=$1", [b])).rows[0], {
+      plan_code: "starter",
+      pending_plan_code: null,
+    });
+    assert.deepEqual(await fees(h, b), [-4900]);
+    assert.equal(await balance(b), 0);
+    assert.equal(await count(h, skipped, [b]), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("a change between paid plans still starts unpaid in grace on a short wallet", async () => {
+  const { h, worker, adjust, subscribe, close } = await setup();
+  try {
+    const org = h.orgA.id;
+    await subscribe(org, "starter");
+    await adjust(org, 4900);
+    assert.equal((await chargePlanPeriod(worker, org, kl("2027-02-01"))).periodState, "charged");
+    // Growth was asked for during that period; the wallet is now empty.
+    await h.cleanup.query("update app.org_plan set pending_plan_code='growth' where org_id=$1", [org]);
+    const next = await chargePlanPeriod(worker, org, kl("2027-02-28"));
+    assert.deepEqual([next.plan, next.periodState], ["growth", "unpaid"]);
+    assert.equal(new Date(next.graceUntil!).toISOString(), kl("2027-03-07", "00:00:00").toISOString());
+    const ent = await planEntitlements(worker, org, kl("2027-03-01"));
+    assert.deepEqual([ent.plan, ent.phoneNumbers, ent.whatsappAgent], ["growth", 1, true]);
+    assert.deepEqual(await fees(h, org), [-4900]);
+    assert.equal(await count(h, "select count(*)::int n from app.audit_log where org_id=$1 and action='billing.plan_start_skipped'", [org]), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("plan_orgs_due: no period covering the time, or an unpaid one; worker role only", async () => {
+  const { h, worker, adjust, subscribe, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    // The database is shared with other tests: check these two only.
+    const due = async (at: Date) => (await worker.query("select id from app_private.plan_orgs_due($1) as id", [at])).rows.map((r) => r.id as string);
+    const listed = async (at: Date) => {
+      const ids = await due(at);
+      return [ids.includes(a), ids.includes(b)];
+    };
+    await subscribe(a, "starter");
+    await subscribe(b, "payg");
+    assert.deepEqual(await listed(kl("2027-02-01")), [true, true], "no period yet");
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-01"))).periodState, "unpaid");
+    assert.equal((await chargePlanPeriod(worker, b, kl("2027-02-01"))).periodState, "free");
+    assert.deepEqual(await listed(kl("2027-02-02")), [true, false], "unpaid listed, free not");
+    await adjust(a, 4900);
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-03"))).periodState, "charged");
+    assert.deepEqual(await listed(kl("2027-02-04")), [false, false], "charged and free not listed");
+    assert.deepEqual(await listed(kl("2027-02-28")), [true, true], "the next period has not started");
+    await assert.rejects(h.sqlAsApp(h.alice, a, (tx) => tx.query("select * from app_private.plan_orgs_due()")), /permission denied/);
+  } finally {
+    await close();
+  }
+});
