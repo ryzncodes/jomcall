@@ -5,10 +5,12 @@ import { HOSTED } from "@/lib/hosted";
 // switch and secrets are set, the screen says the channel is not connected
 // and offers nothing that could reach Meta.
 import { useState } from "react";
-import type {
-  WhatsAppOverview,
-  WhatsAppTemplate,
+import {
+  mappedProviderStatuses,
+  type WhatsAppOverview,
+  type WhatsAppTemplate,
 } from "../../../packages/contracts/src/whatsapp";
+import { useExperience } from "../experience";
 import {
   useCore,
   useWords,
@@ -35,6 +37,21 @@ const templateWords: Record<string, [string, string]> = {
   paused: ["Paused", "Dijeda"],
   disabled: ["Disabled", "Dinyahaktifkan"],
 };
+
+// A time in Kuala Lumpur, in the screen's language.
+function useKlTime() {
+  const { locale } = useExperience();
+  return (iso: string) =>
+    new Intl.DateTimeFormat(locale === "ms" ? "ms-MY" : "en-MY", {
+      timeZone: "Asia/Kuala_Lumpur",
+      day: "numeric",
+      month: "short",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(new Date(iso));
+}
+
+const mapped = new Set<string>(mappedProviderStatuses);
 
 export function LocalWhatsApp() {
   const w = useWords(),
@@ -139,7 +156,14 @@ function WhatsAppBody({
         )}
       </section>
       {readiness.configured && <ChannelForm data={data} reload={reload} />}
-      {channel && <Templates templates={data.templates} reload={reload} />}
+      {channel && (
+        <Templates
+          templates={data.templates}
+          syncedAt={channel.templates_synced_at}
+          syncReason={channel.templates_sync_reason}
+          reload={reload}
+        />
+      )}
       <section className="core-panel">
         <h2>{w("What customers see", "Apa yang pelanggan nampak")}</h2>
         <ul>
@@ -310,14 +334,19 @@ function ChannelForm({
 
 function Templates({
   templates,
+  syncedAt,
+  syncReason,
   reload,
 }: {
   templates: WhatsAppTemplate[];
+  syncedAt: string | null;
+  syncReason: string | null;
   reload: () => void;
 }) {
   const w = useWords(),
     { client } = useCore(),
-    action = useAction();
+    action = useAction(),
+    time = useKlTime();
   const [name, setName] = useState("jomcall_reply_request"),
     [language, setLanguage] = useState("ms"),
     [body, setBody] = useState(
@@ -359,10 +388,27 @@ function Templates({
       <h2>{w("Message templates", "Templat mesej")}</h2>
       <p>
         {w(
-          "After 24 hours without a customer message, WhatsApp only allows approved templates. Submit each template in WhatsApp Manager, then record Meta's decision here.",
-          "Selepas 24 jam tanpa mesej daripada pelanggan, WhatsApp hanya membenarkan templat yang diluluskan. Hantar setiap templat dalam WhatsApp Manager, kemudian rekodkan keputusan Meta di sini.",
+          "After 24 hours without a customer message, WhatsApp only allows approved templates. Submit each template in WhatsApp Manager and add it here. While the number is connected, JomCall checks each template's status with WhatsApp about once an hour; record Meta's decision by hand only for a template WhatsApp has not listed.",
+          "Selepas 24 jam tanpa mesej daripada pelanggan, WhatsApp hanya membenarkan templat yang diluluskan. Hantar setiap templat dalam WhatsApp Manager dan tambahkannya di sini. Semasa nombor disambungkan, JomCall menyemak status setiap templat dengan WhatsApp lebih kurang sejam sekali; rekodkan keputusan Meta secara manual hanya untuk templat yang belum disenaraikan oleh WhatsApp.",
         )}
       </p>
+      {syncReason ? (
+        <p className="storage-warning" role="status">
+          {w(
+            "Could not check with WhatsApp. Statuses below may be out of date.",
+            "Tidak dapat menyemak dengan WhatsApp. Status di bawah mungkin sudah lapuk.",
+          )}
+        </p>
+      ) : (
+        syncedAt && (
+          <p className="editor-note">
+            {w(
+              `Checked with WhatsApp ${time(syncedAt)}`,
+              `Disemak dengan WhatsApp ${time(syncedAt)}`,
+            )}
+          </p>
+        )
+      )}
       {!templates.length ? (
         <p className="core-empty">
           {w("No templates yet.", "Belum ada templat.")}
@@ -370,15 +416,37 @@ function Templates({
       ) : (
         templates.map((t) => {
           const s = templateWords[t.status] ?? [t.status, t.status];
+          // Seen at the provider: its status is the truth, so staff do not
+          // record one by hand.
+          const synced = t.provider_status !== null;
           return (
             <div className="core-record" key={t.id}>
               <div>
                 <strong>{t.name}</strong> <code>{t.language}</code>{" "}
                 <span className="remaining-chip">{w(s[0], s[1])}</span>
                 <p>{t.body}</p>
+                {synced && (
+                  <p className="editor-note">
+                    {t.synced_at
+                      ? w(
+                          `Status from WhatsApp, checked ${time(t.synced_at)}`,
+                          `Status daripada WhatsApp, disemak ${time(t.synced_at)}`,
+                        )
+                      : w("Status from WhatsApp", "Status daripada WhatsApp")}
+                    {!mapped.has(t.provider_status!) && (
+                      <>
+                        {" · "}
+                        {w(
+                          `WhatsApp says: ${t.provider_status}`,
+                          `WhatsApp menyatakan: ${t.provider_status}`,
+                        )}
+                      </>
+                    )}
+                  </p>
+                )}
               </div>
               <div className="core-actions">
-                {t.status === "draft" && (
+                {!synced && t.status === "draft" && (
                   <button
                     className="button secondary-button"
                     disabled={action.busy}
@@ -387,7 +455,7 @@ function Templates({
                     {w("Submitted to Meta", "Dihantar kepada Meta")}
                   </button>
                 )}
-                {t.status === "pending" && (
+                {!synced && t.status === "pending" && (
                   <>
                     <button
                       className="button secondary-button"

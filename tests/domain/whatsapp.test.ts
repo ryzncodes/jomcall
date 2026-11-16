@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   buildInboundText,
   buildStatus,
@@ -21,6 +22,7 @@ import {
   decideSend,
   type SendFacts,
 } from "../../packages/domain/src/whatsapp/policy.ts";
+import { mappedProviderStatuses } from "../../packages/contracts/src/whatsapp.ts";
 
 const secret = "test-app-secret-0123456789";
 
@@ -239,6 +241,121 @@ test("cloud client is unreachable unless switched on, and sends the documented s
     },
   });
   assert.deepEqual(await broken.sendText(target, "x"), { outcome: "unknown" });
+});
+
+test("cloud template listing sends the recorded request, follows cursors and refuses a partial list", async () => {
+  const seen: { url: string; init: RequestInit }[] = [];
+  let replies: Response[] = [];
+  const client = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async (url, init) => {
+      seen.push({ url: String(url), init: init! });
+      return replies.shift() ?? Response.json({ data: [] });
+    },
+  });
+  const input = { wabaId: "200000001", accessToken: "fake-token" };
+  replies = [
+    Response.json({
+      data: [
+        { name: "jomcall_reply_request", language: "ms", status: "APPROVED", id: "1" },
+        { name: "jomcall_reply_request", language: "en", status: "pending" },
+        // Shapes that do not fit are dropped, never guessed.
+        { name: "Bad Name", language: "ms", status: "APPROVED" },
+        { name: "x", language: "malay", status: "APPROVED" },
+        { name: "y", language: "ms", status: 3 },
+      ],
+      paging: {
+        cursors: { after: "QVFIUmFmZAWtl" },
+        next: "https://elsewhere.example/steal?after=QVFIUmFmZAWtl",
+      },
+    }),
+    Response.json({
+      data: [{ name: "jomcall_reply_request", language: "zh_CN", status: "IN_REVIEW" }],
+      paging: { cursors: { after: "QVFIUmFmZAWtm" } },
+    }),
+  ];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: true,
+    templates: [
+      { name: "jomcall_reply_request", language: "ms", status: "APPROVED" },
+      { name: "jomcall_reply_request", language: "en", status: "PENDING" },
+      { name: "jomcall_reply_request", language: "zh_CN", status: "IN_REVIEW" },
+    ],
+  });
+  assert.equal(seen.length, 2);
+  const first = new URL(seen[0].url);
+  assert.equal(
+    first.origin + first.pathname,
+    `https://graph.facebook.com/${graphVersion}/200000001/message_templates`,
+  );
+  assert.equal(first.searchParams.get("fields"), "name,language,status");
+  assert.equal(first.searchParams.get("after"), null);
+  // The next page is built from the cursor on Meta's own origin; the URL in
+  // the response is never fetched.
+  const second = new URL(seen[1].url);
+  assert.equal(second.origin, "https://graph.facebook.com");
+  assert.equal(second.searchParams.get("after"), "QVFIUmFmZAWtl");
+  assert.equal(
+    (seen[0].init.headers as Record<string, string>).authorization,
+    "Bearer fake-token",
+  );
+  assert.equal(seen[0].init.method ?? "GET", "GET");
+
+  // More pages than the cap: a failure, not part of the list.
+  seen.length = 0;
+  const page = (i: number) =>
+    Response.json({
+      data: [{ name: "t" + i, language: "ms", status: "APPROVED" }],
+      paging: { cursors: { after: "c" + i }, next: "https://graph.facebook.com/next" },
+    });
+  replies = Array.from({ length: 12 }, (_, i) => page(i));
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_TOO_LONG",
+  });
+  assert.equal(seen.length, 10);
+
+  replies = [Response.json({ error: { code: 190, message: "expired" } }, { status: 401 })];
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "META_190" });
+  replies = [new Response("", { status: 500 })];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_FAILED",
+  });
+  replies = [Response.json({ nothing: true })];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_INVALID",
+  });
+  replies = [Response.json({ data: [], paging: { next: "https://graph.facebook.com/n", cursors: { after: "bad cursor/" } } })];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_INVALID",
+  });
+  assert.deepEqual(
+    await client.listTemplates({ wabaId: "../me", accessToken: "fake-token" }),
+    { ok: false, reason: "INVALID_TARGET" },
+  );
+  const broken = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async () => {
+      throw Error("reset");
+    },
+  });
+  assert.deepEqual(await broken.listTemplates(input), {
+    ok: false,
+    reason: "PROVIDER_UNREACHABLE",
+  });
+});
+
+test("the screen's list of mapped provider statuses matches the sync migration", () => {
+  const sql = readFileSync(
+    "supabase/migrations/20261116150000_whatsapp_template_sync.sql",
+    "utf8",
+  );
+  const block = sql.slice(sql.indexOf("v_new=case v_raw"), sql.indexOf("else t.status end"));
+  const names = [...block.matchAll(/when '([A-Z_]+)'/g)].map((m) => m[1]).sort();
+  assert.deepEqual(names, [...mappedProviderStatuses].sort());
 });
 
 const now = "2026-11-14T10:00:00.000Z";

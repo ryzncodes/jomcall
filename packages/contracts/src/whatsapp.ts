@@ -32,8 +32,10 @@ export const templateCreate = z
     variables: z.number().int().min(0).max(10),
   })
   .strict();
-// Meta's review happens in WhatsApp Manager. Staff record the outcome here
-// until template sync exists.
+// Meta's review happens in WhatsApp Manager. Once the agent process has seen
+// a template at the provider (provider_status set), the provider's status is
+// copied about once an hour and a manual change is refused. Staff record the
+// outcome by hand only for templates never seen at the provider.
 export const templateStatus = z
   .object({
     status: z.enum([
@@ -67,7 +69,26 @@ export type WhatsAppChannel = {
   credentials_set_at: string | null;
   agent_enabled: boolean;
   revision: number;
+  // Last time the agent process asked the provider for the templates, and
+  // the fixed code of the last failure (null after a successful check).
+  templates_synced_at: string | null;
+  templates_sync_reason: string | null;
 };
+// Provider status names the database maps to a local status (see migration
+// 20261116150000_whatsapp_template_sync.sql; a test keeps the two equal).
+// Any other name leaves the local status alone and is shown as it came.
+export const mappedProviderStatuses = [
+  "APPROVED",
+  "PAUSED",
+  "PENDING",
+  "IN_REVIEW",
+  "IN_APPEAL",
+  "REJECTED",
+  "DISABLED",
+  "ARCHIVED",
+  "PENDING_DELETION",
+  "LIMIT_EXCEEDED",
+] as const;
 export type WhatsAppTemplate = {
   id: string;
   name: string;
@@ -78,6 +99,10 @@ export type WhatsAppTemplate = {
   body: string;
   variables: number;
   revision: number;
+  // The provider's own status name at the last check, or null when the
+  // template was not found there (or never checked).
+  provider_status: string | null;
+  synced_at: string | null;
 };
 export type WhatsAppOverview = {
   readiness: {

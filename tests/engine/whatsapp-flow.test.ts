@@ -3,7 +3,8 @@
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import pg from "pg";
+import { randomBytes, randomUUID } from "node:crypto";
 import { createPhase2Harness } from "../helpers/phase2.ts";
 import { webhookPost } from "../../web/lib/server/whatsapp-webhook.ts";
 import {
@@ -26,11 +27,15 @@ const catalogueRows = [
 
 // With `core`, a real publish with a pattern pack and a confirmed catalogue,
 // so the frozen snapshot carries `packs`; without it, the minimal version.
-async function setup(opts: { core?: boolean; entitled?: boolean } = {}) {
+// With `token`, the channel is saved with a stand-in access token (sealed;
+// the fake provider never opens it), as template sync needs stored
+// credentials.
+async function setup(opts: { core?: boolean; entitled?: boolean; token?: boolean } = {}) {
   Object.assign(process.env, {
     JOMCALL_WHATSAPP_PROVIDER: "fake",
     WHATSAPP_APP_SECRET: secret,
     WHATSAPP_VERIFY_TOKEN: "verify-token-" + randomUUID(),
+    ...(opts.token ? { WHATSAPP_CREDENTIALS_KEY: randomBytes(32).toString("hex") } : {}),
   });
   const f = await createPhase2Harness();
   const { h } = f;
@@ -92,13 +97,17 @@ async function setup(opts: { core?: boolean; entitled?: boolean } = {}) {
     phoneNumberId: phone,
     wabaId: "200000001",
     agentEnabled: true,
+    ...(opts.token ? { accessToken: "stand-in-token" } : {}),
   });
   assert.equal(saved.status, 200, JSON.stringify(saved.body));
   const provider = createFakeProvider();
+  // The worker's clock for the template-sync throttle; tests move it.
+  const clock = { now: Date.now() };
   let next: any[] = [];
   const seen: { messages: { role: string; content: string }[]; decision?: string }[] = [];
   const worker = new WhatsAppWorker(h.namespace, {
     provider,
+    now: () => clock.now,
     model: {
       generate: async (input: any) => {
         seen.push({ messages: input.messages, decision: input.decision });
@@ -147,6 +156,7 @@ async function setup(opts: { core?: boolean; entitled?: boolean } = {}) {
   return {
     ...f,
     provider,
+    clock,
     seen,
     worker,
     deliver,
@@ -651,6 +661,245 @@ test("a bad lookup already parsed by the model client does not fail the turn", a
     const out = await lastOutbound(f);
     assert.equal(out.status, "sent");
     assert.match(out.body, /Item apa/);
+  } finally {
+    await f.close();
+  }
+});
+
+// ---- template status sync (design open item O8) ----------------------------
+test("template statuses are copied from the provider", async (t) => {
+  const f = await setup({ token: true });
+  const tplName = "jomcall_reply_request";
+  try {
+    const db = f.h.cleanup;
+    const channel = async () =>
+      (
+        await db.query(
+          "select id,templates_synced_at,templates_sync_reason from app.whatsapp_channel where org_id=$1",
+          [f.h.orgA.id],
+        )
+      ).rows[0];
+    const templates = async () =>
+      (
+        await db.query(
+          "select name,language,status,provider_status,synced_at,revision from app.whatsapp_template where org_id=$1 order by name,language",
+          [f.h.orgA.id],
+        )
+      ).rows;
+    const due = () =>
+      db.query("update app.whatsapp_channel set templates_synced_at=null where org_id=$1", [f.h.orgA.id]);
+    const create = async (name: string, language: string) => {
+      const r = await f.req("POST", "/channels/whatsapp/templates", {
+        name,
+        language,
+        category: "utility",
+        purpose: "reengage",
+        body: "Kami ada balasan untuk pertanyaan anda. Sila balas mesej ini untuk menyambung perbualan.",
+        variables: 0,
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const p = await f.req("PATCH", `/channels/whatsapp/templates/${r.body.data.id}`, {
+        status: "pending",
+        expectedRevision: r.body.data.revision,
+      });
+      assert.equal(p.status, 200, JSON.stringify(p.body));
+      return p.body.data;
+    };
+    // A customer conversation whose window has closed, with service consent.
+    await f.say("Hai");
+    await f.worker.tick();
+    let c = await f.conversation();
+    await f.req("POST", `/contacts/${c.contact_id}/consents`, {
+      channel: "whatsapp",
+      purpose: "service",
+      granted: true,
+      source: "in_person",
+      evidence: "Borang di kaunter (contoh)",
+      expectedRevision: (await f.req("GET", `/contacts/${c.contact_id}`)).body.data.revision,
+    });
+    const expire = () =>
+      db.query("update app.conversation set last_inbound_at=now()-interval '25 hours' where id=$1", [c.id]);
+    const staffReply = async (text: string) => {
+      const d = (await f.req("GET", `/conversations/${c.id}`)).body.data;
+      const r = await f.req("POST", `/conversations/${c.id}/messages`, { text, expectedRevision: d.revision });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      await f.worker.tick();
+      return (await f.messages()).at(-1);
+    };
+
+    const ms = await create(tplName, "ms");
+    const absent = await create(tplName, "en");
+    const count = async () =>
+      (await db.query("select count(*)::int as n from app.whatsapp_template where org_id=$1", [f.h.orgA.id])).rows[0].n;
+    assert.equal(await count(), 2);
+
+    await t.test("a pending template becomes approved, and the outside-window fallback then uses it", async () => {
+      await expire();
+      const d = (await f.req("GET", `/conversations/${c.id}`)).body.data;
+      assert.equal(d.reply_outlook.reason, "WINDOW_CLOSED");
+      f.provider.setTemplates([
+        { name: tplName, language: "ms", status: "APPROVED" },
+        // At the provider but not here: never created locally.
+        { name: "some_other_template", language: "ms", status: "APPROVED" },
+      ]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      const [en, my] = await templates();
+      assert.equal(my.status, "approved");
+      assert.equal(my.provider_status, "APPROVED");
+      assert.ok(my.synced_at);
+      assert.equal(my.revision, ms.revision + 1);
+      // Absent at the provider: untouched.
+      assert.equal(en.status, "pending");
+      assert.equal(en.provider_status, null);
+      assert.equal(en.revision, absent.revision);
+      const ch = await channel();
+      assert.ok(ch.templates_synced_at);
+      assert.equal(ch.templates_sync_reason, null);
+      const sentBefore = f.provider.sent.length;
+      const out = await staffReply("Maaf lambat balas.");
+      assert.equal(out.status, "sent");
+      assert.equal(out.kind, "template");
+      const last = f.provider.sent[sentBefore];
+      assert.equal(last.kind === "template" && last.template.name, tplName);
+    });
+
+    await t.test("the screen's read carries the provider status and the check time", async () => {
+      const o = (await f.req("GET", "/channels/whatsapp")).body.data;
+      assert.ok(o.channel.templates_synced_at);
+      assert.equal(o.channel.templates_sync_reason, null);
+      const my = o.templates.find((x: any) => x.language === "ms");
+      assert.equal(my.provider_status, "APPROVED");
+      assert.ok(my.synced_at);
+      assert.equal(o.templates.find((x: any) => x.language === "en").provider_status, null);
+    });
+
+    await t.test("a channel is not claimed twice within the hour", async () => {
+      assert.equal(await f.worker.syncTemplatesOne(), false);
+    });
+
+    await t.test("a manual status change is refused on a synced template, allowed on an unsynced one", async () => {
+      const [en, my] = (await f.req("GET", "/channels/whatsapp")).body.data.templates;
+      const refused = await f.req("PATCH", `/channels/whatsapp/templates/${my.id}`, {
+        status: "rejected",
+        expectedRevision: my.revision,
+      });
+      assert.equal(refused.status, 409, JSON.stringify(refused.body));
+      assert.equal(refused.body.error.code, "CONFLICT");
+      assert.equal((await templates())[1].status, "approved");
+      const allowed = await f.req("PATCH", `/channels/whatsapp/templates/${en.id}`, {
+        status: "rejected",
+        expectedRevision: en.revision,
+      });
+      assert.equal(allowed.status, 200, JSON.stringify(allowed.body));
+      const back = await f.req("PATCH", `/channels/whatsapp/templates/${en.id}`, {
+        status: "pending",
+        expectedRevision: allowed.body.data.revision,
+      });
+      assert.equal(back.status, 200, JSON.stringify(back.body));
+    });
+
+    await t.test("APPROVED to PAUSED stops the fallback", async () => {
+      await due();
+      f.provider.setTemplates([{ name: tplName, language: "ms", status: "PAUSED" }]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      assert.equal((await templates())[1].status, "paused");
+      // The customer writes again (a new conversation, as the old window had
+      // closed), then the window closes once more.
+      await f.say("Ok");
+      await f.worker.tick();
+      c = await f.conversation();
+      await expire();
+      const d = (await f.req("GET", `/conversations/${c.id}`)).body.data;
+      assert.equal(d.reply_outlook.reason, "WINDOW_CLOSED");
+      const sentBefore = f.provider.sent.length;
+      const out = await staffReply("Satu lagi.");
+      assert.equal(out.status, "blocked");
+      assert.equal(out.error_code, "WINDOW_CLOSED");
+      assert.equal(f.provider.sent.length, sentBefore);
+    });
+
+    await t.test("an unknown provider status leaves the local status and is kept as it came", async () => {
+      await due();
+      f.provider.setTemplates([{ name: tplName, language: "ms", status: "UNDER_SECOND_LOOK" }]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      const my = (await templates())[1];
+      assert.equal(my.status, "paused");
+      assert.equal(my.provider_status, "UNDER_SECOND_LOOK");
+    });
+
+    await t.test("a provider failure records the reason and changes no status", async () => {
+      await due();
+      const before = await templates();
+      f.provider.failTemplates("META_190");
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      assert.equal((await channel()).templates_sync_reason, "META_190");
+      assert.deepEqual(
+        (await templates()).map((x) => [x.status, x.provider_status, x.revision]),
+        before.map((x) => [x.status, x.provider_status, x.revision]),
+      );
+      assert.equal(
+        (await f.req("GET", "/channels/whatsapp")).body.data.channel.templates_sync_reason,
+        "META_190",
+      );
+      // The next good check clears the reason.
+      await due();
+      f.provider.setTemplates([{ name: tplName, language: "ms", status: "APPROVED" }]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      assert.equal((await channel()).templates_sync_reason, null);
+      assert.equal((await templates())[1].status, "approved");
+    });
+
+    await t.test("channels without a business account id, not connected, or without credentials are skipped", async () => {
+      const set = (sql: string) => db.query(`update app.whatsapp_channel set ${sql} where org_id=$1`, [f.h.orgA.id]);
+      const saved = (
+        await db.query("select waba_id,state,credentials from app.whatsapp_channel where org_id=$1", [f.h.orgA.id])
+      ).rows[0];
+      await due();
+      await set("waba_id=null");
+      assert.equal(await f.worker.syncTemplatesOne(), false);
+      await db.query("update app.whatsapp_channel set waba_id=$2 where org_id=$1", [f.h.orgA.id, saved.waba_id]);
+      await set("state='disabled'");
+      assert.equal(await f.worker.syncTemplatesOne(), false);
+      await set("state='connected',credentials=null");
+      assert.equal(await f.worker.syncTemplatesOne(), false);
+      await db.query("update app.whatsapp_channel set credentials=$2 where org_id=$1", [f.h.orgA.id, saved.credentials]);
+      assert.equal((await channel()).templates_synced_at, null);
+    });
+
+    await t.test("the worker asks for a claim at most once a minute", async () => {
+      await due();
+      f.clock.now += 59_000;
+      await f.worker.tick();
+      assert.equal((await channel()).templates_synced_at, null);
+      f.clock.now += 1_000;
+      await f.worker.tick();
+      assert.ok((await channel()).templates_synced_at);
+    });
+
+    await t.test("only the agent login role can run the sync function", async () => {
+      const sig = "app_private.whatsapp_template_sync(text,text,uuid,jsonb)";
+      const r = (
+        await db.query(
+          "select has_function_privilege('jomcall_app',$1,'execute') as web,has_function_privilege('jomcall_agent',$1,'execute') as agent",
+          [sig],
+        )
+      ).rows[0];
+      assert.deepEqual(r, { web: false, agent: true });
+      const web = new pg.Client({ connectionString: process.env.APP_DATABASE_URL });
+      await web.connect();
+      try {
+        await assert.rejects(
+          web.query("select app_private.whatsapp_template_sync('claim',$1)", [f.h.namespace]),
+          /permission denied/,
+        );
+      } finally {
+        await web.end();
+      }
+    });
+
+    await t.test("no template was created or deleted by any sync", async () => {
+      assert.equal(await count(), 2);
+    });
   } finally {
     await f.close();
   }

@@ -46,7 +46,13 @@ export type WhatsAppWorkerOptions = {
   // Tests inject a model; otherwise the configured provider is used.
   model?: ModelClient;
   env?: Env;
+  // Milliseconds since the epoch; tests inject a clock for the sync throttle.
+  now?: () => number;
 };
+
+// The database is asked for a channel whose templates need checking at most
+// this often per process; the claim itself spaces each channel an hour apart.
+export const templateSyncEveryMs = 60_000;
 
 const code = (e: unknown, fallback: string) => {
   const m = e instanceof Error ? e.message : "";
@@ -56,6 +62,7 @@ const code = (e: unknown, fallback: string) => {
 export class WhatsAppWorker {
   private pool: pg.Pool;
   private env: Env;
+  private lastTemplateSync: number | null = null;
   constructor(
     readonly namespace: string,
     private options: WhatsAppWorkerOptions,
@@ -98,6 +105,14 @@ export class WhatsAppWorker {
       if (!r?.processed) break;
     }
     await this.verifyOne();
+    const now = (this.options.now ?? Date.now)();
+    if (
+      this.lastTemplateSync === null ||
+      now - this.lastTemplateSync >= templateSyncEveryMs
+    ) {
+      this.lastTemplateSync = now;
+      await this.syncTemplatesOne();
+    }
     for (let i = 0; i < 4; i++) if (!(await this.runOneTurn())) break;
     for (let i = 0; i < 20; i++) if (!(await this.sendOne())) break;
   }
@@ -128,6 +143,57 @@ export class WhatsAppWorker {
       reason: result.reason,
       displayPhone: result.displayPhone,
     });
+    return true;
+  }
+
+  // Copies the provider's template statuses onto the local templates of one
+  // connected channel (design open item O8). The database maps the status
+  // names and never creates or deletes a template. Never throws: a failure
+  // is stored on the channel as a fixed code and logged without ids or the
+  // token.
+  async syncTemplatesOne() {
+    let claim: any;
+    try {
+      claim = await this.pool.query(
+        "select app_private.whatsapp_template_sync('claim',$1)as value",
+        [this.namespace],
+      );
+      claim = claim.rows[0].value;
+    } catch {
+      console.error("WHATSAPP_TEMPLATE_SYNC_CLAIM_FAILED");
+      return false;
+    }
+    if (!claim) return false;
+    let result: {
+      ok: boolean;
+      reason?: string;
+      templates?: { name: string; language: string; status: string }[];
+    };
+    try {
+      result = await this.options.provider.listTemplates({
+        wabaId: claim.wabaId,
+        accessToken: this.token(claim.credentials, claim.orgId),
+      });
+    } catch (e) {
+      result = { ok: false, reason: code(e, "TEMPLATE_SYNC_FAILED") };
+    }
+    if (!result.ok) console.error("WHATSAPP_TEMPLATE_SYNC_" + result.reason);
+    try {
+      await this.pool.query(
+        "select app_private.whatsapp_template_sync('result',$1,$2,$3)",
+        [
+          this.namespace,
+          claim.id,
+          JSON.stringify(
+            result.ok
+              ? { ok: true, templates: result.templates }
+              : { ok: false, reason: result.reason },
+          ),
+        ],
+      );
+    } catch {
+      console.error("WHATSAPP_TEMPLATE_SYNC_RESULT_FAILED");
+    }
     return true;
   }
 

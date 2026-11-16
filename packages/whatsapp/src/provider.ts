@@ -44,8 +44,27 @@ export type NumberCheck =
   | { ok: true; displayPhone: string | null }
   | { ok: false; reason: string };
 
+// One template as the provider lists it. The status is the provider's own
+// name, upper case; the database maps it to a local status.
+export type ProviderTemplate = {
+  name: string;
+  language: string;
+  status: string;
+};
+
+export type TemplateList =
+  | { ok: true; templates: ProviderTemplate[] }
+  | { ok: false; reason: string };
+
 export interface WhatsAppProvider {
   readonly name: "fake" | "cloud";
+  // Every template of the business account with its review status. A list
+  // that could not be read in full is a failure, never a partial answer:
+  // a template missing from the list counts as not at the provider.
+  listTemplates(input: {
+    wabaId: string;
+    accessToken: string;
+  }): Promise<TemplateList>;
   sendText(target: SendTarget, body: string): Promise<SendOutcome>;
   sendTemplate(
     target: SendTarget,

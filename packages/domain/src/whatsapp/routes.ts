@@ -31,7 +31,9 @@ import {
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
-  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision";
+  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason";
+const templateColumns =
+  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at";
 
 async function loadChannel(tx: PoolClient, orgId: string, lock = false) {
   return (
@@ -52,7 +54,7 @@ async function overview(tx: PoolClient, ctx: TenantContext, env: Env) {
     templates: channel
       ? (
           await tx.query(
-            "select id,name,language,category,purpose,status,body,variables,revision from app.whatsapp_template where org_id=$1 order by name,language",
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 order by name,language`,
             [ctx.orgId],
           )
         ).rows
@@ -347,7 +349,7 @@ export async function whatsappRoute(
         if (!channel) throw new AppError("WHATSAPP_NOT_CONFIGURED", 409);
         const row = (
           await tx.query(
-            "insert into app.whatsapp_template(org_id,channel_id,name,language,category,purpose,body,variables)values($1,$2,$3,$4,$5,$6,$7,$8) returning id,name,language,category,purpose,status,body,variables,revision",
+            `insert into app.whatsapp_template(org_id,channel_id,name,language,category,purpose,body,variables)values($1,$2,$3,$4,$5,$6,$7,$8) returning ${templateColumns}`,
             [
               ctx.orgId,
               channel.id,
@@ -372,7 +374,7 @@ export async function whatsappRoute(
       async (ref) =>
         (
           await tx.query(
-            "select id,name,language,category,purpose,status,body,variables,revision from app.whatsapp_template where org_id=$1 and id=$2",
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 and id=$2`,
             [ctx.orgId, ref.id],
           )
         ).rows[0],
@@ -391,9 +393,11 @@ export async function whatsappRoute(
       "updateWhatsAppTemplate",
       { id, ...v },
       async () => {
+        // A template seen at the provider takes its status from there; the
+        // agent process copies it about once an hour.
         const row = (
           await tx.query(
-            "update app.whatsapp_template set status=$3,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 and revision=$4 returning id,name,language,category,purpose,status,body,variables,revision",
+            `update app.whatsapp_template set status=$3,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 and revision=$4 and provider_status is null returning ${templateColumns}`,
             [ctx.orgId, id, v.status, v.expectedRevision],
           )
         ).rows[0];
@@ -411,7 +415,7 @@ export async function whatsappRoute(
       async () =>
         (
           await tx.query(
-            "select id,name,language,category,purpose,status,body,variables,revision from app.whatsapp_template where org_id=$1 and id=$2",
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 and id=$2`,
             [ctx.orgId, id],
           )
         ).rows[0],
