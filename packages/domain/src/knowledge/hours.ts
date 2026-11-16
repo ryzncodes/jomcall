@@ -13,6 +13,7 @@ export type FrozenHours = {
 
 export const hoursBudget = (inputBudget: number) => (inputBudget <= 6000 ? 400 : 1500);
 
+const otherPrefix = "Other branches (hours on request from staff): ";
 const header = "Opening hours (Asia/Kuala_Lumpur time):";
 const bytes = (lines: string[]) => Buffer.byteLength(lines.join("\n"));
 
@@ -43,11 +44,21 @@ export function renderHoursBlock(hours: FrozenHours[], maxBytes: number): string
   let i = 1;
   for (; i < hours.length; i++) {
     const next = branchLine(hours[i], sorted(hours[i]));
-    if (bytes([...out, next]) > maxBytes) break;
+    // Keep room for the shortest form of the "Other branches" line.
+    const left = hours.length - i - 1;
+    if (bytes([...out, next, ...(left ? [otherPrefix + `${left} more`] : [])]) > maxBytes) break;
     out.push(next);
   }
   const rest = hours.slice(i);
-  if (rest.length)
-    out.push(`Other branches (hours on request from staff): ${rest.map((h) => line(h.name, 120)).join(", ")}`);
+  if (rest.length) {
+    const prefix = otherPrefix;
+    const names = rest.map((h) => line(h.name, 120));
+    const build = (k: number) =>
+      prefix + (k ? names.slice(0, k).join(", ") : "") + (k < names.length ? `${k ? " and " : ""}${names.length - k} more` : "");
+    // Name as many as fit inside the cap; when none fit the short count line is written anyway.
+    let k = names.length;
+    while (k > 0 && bytes([...out, build(k)]) > maxBytes) k--;
+    out.push(build(k));
+  }
   return out;
 }
