@@ -26,6 +26,9 @@ declare v_actor uuid:=app_private.billing_manager(p_org);op app.org_plan;pl app.
  perform pg_advisory_xact_lock(hashtextextended('wallet:'||p_org::text,0));
  -- Bring the current period up to date first (a fee that is due, a grace
  -- that has ended), so the choice is made against the true state.
+ -- A row the earlier rule left on pay as you go with a paid plan waiting
+ -- is a first pick too: drop the waiting plan so it cannot start in grace.
+ update app.org_plan set pending_plan_code=null,updated_at=now() where org_id=p_org and plan_code='payg' and pending_plan_code is not null;
  if exists(select 1 from app.org_plan where org_id=p_org)then perform app_private.charge_plan_period(p_org,now());end if;
  select * into op from app.org_plan where org_id=p_org for update;
  v_from=coalesce(op.plan_code,'payg');

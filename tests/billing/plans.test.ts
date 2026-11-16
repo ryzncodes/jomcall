@@ -402,6 +402,38 @@ test("first paid plan reuses a free period that began today", async () => {
   }
 });
 
+test("a waiting plan from the old rule starts now, or not at all", async () => {
+  const { h, worker, adjust, balance, choose, subscribe, today, close } = await setup();
+  try {
+    const [a, b] = [h.orgA.id, h.orgB.id];
+    // The earlier choose_plan left pay as you go with starter waiting and no
+    // period row yet; the anchor is three days ago.
+    for (const org of [a, b]) {
+      await subscribe(org, "payg", await today(-3));
+      await h.cleanup.query("update app.org_plan set pending_plan_code='starter' where org_id=$1", [org]);
+      assert.equal(await count(h, "select count(*)::int n from app.plan_period where org_id=$1", [org]), 0);
+    }
+    await adjust(a, 4900);
+    const started = await choose(h.alice, a, "starter");
+    assert.deepEqual([started.outcome, started.plan, started.pendingPlan, started.anchorDate], ["started", "starter", null, await today()]);
+    assert.deepEqual(await fees(h, a), [-4900]);
+    assert.equal(await balance(a), 0);
+    const periods = await current(h, a);
+    assert.equal(periods.length, 1);
+    assert.deepEqual([periods[0].plan_code, periods[0].state, periods[0].s], ["starter", "charged", await today()]);
+    assert.equal(await count(h, "select count(*)::int n from app.audit_log where org_id=$1 and action='billing.plan_started'", [a]), 1);
+
+    // An empty wallet: nothing starts, and no unpaid period gives a number in grace.
+    const short = await choose(h.bob, b, "starter");
+    assert.deepEqual([short.outcome, short.neededSen, short.balanceSen], ["wallet_short", 4900, 0]);
+    assert.equal(await count(h, "select count(*)::int n from app.plan_period where org_id=$1 and state='unpaid'", [b]), 0);
+    assert.deepEqual(await fees(h, b), []);
+    assert.equal((await planEntitlements(worker, b)).phoneNumbers, 0);
+  } finally {
+    await close();
+  }
+});
+
 test("choosing a plan: owners and admins of the organization only", async () => {
   const { h, adjust, close } = await setup();
   try {
