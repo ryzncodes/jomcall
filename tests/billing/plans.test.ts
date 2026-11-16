@@ -570,7 +570,7 @@ test("a late clock never creates a period before the monthly date or a second fe
   }
 });
 
-test("a waiting first plan with no period starts only with the fee, never in grace", async () => {
+test("a waiting first plan with no period is dropped by the scheduler, with or without money", async () => {
   const { h, worker, balance, subscribe, today, close } = await setup();
   try {
     const [a, b] = [h.orgA.id, h.orgB.id];
@@ -590,17 +590,18 @@ test("a waiting first plan with no period starts only with the fee, never in gra
     assert.equal((await planEntitlements(worker, a)).phoneNumbers, 0);
     assert.equal(await count(h, skipped, [a]), 1);
     assert.deepEqual(await fees(h, a), []);
-    // Exactly the fee: the plan starts and is charged in the same call.
+    // With the fee in the wallet it is still dropped: starting it here would
+    // charge a full fee on the old monthly date. The owner picks the plan.
     await setBalance(h.cleanup, b, 4900);
-    const started = await chargePlanPeriod(worker, b);
-    assert.deepEqual([started.plan, started.periodState], ["starter", "charged"]);
+    const funded = await chargePlanPeriod(worker, b);
+    assert.deepEqual([funded.plan, funded.periodState], ["payg", "free"]);
     assert.deepEqual((await h.cleanup.query("select plan_code,pending_plan_code from app.org_plan where org_id=$1", [b])).rows[0], {
-      plan_code: "starter",
+      plan_code: "payg",
       pending_plan_code: null,
     });
-    assert.deepEqual(await fees(h, b), [-4900]);
-    assert.equal(await balance(b), 0);
-    assert.equal(await count(h, skipped, [b]), 0);
+    assert.deepEqual(await fees(h, b), []);
+    assert.equal(await balance(b), 4900);
+    assert.equal(await count(h, skipped, [b]), 1);
   } finally {
     await close();
   }

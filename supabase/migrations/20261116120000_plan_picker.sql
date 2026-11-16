@@ -168,9 +168,8 @@ end$$;
 --     that date to today; a caller whose clock is a little behind (a
 --     transaction that began before midnight) is given today's period
 --     instead of a backdated one with its own fee.
---   * A paid plan waiting on a pay-as-you-go row is a first pick: it starts
---     only when the wallet holds the fee, and is dropped otherwise. It never
---     starts unpaid in grace.
+--   * A paid plan waiting on a pay-as-you-go row is never started here: it
+--     is dropped and the owner picks the plan, which starts it today.
 create or replace function app_private.charge_plan_period(p_org uuid,p_at timestamptz default now())returns jsonb language plpgsql security definer set search_path='' as $$
 declare op app.org_plan;pl app.billing_plan;pp app.plan_period;v_start date;v_end date;v_code text;v_balance bigint;v_ledger uuid;v_dup boolean:=true;v_at timestamptz;begin
  if p_org is null or p_at is null then raise exception 'INVALID_PLAN';end if;
@@ -185,12 +184,12 @@ declare op app.org_plan;pl app.billing_plan;pp app.plan_period;v_start date;v_en
  if not found then
   v_dup=false;
   if op.plan_code='payg' and op.pending_plan_code is not null and op.pending_plan_code<>'payg' then
-   pl=app_private.plan_for(op.pending_plan_code,v_at);
-   select coalesce(sum(amount_sen),0) into v_balance from app.wallet_ledger where org_id=p_org;
-   if v_balance<pl.monthly_fee_sen then
-    insert into app.audit_log(org_id,action,target_type,target_id,metadata)values(p_org,'billing.plan_start_skipped','organization',p_org,jsonb_build_object('plan',op.pending_plan_code,'feeSen',pl.monthly_fee_sen,'balanceSen',v_balance));
-    op.pending_plan_code=null;
-   end if;
+   -- Left by the earlier rule or by an operator. Starting it here would
+   -- charge a full fee for a period that began on the old monthly date and
+   -- may be nearly over, so it is dropped: the owner picks the plan, which
+   -- starts it today.
+   insert into app.audit_log(org_id,action,target_type,target_id,metadata)values(p_org,'billing.plan_start_skipped','organization',p_org,jsonb_build_object('plan',op.pending_plan_code));
+   op.pending_plan_code=null;
   end if;
   -- A change requested during the previous period takes effect now.
   v_code=coalesce(op.pending_plan_code,op.plan_code);

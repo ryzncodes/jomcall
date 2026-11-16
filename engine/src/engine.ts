@@ -56,6 +56,7 @@ async function plansDue(pool: pg.Pool) {
 }
 async function chargePlan(pool: pg.Pool, orgId: string) {
   const c = await pool.connect();
+  let broken: Error | undefined;
   try {
     await c.query("begin");
     // An organization whose wallet lock is held (a call starting) fails
@@ -64,10 +65,13 @@ async function chargePlan(pool: pg.Pool, orgId: string) {
     await c.query("select app_private.charge_plan_period($1,now())", [orgId]);
     await c.query("commit");
   } catch (e) {
-    await c.query("rollback").catch(() => {});
+    // A connection that cannot roll back is discarded, not reused.
+    await c.query("rollback").catch((r) => {
+      broken = r instanceof Error ? r : Error("ROLLBACK_FAILED");
+    });
     throw e;
   } finally {
-    c.release();
+    c.release(broken);
   }
 }
 export class Engine {
