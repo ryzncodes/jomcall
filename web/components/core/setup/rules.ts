@@ -344,7 +344,7 @@ export function requestErrorText(
           )
         : w(
             "JomCall cannot take new files right now. Answer the questions instead, or try again tomorrow.",
-            "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan dahulu, atau cuba lagi esok.",
+            "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan sahaja, atau cuba lagi esok.",
           );
     default:
       return null;

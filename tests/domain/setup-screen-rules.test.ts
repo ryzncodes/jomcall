@@ -1040,7 +1040,7 @@ test("stored uploads at the ceiling: its own sentence, the review page drops the
     );
     assert.equal(
       sendFailureText(503, "UPLOAD_STORE_FULL", step, ms),
-      "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan dahulu, atau cuba lagi esok.",
+      "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan sahaja, atau cuba lagi esok.",
     );
     assert.equal(
       sendFailureText(503, "UPLOAD_STORE_FULL", step, en, true),

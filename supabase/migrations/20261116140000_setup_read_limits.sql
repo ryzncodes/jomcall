@@ -44,11 +44,12 @@ update app.setup_upload set delete_after = created_at + interval '7 days'
  where bytes_deleted_at is null and delete_after is not null and delete_after > created_at + interval '7 days';
 
 grant create on schema app_private to jomcall_agent_jobs;
+create index if not exists setup_upload_held_bytes on app.setup_upload(bytes) where bytes_deleted_at is null and state <> 'removed';
 -- Web: is there room for a new file of p_bytes? Counts the declared sizes of
 -- every organization's files whose bytes are still held. A missing limit
 -- row means no room.
 create or replace function app_private.setup_upload_room(p_bytes bigint) returns boolean language sql stable security definer set search_path = '' as $$
- select p_bytes is not null and p_bytes >= 0 and
+ select p_bytes is not null and p_bytes between 1 and 10485760 and
   (select coalesce(sum(u.bytes), 0) from app.setup_upload u where u.bytes_deleted_at is null and u.state <> 'removed') + p_bytes
   <= coalesce((select stored_bytes_max from app.setup_read_limit), 0)
 $$;
