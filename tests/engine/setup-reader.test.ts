@@ -635,17 +635,25 @@ test("delete_after is set for uploads of sessions that never get applied; chunks
     assert.equal(u.state, "done");
     assert.equal(
       new Date(u.delete_after).getTime() - new Date(u.created_at).getTime(),
-      30 * 86400000,
+      7 * 86400000,
     );
     // The session is still open: the bytes stay until delete_after.
     assert.equal(await x.chunks(id), 1);
-    await x.q(
-      "update app.setup_upload set created_at=now()-interval '31 days',delete_after=null where id=$1",
-      [id],
-    );
     // A local agent process running beside the tests sweeps every upload in
     // the database too (retention is not per namespace). It would only do
     // what this worker does, so each assertion below holds whoever swept.
+    // Six days old: kept.
+    await x.q(
+      "update app.setup_upload set created_at=now()-interval '6 days',delete_after=null where id=$1",
+      [id],
+    );
+    await w.tick();
+    assert.equal(await x.chunks(id), 1);
+    assert.equal((await x.upload(id)).bytes_deleted_at, null);
+    await x.q(
+      "update app.setup_upload set created_at=now()-interval '7 days 1 minute',delete_after=null where id=$1",
+      [id],
+    );
     // Still open: not swept yet.
     assert.equal((await x.upload(id)).bytes_deleted_at, null);
     await w.tick();

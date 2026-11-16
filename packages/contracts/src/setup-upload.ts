@@ -69,7 +69,7 @@ export type SetupUpload = {
   factCount: number;
   // Rows the reader returned that could not be used ("N rows could not be read").
   droppedCount: number;
-  // When the file's bytes were deleted (30 days after upload); null while kept.
+  // When the file's bytes were deleted (7 days after upload); null while kept.
   bytesDeletedAt: string | null;
   createdAt: string;
 };
