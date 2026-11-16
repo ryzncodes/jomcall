@@ -323,12 +323,12 @@ export function requestErrorText(
           )
         : review
           ? w(
-              "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later.",
-              "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
+              `Your workspace has added ${UPLOAD_LIMITS.perOrgPerDay} files in the last 24 hours, the most allowed. Try again later.`,
+              `Ruang kerja anda sudah menambah ${UPLOAD_LIMITS.perOrgPerDay} fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.`,
             )
           : w(
-              "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.",
-              "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
+              `Your workspace has added ${UPLOAD_LIMITS.perOrgPerDay} files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.`,
+              `Ruang kerja anda sudah menambah ${UPLOAD_LIMITS.perOrgPerDay} fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.`,
             );
     case "READER_OFF":
       return failText("READER_OFF", w);

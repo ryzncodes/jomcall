@@ -6,7 +6,10 @@ import { setupReader } from "../../packages/inference/src/provider.ts";
 import { readRaw } from "../../web/lib/server/http.ts";
 import { handleAuth } from "../../web/lib/server/auth.ts";
 import { createDispatch } from "../../web/lib/server/api.ts";
-import { setupUploadCreate } from "../../packages/contracts/src/setup-upload.ts";
+import {
+  setupUploadCreate,
+  UPLOAD_LIMITS,
+} from "../../packages/contracts/src/setup-upload.ts";
 
 // The web process only reads the reader switch; no model is called here.
 async function withReader<T>(value: string | undefined, run: () => Promise<T>) {
@@ -333,13 +336,14 @@ test("sixth upload in a session is refused", () =>
     }
   }));
 
-test("twenty-first in 24 hours is refused", () =>
+test("the eleventh in 24 hours is refused", () =>
   withReader("anthropic", async () => {
     const x = await fixture();
     try {
-      // Twenty earlier uploads in this workspace, all removed: removing does
+      // Ten earlier uploads in this workspace, all removed: removing does
       // not reset the cap, and they hold no session slot.
-      for (let i = 0; i < 20; i++)
+      assert.equal(UPLOAD_LIMITS.perOrgPerDay, 10);
+      for (let i = 0; i < UPLOAD_LIMITS.perOrgPerDay; i++)
         await x.q(
           "insert into app.setup_upload(org_id,session_id,kind,name,mime,bytes,state) values($1,$2,'pdf','lama.pdf','application/pdf',10,'removed')",
           [x.f.h.orgA.id, x.sessionId],
@@ -496,9 +500,12 @@ test("type is checked by leading bytes, not by name", () =>
       assert.equal(c.done.status, 200, JSON.stringify(c.done.body));
       assert.equal(c.done.body.data.kind, "sheet");
       assert.equal((await x.row(c.id)).mime, "text/csv");
-      await x.q("update app.setup_upload set state='removed' where session_id=$1", [
-        x.sessionId,
-      ]);
+      // Aged past 24 hours too, so the refusals below stay under the
+      // workspace's daily cap.
+      await x.q(
+        "update app.setup_upload set state='removed',created_at=now()-interval '25 hours' where session_id=$1",
+        [x.sessionId],
+      );
 
       // Refused: CSV text declared as an image, a GIF, text with a NUL byte,
       // bytes that are not UTF-8 text, and any zip (an .xlsx) whatever it is

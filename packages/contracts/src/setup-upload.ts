@@ -12,7 +12,7 @@ export const UPLOAD_LIMITS = {
   // Chunk writes per upload, re-sends included.
   chunkWrites: 30,
   perSession: 5,
-  perOrgPerDay: 20,
+  perOrgPerDay: 10,
   textChars: 20000,
 } as const;
 

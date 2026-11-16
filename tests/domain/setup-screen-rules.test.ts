@@ -326,11 +326,11 @@ test("on the review page, file lines drop the bring stage's offers; a CSV or tex
   assert.match(sendFailureText(429, "UPLOAD_RATE", "create", en), /or answer the questions instead\.$/);
   assert.equal(
     sendFailureText(429, "UPLOAD_RATE", "create", en, true),
-    "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later.",
+    "Your workspace has added 10 files in the last 24 hours, the most allowed. Try again later.",
   );
   assert.equal(
     sendFailureText(429, "UPLOAD_RATE", "create", ms, true),
-    "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
+    "Ruang kerja anda sudah menambah 10 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
   );
   const t = Date.UTC(2026, 10, 15, 9);
   const queued = { ...upload, state: "queued" as const };
@@ -431,8 +431,8 @@ test("the Excel refusal says to paste the cells or save as CSV or PDF", () => {
 });
 
 test("request errors: UPLOAD_RATE means the daily cap at create, the write cap at a chunk", () => {
-  assert.match(requestErrorText("UPLOAD_RATE", "create", en)!, /20 files/);
-  assert.match(requestErrorText("UPLOAD_RATE", "paste", ms)!, /20 fail/);
+  assert.match(requestErrorText("UPLOAD_RATE", "create", en)!, /10 files/);
+  assert.match(requestErrorText("UPLOAD_RATE", "paste", ms)!, /10 fail/);
   assert.match(requestErrorText("UPLOAD_RATE", "chunk", en)!, /sent too many times/);
   assert.match(requestErrorText("UPLOAD_LIMIT", "create", en)!, /up to 5 files/);
   assert.equal(requestErrorText("UPLOAD_TYPE", "finish", en), refusalText("TYPE", en));

@@ -7,7 +7,10 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Camera, Info, UploadSimple } from "@phosphor-icons/react";
 import { CoreError, failureOf } from "@/lib/core/client";
-import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
+import {
+  UPLOAD_LIMITS,
+  type SetupUpload,
+} from "../../../../packages/contracts/src/setup-upload";
 import { useWords } from "../state";
 import { useLanding, useSetup } from "./flow";
 import {
@@ -216,8 +219,8 @@ export function BringStage({
         <p className="setup-hint" id={`${id}-limits`}>
           {left
             ? w(
-                "A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in each setup and 20 files in 24 hours for your workspace. Remove a file to make room for another.",
-                "Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi setiap persediaan dan 20 fail dalam tempoh 24 jam bagi ruang kerja anda. Buang fail untuk memberi ruang kepada fail lain.",
+                `A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in each setup and ${UPLOAD_LIMITS.perOrgPerDay} files in 24 hours for your workspace. Remove a file to make room for another.`,
+                `Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi setiap persediaan dan ${UPLOAD_LIMITS.perOrgPerDay} fail dalam tempoh 24 jam bagi ruang kerja anda. Buang fail untuk memberi ruang kepada fail lain.`,
               )
             : w(
                 "This setup has 5 files. Remove one to add another.",
