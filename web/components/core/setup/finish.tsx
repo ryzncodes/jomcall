@@ -155,6 +155,13 @@ export function FinishStage({
               : w("Publish", "Terbitkan")}
           </button>
         </div>
+        <p>
+          {w("To answer real calls, ", "Untuk menjawab panggilan sebenar, ")}
+          <a href={href("/app/billing")}>
+            {w("choose a plan", "pilih pelan")}
+          </a>
+          .
+        </p>
         <button type="button" className="setup-link" onClick={onRestart}>
           {w(
             "Answer the setup questions again",

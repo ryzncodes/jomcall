@@ -217,7 +217,7 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 
 - **No card is charged automatically.** The monthly fee is a `plan_fee` debit from the prepaid wallet.
 - **Period.** Each organization's periods are anchored to its start date in `Asia/Kuala_Lumpur` (`org_plan.anchor_date`, set from `organization.created_at` when it first chooses a plan). Period *k* runs from anchor + *k* months to anchor + *k*+1 months, at Kuala Lumpur midnight. A 31 January anchor gives 31 Jan, 28 Feb, 31 Mar and does not drift.
-- **Charging.** `app_private.charge_plan_period(org, at)` starts or retries the period containing `at`, and `charge_due_plans(at)` does it for every organization with a plan. At the first call in a period it does three things:
+- **Charging.** `app_private.charge_plan_period(org, at)` starts or retries the period containing `at`, and `charge_due_plans(at)` does it for every organization with a plan (manual use only since 2026-11-16: the engine lists the organizations due with `plan_orgs_due` and charges each in its own transaction; see the plan picker note at the end of section 13). At the first call in a period it does three things:
   - creates one `plan_period` row per organization and period start;
   - freezes the plan, fee, allowance and entitlements on that row, so a later price version never changes a running period;
   - debits the fee with ledger key `plan_fee:<period id>`.
@@ -228,7 +228,7 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
   - it records the drawn seconds on `usage_event.included_seconds` and `period_id`, and returns `includedSeconds`.
 
   WhatsApp and typed usage always bill from the wallet.
-- **Plan change.** `choose_plan(org, code)` (owner or admin) sets `pending_plan_code`. The change takes effect when the next period is created. This includes moving from `payg` to a paid plan. Asking for the current plan cancels a pending change.
+- **Plan change.** `choose_plan(org, code)` (owner or admin) sets `pending_plan_code`. A change between paid plans, or down to `payg`, takes effect when the next period is created. Asking for the current plan cancels a pending change. Since 2026-11-16 a first paid plan (from `payg`) no longer waits: it starts at once with the full fee and a new monthly date, or not at all when the wallet is short (see the plan picker note at the end of section 13).
 - **Not enough balance for the fee.**
   - The fee is never debited into a negative balance. The period starts `unpaid` with `grace_until` = period start + `grace_days`, which is 7 for both paid plans (placeholder, in data).
   - During grace the plan's phone number and WhatsApp agent stay on, but there is no allowance. Calls bill from the wallet at the overage rate, so nothing is charged twice when the fee lands later.
@@ -256,15 +256,15 @@ WhatsApp: the business connects its **own** WhatsApp number, and Meta bills its 
 
 ### Open owner decisions
 
-- **First subscription timing.** Under the next-period rule, an organization that moves from `payg` to Starter waits until its next anchor date for the number and minutes. Two alternatives: start the first paid period immediately with a full or pro-rated fee, or re-anchor on the day of the first subscription.
+- ~~**First subscription timing.**~~ Decided by the owner on 2026-11-16: the first paid plan starts now with the full fee and a new monthly date (plan picker note at the end of section 13). Under the earlier next-period rule, an organization that moves from `payg` to Starter waits until its next anchor date for the number and minutes. Two alternatives: start the first paid period immediately with a full or pro-rated fee, or re-anchor on the day of the first subscription.
 - Final figures: fees, allowances, Growth overage rate, the WhatsApp agent fee, grace length.
 
 ### Follow-ups (not built)
 
 - ~~Wire `plan_entitlements` into the phone line~~: answering is gated since section 13. Refusing to *assign* a number the plan does not cover is still open.
-- Schedule `charge_due_plans` (daily) in the worker.
-- Retry the fee automatically when a top-up is credited during grace.
-- A plan picker and plan status on the local-app wallet screen (`choose_plan`, `plan_summary`).
+- ~~Schedule `charge_due_plans` (daily) in the worker~~: built 2026-11-16; the engine visits the organizations due every hour, one transaction each.
+- ~~Retry the fee automatically when a top-up is credited during grace~~: built 2026-11-16, in the same transaction as the credit.
+- ~~A plan picker and plan status on the local-app wallet screen (`choose_plan`, `plan_summary`)~~: built 2026-11-16 (plan card on `/app/billing`).
 
 ## 13. Metering and admission on the real channels (2026-11-15)
 
@@ -320,10 +320,10 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
 - **What staff can and cannot see.** Every member, staff included, connects as `jomcall_app`; row-level security limits them to their own organization.
   - **Cannot see:** `app.call.usage_state`, `billed_seconds`, `usage_event_id`, `usage_attempts` and `billing_check` (column grants); `app.whatsapp_usage_window` and `app.billing_notice` (no grant). Wallet ledger and usage events are readable by owners and admins only (row-level security on `manager_read`).
   - **Can see:** `app.call.refusal` (for example `NO_PHONE_ENTITLEMENT`, `WALLET_EXHAUSTED`), `app.conversation.needs_attention` and `attention_reason` (the same codes on a skipped WhatsApp turn), and `app.conversation_turn.error_code` and `billing_check` (including `BILLING_CHECK_FAILED`). These reveal that the workspace was refused for its plan or wallet, or that a billing check failed, but no amount, balance or price.
-- **Operator plan command.** `npm run billing:admin -- plan <org> <starter|growth|payg> "<operator>"` stands in for the missing plan picker:
+- **Operator plan command.** `npm run billing:admin -- plan <org> <starter|growth|payg> "<operator>"` stood in for the plan picker until 2026-11-16 and remains for operators:
   - with no period running, it starts the plan now; otherwise the change takes effect next period;
   - it records `billing.plan_set_by_operator` in the audit log, then starts or retries the period.
-- **Every organization needs a plan.** After this migration, an organization without a plan is refused on the phone line (`NO_PHONE_ENTITLEMENT`) and gets no WhatsApp agent replies (`NO_WHATSAPP_ENTITLEMENT`) until an operator gives it one, because there is no plan picker; its owners get one email a day per reason (decision C). Browser test calls and typed tests are unaffected. `billing:admin` refuses any database but the local one, so on hosted staging the owner runs the equivalent SQL as the database owner (see the pull request).
+- **Every organization needs a plan.** After this migration, an organization without a plan is refused on the phone line (`NO_PHONE_ENTITLEMENT`) and gets no WhatsApp agent replies (`NO_WHATSAPP_ENTITLEMENT`) until it has one (until 2026-11-16 only an operator could give it one; since then its owner can pick a plan on the wallet screen); its owners get one email a day per reason (decision C). Browser test calls and typed tests are unaffected. `billing:admin` refuses any database but the local one, so on hosted staging the owner runs the equivalent SQL as the database owner (see the pull request).
 
 ### Deviations from this design and the channel designs
 
@@ -331,7 +331,7 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
 2. **What is measured.** Section 3 says to bill only after the provider confirms the event. No provider call-end record exists (phone design §11). Voice seconds are measured by JomCall, from the answer (or the first turn) to the end the worker reports. After a crash they run to the end of the last turn.
 3. **Refused calls are silent to the caller.** Section 4 says a refused call rings through to the business and the owner is told. The owner is now told by email (decision C); ringing through is not built (phone design open decision 4).
 4. **The WhatsApp unit.** WhatsApp design O7 says to bill per delivered message from Meta's `pricing` status. This follows section 12 and decision D instead: JomCall's own fee per customer per 24 hours.
-5. **Lazy period start.** Section 12 expects `charge_due_plans` to start periods, but nothing schedules it. Admission starts or retries the period itself, so the first admitted call or chat of a period can debit the monthly fee.
+5. **Lazy period start.** Section 12 expects `charge_due_plans` to start periods, but nothing scheduled it until 2026-11-16. Admission starts or retries the period itself, so the first admitted call or chat of a period can debit the monthly fee before the engine's hourly visit does.
 6. **Owners and admins cannot read the billing columns either.** Every member connects as the same web role, so the column grant hides them from owners and admins too. They see what was billed through the wallet and usage events.
 
 ### Known limits (not fixed here)
@@ -345,14 +345,32 @@ Added on branch `claude/usage-metering-e13eb4` (pull request #26). Migration `su
 - **A call admitted just before a period boundary and answered after it is billed wholly as overage** (awaiting the owner's decision). It is priced at the answer, when the new period has not been charged yet, so it draws on no allowance. Bound: one call cap per line at 32 sen a minute (RM3.20 at the defaults).
 - **A WhatsApp turn claimed just inside a 24-hour window and sent just after it opens a new 15 sen window with no admission check** (awaiting the owner's decision), even on an exhausted wallet or without the entitlement. Bound: 15 sen per customer per window edge.
 - **The owner email is at-least-once.** If the engine sends the email but fails before it is acknowledged, the retry sends it again (up to five tries).
-- **Maintenance takes several organizations' wallet locks in one transaction.** A deadlock with `charge_due_plans` is possible. Inside maintenance it only defers that bill; a `charge_due_plans` run would abort and must be retried.
+- **Maintenance takes several organizations' wallet locks in one transaction.** A deadlock with a plan charge is possible. Inside maintenance it only defers that bill; since 2026-11-16 the engine charges each organization in its own transaction, so only that organization's charge fails and the run retries it after five minutes (a manual `charge_due_plans` run rolls back that organization alone).
 - **Billing a crashed call shortens `duration_seconds`**, which the call log shows, to the end of the last turn.
 - **New columns need a grant.** A later migration that adds a column to `app.call` must grant it to `jomcall_app`, or the web role cannot read it. A migration that grants the whole table again would expose the billing columns.
 
 ### Open owner decisions
 
 - Whether the crash cut-off (the end of the last turn) is acceptable, or whether a provider call-end time is required before real callers.
-- A plan picker on the wallet screen, specific call-log text for the new refusals (currently "Not answered"), and an inbox view of `BILLING_CHECK_FAILED` turns.
+- ~~A plan picker on the wallet screen~~ (built 2026-11-16), specific call-log text for the new refusals (currently "Not answered"), and an inbox view of `BILLING_CHECK_FAILED` turns.
 - Ringing a refused call through to the business (phone open decision 4).
 - Whether a WhatsApp thread may go without an agent reply after its 24-hour window ends on an exhausted wallet or a removed entitlement (today it does; the conversation is flagged and the owner emailed).
 - Whether to reserve allowance for calls in progress, how to treat calls across a period boundary, and the WhatsApp window-edge send (bounds in the known limits above).
+
+### Plan picker as built (2026-11-16)
+
+Branch `feat/plan-picker`, pull request not yet open, not merged; nothing on hosted staging. Migration `supabase/migrations/20261116120000_plan_picker.sql`; web commands `plan` and `choosePlan`; the plan card on `/app/billing` (`web/components/core/plan-card.tsx`, rules in `web/lib/core/plan-rules.ts`) and a link on setup's finish stage; engine `engine/src/engine.ts`.
+
+- **Owner decisions (2026-11-16).**
+  1. A first paid plan starts now: the monthly date becomes today (Kuala Lumpur) and the full fee is debited at once. "First" means the organization is on `payg` now, including one that fell back after an unpaid period.
+  2. Nothing starts on a short wallet: `choose_plan` answers `wallet_short` with the amount needed and the balance, and no plan row, period or grace is created. A first pick never starts unpaid in grace.
+  3. A change between paid plans, or down to `payg`, still waits for the next period. A renewal or such a change on a short wallet still starts `unpaid` with the plan's grace (unchanged).
+- **What else changed.** A credited top-up retries an unpaid plan fee in the same transaction (a failure there never undoes the credit; it is audited as `billing.plan_retry_failed`). The engine visits the organizations due every hour (`app_private.plan_orgs_due`: no period covering now, or an unpaid one) and charges each with `charge_plan_period` in its own transaction with a one-second lock timeout, at most 25 per tick with the rest carried to the next ticks; a failed organization or a failed list logs `PLAN_CHARGE_RUN_FAILED` with the ok and failed counts only and retries after five minutes. `charge_due_plans` stays for manual use. An organization with no plan is still refused on the phone and gets no WhatsApp agent replies until its owner picks a plan, which is now possible in the app.
+- **Review defects and fixes (same day).**
+  1. *A late clock created a backdated period with a second fee.* A caller whose clock was a little behind a first pick (a transaction that began before Kuala Lumpur midnight) made `charge_plan_period` create the period before the new monthly date, with its own fee. Fix: no period is ever created before `anchor_date`; an earlier time is treated as that day's midnight. A paid plan waiting on a `payg` row (left by the earlier rule) now starts only when the wallet holds the fee and is dropped otherwise (`billing.plan_start_skipped`).
+  2. *The hourly run held every wallet lock in one transaction.* The engine wrapped `charge_due_plans` in a single transaction, so each organization's wallet lock stayed held until the end of the run and every charge used the run's starting clock. Fix: one short transaction per organization, as above.
+- **Known limits.**
+  - A call answered earlier the same day as a first pick but billed after it can draw from the new allowance.
+  - The operator `plan` command can still start a plan unpaid in grace when no period is running.
+  - Prices remain owner placeholders.
+- Second review (same day): a paid plan left waiting on a pay-as-you-go row would have been started by the scheduled run on the old monthly date, with a full fee for a period that might be nearly over. The scheduled run now drops such a waiting plan in every case (audit `billing.plan_start_skipped`); the owner picks the plan and it starts that day. Hosted staging had no plan rows when this was checked (read-only query, 2026-11-16), so the first hourly pass there does nothing. Left as is: `plan_entitlements` does not apply the same late-clock rule as `charge_plan_period`, so a call start that began just before midnight and waited behind a first pick made just after it can be refused once (`NO_PHONE_ENTITLEMENT`).

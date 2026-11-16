@@ -845,7 +845,55 @@
 .core-amounts label:has(input:checked) {
   border-color: currentColor;
 }
+.core-plan-card,
+.core-plan-placeholder {
+  margin-top: 32px;
+}
+.core-plan-placeholder {
+  min-height: 240px;
+}
+.core-plan-choices {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.core-plan-choices > li {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  min-width: 0;
+}
+.core-plan-lines {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.core-plan-card .button {
+  justify-self: start;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
+}
+.core-plan-confirm {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.core-plan-confirm:focus {
+  outline: 2px solid currentColor;
+  outline-offset: 4px;
+}
 @media (max-width: 760px) {
+  .core-plan-card .button {
+    justify-self: stretch;
+  }
   .core-billing-overview {
     grid-template-columns: 1fr;
   }

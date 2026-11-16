@@ -89,3 +89,48 @@ export type Receipt = {
   issued_at: string;
   created_at: string;
 };
+
+// Monthly plans (billing design §13). The figures come from the database.
+export const planCodes = ["starter", "growth", "payg"] as const;
+export const planChoice = z.object({ code: z.enum(planCodes) }).strict();
+const planCode = z.enum(planCodes);
+const sen = z.number().int();
+// app_private.plan_summary. Without a period covering now the database
+// leaves out the period's dates, fee and grace; they read as null and 0.
+export const planSummary = z.object({
+  plan: planCode,
+  periodState: z.enum(["none", "free", "charged", "unpaid", "downgraded"]),
+  periodStart: z.string().nullable().default(null),
+  periodEnd: z.string().nullable().default(null),
+  feeSen: sen.default(0),
+  includedVoiceSeconds: z.number().int(),
+  usedIncludedSeconds: z.number().int(),
+  graceUntil: z.string().nullable().default(null),
+  phoneNumbers: z.number().int(),
+  whatsappAgent: z.boolean(),
+  pendingPlan: planCode.nullable().default(null),
+  anchorDate: z.string().nullable().default(null),
+  balanceSen: sen,
+  plans: z.array(
+    z.object({
+      code: planCode,
+      feeSen: sen,
+      includedVoiceSeconds: z.number().int(),
+      phoneNumbers: z.number().int(),
+      whatsappAgent: z.boolean(),
+      graceDays: z.number().int(),
+    }),
+  ),
+});
+export type PlanSummary = z.output<typeof planSummary>;
+// app_private.choose_plan. wallet_short is an answer, not an error: a first
+// paid plan needs the whole fee in the wallet and nothing started.
+export const planChoiceResult = z.object({
+  outcome: z.enum(["started", "wallet_short", "scheduled", "cancelled", "unchanged"]),
+  plan: planCode,
+  pendingPlan: planCode.nullable(),
+  anchorDate: z.string().nullable(),
+  neededSen: sen.optional(),
+  balanceSen: sen.optional(),
+});
+export type PlanChoice = z.output<typeof planChoiceResult>;

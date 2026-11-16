@@ -10,7 +10,8 @@
 // bill once more now and counts a failure (scripts/billing/usage-admin.ts).
 // `plan` stands in for the plan picker the wallet screen does not have yet.
 // With no period running it starts the plan now (anchored on today in Kuala
-// Lumpur); otherwise it takes effect next period, like choose_plan. Then it
+// Lumpur); otherwise it takes effect next period. (choose_plan differs: it
+// starts a first paid plan from payg at once, or not at all.) Then it
 // starts or retries the current period, which debits the fee when the
 // balance covers it. The phone line and the WhatsApp agent need a plan.
 // With a payment provider configured, a refund is sent to the provider first

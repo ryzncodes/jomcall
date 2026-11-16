@@ -5,7 +5,12 @@ import {
   uuid,
   type TenantContext,
 } from "../../contracts/src/index.ts";
-import { topupInput } from "../../contracts/src/billing.ts";
+import {
+  planChoice,
+  planChoiceResult,
+  planSummary,
+  topupInput,
+} from "../../contracts/src/billing.ts";
 import { command } from "../../db/src/receipts.ts";
 import { page } from "../../db/src/pagination.ts";
 import {
@@ -79,6 +84,38 @@ export async function billingRoute(
     return page(tx, ctx.orgId, lists[path as keyof typeof lists], query);
   if (method === "GET" && path === "/billing/wallet")
     return wallet(tx, ctx.orgId);
+  if (method === "GET" && path === "/billing/plan") {
+    const value = (
+      await tx.query("select app_private.plan_summary($1) as value", [
+        ctx.orgId,
+      ])
+    ).rows[0].value;
+    return planSummary.parse({ ...value, balanceSen: Number(value.balanceSen) });
+  }
+  if (method === "POST" && path === "/billing/plan") {
+    const v = planChoice.parse(body);
+    return command(
+      tx,
+      ctx,
+      key,
+      "billing.choosePlan",
+      v,
+      async () => {
+        const result = planChoiceResult.parse(
+          (
+            await tx.query("select app_private.choose_plan($1,$2) as value", [
+              ctx.orgId,
+              v.code,
+            ])
+          ).rows[0].value,
+        );
+        // The whole answer is the receipt (plan codes, a date, amounts in
+        // sen): a repeat returns it without asking for the plan again.
+        return { ref: result, data: result };
+      },
+      async (ref) => planChoiceResult.parse(ref),
+    );
+  }
   if (method === "POST" && path === "/billing/trial") {
     empty.parse(body);
     return command(

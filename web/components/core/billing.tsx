@@ -1,11 +1,22 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { formatSen } from "../../../packages/billing/src/money";
 import { topupAmounts } from "../../../packages/contracts/src/billing";
 import type { Topup, LedgerEntry } from "../../../packages/contracts/src/billing";
 import { useCore, useWords, useResource, useAction, Heading, Notice, Loading } from "./state";
 import { CoreError } from "@/lib/core/client";
+
+// The plan card exists only in the local and hosted builds. The mode is a
+// build-time constant, so the mock bundle drops this import.
+const PlanCard =
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "local" ||
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
+    ? dynamic(() => import("./plan-card").then((m) => m.PlanCard), {
+        loading: () => <div className="core-panel core-plan-placeholder" aria-hidden="true" />,
+      })
+    : null;
 
 type CurlecHandoff = Extract<NonNullable<Topup["checkout"]>, { kind: "curlec" }>;
 type CheckoutWindow = Window & { Razorpay?: new (options: Record<string, unknown>) => { open(): void } };
@@ -64,6 +75,15 @@ export function LocalBilling() {
     pay = useAction(),
     check = useAction();
   const [amount, setAmount] = useState<number>(topupAmounts[1]);
+  const topUpHeading = useRef<HTMLHeadingElement>(null);
+  // From the plan card: pick the smallest amount that covers what is
+  // needed, if one does, and move to the top-up control.
+  const toTopUp = (neededSen: number) => {
+    const fits = topupAmounts.find((a) => a >= neededSen);
+    if (fits) setAmount(fits);
+    topUpHeading.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+    topUpHeading.current?.focus({ preventScroll: true });
+  };
 
   if (!manager)
     return (
@@ -138,6 +158,7 @@ export function LocalBilling() {
                   )}
         </p>
       )}
+      {PlanCard && <PlanCard walletBalanceSen={v.balanceSen} onTopUp={toTopUp} />}
       <div className="core-overview core-billing-overview">
         <div>
           <span>{w("Balance", "Baki")}</span>
@@ -184,7 +205,9 @@ export function LocalBilling() {
       )}
       <div className="core-two-columns">
         <section className="core-panel">
-          <h2>{w("Top up", "Tambah nilai")}</h2>
+          <h2 id="billing-topup" ref={topUpHeading} tabIndex={-1}>
+            {w("Top up", "Tambah nilai")}
+          </h2>
           <Notice error={pay.error} />
           {!connected ? (
             <>

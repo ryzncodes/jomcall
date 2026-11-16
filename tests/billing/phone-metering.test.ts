@@ -443,6 +443,10 @@ test("a call that runs across a plan period boundary uses the period it was answ
     await f.publish();
     const call = await answeredCall(f, await f.addNumber(), 10);
     const current = (await f.h.cleanup.query("select * from app.plan_period where org_id=$1", [org])).rows[0];
+    // No period is ever created before the monthly date, so move that date a
+    // year back: the periods still begin on today's day of the month (except
+    // on 29 February), and the one before today's can exist.
+    await f.h.cleanup.query("update app.org_plan set anchor_date=(anchor_date-interval '1 year')::date where org_id=$1", [org]);
     // The previous period was paid; the current one has no allowance left.
     await f.h.cleanup.query("select app_private.charge_plan_period($1,$2::timestamptz-interval '1 day')", [org, current.starts_at]);
     const previous = (

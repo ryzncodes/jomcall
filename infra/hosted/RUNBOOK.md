@@ -398,6 +398,33 @@ Uploads are stored in the database, not in object storage. Each setup holds up t
 
 [ROLLBACK] unset `JOMCALL_SETUP_READER` in both places and redeploy; the migrations stay (they only add tables and functions).
 
+## Step 13. Plan picker — [OWNER], applies a migration; the engine then charges plan fees every hour
+
+Branch `feat/plan-picker`. Owners pick a plan on `/app/billing`; a first paid plan starts at once with the full fee. The engine visits the organizations whose plan is due every hour and charges each in its own transaction. Nothing here has run on hosted staging or production.
+
+**Warning.** The first hourly pass after the rebuild charges or downgrades every organization that has a plan row, including ones with no traffic yet. An organization whose current period began more than 7 days ago and whose wallet does not hold the fee falls back to pay as you go at once, without an email. Run the query in step 1 first and top up or change plans where needed.
+
+1. **[OWNER]** Read-only check, in the staging SQL editor, before anything else. It lists each plan row with its balance and whether a period covers now (no names, no emails):
+
+   ```sql
+   select op.org_id, op.plan_code, op.pending_plan_code, op.anchor_date,
+          (select coalesce(sum(l.amount_sen), 0) from app.wallet_ledger l where l.org_id = op.org_id) as balance_sen,
+          pp.org_id is not null as has_current_period,
+          pp.state as current_period_state
+     from app.org_plan op
+     left join app.plan_period pp
+       on pp.org_id = op.org_id and pp.starts_at <= now() and pp.ends_at > now()
+    order by op.anchor_date;
+   ```
+
+   Rows with no current period, or with `current_period_state = 'unpaid'`, are the ones the engine visits. A paid plan with `balance_sen` at least the fee is charged; a short one starts unpaid with 7 days' grace from the period start, so a period that began more than 7 days ago is downgraded at once. A `payg` row with a paid plan waiting starts that plan only if the wallet holds the fee, and otherwise drops it.
+2. **[OWNER]** Apply the migration to staging first, from a clean release folder: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. It is `20261116120000_plan_picker.sql`. The engine must not be rebuilt before this: the new engine calls `app_private.plan_orgs_due`, which the migration adds.
+3. **[OWNER]** Rebuild and restart on the server: `docker compose up -d --build engine agent`. Redeploy the web service on Vercel for the plan card.
+
+[CHECK] with a made-up workspace: the wallet screen shows "Choose a plan"; with enough credit, Start Starter charges the fee once; the engine log shows no `PLAN_CHARGE_RUN_FAILED` (a failure logs only the ok and failed counts and retries after five minutes).
+
+[ROLLBACK] rebuild the previous engine image; the migration stays (it replaces functions and adds one). Fees already debited stay in the ledger; refund them with an operator adjustment if needed.
+
 ---
 
 ## Moving web to Cloudflare Workers later — NOT DONE
