@@ -242,6 +242,9 @@ export type KnowledgeGap = {
   language: string;
   channel: "text" | "voice" | "phone" | "whatsapp";
   answer: string;
+  channels: string[];
+  resolved_answer: string | null;
+  answer_removed: boolean;
 };
 export type CatalogueHit = {
   sourceId: string;

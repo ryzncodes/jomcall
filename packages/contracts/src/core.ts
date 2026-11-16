@@ -614,7 +614,12 @@ export const commands = {
     z.object({ id: uuid, uploadId: uuid, seq: uploadSeq }).strict(),
     out<Uint8Array>(),
   ),
-  knowledgeGaps: route("GET", "/agents/:id/gaps", id, out<KnowledgeGap[]>()),
+  knowledgeGaps: route(
+    "GET",
+    "/agents/:id/gaps",
+    id.extend({ status: z.enum(["open", "resolved", "ignored"]).optional() }),
+    out<KnowledgeGap[]>(),
+  ),
   resolveGap: route(
     "POST",
     "/agents/:agentId/gaps/:id/resolve",

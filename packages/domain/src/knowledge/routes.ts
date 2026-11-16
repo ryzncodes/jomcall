@@ -1,7 +1,7 @@
 // Knowledge core commands: packs, facts, rules, catalogue rows, confirmation
 // and the gap log. Every change bumps the agent revision like knowledge items.
 import type { PoolClient } from "pg";
-import type { z } from "zod";
+import { z } from "zod";
 import { AppError, uuid, type TenantContext } from "../../../contracts/src/index.ts";
 import {
   catalogueInput,
@@ -17,7 +17,7 @@ import {
 import { audit, command } from "../../../db/src/receipts.ts";
 import { manager } from "../authorization.ts";
 import { packById, packIds, packSummaries } from "../packs/index.ts";
-import { enforceCoreLimits } from "./snapshot.ts";
+import { enforceCoreLimits, factText } from "./snapshot.ts";
 import { catalogueSearchText, lookupKeys } from "./text.ts";
 
 const SHOWN_ROWS = 500;
@@ -85,6 +85,7 @@ export async function knowledgeRoute(
   path: string,
   body: unknown,
   key: string,
+  query: URLSearchParams = new URLSearchParams(),
 ) {
   if (path === "/packs" && method === "GET") return packSummaries();
   const m = path.match(
@@ -129,19 +130,40 @@ export async function knowledgeRoute(
       },
     };
   };
-  const gaps = async () =>
-    (
+  const gaps = async (status?: "open" | "resolved" | "ignored") => {
+    const rows = (
       await tx.query(
-        `select g.id,g.status,g.resolution,g.ask_count,g.last_asked_at,g.revision,a.question,a.language,a.channel,a.answer
+        `select g.id,g.status,g.resolution,g.ask_count,g.last_asked_at,g.revision,a.question,a.language,a.channel,a.answer,
+           (select coalesce(array_agg(distinct x.channel order by x.channel),'{}') from app.knowledge_gap_ask x where x.org_id=g.org_id and x.gap_id=g.id) as channels,
+           f.value as fact_value,r.text as rule_text,
+           (g.status='resolved' and ((g.resolution='fact' and f.id is null) or (g.resolution='rule' and r.id is null))) as answer_removed
          from app.knowledge_gap g join lateral(select * from app.knowledge_gap_ask x where x.org_id=g.org_id and x.gap_id=g.id order by x.asked_at desc,x.id limit 1)a on true
-         where g.org_id=$1 and g.agent_id=$2 order by (g.status='open') desc,g.last_asked_at desc limit 200`,
-        [ctx.orgId, agentId],
+         left join app.knowledge_fact f on g.status='resolved' and g.resolution='fact' and f.org_id=g.org_id and f.id=g.resolved_ref
+         left join app.knowledge_rule r on g.status='resolved' and g.resolution='rule' and r.org_id=g.org_id and r.id=g.resolved_ref
+         where g.org_id=$1 and g.agent_id=$2 and ($3::text is null or g.status=$3) order by (g.status='open') desc,g.last_asked_at desc limit 200`,
+        [ctx.orgId, agentId, status ?? null],
       )
     ).rows;
+    return rows.map(({ fact_value, rule_text, ...g }) => ({
+      ...g,
+      resolved_answer:
+        g.resolution === "fact" && fact_value !== null && fact_value !== undefined
+          ? factText(fact_value)
+          : g.resolution === "rule" && rule_text !== null && rule_text !== undefined
+            ? (rule_text as string)
+            : null,
+    }));
+  };
 
   if (method === "GET") {
     if (action === "core" && !child) return core();
-    if (action === "gaps" && !child) return gaps();
+    if (action === "gaps" && !child) {
+      const v = z
+        .object({ status: z.enum(["open", "resolved", "ignored"]).optional() })
+        .strict()
+        .parse(Object.fromEntries(query));
+      return gaps(v.status);
+    }
     return;
   }
 

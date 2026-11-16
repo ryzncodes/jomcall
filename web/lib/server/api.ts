@@ -207,6 +207,7 @@ async function dispatch(request: Request, deps: CoreDeps) {
           path,
           body,
           key,
+          new URL(request.url).searchParams,
         );
         if (knowledgeResult !== undefined) return respond(knowledgeResult);
         const uploadResult = await setupUploadRoute(

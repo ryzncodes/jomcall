@@ -267,3 +267,67 @@ test("a typed turn calls lookup_catalogue, takes a message and records a gap; ex
     await f.close();
   }
 });
+
+test("gap list: status filter, channels and the saved answer", async () => {
+  const { f, agentPath, send, rev } = await setup();
+  const repo = new AgentRepository(f.h.namespace);
+  try {
+    const { turn } = await runningTurn(f, rev());
+    const k = repo.knowledge({ turn });
+    await k.gap(gapRecord("How much is a timing belt?", "en", "voice", "I will ask staff."));
+    await k.gap(gapRecord("How much is a timing belt?", "en", "text", "I will ask staff."));
+    await k.gap(gapRecord("Do you sell tyres?", "en", "text", "I will ask staff."));
+    await k.gap(gapRecord("Do you fit wipers?", "en", "text", "I will ask staff."));
+    const list = async (q = "") => (await f.req("GET", agentPath + "/gaps" + q)).body.data;
+    const all = await list();
+    assert.equal(all.length, 3);
+    const belt = all.find((g: any) => /timing belt/.test(g.question));
+    assert.deepEqual(belt.channels, ["text", "voice"]);
+    assert.equal(belt.resolved_answer, null);
+    assert.equal(belt.answer_removed, false);
+
+    const resolve = async (g: any, body: Record<string, unknown>) => {
+      const cur = (await list()).find((x: any) => x.id === g.id);
+      const r = await f.req("POST", `${agentPath}/gaps/${g.id}/resolve`, {
+        expectedRevision: cur.revision,
+        expectedAgentRevision: (await f.req("GET", `${agentPath}/draft`)).body.data.revision,
+        ...body,
+      });
+      assert.equal(r.status, 200);
+    };
+    await resolve(belt, { as: "fact", title: "Timing belt", value: "We do not stock timing belts." });
+    const tyres = all.find((g: any) => /tyres/.test(g.question));
+    await resolve(tyres, { as: "rule", kind: "never", text: "Never quote tyre prices." });
+    const wipers = all.find((g: any) => /wipers/.test(g.question));
+    assert.equal(
+      (await f.req("POST", `${agentPath}/gaps/${wipers.id}/ignore`, { expectedRevision: wipers.revision })).status,
+      200,
+    );
+
+    assert.deepEqual((await list("?status=open")).length, 0);
+    assert.deepEqual((await list("?status=ignored")).map((g: any) => g.id), [wipers.id]);
+    const resolved = await list("?status=resolved");
+    assert.equal(resolved.length, 2);
+    const byId = (id: string) => resolved.find((g: any) => g.id === id);
+    assert.equal(byId(belt.id).resolved_answer, "We do not stock timing belts.");
+    assert.equal(byId(tyres.id).resolved_answer, "Never quote tyre prices.");
+    const ignored = (await list("?status=ignored"))[0];
+    assert.equal(ignored.resolved_answer, null);
+    assert.equal(ignored.answer_removed, false);
+    assert.equal((await list()).length, 3);
+
+    // Deleting the fact leaves the gap resolved but marks the answer gone.
+    const fact = (await f.req("GET", agentPath + "/core")).body.data.facts.find((x: any) => x.title === "Timing belt");
+    assert.equal((await f.req("DELETE", `${agentPath}/facts/${fact.id}`, { expectedAgentRevision: (await f.req("GET", `${agentPath}/draft`)).body.data.revision })).status, 200);
+    const after = (await list("?status=resolved")).find((g: any) => g.id === belt.id);
+    assert.equal(after.status, "resolved");
+    assert.equal(after.answer_removed, true);
+    assert.equal(after.resolved_answer, null);
+
+    assert.equal((await f.req("GET", agentPath + "/gaps?status=bogus")).status, 422);
+    assert.equal((await f.api.request(f.h.staff, f.h.orgA.id, "GET", `/api/v1${agentPath}/gaps?status=open`)).status, 403);
+  } finally {
+    await repo.close();
+    await f.close();
+  }
+});

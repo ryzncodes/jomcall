@@ -20292,6 +20292,19 @@
               "format": "uuid"
             },
             "description": "Workspace selection; server rechecks membership. Never authority by itself."
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "resolved",
+                "ignored"
+              ]
+            }
           }
         ],
         "description": "Local-only core command. Custom validation, revision conflicts and authorization are enforced by the server.",
