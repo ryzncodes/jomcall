@@ -141,26 +141,36 @@ export function createCloudProvider(
       if (!/^[0-9]{5,30}$/.test(input.wabaId) || !input.accessToken)
         return { ok: false, reason: "INVALID_TARGET" };
       const templates: ProviderTemplate[] = [];
+      const deadline = input.signal;
+      const timedOut = { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" } as const;
       let after: string | null = null;
       for (let page = 0; page < templatePageCap; page++) {
+        // The caller's deadline has passed: stop paging.
+        if (deadline?.aborted) return timedOut;
         const query = new URLSearchParams({
           fields: "name,language,status",
           limit: String(templatePageSize),
           ...(after ? { after } : {}),
         });
         let response: Response;
+        let body: any;
         try {
           response = await send(
             `${graphOrigin}/${graphVersion}/${input.wabaId}/message_templates?${query}`,
             {
               headers: { authorization: "Bearer " + input.accessToken },
-              signal: AbortSignal.timeout(timeoutMs),
+              signal: deadline
+                ? AbortSignal.any([AbortSignal.timeout(timeoutMs), deadline])
+                : AbortSignal.timeout(timeoutMs),
             },
           );
+          body = await readJson(response);
         } catch {
-          return { ok: false, reason: "PROVIDER_UNREACHABLE" };
+          return deadline?.aborted
+            ? timedOut
+            : { ok: false, reason: "PROVIDER_UNREACHABLE" };
         }
-        const body = await readJson(response);
+        if (deadline?.aborted) return timedOut;
         if (!response.ok)
           return {
             ok: false,
@@ -170,6 +180,9 @@ export function createCloudProvider(
           return { ok: false, reason: "TEMPLATE_LIST_INVALID" };
         for (const item of body.data) {
           const t = readTemplate(item);
+          // One malformed item makes the whole list untrustworthy.
+          if (t === "invalid")
+            return { ok: false, reason: "TEMPLATE_LIST_INVALID" };
           if (t) templates.push(t);
         }
         if (templates.length > templateCap)
@@ -186,19 +199,28 @@ export function createCloudProvider(
   };
 }
 
-// Keeps a listed template only when every field has the expected shape.
-// Names follow the local template rule; the status is kept upper case for
-// the database to map.
-function readTemplate(item: any): ProviderTemplate | null {
+// One listed template. A missing, empty or non-text name, language or status, or a
+// status that is not upper-case letters and underscores, is "invalid" and
+// fails the whole list: the database would otherwise read the template as
+// missing at the provider. A name or language in a shape no local template
+// can have (the same rules as templateCreate) cannot match any local row,
+// so it is left out (null).
+function readTemplate(item: any): ProviderTemplate | "invalid" | null {
   const name = item?.name,
     language = item?.language,
-    status = typeof item?.status === "string" ? item.status.toUpperCase() : "";
+    status = item?.status;
   if (
     typeof name !== "string" ||
-    !/^[a-z0-9_]{1,512}$/.test(name) ||
+    !name ||
     typeof language !== "string" ||
-    !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(language) ||
+    !language ||
+    typeof status !== "string" ||
     !/^[A-Z_]{1,60}$/.test(status)
+  )
+    return "invalid";
+  if (
+    !/^[a-z0-9_]{1,512}$/.test(name) ||
+    !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(language)
   )
     return null;
   return { name, language, status };

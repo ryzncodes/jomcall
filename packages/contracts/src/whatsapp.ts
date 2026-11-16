@@ -34,8 +34,12 @@ export const templateCreate = z
   .strict();
 // Meta's review happens in WhatsApp Manager. Once the agent process has seen
 // a template at the provider (provider_status set), the provider's status is
-// copied about once an hour and a manual change is refused. Staff record the
-// outcome by hand only for templates never seen at the provider.
+// copied about once an hour and a manual change is refused, with one
+// exception: staff can always switch a template off ("disabled"), and a
+// check never switches it back on. Any other status on a template switched
+// off by staff switches it back on (a synced one takes the provider's last
+// status). Staff record the outcome by hand only for templates never seen
+// at the provider.
 export const templateStatus = z
   .object({
     status: z.enum([
@@ -74,23 +78,28 @@ export type WhatsAppChannel = {
   templates_synced_at: string | null;
   templates_sync_reason: string | null;
 };
-// Provider status names the database maps to a local status (see migration
-// 20261116150000_whatsapp_template_sync.sql; a test keeps the two equal).
-// Any other name leaves the local status alone and is shown as it came.
-export const mappedProviderStatuses = [
-  "APPROVED",
-  "PAUSED",
-  "PENDING",
-  "IN_REVIEW",
-  "IN_APPEAL",
-  "REJECTED",
-  "DISABLED",
-  "ARCHIVED",
-  "PENDING_DELETION",
-  "LIMIT_EXCEEDED",
-] as const;
+// Provider status names and the local status the database maps each to (see
+// migration 20261116150000_whatsapp_template_sync.sql; a test keeps the two
+// equal). Any other name leaves the local status alone and is shown as it
+// came. Switching a template back on uses the same map.
+export const providerStatusMap = {
+  APPROVED: "approved",
+  PAUSED: "paused",
+  PENDING: "pending",
+  IN_REVIEW: "pending",
+  IN_APPEAL: "pending",
+  REJECTED: "rejected",
+  DISABLED: "disabled",
+  ARCHIVED: "disabled",
+  PENDING_DELETION: "disabled",
+  LIMIT_EXCEEDED: "disabled",
+} as const satisfies Record<string, z.infer<typeof templateStatus>["status"]>;
+export const mappedProviderStatuses = Object.keys(
+  providerStatusMap,
+) as (keyof typeof providerStatusMap)[];
 // Stored in `provider_status` when a template that was seen at the provider
-// is gone from a later list (the database also sets its status to disabled).
+// is gone from a later list. Its status is left alone: a list can come back
+// short for reasons other than deletion, so staff are told and decide.
 export const providerStatusNotFound = "NOT_FOUND";
 export type WhatsAppTemplate = {
   id: string;
@@ -106,6 +115,9 @@ export type WhatsAppTemplate = {
   // template was not found there (or never checked).
   provider_status: string | null;
   synced_at: string | null;
+  // Switched off by staff; a check records the provider's status but keeps
+  // the template disabled until staff switch it back on.
+  disabled_by_staff: boolean;
 };
 export type WhatsAppOverview = {
   readiness: {

@@ -22,7 +22,7 @@ import {
   decideSend,
   type SendFacts,
 } from "../../packages/domain/src/whatsapp/policy.ts";
-import { mappedProviderStatuses, providerStatusNotFound } from "../../packages/contracts/src/whatsapp.ts";
+import { mappedProviderStatuses, providerStatusMap, providerStatusNotFound } from "../../packages/contracts/src/whatsapp.ts";
 
 const secret = "test-app-secret-0123456789";
 
@@ -318,11 +318,11 @@ test("cloud template listing sends the recorded request, follows cursors and ref
     Response.json({
       data: [
         { name: "jomcall_reply_request", language: "ms", status: "APPROVED", id: "1" },
-        { name: "jomcall_reply_request", language: "en", status: "pending" },
-        // Shapes that do not fit are dropped, never guessed.
+        { name: "jomcall_reply_request", language: "en", status: "PENDING" },
+        // A name or language no local template can have cannot match a
+        // local row, so it is left out.
         { name: "Bad Name", language: "ms", status: "APPROVED" },
         { name: "x", language: "malay", status: "APPROVED" },
-        { name: "y", language: "ms", status: 3 },
       ],
       paging: {
         cursors: { after: "QVFIUmFmZAWtl" },
@@ -408,6 +408,81 @@ test("cloud template listing sends the recorded request, follows cursors and ref
   });
 });
 
+test("cloud template listing fails the whole list on one malformed item", async () => {
+  let replies: Response[] = [];
+  const client = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async () => replies.shift() ?? Response.json({ data: [] }),
+  });
+  const input = { wabaId: "200000001", accessToken: "fake-token" };
+  const good = { name: "jomcall_reply_request", language: "ms", status: "APPROVED" };
+  for (const bad of [
+    { language: "ms", status: "APPROVED" },
+    { name: "jomcall_reply_request", status: "APPROVED" },
+    { name: "jomcall_reply_request", language: "ms" },
+    { name: "", language: "ms", status: "APPROVED" },
+    { name: "jomcall_reply_request", language: "ms", status: 3 },
+    // Not upper case: never upper-cased here, refused.
+    { name: "jomcall_reply_request", language: "en", status: "approved" },
+    { name: "jomcall_reply_request", language: "en", status: "IN REVIEW" },
+    null,
+  ]) {
+    replies = [Response.json({ data: [good, bad] })];
+    assert.deepEqual(
+      await client.listTemplates(input),
+      { ok: false, reason: "TEMPLATE_LIST_INVALID" },
+      JSON.stringify(bad),
+    );
+  }
+  // A malformed item on a later page fails the pages already read too.
+  replies = [
+    Response.json({ data: [good], paging: { cursors: { after: "c1" }, next: "https://graph.facebook.com/n" } }),
+    Response.json({ data: [{ name: "x", language: "ms", status: "lower" }] }),
+  ];
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "TEMPLATE_LIST_INVALID" });
+});
+
+test("cloud template listing stops paging when the caller's deadline passes", async () => {
+  const stop = new AbortController();
+  const seen: string[] = [];
+  const page = (i: number) =>
+    Response.json({
+      data: [{ name: "t" + i, language: "ms", status: "APPROVED" }],
+      paging: { cursors: { after: "c" + i }, next: "https://graph.facebook.com/next" },
+    });
+  const client = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async (url, init) => {
+      seen.push(String(url));
+      // The request carries a signal that follows the caller's deadline.
+      assert.ok(init?.signal);
+      // The deadline passes while the first page is in flight.
+      if (seen.length === 1) stop.abort();
+      return page(seen.length);
+    },
+  });
+  const input = { wabaId: "200000001", accessToken: "fake-token", signal: stop.signal };
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" });
+  assert.equal(seen.length, 1);
+  // Already past the deadline: nothing is asked for.
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" });
+  assert.equal(seen.length, 1);
+  // A request aborted by the deadline is a timeout, not an unreachable provider.
+  const late = new AbortController();
+  const hanging = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason));
+        late.abort();
+      }),
+  });
+  assert.deepEqual(
+    await hanging.listTemplates({ ...input, signal: late.signal }),
+    { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" },
+  );
+});
+
 test("the screen's list of mapped provider statuses matches the sync migration", () => {
   const sql = readFileSync(
     "supabase/migrations/20261116150000_whatsapp_template_sync.sql",
@@ -416,6 +491,10 @@ test("the screen's list of mapped provider statuses matches the sync migration",
   const block = sql.slice(sql.indexOf("v_new=case v_raw"), sql.indexOf("else t.status end"));
   const names = [...block.matchAll(/when '([A-Z_]+)'/g)].map((m) => m[1]).sort();
   assert.deepEqual(names, [...mappedProviderStatuses].sort());
+  // The local status each name maps to is the same on both sides.
+  const pairs = [...block.matchAll(/when '([A-Z_]+)' then '([a-z]+)'/g)].map((m) => [m[1], m[2]]);
+  assert.equal(pairs.length, names.length);
+  assert.deepEqual(Object.fromEntries(pairs), providerStatusMap);
 });
 
 test("the screen's NOT_FOUND marker is the one the sync migration writes, and is not a mapped status", () => {

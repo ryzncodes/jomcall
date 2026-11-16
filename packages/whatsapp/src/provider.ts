@@ -60,10 +60,12 @@ export interface WhatsAppProvider {
   readonly name: "fake" | "cloud";
   // Every template of the business account with its review status. A list
   // that could not be read in full is a failure, never a partial answer:
-  // a template missing from the list counts as not at the provider.
+  // a template missing from the list counts as not at the provider. When
+  // `signal` aborts (the caller's deadline), no further page is asked for.
   listTemplates(input: {
     wabaId: string;
     accessToken: string;
+    signal?: AbortSignal;
   }): Promise<TemplateList>;
   sendText(target: SendTarget, body: string): Promise<SendOutcome>;
   sendTemplate(

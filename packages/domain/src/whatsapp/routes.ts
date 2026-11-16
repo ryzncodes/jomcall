@@ -11,6 +11,7 @@ import {
   channelRevision,
   channelSave,
   conversationList,
+  providerStatusMap,
   staffReply,
   type ReplyOutlook,
   templateCreate,
@@ -34,7 +35,7 @@ type Env = Record<string, string | undefined>;
 const channelColumns =
   "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason";
 const templateColumns =
-  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at";
+  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff";
 
 async function loadChannel(tx: PoolClient, orgId: string, lock = false) {
   return (
@@ -395,22 +396,50 @@ export async function whatsappRoute(
       "updateWhatsAppTemplate",
       { id, ...v },
       async () => {
-        // A template seen at the provider takes its status from there; the
-        // agent process copies it about once an hour.
-        const row = (
+        const cur = (
           await tx.query(
-            `update app.whatsapp_template set status=$3,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 and revision=$4 and provider_status is null returning ${templateColumns}`,
-            [ctx.orgId, id, v.status, v.expectedRevision],
+            "select status,provider_status,disabled_by_staff,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
+            [ctx.orgId, id],
           )
         ).rows[0];
-        if (!row) throw new AppError("CONFLICT", 409);
+        if (!cur || cur.revision !== v.expectedRevision)
+          throw new AppError("CONFLICT", 409);
+        let status: string = v.status,
+          byStaff: boolean = cur.disabled_by_staff;
+        if (v.status === "disabled") {
+          // Staff can always switch a template off; a check never switches
+          // it back on.
+          byStaff = true;
+        } else if (cur.disabled_by_staff) {
+          // Switching back on. A template seen at the provider takes the
+          // status the provider last reported; one not found there, or with
+          // a status the map does not know, stays disabled until a check
+          // reports a known status. The next hourly check confirms it (the
+          // web role cannot bring that check forward).
+          byStaff = false;
+          if (cur.provider_status !== null)
+            status =
+              providerStatusMap[
+                cur.provider_status as keyof typeof providerStatusMap
+              ] ?? "disabled";
+        } else if (cur.provider_status !== null) {
+          // A template seen at the provider takes its status from there; the
+          // agent process copies it about once an hour.
+          throw new AppError("CONFLICT", 409);
+        }
+        const row = (
+          await tx.query(
+            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
+            [ctx.orgId, id, status, byStaff],
+          )
+        ).rows[0];
         await audit(
           tx,
           ctx,
           "whatsapp.template_status",
           "whatsapp_template",
           id,
-          { status: v.status },
+          { status, disabledByStaff: byStaff },
         );
         return { ref: { id }, data: row };
       },

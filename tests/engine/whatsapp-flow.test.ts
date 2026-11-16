@@ -13,7 +13,7 @@ import {
   signBody,
 } from "../../packages/whatsapp/src/index.ts";
 import { createFakeProvider } from "../../packages/whatsapp/src/fake.ts";
-import { WhatsAppWorker } from "../../engine/src/whatsapp/worker.ts";
+import { WhatsAppWorker, templateListDeadlineMs } from "../../engine/src/whatsapp/worker.ts";
 import { entitle } from "../helpers/billing.ts";
 import type { ModelDecision } from "../../packages/contracts/src/agent-test.ts";
 
@@ -724,7 +724,7 @@ test("template statuses are copied from the provider", async (t) => {
     const templates = async () =>
       (
         await db.query(
-          "select name,language,status,provider_status,synced_at,revision from app.whatsapp_template where org_id=$1 order by name,language",
+          "select name,language,status,provider_status,synced_at,revision,disabled_by_staff from app.whatsapp_template where org_id=$1 order by name,language",
           [f.h.orgA.id],
         )
       ).rows;
@@ -838,6 +838,21 @@ test("template statuses are copied from the provider", async (t) => {
         expectedRevision: allowed.body.data.revision,
       });
       assert.equal(back.status, 200, JSON.stringify(back.body));
+      assert.equal(back.body.data.disabled_by_staff, false);
+      // An unsynced template switched off by staff and back on keeps the
+      // manual behaviour: the status asked for.
+      const off = await f.req("PATCH", `/channels/whatsapp/templates/${en.id}`, {
+        status: "disabled",
+        expectedRevision: back.body.data.revision,
+      });
+      assert.equal(off.status, 200, JSON.stringify(off.body));
+      assert.deepEqual([off.body.data.status, off.body.data.disabled_by_staff], ["disabled", true]);
+      const on = await f.req("PATCH", `/channels/whatsapp/templates/${en.id}`, {
+        status: "pending",
+        expectedRevision: off.body.data.revision,
+      });
+      assert.equal(on.status, 200, JSON.stringify(on.body));
+      assert.deepEqual([on.body.data.status, on.body.data.disabled_by_staff], ["pending", false]);
     });
 
     await t.test("APPROVED to PAUSED stops the fallback", async () => {
@@ -904,7 +919,12 @@ test("template statuses are copied from the provider", async (t) => {
       await db.query("select app_private.whatsapp_template_sync('result',$1,$2,$3)", [
         f.h.namespace,
         claim.id,
-        JSON.stringify({ ok: true, templates: [{ name: tplName, language: "ms", status: "APPROVED" }] }),
+        JSON.stringify({
+          wabaId: claim.wabaId,
+          revision: claim.revision,
+          ok: true,
+          templates: [{ name: tplName, language: "ms", status: "APPROVED" }],
+        }),
       ]);
       assert.equal((await channel()).templates_sync_reason, null);
       // A failed result replaces the pending marker with its reason.
@@ -914,12 +934,117 @@ test("template statuses are copied from the provider", async (t) => {
       await db.query("select app_private.whatsapp_template_sync('result',$1,$2,$3)", [
         f.h.namespace,
         again.id,
-        JSON.stringify({ ok: false, reason: "META_190" }),
+        JSON.stringify({ wabaId: again.wabaId, revision: again.revision, ok: false, reason: "META_190" }),
       ]);
       assert.equal((await channel()).templates_sync_reason, "META_190");
     });
 
-    await t.test("a template seen at the provider and then gone is disabled, then comes back", async () => {
+    await t.test("a result is applied only to the claim it answers, once, and only for a well-formed list", async () => {
+      const claimNow = async () => {
+        await due();
+        const v = (await db.query("select app_private.whatsapp_template_sync('claim',$1) as value", [f.h.namespace]))
+          .rows[0].value;
+        assert.ok(v, "the channel is claimed");
+        assert.equal(typeof v.revision, "number");
+        return v;
+      };
+      const answer = async (claim: any, data: Record<string, unknown>) =>
+        (
+          await db.query("select app_private.whatsapp_template_sync('result',$1,$2,$3) as value", [
+            f.h.namespace,
+            claim.id,
+            JSON.stringify(data),
+          ])
+        ).rows[0].value;
+      const paused = [{ name: tplName, language: "ms", status: "PAUSED" }];
+      const shape = async () => (await templates()).map((x) => [x.status, x.provider_status, x.revision]);
+      const before = await shape();
+      assert.deepEqual(before.map((x) => x[1]), [null, "APPROVED"]);
+
+      // Another business account, another revision, or a channel moved back
+      // to pending: not applied, marked stale and due again.
+      for (const [label, wrong] of [
+        ["business account", (c: any) => ({ wabaId: "999999999", revision: c.revision })],
+        ["revision", (c: any) => ({ wabaId: c.wabaId, revision: c.revision + 1 })],
+      ] as const) {
+        const c = await claimNow();
+        assert.deepEqual(await answer(c, { ...wrong(c), ok: true, templates: paused }), { applied: false }, label);
+        const ch = await channel();
+        assert.equal(ch.templates_sync_reason, "TEMPLATE_SYNC_STALE", label);
+        assert.equal(ch.templates_synced_at, null, label);
+        assert.deepEqual(await shape(), before, label);
+      }
+      const c = await claimNow();
+      await db.query("update app.whatsapp_channel set state='pending' where org_id=$1", [f.h.orgA.id]);
+      try {
+        assert.deepEqual(
+          await answer(c, { wabaId: c.wabaId, revision: c.revision, ok: true, templates: paused }),
+          { applied: false },
+        );
+        assert.equal((await channel()).templates_sync_reason, "TEMPLATE_SYNC_STALE");
+        assert.equal((await channel()).templates_synced_at, null);
+        assert.deepEqual(await shape(), before);
+      } finally {
+        await db.query("update app.whatsapp_channel set state='connected' where org_id=$1", [f.h.orgA.id]);
+      }
+
+      // The right answer is applied once; a second one for the same claim is
+      // ignored.
+      const ok = await claimNow();
+      const first = await answer(ok, {
+        wabaId: ok.wabaId,
+        revision: ok.revision,
+        ok: true,
+        templates: [{ name: tplName, language: "ms", status: "APPROVED" }],
+      });
+      assert.equal(first.applied, true);
+      const checkedAt = (await channel()).templates_synced_at;
+      assert.deepEqual(
+        await answer(ok, { wabaId: ok.wabaId, revision: ok.revision, ok: true, templates: paused }),
+        { applied: false },
+      );
+      assert.deepEqual(await answer(ok, { wabaId: ok.wabaId, revision: ok.revision, ok: false, reason: "META_190" }), {
+        applied: false,
+      });
+      assert.equal((await channel()).templates_sync_reason, null);
+      assert.deepEqual((await channel()).templates_synced_at, checkedAt);
+      assert.deepEqual(await shape(), before);
+
+      // The same name and language twice: refused whole, nothing changes.
+      const dup = await claimNow();
+      assert.deepEqual(
+        await answer(dup, {
+          wabaId: dup.wabaId,
+          revision: dup.revision,
+          ok: true,
+          templates: [...paused, { name: tplName, language: "ms", status: "APPROVED" }],
+        }),
+        { applied: false },
+      );
+      assert.equal((await channel()).templates_sync_reason, "TEMPLATE_LIST_INVALID");
+      assert.deepEqual(await shape(), before);
+
+      // A status that is not upper case counts as not listed: the template
+      // seen before is flagged NOT_FOUND with its status kept, the one never
+      // seen is untouched.
+      const lower = await claimNow();
+      const r = await answer(lower, {
+        wabaId: lower.wabaId,
+        revision: lower.revision,
+        ok: true,
+        templates: [
+          { name: tplName, language: "ms", status: "paused" },
+          { name: tplName, language: "en", status: "approved" },
+        ],
+      });
+      assert.deepEqual([r.applied, r.seen, r.changed], [true, 0, 0]);
+      const [en, my] = await templates();
+      assert.deepEqual([my.status, my.provider_status], ["approved", "NOT_FOUND"]);
+      assert.deepEqual([en.status, en.provider_status, en.revision], [before[0][0], null, before[0][2]]);
+      assert.equal(my.revision, before[1][2]);
+    });
+
+    await t.test("a template seen at the provider and then gone is flagged NOT_FOUND, keeps its status, and the fallback still uses it", async () => {
       // Both templates are seen first (the English one was never seen before).
       await due();
       f.provider.setTemplates([
@@ -929,19 +1054,19 @@ test("template statuses are copied from the provider", async (t) => {
       assert.equal(await f.worker.syncTemplatesOne(), true);
       let [en, my] = await templates();
       assert.deepEqual([en.status, en.provider_status, my.status], ["approved", "APPROVED", "approved"]);
-      const seenRevision = en.revision;
+      const revisions = [en.revision, my.revision];
 
-      // Gone from the list: disabled and marked, revision bumped.
+      // Gone from the list: flagged, status and revision unchanged.
       await due();
       f.provider.setTemplates([]);
       assert.equal(await f.worker.syncTemplatesOne(), true);
       [en, my] = await templates();
       for (const x of [en, my]) {
-        assert.equal(x.status, "disabled");
+        assert.equal(x.status, "approved");
         assert.equal(x.provider_status, "NOT_FOUND");
         assert.ok(x.synced_at);
       }
-      assert.equal(en.revision, seenRevision + 1);
+      assert.deepEqual([en.revision, my.revision], revisions);
       assert.equal((await channel()).templates_sync_reason, null);
       // The screen's read carries the marker.
       const o = (await f.req("GET", "/channels/whatsapp")).body.data;
@@ -949,29 +1074,94 @@ test("template statuses are copied from the provider", async (t) => {
       // A second check that still finds nothing changes nothing more.
       await due();
       assert.equal(await f.worker.syncTemplatesOne(), true);
-      assert.equal((await templates())[0].revision, seenRevision + 1);
+      assert.deepEqual((await templates()).map((x) => x.revision), revisions);
 
-      // The outside-window fallback no longer picks either template.
+      // The outside-window fallback still picks a flagged template.
       await f.say("Hai lagi");
       await f.worker.tick();
       c = await f.conversation();
       await expire();
       const sentBefore = f.provider.sent.length;
-      const blocked = await staffReply("Tiada templat.");
-      assert.equal(blocked.status, "blocked");
-      assert.equal(blocked.error_code, "WINDOW_CLOSED");
-      assert.equal(f.provider.sent.length, sentBefore);
+      const out = await staffReply("Masih ada templat.");
+      assert.equal(out.status, "sent");
+      assert.equal(out.kind, "template");
+      assert.equal(f.provider.sent.length, sentBefore + 1);
 
-      // Present again: mapped normally.
+      // Present again: mapped normally; the English one stays flagged.
       await due();
       f.provider.setTemplates([{ name: tplName, language: "ms", status: "APPROVED" }]);
       assert.equal(await f.worker.syncTemplatesOne(), true);
       [en, my] = await templates();
-      assert.equal(my.status, "approved");
-      assert.equal(my.provider_status, "APPROVED");
-      // The English one is still gone: unchanged by the second NOT_FOUND pass.
+      assert.deepEqual([my.status, my.provider_status], ["approved", "APPROVED"]);
+      assert.deepEqual([en.status, en.provider_status], ["approved", "NOT_FOUND"]);
+    });
+
+    await t.test("staff can switch a template off, a check never switches it on, and switching on restores the provider's status", async () => {
+      const read = async () => {
+        const list = (await f.req("GET", "/channels/whatsapp")).body.data.templates;
+        return [list.find((x: any) => x.language === "en"), list.find((x: any) => x.language === "ms")];
+      };
+      const patch = (x: any, status: string) =>
+        f.req("PATCH", `/channels/whatsapp/templates/${x.id}`, { status, expectedRevision: x.revision });
+      let [en, my] = await read();
+      assert.equal(my.disabled_by_staff, false);
+      // Switching off is allowed on a synced template.
+      for (const x of [en, my]) {
+        const r = await patch(x, "disabled");
+        assert.equal(r.status, 200, JSON.stringify(r.body));
+        assert.deepEqual([r.body.data.status, r.body.data.disabled_by_staff], ["disabled", true]);
+      }
+      // A check that reports both approved records it and keeps them off.
+      await due();
+      f.provider.setTemplates([
+        { name: tplName, language: "ms", status: "APPROVED" },
+        { name: tplName, language: "en", status: "APPROVED" },
+      ]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      for (const x of await templates())
+        assert.deepEqual([x.status, x.provider_status, x.disabled_by_staff], ["disabled", "APPROVED", true]);
+      // The outside-window fallback picks neither.
+      await f.say("Hai sekali lagi");
+      await f.worker.tick();
+      c = await f.conversation();
+      await expire();
+      const sentBefore = f.provider.sent.length;
+      const blocked = await staffReply("Templat dimatikan.");
+      assert.equal(blocked.status, "blocked");
+      assert.equal(blocked.error_code, "WINDOW_CLOSED");
+      assert.equal(f.provider.sent.length, sentBefore);
+
+      // The English one goes missing at the next check while switched off.
+      await due();
+      f.provider.setTemplates([{ name: tplName, language: "ms", status: "APPROVED" }]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      [en, my] = await read();
       assert.deepEqual([en.status, en.provider_status], ["disabled", "NOT_FOUND"]);
-      const out = await staffReply("Sudah ada templat.");
+
+      // Switching on: any other status asked for. The synced Malay one takes
+      // the provider's last status; the one not found stays disabled until a
+      // check finds it.
+      const onMy = await patch(my, "pending");
+      assert.equal(onMy.status, 200, JSON.stringify(onMy.body));
+      assert.deepEqual([onMy.body.data.status, onMy.body.data.disabled_by_staff], ["approved", false]);
+      const onEn = await patch(en, "approved");
+      assert.equal(onEn.status, 200, JSON.stringify(onEn.body));
+      assert.deepEqual([onEn.body.data.status, onEn.body.data.disabled_by_staff], ["disabled", false]);
+      // Switched on, other manual changes on a synced template stay refused.
+      const refused = await patch(onMy.body.data, "rejected");
+      assert.equal(refused.status, 409, JSON.stringify(refused.body));
+      // A stale revision is refused.
+      assert.equal((await patch(my, "disabled")).status, 409);
+      // The next check that lists the English one maps it again.
+      await due();
+      f.provider.setTemplates([
+        { name: tplName, language: "ms", status: "APPROVED" },
+        { name: tplName, language: "en", status: "APPROVED" },
+      ]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      for (const x of await templates())
+        assert.deepEqual([x.status, x.provider_status, x.disabled_by_staff], ["approved", "APPROVED", false]);
+      const out = await staffReply("Templat dihidupkan.");
       assert.equal(out.status, "sent");
       assert.equal(out.kind, "template");
     });
@@ -1001,6 +1191,60 @@ test("template statuses are copied from the provider", async (t) => {
       f.clock.now += 1_000;
       await f.worker.tick();
       assert.ok((await channel()).templates_synced_at);
+    });
+
+    await t.test("a tick sends replies before it checks templates", async () => {
+      // A staff reply inside the window, waiting to go.
+      await f.say("Boleh tolong?");
+      await f.worker.tick();
+      c = await f.conversation();
+      const d = (await f.req("GET", `/conversations/${c.id}`)).body.data;
+      const r = await f.req("POST", `/conversations/${c.id}/messages`, { text: "Boleh.", expectedRevision: d.revision });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const order: string[] = [];
+      const p = f.provider as any;
+      const { sendText, sendTemplate, listTemplates } = p;
+      p.sendText = (...a: any[]) => (order.push("send"), sendText(...a));
+      p.sendTemplate = (...a: any[]) => (order.push("send"), sendTemplate(...a));
+      p.listTemplates = (...a: any[]) => (order.push("list"), listTemplates(...a));
+      try {
+        await due();
+        f.clock.now += 60_000;
+        await f.worker.tick();
+      } finally {
+        Object.assign(p, { sendText, sendTemplate, listTemplates });
+      }
+      assert.ok(order.includes("send"), JSON.stringify(order));
+      assert.equal(order.filter((x) => x === "list").length, 1);
+      assert.equal(order.at(-1), "list");
+    });
+
+    await t.test("a template list that never arrives is answered as timed out at the 20-second deadline", async () => {
+      assert.equal(templateListDeadlineMs, 20_000);
+      const timers: { fire: () => void; ms: number }[] = [];
+      let cleared = 0;
+      const worker = new WhatsAppWorker(f.h.namespace, {
+        provider: { ...f.provider, listTemplates: () => new Promise<never>(() => {}) },
+        model: { generate: async () => ({ kind: "answer", text: "Baik.", citations: [] }) } as any,
+        timer: {
+          set: (fire, ms) => timers.push({ fire, ms }),
+          clear: () => void cleared++,
+        },
+      });
+      try {
+        await due();
+        const run = worker.syncTemplatesOne();
+        for (let i = 0; i < 400 && !timers.length; i++) await new Promise((r) => setTimeout(r, 5));
+        assert.equal(timers.length, 1, "the deadline was set");
+        assert.equal(timers[0].ms, 20_000);
+        assert.equal((await channel()).templates_sync_reason, "TEMPLATE_SYNC_PENDING");
+        timers[0].fire();
+        assert.equal(await run, true);
+        assert.equal((await channel()).templates_sync_reason, "TEMPLATE_LIST_TIMEOUT");
+        assert.equal(cleared, 1);
+      } finally {
+        await worker.close();
+      }
     });
 
     await t.test("only the agent login role can run the sync function", async () => {

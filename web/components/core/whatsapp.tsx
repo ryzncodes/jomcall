@@ -7,10 +7,10 @@ import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import {
   mappedProviderStatuses,
-  providerStatusNotFound,
   type WhatsAppOverview,
   type WhatsAppTemplate,
 } from "../../../packages/contracts/src/whatsapp";
+import { syncLine, templateNote } from "@/lib/core/whatsapp-template-rules";
 import { useExperience } from "../experience";
 import {
   useCore,
@@ -369,10 +369,13 @@ function Templates({
     )
       reload();
   };
+  // The template whose "Switch off" is waiting for a yes.
+  const [confirmOff, setConfirmOff] = useState<string | null>(null);
   const mark = async (
     t: WhatsAppTemplate,
-    status: "pending" | "approved" | "rejected",
+    status: "pending" | "approved" | "rejected" | "disabled",
   ) => {
+    setConfirmOff(null);
     if (
       await action.run(() =>
         client.execute("updateWhatsAppTemplate", {
@@ -384,6 +387,7 @@ function Templates({
     )
       reload();
   };
+  const line = syncLine(syncedAt, syncReason);
   return (
     <section className="core-panel">
       <h2>{w("Message templates", "Templat mesej")}</h2>
@@ -393,22 +397,29 @@ function Templates({
           "Selepas 24 jam tanpa mesej daripada pelanggan, WhatsApp hanya membenarkan templat yang diluluskan. Hantar setiap templat dalam WhatsApp Manager dan tambahkannya di sini. Semasa nombor disambungkan, JomCall menyemak status setiap templat dengan WhatsApp lebih kurang sejam sekali; rekodkan keputusan Meta secara manual hanya untuk templat yang belum disenaraikan oleh WhatsApp.",
         )}
       </p>
-      {syncReason ? (
+      {line === "checking" && (
+        <p className="editor-note" role="status">
+          {w(
+            "Checking with WhatsApp…",
+            "Sedang menyemak dengan WhatsApp…",
+          )}
+        </p>
+      )}
+      {line === "failed" && (
         <p className="storage-warning" role="status">
           {w(
             "Could not check with WhatsApp. Statuses below may be out of date.",
             "Tidak dapat menyemak dengan WhatsApp. Status di bawah mungkin sudah lapuk.",
           )}
         </p>
-      ) : (
-        syncedAt && (
-          <p className="editor-note">
-            {w(
-              `Checked with WhatsApp ${time(syncedAt)}`,
-              `Disemak dengan WhatsApp ${time(syncedAt)}`,
-            )}
-          </p>
-        )
+      )}
+      {line === "checked" && syncedAt && (
+        <p className="editor-note">
+          {w(
+            `Checked with WhatsApp ${time(syncedAt)}`,
+            `Disemak dengan WhatsApp ${time(syncedAt)}`,
+          )}
+        </p>
       )}
       {!templates.length ? (
         <p className="core-empty">
@@ -420,21 +431,38 @@ function Templates({
           // Seen at the provider: its status is the truth, so staff do not
           // record one by hand.
           const synced = t.provider_status !== null;
+          const note = templateNote(t, syncedAt, syncReason);
           return (
             <div className="core-record" key={t.id}>
               <div>
                 <strong>{t.name}</strong> <code>{t.language}</code>{" "}
                 <span className="remaining-chip">{w(s[0], s[1])}</span>
                 <p>{t.body}</p>
-                {synced && t.provider_status === providerStatusNotFound && (
+                {t.disabled_by_staff && (
                   <p className="editor-note">
                     {w(
-                      "No longer found at WhatsApp",
-                      "Tidak lagi ditemui di WhatsApp",
+                      "Switched off by your team",
+                      "Dimatikan oleh pasukan anda",
                     )}
                   </p>
                 )}
-                {synced && t.provider_status !== providerStatusNotFound && (
+                {note === "not_found" && (
+                  <p className="editor-note">
+                    {w(
+                      "Not in WhatsApp's list at the last check. If it was deleted there, switch it off here.",
+                      "Tiada dalam senarai WhatsApp pada semakan terakhir. Jika ia telah dipadam di sana, matikan di sini.",
+                    )}
+                  </p>
+                )}
+                {note === "not_listed" && (
+                  <p className="editor-note">
+                    {w(
+                      "Not listed by WhatsApp. Check the name and language match exactly.",
+                      "Tidak disenaraikan oleh WhatsApp. Pastikan nama dan bahasa sepadan dengan tepat.",
+                    )}
+                  </p>
+                )}
+                {note === "from_provider" && (
                   <p className="editor-note">
                     {t.synced_at
                       ? w(
@@ -455,7 +483,46 @@ function Templates({
                 )}
               </div>
               <div className="core-actions">
-                {!synced && t.status === "draft" && (
+                {t.disabled_by_staff ? (
+                  <button
+                    className="button secondary-button"
+                    disabled={action.busy}
+                    onClick={() => mark(t, "pending")}
+                  >
+                    {w("Switch on", "Hidupkan")}
+                  </button>
+                ) : confirmOff === t.id ? (
+                  <>
+                    <p role="status">
+                      {w(
+                        "Switch this template off? JomCall will not use it to message customers.",
+                        "Matikan templat ini? JomCall tidak akan menggunakannya untuk menghantar mesej kepada pelanggan.",
+                      )}
+                    </p>
+                    <button
+                      className="button button-dark"
+                      disabled={action.busy}
+                      onClick={() => mark(t, "disabled")}
+                    >
+                      {w("Switch off", "Matikan")}
+                    </button>
+                    <button
+                      className="button secondary-button"
+                      onClick={() => setConfirmOff(null)}
+                    >
+                      {w("Cancel", "Batal")}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    className="button secondary-button"
+                    disabled={action.busy}
+                    onClick={() => setConfirmOff(t.id)}
+                  >
+                    {w("Switch off", "Matikan")}
+                  </button>
+                )}
+                {!t.disabled_by_staff && !synced && t.status === "draft" && (
                   <button
                     className="button secondary-button"
                     disabled={action.busy}
@@ -464,7 +531,7 @@ function Templates({
                     {w("Submitted to Meta", "Dihantar kepada Meta")}
                   </button>
                 )}
-                {!synced && t.status === "pending" && (
+                {!t.disabled_by_staff && !synced && t.status === "pending" && (
                   <>
                     <button
                       className="button secondary-button"
