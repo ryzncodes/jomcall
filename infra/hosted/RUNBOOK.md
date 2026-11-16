@@ -419,11 +419,12 @@ Branch `feat/plan-picker`. Owners pick a plan on `/app/billing`; a first paid pl
 
    Rows with no current period, or with `current_period_state = 'unpaid'`, are the ones the engine visits. A paid plan with `balance_sen` at least the fee is charged; a short one starts unpaid with 7 days' grace from the period start, so a period that began more than 7 days ago is downgraded at once. A `payg` row with a paid plan waiting starts that plan only if the wallet holds the fee, and otherwise drops it.
 2. **[OWNER]** Apply the migration to staging first, from a clean release folder: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. It is `20261116120000_plan_picker.sql`. The engine must not be rebuilt before this: the new engine calls `app_private.plan_orgs_due`, which the migration adds.
+   - Branch `feat/plan-leftovers` adds a second migration, `20261116130000_plan_notices.sql` (owner emails about the fee: due soon, unpaid, plan stopped), applied by the same command; apply it before rebuilding the engine too, because the new engine calls `app_private.queue_plan_notices` after each hourly run (without it the run logs `PLAN_NOTICE_RUN_FAILED` and sends no fee emails). Each email is checked again when it is about to be sent and skipped when it is no longer true. The first hourly run after deploy emails the owners of every organization whose plan is unpaid and in grace, and of those whose plan stopped in the last two days. Do not roll the engine back to a build from before this change while plan notices are queued: the old sender does not know the `plan` channel.
 3. **[OWNER]** Rebuild and restart on the server: `docker compose up -d --build engine agent`. Redeploy the web service on Vercel for the plan card.
 
 [CHECK] with a made-up workspace: the wallet screen shows "Choose a plan"; with enough credit, Start Starter charges the fee once; the engine log shows no `PLAN_CHARGE_RUN_FAILED` (a failure logs only the ok and failed counts and retries after five minutes).
 
-[ROLLBACK] rebuild the previous engine image; the migration stays (it replaces functions and adds one). Fees already debited stay in the ledger; refund them with an operator adjustment if needed.
+[ROLLBACK] rebuild the previous engine image (once `20261116130000_plan_notices.sql` is in, not one from before it while plan notices are queued; see step 2); the migration stays (it replaces functions and adds one). Fees already debited stay in the ledger; refund them with an operator adjustment if needed.
 
 ---
 
