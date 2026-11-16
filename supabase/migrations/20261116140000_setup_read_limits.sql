@@ -10,9 +10,16 @@
 --    hold everyone else back.
 -- The per-workspace daily cap (20 to 10) is in the application code.
 --
+-- 3. A ceiling on stored upload bytes for the whole service (default 150 MiB
+--    of declared file sizes whose bytes are still held). When a new file
+--    would go over it, the upload is refused; the engine emails the
+--    operator once a day from 80 percent. A file's bytes are deleted 7 days
+--    after it was added (was 30).
+--
 -- setup_read is the function from 20261116110100_setup_read_worker.sql with
 -- three changes in its 'claim' action (ceiling check, fair order,
--- first_claimed_at); everything else is copied unchanged. Re-runnable.
+-- first_claimed_at) and the retention in 'maintain' (30 days to 7);
+-- everything else is copied unchanged. Re-runnable.
 
 alter table app.setup_upload add column if not exists first_claimed_at timestamptz;
 create index if not exists setup_upload_first_claimed on app.setup_upload(first_claimed_at) where first_claimed_at is not null;
@@ -29,7 +36,32 @@ alter table app.setup_read_limit enable row level security;
 alter table app.setup_read_limit force row level security;
 grant select, update on app.setup_read_limit to jomcall_agent_jobs;
 
+alter table app.setup_read_limit add column if not exists stored_bytes_max bigint not null default 157286400 check(stored_bytes_max between 0 and 1099511627776);
+alter table app.setup_read_limit add column if not exists bytes_noticed_day date;
+-- Files already waiting for the 30-day sweep now go at 7 days.
+update app.setup_upload set delete_after = created_at + interval '7 days'
+ where bytes_deleted_at is null and delete_after is not null and delete_after > created_at + interval '7 days';
+
 grant create on schema app_private to jomcall_agent_jobs;
+-- Web: is there room for a new file of p_bytes? Counts the declared sizes of
+-- every organization's files whose bytes are still held. A missing limit
+-- row means no room.
+create or replace function app_private.setup_upload_room(p_bytes bigint) returns boolean language sql stable security definer set search_path = '' as $$
+ select p_bytes is not null and p_bytes >= 0 and
+  (select coalesce(sum(u.bytes), 0) from app.setup_upload u where u.bytes_deleted_at is null and u.state <> 'removed') + p_bytes
+  <= coalesce((select stored_bytes_max from app.setup_read_limit), 0)
+$$;
+-- Engine, hourly: a row once per Kuala Lumpur day while stored bytes are at
+-- 80 percent of the ceiling or more. Counts only.
+create or replace function app_private.setup_bytes_notice() returns jsonb language plpgsql security definer set search_path = '' as $$
+declare v_day date := (now() at time zone 'Asia/Kuala_Lumpur')::date; l app.setup_read_limit; v_stored bigint; begin
+ select * into l from app.setup_read_limit for update;
+ if not found then return null; end if;
+ select coalesce(sum(u.bytes), 0) into v_stored from app.setup_upload u where u.bytes_deleted_at is null and u.state <> 'removed';
+ if v_stored * 5 < l.stored_bytes_max * 4 or l.bytes_noticed_day = v_day then return null; end if;
+ update app.setup_read_limit set bytes_noticed_day = v_day, updated_at = now();
+ return jsonb_build_object('day', v_day, 'storedBytes', v_stored, 'maxBytes', l.stored_bytes_max);
+end $$;
 create or replace function app_private.setup_read_ceiling_hit() returns boolean language sql stable security definer set search_path = '' as $$
  select (select count(*) from app.setup_upload where first_claimed_at > now() - interval '24 hours')
   >= coalesce((select daily_reads from app.setup_read_limit), 0)
@@ -77,12 +109,12 @@ begin
   gone as (delete from app.setup_upload_chunk k using x where k.upload_id = x.id)
   update app.setup_upload t set state = 'removed', fail_code = 'ABANDONED', lease_token = null, lease_until = null, bytes_deleted_at = now() from x where t.id = x.id;
   get diagnostics v_abandoned = row_count;
-  -- Every upload's bytes go 30 days after it was created, whatever happens
+  -- Every upload's bytes go 7 days after it was created, whatever happens
   -- to its session.
   with x as (
    select u2.id from app.setup_upload u2 where u2.delete_after is null
    order by u2.created_at limit 100 for update skip locked)
-  update app.setup_upload t set delete_after = t.created_at + interval '30 days' from x where t.id = x.id;
+  update app.setup_upload t set delete_after = t.created_at + interval '7 days' from x where t.id = x.id;
   get diagnostics v_marked = row_count;
   -- The upload row and its items stay. Each upload is swept once.
   with x as (
@@ -298,6 +330,12 @@ begin
 end$$;
 
 alter function app_private.setup_read_ceiling_hit() owner to jomcall_agent_jobs;
+alter function app_private.setup_upload_room(bigint) owner to jomcall_agent_jobs;
+alter function app_private.setup_bytes_notice() owner to jomcall_agent_jobs;
+revoke all on function app_private.setup_upload_room(bigint) from public;
+revoke all on function app_private.setup_bytes_notice() from public;
+grant execute on function app_private.setup_upload_room(bigint) to jomcall_app;
+grant execute on function app_private.setup_bytes_notice() to jomcall_worker;
 alter function app_private.setup_read_ceiling_notice() owner to jomcall_agent_jobs;
 revoke all on function app_private.setup_read_ceiling_hit() from public;
 revoke all on function app_private.setup_read_ceiling_notice() from public;
