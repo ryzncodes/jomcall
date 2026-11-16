@@ -10,8 +10,10 @@
 import {
   whatsappMode,
   type NumberCheck,
+  type ProviderTemplate,
   type SendOutcome,
   type SendTarget,
+  type TemplateList,
   type TemplateMessage,
   type WhatsAppProvider,
 } from "./provider.ts";
@@ -20,6 +22,12 @@ import {
 // 2026-11-04). The only place the version is named.
 export const graphVersion = "v27.0";
 const graphOrigin = "https://graph.facebook.com";
+
+// Template listing limits. A longer list is refused as a whole, because the
+// database treats a template missing from the list as not at the provider.
+export const templatePageSize = 100;
+export const templatePageCap = 10;
+export const templateCap = 1000;
 
 type Env = Record<string, string | undefined>;
 
@@ -122,7 +130,100 @@ export function createCloudProvider(
         displayPhone: /^[1-9][0-9]{1,14}$/.test(digits) ? "+" + digits : null,
       };
     },
+    // UNCONFIRMED AGAINST META: GET /<WABA_ID>/message_templates with the
+    // fields name, language and status, as recorded in the WhatsApp design
+    // (open item O8). Paging is assumed to follow the usual Graph shape
+    // (paging.cursors.after, with paging.next present while more pages
+    // remain). The next request is always built here from the cursor; a URL
+    // taken from the response is never fetched, so the token cannot be sent
+    // anywhere else.
+    async listTemplates(input): Promise<TemplateList> {
+      if (!/^[0-9]{5,30}$/.test(input.wabaId) || !input.accessToken)
+        return { ok: false, reason: "INVALID_TARGET" };
+      const templates: ProviderTemplate[] = [];
+      const deadline = input.signal;
+      const timedOut = { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" } as const;
+      let after: string | null = null;
+      for (let page = 0; page < templatePageCap; page++) {
+        // The caller's deadline has passed: stop paging.
+        if (deadline?.aborted) return timedOut;
+        const query = new URLSearchParams({
+          fields: "name,language,status",
+          limit: String(templatePageSize),
+          ...(after ? { after } : {}),
+        });
+        let response: Response;
+        let body: any;
+        try {
+          response = await send(
+            `${graphOrigin}/${graphVersion}/${input.wabaId}/message_templates?${query}`,
+            {
+              headers: { authorization: "Bearer " + input.accessToken },
+              signal: deadline
+                ? AbortSignal.any([AbortSignal.timeout(timeoutMs), deadline])
+                : AbortSignal.timeout(timeoutMs),
+            },
+          );
+          body = await readJson(response);
+        } catch {
+          return deadline?.aborted
+            ? timedOut
+            : { ok: false, reason: "PROVIDER_UNREACHABLE" };
+        }
+        if (deadline?.aborted) return timedOut;
+        if (!response.ok)
+          return {
+            ok: false,
+            reason: errorCode(body) ?? "TEMPLATE_LIST_FAILED",
+          };
+        if (!Array.isArray(body?.data))
+          return { ok: false, reason: "TEMPLATE_LIST_INVALID" };
+        for (const item of body.data) {
+          const t = readTemplate(item);
+          // One malformed item makes the whole list untrustworthy.
+          if (t === "invalid")
+            return { ok: false, reason: "TEMPLATE_LIST_INVALID" };
+          if (t) templates.push(t);
+        }
+        if (templates.length > templateCap)
+          return { ok: false, reason: "TEMPLATE_LIST_TOO_LONG" };
+        const cursor = body?.paging?.cursors?.after;
+        if (!body?.paging?.next) return { ok: true, templates };
+        if (typeof cursor !== "string" || !/^[A-Za-z0-9_=-]{1,512}$/.test(cursor))
+          return { ok: false, reason: "TEMPLATE_LIST_INVALID" };
+        after = cursor;
+      }
+      // More pages than the cap allows: refuse rather than report a part.
+      return { ok: false, reason: "TEMPLATE_LIST_TOO_LONG" };
+    },
   };
+}
+
+// One listed template. A missing, empty or non-text name, language or status, or a
+// status that is not upper-case letters and underscores, is "invalid" and
+// fails the whole list: the database would otherwise read the template as
+// missing at the provider. A name or language in a shape no local template
+// can have (the same rules as templateCreate) cannot match any local row,
+// so it is left out (null).
+function readTemplate(item: any): ProviderTemplate | "invalid" | null {
+  const name = item?.name,
+    language = item?.language,
+    status = item?.status;
+  if (
+    typeof name !== "string" ||
+    !name ||
+    typeof language !== "string" ||
+    !language ||
+    typeof status !== "string" ||
+    !/^[A-Z_]{1,60}$/.test(status)
+  )
+    return "invalid";
+  if (
+    !/^[a-z0-9_]{1,512}$/.test(name) ||
+    !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(language)
+  )
+    return null;
+  return { name, language, status };
 }
 
 async function readJson(response: Response): Promise<any> {

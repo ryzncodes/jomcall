@@ -1,5 +1,46 @@
 # Handoff
 
+## 2026-11-16 — WhatsApp template check after review
+
+Branch `feat/whatsapp-sync`, pull request not yet open, not merged. Nothing on hosted staging. Fake WhatsApp provider only; the Cloud API is still not approved and nothing reached Meta.
+
+**Changed**
+- Controller's SQL (`20261116150000_whatsapp_template_sync.sql`, commit `ae7658c`): a missing template is flagged `NOT_FOUND`, not disabled (a short list must not silently stop the fallback; sending a deleted one fails in the open); a result applies only to its own claim (`wabaId` + `revision`, else `TEMPLATE_SYNC_STALE`); duplicates or over 1000 items `TEMPLATE_LIST_INVALID`; status names must be upper case; `whatsapp_template.disabled_by_staff`.
+- Worker: sends `wabaId`/`revision` back in every result; 20 s deadline on the whole list (`TEMPLATE_LIST_TIMEOUT`, injectable timer); sync moved to the end of `tick()`. Cloud client: abort signal stops paging; one malformed item fails the whole list; no upper-casing.
+- PATCH: `disabled` always allowed (sets `disabled_by_staff`); any other status on a staff-disabled template switches it on (synced: provider's last mapped status via `providerStatusMap`, `NOT_FOUND`/unmapped stays disabled; unsynced: status asked for). The web role cannot update `whatsapp_channel.templates_synced_at` (checked with `has_column_privilege`), so switching on waits for the next hourly check. Read returns `disabled_by_staff`.
+- Screen: Switch off / Matikan (confirm in place), Switched off by your team / Dimatikan oleh pasukan anda, Switch on / Hidupkan, Checking with WhatsApp… / Sedang menyemak dengan WhatsApp…, reworded NOT_FOUND line, "Not listed by WhatsApp…" / "Tidak disenaraikan oleh WhatsApp…". Rules in `web/lib/core/whatsapp-template-rules.ts`.
+- Customer file names cleaned (control and bidi characters; `cleanFileName` shared with setup uploads) at parse time and on read (inbox, PDPA export).
+- Reactions are ignored, so a reaction no longer counts as the customer's last message for the 24-hour window; unverified whether Meta counts it.
+
+**Verified (2026-11-16, local database and fakes only)**
+- `npm run typecheck` passes; `npm run test:guards` 69 of 69 on the rerun (first run 68 of 69, only the known flickering `tests/local/model.test.mjs` runtime-ownership guard); `tests/domain/whatsapp.test.ts` 16 of 16, `tests/domain/whatsapp-template-rules.test.ts` 2 of 2, `tests/engine/whatsapp-flow.test.ts` 37 of 37, `tests/engine/privacy.test.ts` 1 of 1; `npm run check:core` 871 of 871; `npm run db:verify-migrations` passes (59 tables with row-level security); `npm run build:local`, `npm run build:mock` and `npm run build:hosted` pass.
+
+**Next**
+- Owner: apply the amended migration on staging (never applied there yet), rebuild `agent` and web.
+- No browser check of the new screen states; nothing against Meta.
+
+## 2026-11-16 — WhatsApp template status sync and media in the inbox
+
+Branch `feat/whatsapp-sync`, pull request not yet open, not merged. Nothing on hosted staging. Built and tested against the fake WhatsApp provider only; the Cloud API is still not approved and `listTemplates` has never reached Meta.
+
+**Changed**
+- Migration `20261116150000_whatsapp_template_sync.sql` (controller's; applied to the shared local database): template and channel sync columns and `app_private.whatsapp_template_sync` (agent login role only).
+- Provider port `listTemplates`; Cloud client reads `GET /<WABA_ID>/message_templates` (UNCONFIRMED; cursor paging built locally; more than 10 pages or 1000 templates is a failure); fake `setTemplates` / `failTemplates`.
+- Worker `syncTemplatesOne()` from `tick()`, at most once a minute per process; logs `WHATSAPP_TEMPLATE_SYNC_<code>` only.
+- Absent-template rule: a template never seen at the provider and missing from its list is left as staff set it; one seen there before and now gone becomes `disabled` with `provider_status` `NOT_FOUND` (screen: "No longer found at WhatsApp" / "Tidak lagi ditemui di WhatsApp") and is mapped normally if a later list has it. `claim` sets reason `TEMPLATE_SYNC_PENDING` until `result` clears it or replaces it with the failure code.
+- Settings screen: "Status from WhatsApp, checked …" / "Status daripada WhatsApp, disemak …"; "WhatsApp says: …" / "WhatsApp menyatakan: …" for an unmapped name; manual approve/reject hidden for synced templates; "Checked with WhatsApp …" / "Disemak dengan WhatsApp …" or "Could not check with WhatsApp. Statuses below may be out of date." / "Tidak dapat menyemak dengan WhatsApp. Status di bawah mungkin sudah lapuk." Manual PATCH on a synced template answers 409 `CONFLICT`.
+- Webhook parser drops reactions and keeps `media.kind`; conversation read and PDPA export carry media `{kind, filename}` only (`packages/domain/src/whatsapp/media-sql.ts`); inbox labels media (Photo/Gambar, Voice or audio message/Mesej suara atau audio, Video/Video, Document: name/Dokumen: name, Sticker/Pelekat), one "does not download files" line, and "Message type JomCall cannot show" / "Jenis mesej yang JomCall tidak dapat paparkan".
+- Docs: AGENTS.md, WhatsApp design (§3, §5, O4, O8, §14 as built), go-live step 11.
+
+**Verified (2026-11-16, local database and fakes only)**
+- typecheck: pass. guards: 69 of 69. `tests/domain/whatsapp.test.ts` 13 of 13; `tests/engine/whatsapp-flow.test.ts` 31 of 31. check:core: 860 of 860. verify-migrations: pass (59 RLS tables). build:local, build:mock, build:hosted: pass.
+- The mock bundle contains the new settings and inbox text, as it already contains the existing WhatsApp settings and inbox screens (static imports in `web/components/core/local-app.tsx`; setup is the only screen gated out). Not changed here. `tests/local/whatsapp-guard.test.mjs` passes (web never imports the Cloud client).
+
+**Next**
+- Owner: apply migration `20261116150000_whatsapp_template_sync.sql` on staging (`npm run hosted:migrate`), then rebuild `agent` and web.
+- A channel saved without an access token is never synced (claim needs stored credentials).
+- No browser check of the settings or inbox changes yet; nothing against Meta.
+
 ## 2026-11-16 — stored-upload ceiling and 7-day deletion
 
 Branch `feat/reading-limits`, pull request #35, not merged. Nothing on hosted staging. Owner decision 2026-11-16: uploads stay in Postgres for now (Supabase Storage waits for real volume or a paid plan); instead a ceiling on stored upload bytes and deletion of file bytes after 7 days (was 30).

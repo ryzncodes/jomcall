@@ -19,7 +19,17 @@ export const UPLOAD_LIMITS = {
 const codePoints = (s: string) => [...s].length;
 // No control characters (C0, DEL, C1) and no bidirectional override or
 // isolate characters, which could make a file name display as another.
-const plain = /^[^\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]*$/;
+// Shared with WhatsApp media file names, which are cleaned rather than
+// refused (cleanFileName).
+const unsafeNameChars = "\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069";
+const plain = new RegExp(`^[^${unsafeNameChars}]*$`);
+const unsafeName = new RegExp(`[${unsafeNameChars}]`, "g");
+// The name without those characters, or undefined when nothing but
+// whitespace is left.
+export function cleanFileName(name: string): string | undefined {
+  const clean = name.replace(unsafeName, "");
+  return clean.trim() ? clean : undefined;
+}
 
 // The declared kind, name and mime are hints only: the stored kind and mime
 // come from the leading bytes at finish. Pasted text has its own command.

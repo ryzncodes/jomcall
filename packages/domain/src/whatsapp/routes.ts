@@ -11,6 +11,8 @@ import {
   channelRevision,
   channelSave,
   conversationList,
+  providerStatusMap,
+  providerStatusNotFound,
   staffReply,
   type ReplyOutlook,
   templateCreate,
@@ -28,10 +30,13 @@ import {
   consentServiceSql,
   fallbackSql,
 } from "./send-facts-sql.ts";
+import { cleanMediaFacts, mediaFactsSql } from "./media-sql.ts";
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
-  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision";
+  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason";
+const templateColumns =
+  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff";
 
 async function loadChannel(tx: PoolClient, orgId: string, lock = false) {
   return (
@@ -52,7 +57,7 @@ async function overview(tx: PoolClient, ctx: TenantContext, env: Env) {
     templates: channel
       ? (
           await tx.query(
-            "select id,name,language,category,purpose,status,body,variables,revision from app.whatsapp_template where org_id=$1 order by name,language",
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 order by name,language`,
             [ctx.orgId],
           )
         ).rows
@@ -184,14 +189,15 @@ async function conversationDetail(
         `select * from (select m.id,m.direction,m.author,m.kind,m.body,m.status,m.error_code,m.created_at,
            case when t.kind like 'notice\\_%' then t.kind end as notice,
            (m.id=c.disclosure_message_id) is true as disclosure,
-           (m.kind='template' and p.purpose='reengage') is true as reply_request
+           (m.kind='template' and p.purpose='reengage') is true as reply_request,
+           ${mediaFactsSql("m")} as media
           from app.message m join app.conversation c on(c.org_id=m.org_id and c.id=m.conversation_id)
           left join app.conversation_turn t on(t.org_id=m.org_id and t.id=m.turn_id)
           left join app.whatsapp_template p on(p.org_id=m.org_id and p.id=m.template_id)
           where m.org_id=$1 and m.conversation_id=$2 order by m.created_at desc,m.id desc limit 200) recent order by created_at,id`,
         [ctx.orgId, id],
       )
-    ).rows,
+    ).rows.map((m) => ({ ...m, media: cleanMediaFacts(m.media) })),
     proposals: (
       await tx.query(
         "select id,kind,details,state,created_at from app.conversation_proposal where org_id=$1 and conversation_id=$2 order by created_at,id",
@@ -347,7 +353,7 @@ export async function whatsappRoute(
         if (!channel) throw new AppError("WHATSAPP_NOT_CONFIGURED", 409);
         const row = (
           await tx.query(
-            "insert into app.whatsapp_template(org_id,channel_id,name,language,category,purpose,body,variables)values($1,$2,$3,$4,$5,$6,$7,$8) returning id,name,language,category,purpose,status,body,variables,revision",
+            `insert into app.whatsapp_template(org_id,channel_id,name,language,category,purpose,body,variables)values($1,$2,$3,$4,$5,$6,$7,$8) returning ${templateColumns}`,
             [
               ctx.orgId,
               channel.id,
@@ -372,7 +378,7 @@ export async function whatsappRoute(
       async (ref) =>
         (
           await tx.query(
-            "select id,name,language,category,purpose,status,body,variables,revision from app.whatsapp_template where org_id=$1 and id=$2",
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 and id=$2`,
             [ctx.orgId, ref.id],
           )
         ).rows[0],
@@ -391,27 +397,77 @@ export async function whatsappRoute(
       "updateWhatsAppTemplate",
       { id, ...v },
       async () => {
-        const row = (
+        const cur = (
           await tx.query(
-            "update app.whatsapp_template set status=$3,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 and revision=$4 returning id,name,language,category,purpose,status,body,variables,revision",
-            [ctx.orgId, id, v.status, v.expectedRevision],
+            "select status,provider_status,disabled_by_staff,status_before_off,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
+            [ctx.orgId, id],
           )
         ).rows[0];
-        if (!row) throw new AppError("CONFLICT", 409);
+        if (!cur || cur.revision !== v.expectedRevision)
+          throw new AppError("CONFLICT", 409);
+        let status: string = v.status,
+          byStaff: boolean = cur.disabled_by_staff,
+          before: string | null = cur.status_before_off;
+        const seen =
+          cur.provider_status !== null &&
+          cur.provider_status !== providerStatusNotFound;
+        const mapped = seen
+          ? (providerStatusMap as Record<string, string>)[cur.provider_status]
+          : undefined;
+        if (v.status === "disabled") {
+          // Staff can always switch a template off; a check never switches
+          // it back on. The status it had is kept to restore on switch-on.
+          byStaff = true;
+          if (cur.status !== "disabled") before = cur.status;
+        } else if (cur.disabled_by_staff) {
+          // Switching back on. A synced template takes the status the
+          // provider last reported when the map knows it; when WhatsApp's
+          // status is unknown (unmapped, or not found) it gets the status it
+          // had before it was switched off, else pending. An unsynced one
+          // gets that earlier status, else the status asked for. The next
+          // hourly check confirms it.
+          byStaff = false;
+          status =
+            cur.provider_status !== null
+              ? (mapped ?? before ?? "pending")
+              : (before ?? v.status);
+          before = null;
+        } else if (
+          cur.status === "disabled" &&
+          cur.provider_status !== null &&
+          mapped === undefined &&
+          (v.status === "approved" || v.status === "pending")
+        ) {
+          // A row stuck disabled by an earlier version of the switch-on:
+          // WhatsApp's status is unknown, so staff can restore it by hand.
+          status =
+            before === "approved" || before === "pending" ? before : v.status;
+          before = null;
+        } else if (cur.provider_status !== null) {
+          // A template seen at the provider takes its status from there; the
+          // agent process copies it about once an hour.
+          throw new AppError("CONFLICT", 409);
+        }
+        const row = (
+          await tx.query(
+            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,status_before_off=$5,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
+            [ctx.orgId, id, status, byStaff, before],
+          )
+        ).rows[0];
         await audit(
           tx,
           ctx,
           "whatsapp.template_status",
           "whatsapp_template",
           id,
-          { status: v.status },
+          { status, disabledByStaff: byStaff },
         );
         return { ref: { id }, data: row };
       },
       async () =>
         (
           await tx.query(
-            "select id,name,language,category,purpose,status,body,variables,revision from app.whatsapp_template where org_id=$1 and id=$2",
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 and id=$2`,
             [ctx.orgId, id],
           )
         ).rows[0],

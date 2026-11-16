@@ -4,6 +4,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   NumberCheck,
+  ProviderTemplate,
   SendOutcome,
   SendTarget,
   TemplateMessage,
@@ -24,11 +25,17 @@ export type FakeProvider = WhatsAppProvider & {
   // The next send returns this outcome instead of succeeding.
   failNext(outcome: Exclude<SendOutcome, { outcome: "sent" }>): void;
   rejectNumber(reason: string): void;
+  // What listTemplates answers from now on (default: an empty list).
+  setTemplates(list: ProviderTemplate[]): void;
+  // listTemplates fails with this reason until setTemplates is called.
+  failTemplates(reason: string): void;
 };
 
 export function createFakeProvider(): FakeProvider {
   let next: SendOutcome | undefined;
   let numberReason: string | undefined;
+  let templates: ProviderTemplate[] = [];
+  let templateReason: string | undefined;
   const sent: FakeSend[] = [];
   function settle(
     entry:
@@ -61,6 +68,18 @@ export function createFakeProvider(): FakeProvider {
     },
     rejectNumber(reason) {
       numberReason = reason;
+    },
+    setTemplates(list) {
+      templates = list.map((t) => ({ ...t }));
+      templateReason = undefined;
+    },
+    failTemplates(reason) {
+      templateReason = reason;
+    },
+    async listTemplates() {
+      return templateReason
+        ? { ok: false as const, reason: templateReason }
+        : { ok: true as const, templates: templates.map((t) => ({ ...t })) };
     },
     async sendText(target: SendTarget, body: string) {
       return settle({

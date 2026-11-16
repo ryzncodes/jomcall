@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   buildInboundText,
   buildStatus,
@@ -21,6 +22,7 @@ import {
   decideSend,
   type SendFacts,
 } from "../../packages/domain/src/whatsapp/policy.ts";
+import { mappedProviderStatuses, providerStatusMap, providerStatusNotFound } from "../../packages/contracts/src/whatsapp.ts";
 
 const secret = "test-app-secret-0123456789";
 
@@ -119,6 +121,75 @@ test("webhook parsing keys deliveries for idempotency and skips unknown shapes",
     }),
     [],
   );
+});
+
+test("webhook parsing names each media type, keeps non-text types, and drops reactions", () => {
+  const deliver = (messages: Record<string, unknown>[]) => ({
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "0",
+        changes: [
+          {
+            field: "messages",
+            value: {
+              metadata: { phone_number_id: "100000001" },
+              contacts: [{ profile: { name: "Aina Contoh" }, wa_id: "60123456789" }],
+              messages: messages.map((m, i) => ({
+                from: "60123456789",
+                id: "wamid.M" + i,
+                timestamp: "1700000000",
+                ...m,
+              })),
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const media = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    mime_type: "application/octet-stream",
+    sha256: "c2hhLWZha2U=",
+    ...extra,
+  });
+  const events = parseWebhook(
+    deliver([
+      { type: "image", image: media("MEDIA1", { mime_type: "image/jpeg", caption: "Rosak macam ni" }) },
+      { type: "audio", audio: media("MEDIA2", { mime_type: "audio/ogg; codecs=opus", voice: true }) },
+      { type: "document", document: media("MEDIA3", { mime_type: "application/pdf", filename: "sebut-harga.pdf" }) },
+      { type: "sticker", sticker: media("MEDIA4", { mime_type: "image/webp", animated: false }) },
+      { type: "location", location: { latitude: 3.139, longitude: 101.6869, name: "Contoh" } },
+      { type: "reaction", reaction: { message_id: "wamid.OUT1", emoji: "👍" } },
+    ]),
+  );
+  // A customer's file name loses control and bidirectional characters; one
+  // with nothing else left has no name.
+  const named = (filename: string) =>
+    (parseWebhook(deliver([{ type: "document", document: media("MEDIA9", { filename }) }]))[0].payload as any).media;
+  assert.equal(named("\u202Efdp.exe\u0000harga\u2066\u009f").filename, "fdp.exeharga");
+  assert.equal(named("a\u0007b\u007fc\u202ad\u2069").filename, "abcd");
+  const emptied = named("\u0001\u202e\u0085");
+  assert.equal("filename" in emptied, false);
+  assert.equal("filename" in named(""), false);
+  // The reaction (sixth message) is not stored at all.
+  assert.deepEqual(
+    events.map((e) => e.key),
+    ["m:wamid.M0", "m:wamid.M1", "m:wamid.M2", "m:wamid.M3", "m:wamid.M4"],
+  );
+  const [image, audio, doc, sticker, location] = events.map((e) => e.payload as any);
+  assert.equal(image.type, "image");
+  assert.equal(image.media.kind, "image");
+  assert.equal(image.media.caption, "Rosak macam ni");
+  assert.equal(image.text, undefined);
+  assert.equal(audio.media.kind, "audio");
+  assert.equal(audio.media.mimeType, "audio/ogg; codecs=opus");
+  assert.equal(doc.media.kind, "document");
+  assert.equal(doc.media.filename, "sebut-harga.pdf");
+  assert.equal(sticker.media.kind, "sticker");
+  assert.equal(location.type, "location");
+  assert.equal(location.media, undefined);
+  assert.deepEqual(parseWebhook(deliver([{ type: "reaction", reaction: { message_id: "wamid.X", emoji: "" } }])), []);
 });
 
 test("credentials are sealed per organization and never open elsewhere", () => {
@@ -239,6 +310,209 @@ test("cloud client is unreachable unless switched on, and sends the documented s
     },
   });
   assert.deepEqual(await broken.sendText(target, "x"), { outcome: "unknown" });
+});
+
+test("cloud template listing sends the recorded request, follows cursors and refuses a partial list", async () => {
+  const seen: { url: string; init: RequestInit }[] = [];
+  let replies: Response[] = [];
+  const client = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async (url, init) => {
+      seen.push({ url: String(url), init: init! });
+      return replies.shift() ?? Response.json({ data: [] });
+    },
+  });
+  const input = { wabaId: "200000001", accessToken: "fake-token" };
+  replies = [
+    Response.json({
+      data: [
+        { name: "jomcall_reply_request", language: "ms", status: "APPROVED", id: "1" },
+        { name: "jomcall_reply_request", language: "en", status: "PENDING" },
+        // A name or language no local template can have cannot match a
+        // local row, so it is left out.
+        { name: "Bad Name", language: "ms", status: "APPROVED" },
+        { name: "x", language: "malay", status: "APPROVED" },
+      ],
+      paging: {
+        cursors: { after: "QVFIUmFmZAWtl" },
+        next: "https://elsewhere.example/steal?after=QVFIUmFmZAWtl",
+      },
+    }),
+    Response.json({
+      data: [{ name: "jomcall_reply_request", language: "zh_CN", status: "IN_REVIEW" }],
+      paging: { cursors: { after: "QVFIUmFmZAWtm" } },
+    }),
+  ];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: true,
+    templates: [
+      { name: "jomcall_reply_request", language: "ms", status: "APPROVED" },
+      { name: "jomcall_reply_request", language: "en", status: "PENDING" },
+      { name: "jomcall_reply_request", language: "zh_CN", status: "IN_REVIEW" },
+    ],
+  });
+  assert.equal(seen.length, 2);
+  const first = new URL(seen[0].url);
+  assert.equal(
+    first.origin + first.pathname,
+    `https://graph.facebook.com/${graphVersion}/200000001/message_templates`,
+  );
+  assert.equal(first.searchParams.get("fields"), "name,language,status");
+  assert.equal(first.searchParams.get("after"), null);
+  // The next page is built from the cursor on Meta's own origin; the URL in
+  // the response is never fetched.
+  const second = new URL(seen[1].url);
+  assert.equal(second.origin, "https://graph.facebook.com");
+  assert.equal(second.searchParams.get("after"), "QVFIUmFmZAWtl");
+  assert.equal(
+    (seen[0].init.headers as Record<string, string>).authorization,
+    "Bearer fake-token",
+  );
+  assert.equal(seen[0].init.method ?? "GET", "GET");
+
+  // More pages than the cap: a failure, not part of the list.
+  seen.length = 0;
+  const page = (i: number) =>
+    Response.json({
+      data: [{ name: "t" + i, language: "ms", status: "APPROVED" }],
+      paging: { cursors: { after: "c" + i }, next: "https://graph.facebook.com/next" },
+    });
+  replies = Array.from({ length: 12 }, (_, i) => page(i));
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_TOO_LONG",
+  });
+  assert.equal(seen.length, 10);
+
+  replies = [Response.json({ error: { code: 190, message: "expired" } }, { status: 401 })];
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "META_190" });
+  replies = [new Response("", { status: 500 })];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_FAILED",
+  });
+  replies = [Response.json({ nothing: true })];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_INVALID",
+  });
+  replies = [Response.json({ data: [], paging: { next: "https://graph.facebook.com/n", cursors: { after: "bad cursor/" } } })];
+  assert.deepEqual(await client.listTemplates(input), {
+    ok: false,
+    reason: "TEMPLATE_LIST_INVALID",
+  });
+  assert.deepEqual(
+    await client.listTemplates({ wabaId: "../me", accessToken: "fake-token" }),
+    { ok: false, reason: "INVALID_TARGET" },
+  );
+  const broken = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async () => {
+      throw Error("reset");
+    },
+  });
+  assert.deepEqual(await broken.listTemplates(input), {
+    ok: false,
+    reason: "PROVIDER_UNREACHABLE",
+  });
+});
+
+test("cloud template listing fails the whole list on one malformed item", async () => {
+  let replies: Response[] = [];
+  const client = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async () => replies.shift() ?? Response.json({ data: [] }),
+  });
+  const input = { wabaId: "200000001", accessToken: "fake-token" };
+  const good = { name: "jomcall_reply_request", language: "ms", status: "APPROVED" };
+  for (const bad of [
+    { language: "ms", status: "APPROVED" },
+    { name: "jomcall_reply_request", status: "APPROVED" },
+    { name: "jomcall_reply_request", language: "ms" },
+    { name: "", language: "ms", status: "APPROVED" },
+    { name: "jomcall_reply_request", language: "ms", status: 3 },
+    // Not upper case: never upper-cased here, refused.
+    { name: "jomcall_reply_request", language: "en", status: "approved" },
+    { name: "jomcall_reply_request", language: "en", status: "IN REVIEW" },
+    null,
+  ]) {
+    replies = [Response.json({ data: [good, bad] })];
+    assert.deepEqual(
+      await client.listTemplates(input),
+      { ok: false, reason: "TEMPLATE_LIST_INVALID" },
+      JSON.stringify(bad),
+    );
+  }
+  // A malformed item on a later page fails the pages already read too.
+  replies = [
+    Response.json({ data: [good], paging: { cursors: { after: "c1" }, next: "https://graph.facebook.com/n" } }),
+    Response.json({ data: [{ name: "x", language: "ms", status: "lower" }] }),
+  ];
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "TEMPLATE_LIST_INVALID" });
+});
+
+test("cloud template listing stops paging when the caller's deadline passes", async () => {
+  const stop = new AbortController();
+  const seen: string[] = [];
+  const page = (i: number) =>
+    Response.json({
+      data: [{ name: "t" + i, language: "ms", status: "APPROVED" }],
+      paging: { cursors: { after: "c" + i }, next: "https://graph.facebook.com/next" },
+    });
+  const client = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async (url, init) => {
+      seen.push(String(url));
+      // The request carries a signal that follows the caller's deadline.
+      assert.ok(init?.signal);
+      // The deadline passes while the first page is in flight.
+      if (seen.length === 1) stop.abort();
+      return page(seen.length);
+    },
+  });
+  const input = { wabaId: "200000001", accessToken: "fake-token", signal: stop.signal };
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" });
+  assert.equal(seen.length, 1);
+  // Already past the deadline: nothing is asked for.
+  assert.deepEqual(await client.listTemplates(input), { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" });
+  assert.equal(seen.length, 1);
+  // A request aborted by the deadline is a timeout, not an unreachable provider.
+  const late = new AbortController();
+  const hanging = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason));
+        late.abort();
+      }),
+  });
+  assert.deepEqual(
+    await hanging.listTemplates({ ...input, signal: late.signal }),
+    { ok: false, reason: "TEMPLATE_LIST_TIMEOUT" },
+  );
+});
+
+test("the screen's list of mapped provider statuses matches the sync migration", () => {
+  const sql = readFileSync(
+    "supabase/migrations/20261116150000_whatsapp_template_sync.sql",
+    "utf8",
+  );
+  const block = sql.slice(sql.indexOf("v_new=case v_raw"), sql.indexOf("else t.status end"));
+  const names = [...block.matchAll(/when '([A-Z_]+)'/g)].map((m) => m[1]).sort();
+  assert.deepEqual(names, [...mappedProviderStatuses].sort());
+  // The local status each name maps to is the same on both sides.
+  const pairs = [...block.matchAll(/when '([A-Z_]+)' then '([a-z]+)'/g)].map((m) => [m[1], m[2]]);
+  assert.equal(pairs.length, names.length);
+  assert.deepEqual(Object.fromEntries(pairs), providerStatusMap);
+});
+
+test("the screen's NOT_FOUND marker is the one the sync migration writes, and is not a mapped status", () => {
+  const sql = readFileSync(
+    "supabase/migrations/20261116150000_whatsapp_template_sync.sql",
+    "utf8",
+  );
+  assert.ok(sql.includes(`provider_status='${providerStatusNotFound}'`));
+  assert.ok(!(mappedProviderStatuses as readonly string[]).includes(providerStatusNotFound));
 });
 
 const now = "2026-11-14T10:00:00.000Z";

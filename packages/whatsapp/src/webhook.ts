@@ -2,6 +2,7 @@
 // functions: no database, no network. Shapes follow Meta's webhook
 // documentation as read on 2026-11-14 (docs/research/whatsapp-go-live.md).
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { cleanFileName } from "../../contracts/src/setup-upload.ts";
 
 // Meta documents webhook payloads of up to 3 MB.
 export const maxWebhookBytes = 3 * 1024 * 1024;
@@ -83,7 +84,7 @@ const mediaTypes = ["image", "audio", "video", "document", "sticker"];
 
 // Reduces a webhook body to the facts JomCall stores. Anything it does not
 // recognise is skipped, never guessed. Media is recorded by ID and type only;
-// nothing is downloaded.
+// nothing is downloaded. Reactions are dropped.
 export function parseWebhook(body: unknown): IntakeEvent[] {
   const root = record(body);
   if (root.object !== "whatsapp_business_account") return [];
@@ -105,7 +106,14 @@ export function parseWebhook(body: unknown): IntakeEvent[] {
         const id = text(m.id, 256);
         if (!id || events.length >= maxEvents) continue;
         const type = text(m.type, 40);
+        // A reaction (an emoji on an earlier message) is not a message to
+        // answer: nothing is stored, so no notice goes out and nobody is
+        // alerted.
+        if (type === "reaction") continue;
         const media = mediaTypes.includes(type) ? record(m[type]) : null;
+        const filename = media
+          ? cleanFileName(text(media.filename, 200))
+          : undefined;
         // A tapped button or list row is the customer's answer in words.
         const reply = record(record(m.interactive).button_reply).title
           ? record(record(m.interactive).button_reply).title
@@ -138,11 +146,16 @@ export function parseWebhook(body: unknown): IntakeEvent[] {
             ...(media
               ? {
                   media: {
+                    // Which of the media types it is; the stored row keeps
+                    // this, as the type is not otherwise recorded.
+                    kind: type,
                     id: text(media.id, 200),
                     mimeType: text(media.mime_type, 100),
                     sha256: text(media.sha256, 100),
                     caption: text(media.caption, 1024),
-                    filename: text(media.filename, 200),
+                    // Customer-supplied: control and bidirectional
+                    // characters are removed; an emptied name is left out.
+                    ...(filename !== undefined ? { filename } : {}),
                   },
                 }
               : {}),

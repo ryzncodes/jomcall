@@ -36,6 +36,7 @@ import {
   whatsappMode,
   type SealedCredentials,
   type SendOutcome,
+  type TemplateList,
   type WhatsAppProvider,
 } from "../../../packages/whatsapp/src/index.ts";
 import { runTextBrain } from "../agent/brain.ts";
@@ -46,6 +47,30 @@ export type WhatsAppWorkerOptions = {
   // Tests inject a model; otherwise the configured provider is used.
   model?: ModelClient;
   env?: Env;
+  // Milliseconds since the epoch; tests inject a clock for the sync throttle.
+  now?: () => number;
+  // Tests inject the timer behind the template-list deadline.
+  timer?: {
+    set(fire: () => void, ms: number): unknown;
+    clear(handle: unknown): void;
+  };
+};
+
+// The database is asked for a channel whose templates need checking at most
+// this often per process; the claim itself spaces each channel an hour apart.
+export const templateSyncEveryMs = 60_000;
+// The whole template list, every page included, must arrive within this
+// time; otherwise the check is answered as failed and tried again later.
+export const templateListDeadlineMs = 20_000;
+const realTimer = {
+  set(fire: () => void, ms: number) {
+    const handle = setTimeout(fire, ms);
+    handle.unref();
+    return handle;
+  },
+  clear(handle: unknown) {
+    clearTimeout(handle as ReturnType<typeof setTimeout>);
+  },
 };
 
 const code = (e: unknown, fallback: string) => {
@@ -56,6 +81,7 @@ const code = (e: unknown, fallback: string) => {
 export class WhatsAppWorker {
   private pool: pg.Pool;
   private env: Env;
+  private lastTemplateSync: number | null = null;
   constructor(
     readonly namespace: string,
     private options: WhatsAppWorkerOptions,
@@ -100,6 +126,15 @@ export class WhatsAppWorker {
     await this.verifyOne();
     for (let i = 0; i < 4; i++) if (!(await this.runOneTurn())) break;
     for (let i = 0; i < 20; i++) if (!(await this.sendOne())) break;
+    // Last, so a slow provider list never delays a reply.
+    const now = (this.options.now ?? Date.now)();
+    if (
+      this.lastTemplateSync === null ||
+      now - this.lastTemplateSync >= templateSyncEveryMs
+    ) {
+      this.lastTemplateSync = now;
+      await this.syncTemplatesOne();
+    }
   }
 
   private token(sealed: SealedCredentials | null, orgId: string) {
@@ -128,6 +163,71 @@ export class WhatsAppWorker {
       reason: result.reason,
       displayPhone: result.displayPhone,
     });
+    return true;
+  }
+
+  // Copies the provider's template statuses onto the local templates of one
+  // connected channel (design open item O8). The database maps the status
+  // names and never creates or deletes a template. Never throws: a failure
+  // is stored on the channel as a fixed code and logged without ids or the
+  // token.
+  async syncTemplatesOne() {
+    let claim: any;
+    try {
+      claim = await this.pool.query(
+        "select app_private.whatsapp_template_sync('claim',$1)as value",
+        [this.namespace],
+      );
+      claim = claim.rows[0].value;
+    } catch {
+      console.error("WHATSAPP_TEMPLATE_SYNC_CLAIM_FAILED");
+      return false;
+    }
+    if (!claim) return false;
+    let result: TemplateList;
+    const timer = this.options.timer ?? realTimer;
+    const stop = new AbortController();
+    let handle: unknown;
+    try {
+      const deadline = new Promise<TemplateList>((resolve) => {
+        handle = timer.set(() => {
+          stop.abort();
+          resolve({ ok: false, reason: "TEMPLATE_LIST_TIMEOUT" });
+        }, templateListDeadlineMs);
+      });
+      result = await Promise.race([
+        this.options.provider.listTemplates({
+          wabaId: claim.wabaId,
+          accessToken: this.token(claim.credentials, claim.orgId),
+          signal: stop.signal,
+        }),
+        deadline,
+      ]);
+    } catch (e) {
+      result = { ok: false, reason: code(e, "TEMPLATE_SYNC_FAILED") };
+    } finally {
+      timer.clear(handle);
+    }
+    if (!result.ok) console.error("WHATSAPP_TEMPLATE_SYNC_" + result.reason);
+    // The claim's business account and revision go back with the answer, so
+    // the database applies it only to the claim it answers.
+    const answer = { wabaId: claim.wabaId, revision: claim.revision };
+    try {
+      await this.pool.query(
+        "select app_private.whatsapp_template_sync('result',$1,$2,$3)",
+        [
+          this.namespace,
+          claim.id,
+          JSON.stringify(
+            result.ok
+              ? { ...answer, ok: true, templates: result.templates }
+              : { ...answer, ok: false, reason: result.reason },
+          ),
+        ],
+      );
+    } catch {
+      console.error("WHATSAPP_TEMPLATE_SYNC_RESULT_FAILED");
+    }
     return true;
   }
 
