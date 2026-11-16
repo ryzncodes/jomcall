@@ -219,6 +219,28 @@ test("conditional keys are required only when their feature is on", () => {
     assert.ok(names.includes(n), n);
 });
 
+test("the engine's operator email is optional, and checked only when set", () => {
+  const engine = {
+    JOMCALL_MODE: "hosted",
+    JOMCALL_QUEUE_NAMESPACE: "prod",
+    JOMCALL_DATABASE_HOSTS: "db.example.test",
+    APP_ORIGIN: "https://app.example.test",
+    WORKER_DATABASE_URL: "postgresql://a:b@db.example.test:5432/postgres",
+    QUEUE_DATABASE_URL: "postgresql://a:b@db.example.test:5432/postgres",
+    INVITATION_KEY: hex,
+    SMTP_HOST: "smtp.example.test",
+    SMTP_PORT: "465",
+    SMTP_USER: "user",
+    SMTP_PASSWORD: SECRET,
+    SMTP_FROM: "JomCall <hello@example.test>",
+  };
+  assert.deepEqual(readiness("engine", engine), []);
+  assert.deepEqual(readiness("engine", { ...engine, JOMCALL_OPERATOR_EMAIL: "ops@example.test" }), []);
+  const bad = readiness("engine", { ...engine, JOMCALL_OPERATOR_EMAIL: `a@example.test,${SECRET}@example.test` });
+  assert.deepEqual(bad, [{ name: "JOMCALL_OPERATOR_EMAIL", code: "INVALID_OPERATOR_EMAIL" }]);
+  assert.ok(!JSON.stringify(bad).includes(SECRET));
+});
+
 test("the setup reader needs the model key in the agent only, even with voice off", () => {
   const agent = {
     JOMCALL_MODE: "hosted",

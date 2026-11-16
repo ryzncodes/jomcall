@@ -119,6 +119,9 @@ export const ACCEPT =
   "image/*,application/pdf,.pdf,.csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values";
 // An upload still queued after this long is no longer polled for.
 export const QUEUE_PATIENCE_MS = 10 * 60 * 1000;
+// An upload still queued after this long gets the "reading is busy" line:
+// reading can now wait for other workspaces' files or the daily ceiling.
+export const QUEUE_BUSY_MS = 2 * 60 * 1000;
 
 // Chunk sizes for a file of `bytes`: pieces of at most 3 MiB, at most 10 of
 // them. An empty file or one over 10 MiB gets no plan (refused).
@@ -523,6 +526,15 @@ export const stalled = (
   since !== undefined &&
   now - since > QUEUE_PATIENCE_MS;
 
+// An upload this browser has seen queued for longer than QUEUE_BUSY_MS, on
+// the same clock as stalled (a reload starts it again).
+export const queuedBusy = (
+  u: Pick<SetupUpload, "state">,
+  now: number,
+  since: number | undefined,
+) =>
+  u.state === "queued" && since !== undefined && now - since > QUEUE_BUSY_MS;
+
 // When this browser first saw each upload queued: earlier times are kept,
 // newly queued uploads get `now`.
 export function firstSeenQueued(
@@ -561,7 +573,17 @@ export function uploadLabel(
               "Still waiting to be read. You can go on and come back later.",
               "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
             )
-        : w("Waiting to be read", "Menunggu untuk dibaca");
+        : now !== undefined && queuedBusy(u, now, since)
+          ? review
+            ? w(
+                "Reading is busy right now. Your file is in the queue.",
+                "Bacaan sedang sibuk sekarang. Fail anda dalam giliran.",
+              )
+            : w(
+                "Reading is busy right now. Your file is in the queue; you can answer the questions meanwhile.",
+                "Bacaan sedang sibuk sekarang. Fail anda dalam giliran; anda boleh jawab soalan dahulu.",
+              )
+          : w("Waiting to be read", "Menunggu untuk dibaca");
     case "reading":
       return w("Reading…", "Sedang dibaca…");
     case "failed":

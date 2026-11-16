@@ -11,6 +11,7 @@ import {
   liveKitUrlProblem,
   mailProvider,
   mailSettings,
+  operatorEmail,
   queueNamespace,
   serviceSecret,
   setupReader,
@@ -301,6 +302,14 @@ export const SETTINGS: Setting[] = [
     required: false,
     description:
       "Optional: smtp (default) or cloudflare (Cloudflare Email Service REST API)",
+  },
+  {
+    name: "JOMCALL_OPERATOR_EMAIL",
+    services: ["engine"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: one address for operator notices (document reading paused at the daily ceiling); absent means log only",
   },
   {
     name: "CLOUDFLARE_ACCOUNT_ID",
@@ -702,6 +711,7 @@ export function readiness(service: Service, env: Env): Finding[] {
     database("WORKER_DATABASE_URL");
     database("QUEUE_DATABASE_URL");
     hex64("INVITATION_KEY");
+    check("JOMCALL_OPERATOR_EMAIL", () => operatorEmail(hostedEnv));
     attempt(findings, "JOMCALL_MAIL_PROVIDER", () => {
       if (mailProvider(hostedEnv) === "cloudflare") {
         if (

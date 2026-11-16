@@ -3,11 +3,13 @@ import { PgBoss } from "pg-boss";
 import { z } from "zod";
 import {
   databaseConnection,
+  operatorEmail,
   validNamespace,
 } from "../../packages/contracts/src/hosting.ts";
 import { createMailSender, type MailSender } from "./mail.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
 import { billingNoticeMail } from "./billing-notice.ts";
+import { readCeilingMail, type ReadCeilingNotice } from "./read-ceiling.ts";
 const payload = z
   .object({
     outboxId: z.uuid(),
@@ -74,6 +76,29 @@ async function chargePlan(pool: pg.Pool, orgId: string) {
     c.release(broken);
   }
 }
+// Document reading's daily ceiling (owner decision 2026-11-16). Once an
+// hour the engine asks app_private.setup_read_ceiling_notice(), which answers
+// at most once per Kuala Lumpur day while the ceiling is reached. The code
+// SETUP_READ_CEILING is always logged with the counts; the operator gets one
+// email when JOMCALL_OPERATOR_EMAIL is set. The database marks the day before
+// the email goes out, so a failed send is logged and not retried that day.
+export type ReadCeilingOptions = {
+  firstAfterMs?: number;
+  everyMs?: number;
+  // Gap after a check that failed (nothing was marked, so it is safe).
+  retryMs?: number;
+  now?: () => number;
+  notice?: (pool: pg.Pool) => Promise<ReadCeilingNotice | null>;
+  // Defaults to JOMCALL_OPERATOR_EMAIL; null sends nothing.
+  operatorEmail?: string | null;
+};
+async function readCeilingNotice(pool: pg.Pool) {
+  return (
+    await pool.query<{ value: ReadCeilingNotice | null }>(
+      "select app_private.setup_read_ceiling_notice() as value",
+    )
+  ).rows[0].value;
+}
 export class Engine {
   private pool: pg.Pool;
   private boss: PgBoss;
@@ -88,9 +113,13 @@ export class Engine {
   // The organizations the current run has still to charge, and its counts.
   private planQueue: string[] = [];
   private planCounts = { ok: 0, failed: 0 };
+  private ceiling: Required<ReadCeilingOptions>;
+  private ceilingDueAt: number;
   private constructor(
     readonly namespace: string,
     plans: PlanChargeOptions = {},
+    ceiling: ReadCeilingOptions = {},
+    mail?: MailSender,
   ) {
     validNamespace(namespace);
     this.plans = {
@@ -104,9 +133,20 @@ export class Engine {
       ...plans,
     };
     this.plansDueAt = this.plans.now() + this.plans.firstAfterMs;
+    this.ceiling = {
+      firstAfterMs: 60_000,
+      everyMs: 3_600_000,
+      retryMs: 300_000,
+      now: Date.now,
+      notice: readCeilingNotice,
+      // An invalid address stops the engine at start, naming the setting.
+      operatorEmail: operatorEmail(),
+      ...ceiling,
+    };
+    this.ceilingDueAt = this.ceiling.now() + this.ceiling.firstAfterMs;
     // Local mode: Mailpit on loopback. Hosted mode: SMTP with TLS, or
     // Cloudflare Email Service when JOMCALL_MAIL_PROVIDER=cloudflare.
-    this.mail = createMailSender();
+    this.mail = mail ?? createMailSender();
     this.pool = new pg.Pool({
       ...dsn("WORKER_DATABASE_URL"),
       max: 3,
@@ -122,9 +162,18 @@ export class Engine {
   }
   static async create(
     namespace = "local",
-    options: { plans?: PlanChargeOptions } = {},
+    options: {
+      plans?: PlanChargeOptions;
+      readCeiling?: ReadCeilingOptions;
+      mail?: MailSender;
+    } = {},
   ) {
-    const e = new Engine(namespace, options.plans);
+    const e = new Engine(
+      namespace,
+      options.plans,
+      options.readCeiling,
+      options.mail,
+    );
     try {
       await e.boss.start();
       await e.boss.createQueue(e.queue, {
@@ -191,9 +240,39 @@ export class Engine {
       console.error("PLAN_CHARGE_RUN_FAILED", `ok=${ok} failed=${failed}`);
     } else this.plansDueAt = now + this.plans.everyMs;
   }
+  // Never throws: a failed check is retried sooner, a failed send is logged.
+  private async noticeReadCeiling() {
+    const now = this.ceiling.now();
+    if (now < this.ceilingDueAt) return;
+    let n: ReadCeilingNotice | null;
+    try {
+      n = await this.ceiling.notice(this.pool);
+    } catch {
+      this.ceilingDueAt = now + this.ceiling.retryMs;
+      console.error("SETUP_READ_CEILING_CHECK_FAILED");
+      return;
+    }
+    this.ceilingDueAt = now + this.ceiling.everyMs;
+    if (!n) return;
+    console.error(
+      "SETUP_READ_CEILING",
+      `started=${n.started} ceiling=${n.ceiling} waiting=${n.waiting}`,
+    );
+    if (!this.ceiling.operatorEmail) return;
+    try {
+      await this.mail.send({
+        to: this.ceiling.operatorEmail,
+        ...readCeilingMail(n),
+        operationId: `setup-read-ceiling-${n.day}`,
+      });
+    } catch {
+      console.error("SETUP_READ_CEILING_MAIL_FAILED");
+    }
+  }
   async tick(failAt?: "after-enqueue" | "before-commit") {
     if (failAt && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
     await this.chargeDuePlans();
+    await this.noticeReadCeiling();
     await this.pool.query("select app_private.maintain_jobs($1)", [
       this.namespace,
     ]);

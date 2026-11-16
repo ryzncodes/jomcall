@@ -21,6 +21,7 @@ import {
   senderShown,
   sniffKind,
   stalled,
+  queuedBusy,
   firstSeenQueued,
   quietRetry,
   tooLong,
@@ -491,6 +492,41 @@ test("an upload queued for more than 10 minutes, by this browser's clock, is not
     uploadLabel(queued, ms, t + 11 * 60_000, t),
     "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
   );
+});
+
+test("after 2 minutes queued, by this browser's clock, the line says reading is busy and the file is still polled for", () => {
+  const t = Date.parse("2026-11-16T00:00:00Z");
+  const queued = { ...upload, id: "q1", state: "queued" as const };
+  assert.equal(queuedBusy(queued, t + 2 * 60_000, t), false);
+  assert.equal(queuedBusy(queued, t + 2 * 60_000 + 1, t), true);
+  assert.equal(queuedBusy(queued, t + 3_600_000, undefined), false);
+  assert.equal(queuedBusy({ ...queued, state: "reading" }, t + 3_600_000, t), false);
+  assert.equal(uploadLabel(queued, en, t + 2 * 60_000, t), "Waiting to be read");
+  assert.equal(
+    uploadLabel(queued, en, t + 3 * 60_000, t),
+    "Reading is busy right now. Your file is in the queue; you can answer the questions meanwhile.",
+  );
+  assert.equal(
+    uploadLabel(queued, ms, t + 3 * 60_000, t),
+    "Bacaan sedang sibuk sekarang. Fail anda dalam giliran; anda boleh jawab soalan dahulu.",
+  );
+  // On the review page the offer of the questions is dropped.
+  assert.equal(
+    uploadLabel(queued, en, t + 3 * 60_000, t, true),
+    "Reading is busy right now. Your file is in the queue.",
+  );
+  assert.equal(
+    uploadLabel(queued, ms, t + 3 * 60_000, t, true),
+    "Bacaan sedang sibuk sekarang. Fail anda dalam giliran.",
+  );
+  // Still polled for until the 10-minute limit; then the stalled line wins.
+  const seen = new Map([[queued.id, t]]);
+  assert.equal(readingNow([queued], t + 3 * 60_000, seen), true);
+  assert.match(uploadLabel(queued, en, t + 11 * 60_000, t), /^Still waiting to be read\./);
+  // No time is promised in any queued line.
+  for (const at of [t + 60_000, t + 3 * 60_000, t + 11 * 60_000])
+    for (const words of [en, ms])
+      assert.doesNotMatch(uploadLabel(queued, words, at, t), /\d|second|minute|saat|minit/);
 });
 
 test("a phone clock 15 minutes fast does not stop polling for a fresh upload", () => {
