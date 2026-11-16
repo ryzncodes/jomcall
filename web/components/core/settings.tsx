@@ -296,7 +296,10 @@ function Team() {
               </select>
             </Field>
             <button disabled={a.busy} className="button button-dark">
-              {w("Send local invitation", "Hantar jemputan setempat")}
+              {w(
+                HOSTED ? "Send invitation" : "Send local invitation",
+                HOSTED ? "Hantar jemputan" : "Hantar jemputan setempat",
+              )}
             </button>
           </form>
           <Notice error={inv.error} />
@@ -347,8 +350,12 @@ function Jobs() {
       <h2>{w("Privacy requests", "Permintaan privasi")}</h2>
       <p>
         {w(
-          "Jobs run in the local engine, even after you leave this page. Pending jobs wait if the engine is stopped.",
-          "Tugas berjalan dalam enjin setempat walaupun anda meninggalkan halaman ini. Tugas menunggu jika enjin dihentikan.",
+          HOSTED
+            ? "Jobs keep running after you leave this page."
+            : "Jobs run in the local engine, even after you leave this page. Pending jobs wait if the engine is stopped.",
+          HOSTED
+            ? "Tugas terus berjalan walaupun anda meninggalkan halaman ini."
+            : "Tugas berjalan dalam enjin setempat walaupun anda meninggalkan halaman ini. Tugas menunggu jika enjin dihentikan.",
         )}
       </p>
       {r.error || !r.data ? (

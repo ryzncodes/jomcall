@@ -244,3 +244,36 @@ test("the health route reports mode and database without naming any value", asyn
     database: false,
   });
 });
+
+test("the health route retries once when a pooled connection was dropped", async () => {
+  // Each case replaces the pool's query; nothing reaches the network.
+  const run = async (failures: unknown[]) => {
+    await closeServices();
+    hosted();
+    let calls = 0;
+    database().pool.query = (async () => {
+      const failure = failures[calls++];
+      if (failure) throw failure;
+      return { rows: [{ "?column?": 1 }] };
+    }) as never;
+    const res = await handleHealth();
+    return { status: res.status, body: await res.text(), calls };
+  };
+  const dropped = Error("Connection terminated unexpectedly");
+  const once = await run([dropped]);
+  assert.equal(once.status, 200);
+  assert.deepEqual(JSON.parse(once.body), { ok: true, mode: "hosted", database: true });
+  assert.equal(once.calls, 2);
+  const reset = Object.assign(Error("read ECONNRESET"), { code: "ECONNRESET" });
+  assert.equal((await run([reset])).calls, 2);
+  // Still down on the retry: false, no detail.
+  const twice = await run([dropped, reset]);
+  assert.equal(twice.status, 503);
+  assert.deepEqual(JSON.parse(twice.body), { ok: false, mode: "hosted", database: false });
+  assert.doesNotMatch(twice.body, /terminated|ECONNRESET/);
+  // A server error is not a dropped connection: no retry.
+  const denied = await run([Object.assign(Error("permission denied"), { code: "42501" })]);
+  assert.equal(denied.status, 503);
+  assert.equal(denied.calls, 1);
+  await closeServices();
+});

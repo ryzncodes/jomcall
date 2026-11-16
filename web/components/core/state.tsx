@@ -56,20 +56,32 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Pilih waktu sela 15 minit, sekurang-kurangnya 15 minit dari sekarang dan dalam 90 hari.",
     ],
     MODEL_UNAVAILABLE: [
-      "Local model unavailable. Start it and retry. Your question is preserved.",
-      "Model setempat tiada. Mulakan dan cuba lagi. Soalan anda dikekalkan.",
+      HOSTED
+        ? "The model is unavailable right now. Try again shortly. Your question is preserved."
+        : "Local model unavailable. Start it and retry. Your question is preserved.",
+      HOSTED
+        ? "Model tidak tersedia sekarang. Cuba lagi sebentar. Soalan anda dikekalkan."
+        : "Model setempat tiada. Mulakan dan cuba lagi. Soalan anda dikekalkan.",
     ],
     MODEL_DISABLED: [
-      "Local text inference is disabled. Knowledge and bookings still work.",
-      "Inferens teks setempat dimatikan. Pengetahuan dan tempahan masih berfungsi.",
+      HOSTED
+        ? "Text answers are turned off. Knowledge and bookings still work."
+        : "Local text inference is disabled. Knowledge and bookings still work.",
+      HOSTED
+        ? "Jawapan teks dimatikan. Pengetahuan dan tempahan masih berfungsi."
+        : "Inferens teks setempat dimatikan. Pengetahuan dan tempahan masih berfungsi.",
     ],
     MODEL_CHANGED: [
       "The model changed. Start a new test session.",
       "Model telah berubah. Mulakan sesi ujian baharu.",
     ],
     INPUT_BUDGET_EXCEEDED: [
-      "This test exceeds the local model input budget. Shorten the question or agent instructions.",
-      "Ujian melebihi had input model setempat. Pendekkan soalan atau arahan ejen.",
+      HOSTED
+        ? "This test is too long for the model. Shorten the question or agent instructions."
+        : "This test exceeds the local model input budget. Shorten the question or agent instructions.",
+      HOSTED
+        ? "Ujian ini terlalu panjang untuk model. Pendekkan soalan atau arahan ejen."
+        : "Ujian melebihi had input model setempat. Pendekkan soalan atau arahan ejen.",
     ],
     TEST_EXPIRED: [
       "This test expired. Start a new session.",
