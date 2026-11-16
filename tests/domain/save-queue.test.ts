@@ -217,3 +217,75 @@ test("setRevision changes the revision the next job sends", async () => {
   await queue.push({ run: async (r) => ((seen = r), 8) });
   assert.equal(seen, 7);
 });
+
+function reentrant(on: QueueStatus, extra: () => void = () => {}) {
+  let n = 0,
+    fired = false;
+  const ran: string[] = [];
+  let push!: (label: string, run?: () => Promise<number>) => Promise<void>;
+  const queue = createSaveQueue({
+    revision: 1,
+    newKey: () => "k" + ++n,
+    isConflict: (e) => e instanceof Conflict,
+    isLost: () => false,
+    reread: async () => ({ revision: 9, same: false }),
+    onStatus: (s) => {
+      if (s === on && !fired) {
+        fired = true;
+        extra();
+      }
+    },
+  });
+  push = (label, run) =>
+    queue.push({
+      run:
+        run ??
+        (async () => {
+          ran.push(label);
+          return 5;
+        }),
+    });
+  return { queue, push, ran };
+}
+
+test("a save pushed from the saved callback runs and idle resolves after it", async () => {
+  let second: Promise<void> | undefined;
+  const h = reentrant("saved", () => {
+    second = h.push("second");
+  });
+  await h.push("first");
+  await h.queue.idle();
+  await second;
+  assert.deepEqual(h.ran, ["first", "second"]);
+  assert.equal(h.queue.pending(), false);
+});
+
+test("a save pushed from the error callback restarts the queue, queued jobs first", async () => {
+  let third: Promise<void> | undefined;
+  const h = reentrant("error", () => {
+    third = h.push("third");
+  });
+  const a = h.push("a", async () => {
+    throw new Error("BAD");
+  });
+  const b = h.push("b");
+  await assert.rejects(a);
+  await h.queue.idle();
+  await Promise.all([b, third]);
+  assert.deepEqual(h.ran, ["b", "third"]);
+});
+
+test("a save pushed from the conflict callback runs", async () => {
+  let next: Promise<void> | undefined;
+  const h = reentrant("conflict", () => {
+    next = h.push("next");
+  });
+  await assert.rejects(
+    h.push("a", async () => {
+      throw new Conflict();
+    }),
+  );
+  await h.queue.idle();
+  await next;
+  assert.deepEqual(h.ran, ["next"]);
+});

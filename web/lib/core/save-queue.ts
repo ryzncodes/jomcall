@@ -41,43 +41,44 @@ export function createSaveQueue(options: {
     for (const w of waiters) w();
   }
 
-  // Runs one entry: retries a lost answer with the same key. Returns "ok",
-  // or "stop" after rejecting its waiters (and, on a conflict, the queue).
-  async function runEntry(entry: Entry): Promise<"ok" | "stop"> {
+  type Outcome = { status?: QueueStatus; error?: unknown; stop: boolean };
+
+  // Runs one entry: retries a lost answer with the same key. Rejects its
+  // waiters (and, on a conflict, the queue) and returns the status to report;
+  // the caller reports it only after the pump is no longer running, so a push
+  // made from the status callback starts a fresh pump.
+  async function runEntry(entry: Entry): Promise<Outcome> {
     for (let attempt = 0; ; attempt++) {
       try {
         revision = await entry.job.run(revision, entry.key);
         for (const w of entry.waiters) w.resolve();
-        return "ok";
+        return { stop: false };
       } catch (error) {
         if (options.isConflict(error)) {
           let again: { revision: number; same: boolean };
           try {
             again = await options.reread();
           } catch (rereadError) {
-            options.onStatus("error", rereadError);
             for (const w of entry.waiters) w.reject(rereadError);
-            return "stop";
+            return { status: "error", error: rereadError, stop: true };
           }
           revision = again.revision;
           if (again.same) {
             for (const w of entry.waiters) w.resolve();
-            return "ok";
+            return { stop: false };
           }
-          options.onStatus("conflict", error);
           const rest = queued;
           queued = [];
           for (const w of entry.waiters) w.reject(error);
           for (const e of rest) for (const w of e.waiters) w.reject(error);
-          return "stop";
+          return { status: "conflict", error, stop: true };
         }
         if (options.isLost(error) && attempt < RETRY_DELAYS.length) {
           await wait(RETRY_DELAYS[attempt]!);
           continue;
         }
-        options.onStatus("error", error);
         for (const w of entry.waiters) w.reject(error);
-        return "stop";
+        return { status: "error", error, stop: true };
       }
     }
   }
@@ -85,6 +86,7 @@ export function createSaveQueue(options: {
   async function pump() {
     if (pumping) return;
     pumping = true;
+    let final: Outcome | undefined;
     try {
       let succeeded = false;
       while (queued.length) {
@@ -93,13 +95,17 @@ export function createSaveQueue(options: {
         options.onStatus("saving");
         const outcome = await runEntry(entry);
         running = undefined;
-        if (outcome === "stop") return;
+        if (outcome.stop) {
+          final = outcome;
+          return;
+        }
         succeeded = true;
       }
-      if (succeeded) options.onStatus("saved");
+      if (succeeded) final = { status: "saved", stop: false };
     } finally {
       running = undefined;
       pumping = false;
+      if (final?.status) options.onStatus(final.status, final.error);
       settleIdle();
     }
   }
