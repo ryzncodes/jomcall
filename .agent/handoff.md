@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-11-16 — document reading limits
+
+Branch `feat/reading-limits`, pull request not yet open, not merged. Nothing on hosted staging. Owner decision 2026-11-16: reading stays free, with lower caps.
+
+**Changed**
+- Migration `20261116140000_setup_read_limits.sql` (controller's): `app.setup_read_limit` (one row, `daily_reads` default 300), a ceiling check at claim (files stay `queued`), fair order (fewest reads started in the last hour first), `first_claimed_at`, and `app_private.setup_read_ceiling_notice()` for the engine (worker role only).
+- Workspace cap 20 to 10 files in 24 hours (`UPLOAD_LIMITS.perOrgPerDay`); the bring stage and refusal copy read the number from the constant.
+- Engine: hourly ceiling check as its own step after the plan charge pass (`noticeReadCeiling` in `engine/src/engine.ts`, mail text in `engine/src/read-ceiling.ts`); always logs `SETUP_READ_CEILING started=… ceiling=… waiting=…`; emails `JOMCALL_OPERATOR_EMAIL` (new optional engine setting, validated at start and by `hosted:readiness`) once per Kuala Lumpur day; send failure logs `SETUP_READ_CEILING_MAIL_FAILED`, not retried that day; check failure logs `SETUP_READ_CEILING_CHECK_FAILED` and retries after 5 minutes.
+- Setup screens: a file this browser has seen queued for more than 2 minutes says "Reading is busy right now. Your file is in the queue; you can answer the questions meanwhile." (BM: "Bacaan sedang sibuk sekarang. Fail anda dalam giliran; anda boleh jawab soalan dahulu."); the review page drops the offer. Uses the browser's own first-seen time, not the server's `createdAt`; a reload restarts the two minutes.
+- Docs: AGENTS.md, setup flow design §12, RUNBOOK step 12 item 5.
+
+**Verified (2026-11-16, local database and fakes only)**
+- typecheck: pass. guards: 69 of 69. check:core: 798 of 799 (the known flickering `tests/local/model.test.mjs` runtime-ownership test, in both full runs; passes alone). verify-migrations: pass (59 RLS tables). build:local, build:mock, build:hosted: pass.
+
+**Next**
+- Owner: apply the migration on staging; optionally set `JOMCALL_OPERATOR_EMAIL` in `engine.env`.
+- Known limit: while the ceiling holds, a queued file whose setup was saved stays queued (counted in `waiting`) until the next claim fails it `SESSION_CLOSED`.
+- Uploads still live in the database; Supabase Storage is a separate change. No browser check and no real email yet.
+
 ## 2026-11-16 — plan picker, after review
 
 Branch `feat/plan-picker`, pull request not yet open, not merged. Nothing on hosted staging.
