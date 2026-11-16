@@ -354,6 +354,19 @@ export function cloudflareMailSettings(
   };
 }
 
+// --- Operator email ------------------------------------------------------------
+//
+// Optional, engine only: one address that gets service notices (the document
+// reading ceiling). Absent means the engine logs the notice and sends nothing.
+
+export function operatorEmail(env: Env = process.env): string | null {
+  const value = env.JOMCALL_OPERATOR_EMAIL?.trim() ?? "";
+  if (!value) return null;
+  if (!/^[^\s<>@,]+@[^\s<>@,]+\.[^\s<>@,]+$/.test(value))
+    throw Error("INVALID_OPERATOR_EMAIL: JOMCALL_OPERATOR_EMAIL");
+  return value;
+}
+
 // --- Turnstile ---------------------------------------------------------------
 //
 // Off unless both keys are set, and never on outside hosted mode. One key

@@ -635,17 +635,25 @@ test("delete_after is set for uploads of sessions that never get applied; chunks
     assert.equal(u.state, "done");
     assert.equal(
       new Date(u.delete_after).getTime() - new Date(u.created_at).getTime(),
-      30 * 86400000,
+      7 * 86400000,
     );
     // The session is still open: the bytes stay until delete_after.
     assert.equal(await x.chunks(id), 1);
-    await x.q(
-      "update app.setup_upload set created_at=now()-interval '31 days',delete_after=null where id=$1",
-      [id],
-    );
     // A local agent process running beside the tests sweeps every upload in
     // the database too (retention is not per namespace). It would only do
     // what this worker does, so each assertion below holds whoever swept.
+    // Six days old: kept.
+    await x.q(
+      "update app.setup_upload set created_at=now()-interval '6 days',delete_after=null where id=$1",
+      [id],
+    );
+    await w.tick();
+    assert.equal(await x.chunks(id), 1);
+    assert.equal((await x.upload(id)).bytes_deleted_at, null);
+    await x.q(
+      "update app.setup_upload set created_at=now()-interval '7 days 1 minute',delete_after=null where id=$1",
+      [id],
+    );
     // Still open: not swept yet.
     assert.equal((await x.upload(id)).bytes_deleted_at, null);
     await w.tick();
@@ -939,7 +947,9 @@ test("close() during a read ends the loop and gives the attempt back", () =>
     const w = await x.worker(read);
     const loop = w.run();
     await reading;
-    assert.equal((await x.upload(id)).state, "reading");
+    const claimed = await x.upload(id);
+    assert.equal(claimed.state, "reading");
+    assert.ok(claimed.first_claimed_at instanceof Date);
     const t0 = Date.now();
     await w.close();
     await loop;
@@ -949,6 +959,19 @@ test("close() during a read ends the loop and gives the attempt back", () =>
     assert.equal(u.state, "queued");
     assert.equal(u.attempts, 0);
     assert.equal(await x.outboxDone(id), false);
+    // The released file keeps when it first started, and its next read
+    // counts toward the daily ceiling once, not twice.
+    assert.equal(u.first_claimed_at.getTime(), claimed.first_claimed_at.getTime());
+    const again = await x.worker(fake(ok([row("Nasi lemak")])).read);
+    assert.equal(await again.tick(), true);
+    const done = await x.upload(id);
+    assert.equal(done.state, "done");
+    assert.equal(done.first_claimed_at.getTime(), claimed.first_claimed_at.getTime());
+    const counted = await x.q(
+      "select count(*)::int as n from app.setup_upload where org_id=$1 and first_claimed_at>now()-interval '24 hours'",
+      [x.f.h.orgA.id],
+    );
+    assert.equal(counted.rows[0].n, 1);
   }));
 
 test("the worker loop waits when idle and close() ends it promptly", () =>

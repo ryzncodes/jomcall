@@ -1,5 +1,44 @@
 # Handoff
 
+## 2026-11-16 — stored-upload ceiling and 7-day deletion
+
+Branch `feat/reading-limits`, pull request #35, not merged. Nothing on hosted staging. Owner decision 2026-11-16: uploads stay in Postgres for now (Supabase Storage waits for real volume or a paid plan); instead a ceiling on stored upload bytes and deletion of file bytes after 7 days (was 30).
+
+**Changed**
+- Migration `20261116140000_setup_read_limits.sql` (controller's): `app.setup_read_limit.stored_bytes_max` (default 157286400, 150 MiB), `app_private.setup_upload_room(bytes)` (web role), `app_private.setup_bytes_notice()` (worker role), retention 7 days (existing rows moved).
+- `createSetupUpload` and `pasteSetupText` (`packages/domain/src/setup/uploads.ts`): after the per-setup and per-workspace caps, refuse with `UPLOAD_STORE_FULL` (503) when there is no room. Advisory: two racing uploads may both pass.
+- Screen (`web/components/core/setup/rules.ts`): EN "JomCall cannot take new files right now. Answer the questions instead, or try again tomorrow." / BM "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan dahulu, atau cuba lagi esok."; the review page drops the first half of the offer ("… Try again tomorrow." / "… Cuba lagi esok."). No Retry button.
+- Bring stage Anthropic notice: 7 days / 7 hari.
+- Engine: `noticeBytesCeiling` beside `noticeReadCeiling` (own timer, same hourly cadence and retry); logs `SETUP_BYTES_CEILING stored=… max=…`; emails `JOMCALL_OPERATOR_EMAIL` (operation id `setup-bytes-ceiling-<day>`); `SETUP_BYTES_CEILING_CHECK_FAILED` / `SETUP_BYTES_CEILING_MAIL_FAILED`. Mail text in `engine/src/read-ceiling.ts`; MB are whole numbers rounded down.
+- Tests: API ceiling test (commits a lowered `stored_bytes_max` for the one test and restores it in `finally`; test files run one at a time), DB notice test (rolled back), engine notice tests, 7-day retention test (kept at 6 days, swept after 7).
+- Docs: AGENTS.md, setup flow design (decision 1 and reading limits), RUNBOOK step 12 item 5.
+
+**Verified (2026-11-16, local database and fakes only)**
+- typecheck: pass. guards: 69 of 69. check:core: 844 of 844 on the rerun (first run 843 of 844, only the known flickering `tests/local/model.test.mjs` runtime-ownership guard). verify-migrations: pass (59 RLS tables). build:local, build:mock, build:hosted: pass; the mock bundle has none of the new screen text.
+
+**Next**
+- Owner: apply the migration on staging; optionally set `JOMCALL_OPERATOR_EMAIL`; change the ceiling with SQL if needed (RUNBOOK step 12).
+- No browser check and no real email yet.
+
+## 2026-11-16 — document reading limits
+
+Branch `feat/reading-limits`, pull request not yet open, not merged. Nothing on hosted staging. Owner decision 2026-11-16: reading stays free, with lower caps.
+
+**Changed**
+- Migration `20261116140000_setup_read_limits.sql` (controller's): `app.setup_read_limit` (one row, `daily_reads` default 300), a ceiling check at claim (files stay `queued`), fair order (fewest reads started in the last hour first), `first_claimed_at`, and `app_private.setup_read_ceiling_notice()` for the engine (worker role only).
+- Workspace cap 20 to 10 files in 24 hours (`UPLOAD_LIMITS.perOrgPerDay`); the bring stage and refusal copy read the number from the constant.
+- Engine: hourly ceiling check as its own step after the plan charge pass (`noticeReadCeiling` in `engine/src/engine.ts`, mail text in `engine/src/read-ceiling.ts`); always logs `SETUP_READ_CEILING started=… ceiling=… waiting=…`; emails `JOMCALL_OPERATOR_EMAIL` (new optional engine setting, validated at start and by `hosted:readiness`) once per Kuala Lumpur day; send failure logs `SETUP_READ_CEILING_MAIL_FAILED`, not retried that day; check failure logs `SETUP_READ_CEILING_CHECK_FAILED` and retries after 5 minutes.
+- Setup screens: a file this browser has seen queued for more than 2 minutes says "Reading is busy right now. Your file is in the queue; you can answer the questions meanwhile." (BM: "Bacaan sedang sibuk sekarang. Fail anda dalam giliran; anda boleh jawab soalan dahulu."); the review page drops the offer. Uses the browser's own first-seen time, not the server's `createdAt`; a reload restarts the two minutes.
+- Docs: AGENTS.md, setup flow design §12, RUNBOOK step 12 item 5.
+
+**Verified (2026-11-16, local database and fakes only)**
+- typecheck: pass. guards: 69 of 69. check:core: 836 of 837 after merging `main` (the known flickering `tests/local/model.test.mjs` runtime-ownership test, in both full runs; passes alone). verify-migrations: pass (59 RLS tables). build:local, build:mock, build:hosted: pass.
+
+**Next**
+- Owner: apply the migration on staging; optionally set `JOMCALL_OPERATOR_EMAIL` in `engine.env`.
+- Known limit: while the ceiling holds, a queued file whose setup was saved stays queued (counted in `waiting`) until the next claim fails it `SESSION_CLOSED`.
+- Uploads still live in the database; Supabase Storage is a separate change. No browser check and no real email yet.
+
 ## 2026-11-16 — plan picker leftovers
 
 Branch `feat/plan-leftovers`, pull request not yet open, not merged. Nothing on hosted staging.

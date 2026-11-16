@@ -119,6 +119,9 @@ export const ACCEPT =
   "image/*,application/pdf,.pdf,.csv,.tsv,.txt,text/csv,text/plain,text/tab-separated-values";
 // An upload still queued after this long is no longer polled for.
 export const QUEUE_PATIENCE_MS = 10 * 60 * 1000;
+// An upload still queued after this long gets the "reading is busy" line:
+// reading can now wait for other workspaces' files or the daily ceiling.
+export const QUEUE_BUSY_MS = 2 * 60 * 1000;
 
 // Chunk sizes for a file of `bytes`: pieces of at most 3 MiB, at most 10 of
 // them. An empty file or one over 10 MiB gets no plan (refused).
@@ -323,15 +326,26 @@ export function requestErrorText(
           )
         : review
           ? w(
-              "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later.",
-              "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
+              `Your workspace has added ${UPLOAD_LIMITS.perOrgPerDay} files in the last 24 hours, the most allowed. Try again later.`,
+              `Ruang kerja anda sudah menambah ${UPLOAD_LIMITS.perOrgPerDay} fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.`,
             )
           : w(
-              "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.",
-              "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.",
+              `Your workspace has added ${UPLOAD_LIMITS.perOrgPerDay} files in the last 24 hours, the most allowed. Try again later, or answer the questions instead.`,
+              `Ruang kerja anda sudah menambah ${UPLOAD_LIMITS.perOrgPerDay} fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian, atau jawab soalan sahaja.`,
             );
     case "READER_OFF":
       return failText("READER_OFF", w);
+    // The service-wide ceiling on stored uploads: not the owner's file.
+    case "UPLOAD_STORE_FULL":
+      return review
+        ? w(
+            "JomCall cannot take new files right now. Try again tomorrow.",
+            "JomCall tidak dapat menerima fail baharu buat masa ini. Cuba lagi esok.",
+          )
+        : w(
+            "JomCall cannot take new files right now. Answer the questions instead, or try again tomorrow.",
+            "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan sahaja, atau cuba lagi esok.",
+          );
     default:
       return null;
   }
@@ -422,9 +436,11 @@ export const sendBrokenText = (w: Words) =>
 
 // Retry is offered only when sending the same thing again can work: no
 // answer, a timeout or a server error (or a proxy's page a later try may
-// pass), and never after the write cap or while reading is switched off.
+// pass), and never after the write cap, while reading is switched off or
+// while stored uploads are at the ceiling.
 export function retryOffered(status: number | null, code: string | null) {
-  if (code === "UPLOAD_RATE" || code === "READER_OFF") return false;
+  if (code === "UPLOAD_RATE" || code === "READER_OFF" || code === "UPLOAD_STORE_FULL")
+    return false;
   if (code === "PROXY") return proxyRetryable(status);
   return retryable(status);
 }
@@ -523,6 +539,15 @@ export const stalled = (
   since !== undefined &&
   now - since > QUEUE_PATIENCE_MS;
 
+// An upload this browser has seen queued for longer than QUEUE_BUSY_MS, on
+// the same clock as stalled (a reload starts it again).
+export const queuedBusy = (
+  u: Pick<SetupUpload, "state">,
+  now: number,
+  since: number | undefined,
+) =>
+  u.state === "queued" && since !== undefined && now - since > QUEUE_BUSY_MS;
+
 // When this browser first saw each upload queued: earlier times are kept,
 // newly queued uploads get `now`.
 export function firstSeenQueued(
@@ -561,7 +586,17 @@ export function uploadLabel(
               "Still waiting to be read. You can go on and come back later.",
               "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
             )
-        : w("Waiting to be read", "Menunggu untuk dibaca");
+        : now !== undefined && queuedBusy(u, now, since)
+          ? review
+            ? w(
+                "Lots of files are being read right now. Your file is waiting its turn.",
+                "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran.",
+              )
+            : w(
+                "Lots of files are being read right now. Your file is waiting its turn; you can answer the questions meanwhile.",
+                "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran; sementara itu, anda boleh jawab soalan.",
+              )
+          : w("Waiting to be read", "Menunggu untuk dibaca");
     case "reading":
       return w("Reading…", "Sedang dibaca…");
     case "failed":

@@ -7,7 +7,10 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Camera, Info, UploadSimple } from "@phosphor-icons/react";
 import { CoreError, failureOf } from "@/lib/core/client";
-import type { SetupUpload } from "../../../../packages/contracts/src/setup-upload";
+import {
+  UPLOAD_LIMITS,
+  type SetupUpload,
+} from "../../../../packages/contracts/src/setup-upload";
 import { useWords } from "../state";
 import { useLanding, useSetup } from "./flow";
 import {
@@ -177,8 +180,8 @@ export function BringStage({
         <p className="setup-hint setup-private setup-upload-notice" id={`${id}-notice`}>
           <Info size={16} aria-hidden="true" />
           {w(
-            "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. The file itself is deleted 30 days after you add it, or now with Remove while setup is open. Prices and details read from it stay in your setup until you remove them.",
-            "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail itu sendiri dipadam 30 hari selepas anda menambahnya, atau sekarang dengan butang Buang semasa persediaan masih dibuka. Harga dan butiran yang dibaca daripadanya kekal dalam persediaan anda sehingga anda membuangnya.",
+            "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. The file itself is deleted 7 days after you add it, or now with Remove while setup is open. Prices and details read from it stay in your setup until you remove them.",
+            "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail itu sendiri dipadam 7 hari selepas anda menambahnya, atau sekarang dengan butang Buang semasa persediaan masih dibuka. Harga dan butiran yang dibaca daripadanya kekal dalam persediaan anda sehingga anda membuangnya.",
           )}
         </p>
         <div className="setup-file-row">
@@ -216,8 +219,8 @@ export function BringStage({
         <p className="setup-hint" id={`${id}-limits`}>
           {left
             ? w(
-                "A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in each setup and 20 files in 24 hours for your workspace. Remove a file to make room for another.",
-                "Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi setiap persediaan dan 20 fail dalam tempoh 24 jam bagi ruang kerja anda. Buang fail untuk memberi ruang kepada fail lain.",
+                `A photo, a PDF or a CSV file, up to 10 MB each. Up to 5 files in each setup and ${UPLOAD_LIMITS.perOrgPerDay} files in 24 hours for your workspace. Remove a file to make room for another.`,
+                `Foto, PDF atau fail CSV, sehingga 10 MB setiap satu. Sehingga 5 fail bagi setiap persediaan dan ${UPLOAD_LIMITS.perOrgPerDay} fail dalam tempoh 24 jam bagi ruang kerja anda. Buang fail untuk memberi ruang kepada fail lain.`,
               )
             : w(
                 "This setup has 5 files. Remove one to add another.",

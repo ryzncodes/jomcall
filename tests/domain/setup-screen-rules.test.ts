@@ -21,6 +21,7 @@ import {
   senderShown,
   sniffKind,
   stalled,
+  queuedBusy,
   firstSeenQueued,
   quietRetry,
   tooLong,
@@ -326,11 +327,11 @@ test("on the review page, file lines drop the bring stage's offers; a CSV or tex
   assert.match(sendFailureText(429, "UPLOAD_RATE", "create", en), /or answer the questions instead\.$/);
   assert.equal(
     sendFailureText(429, "UPLOAD_RATE", "create", en, true),
-    "Your workspace has added 20 files in the last 24 hours, the most allowed. Try again later.",
+    "Your workspace has added 10 files in the last 24 hours, the most allowed. Try again later.",
   );
   assert.equal(
     sendFailureText(429, "UPLOAD_RATE", "create", ms, true),
-    "Ruang kerja anda sudah menambah 20 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
+    "Ruang kerja anda sudah menambah 10 fail dalam 24 jam yang lalu, iaitu had maksimum. Cuba lagi kemudian.",
   );
   const t = Date.UTC(2026, 10, 15, 9);
   const queued = { ...upload, state: "queued" as const };
@@ -431,8 +432,8 @@ test("the Excel refusal says to paste the cells or save as CSV or PDF", () => {
 });
 
 test("request errors: UPLOAD_RATE means the daily cap at create, the write cap at a chunk", () => {
-  assert.match(requestErrorText("UPLOAD_RATE", "create", en)!, /20 files/);
-  assert.match(requestErrorText("UPLOAD_RATE", "paste", ms)!, /20 fail/);
+  assert.match(requestErrorText("UPLOAD_RATE", "create", en)!, /10 files/);
+  assert.match(requestErrorText("UPLOAD_RATE", "paste", ms)!, /10 fail/);
   assert.match(requestErrorText("UPLOAD_RATE", "chunk", en)!, /sent too many times/);
   assert.match(requestErrorText("UPLOAD_LIMIT", "create", en)!, /up to 5 files/);
   assert.equal(requestErrorText("UPLOAD_TYPE", "finish", en), refusalText("TYPE", en));
@@ -491,6 +492,41 @@ test("an upload queued for more than 10 minutes, by this browser's clock, is not
     uploadLabel(queued, ms, t + 11 * 60_000, t),
     "Masih menunggu untuk dibaca. Anda boleh teruskan dan kembali kemudian.",
   );
+});
+
+test("after 2 minutes queued, by this browser's clock, the line says reading is busy and the file is still polled for", () => {
+  const t = Date.parse("2026-11-16T00:00:00Z");
+  const queued = { ...upload, id: "q1", state: "queued" as const };
+  assert.equal(queuedBusy(queued, t + 2 * 60_000, t), false);
+  assert.equal(queuedBusy(queued, t + 2 * 60_000 + 1, t), true);
+  assert.equal(queuedBusy(queued, t + 3_600_000, undefined), false);
+  assert.equal(queuedBusy({ ...queued, state: "reading" }, t + 3_600_000, t), false);
+  assert.equal(uploadLabel(queued, en, t + 2 * 60_000, t), "Waiting to be read");
+  assert.equal(
+    uploadLabel(queued, en, t + 3 * 60_000, t),
+    "Lots of files are being read right now. Your file is waiting its turn; you can answer the questions meanwhile.",
+  );
+  assert.equal(
+    uploadLabel(queued, ms, t + 3 * 60_000, t),
+    "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran; sementara itu, anda boleh jawab soalan.",
+  );
+  // On the review page the offer of the questions is dropped.
+  assert.equal(
+    uploadLabel(queued, en, t + 3 * 60_000, t, true),
+    "Lots of files are being read right now. Your file is waiting its turn.",
+  );
+  assert.equal(
+    uploadLabel(queued, ms, t + 3 * 60_000, t, true),
+    "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran.",
+  );
+  // Still polled for until the 10-minute limit; then the stalled line wins.
+  const seen = new Map([[queued.id, t]]);
+  assert.equal(readingNow([queued], t + 3 * 60_000, seen), true);
+  assert.match(uploadLabel(queued, en, t + 11 * 60_000, t), /^Still waiting to be read\./);
+  // No time is promised in any queued line.
+  for (const at of [t + 60_000, t + 3 * 60_000, t + 11 * 60_000])
+    for (const words of [en, ms])
+      assert.doesNotMatch(uploadLabel(queued, words, at, t), /\d|second|minute|saat|minit/);
 });
 
 test("a phone clock 15 minutes fast does not stop polling for a fresh upload", () => {
@@ -994,6 +1030,28 @@ test("a file this window removed is not another window's change", () => {
 test("Retry is never offered while reading is switched off", () => {
   assert.equal(retryOffered(503, "READER_OFF"), false);
   assert.equal(retryOffered(503, "INTERNAL"), true);
+});
+
+test("stored uploads at the ceiling: its own sentence, the review page drops the questions offer, no Retry", () => {
+  for (const step of ["create", "paste"] as const) {
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, en),
+      "JomCall cannot take new files right now. Answer the questions instead, or try again tomorrow.",
+    );
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, ms),
+      "JomCall tidak dapat menerima fail baharu buat masa ini. Jawab soalan sahaja, atau cuba lagi esok.",
+    );
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, en, true),
+      "JomCall cannot take new files right now. Try again tomorrow.",
+    );
+    assert.equal(
+      sendFailureText(503, "UPLOAD_STORE_FULL", step, ms, true),
+      "JomCall tidak dapat menerima fail baharu buat masa ini. Cuba lagi esok.",
+    );
+  }
+  assert.equal(retryOffered(503, "UPLOAD_STORE_FULL"), false);
 });
 
 test("our own reason sentences are said in Bahasa Melayu; the reader's words stay English", () => {

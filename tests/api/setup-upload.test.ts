@@ -6,7 +6,10 @@ import { setupReader } from "../../packages/inference/src/provider.ts";
 import { readRaw } from "../../web/lib/server/http.ts";
 import { handleAuth } from "../../web/lib/server/auth.ts";
 import { createDispatch } from "../../web/lib/server/api.ts";
-import { setupUploadCreate } from "../../packages/contracts/src/setup-upload.ts";
+import {
+  setupUploadCreate,
+  UPLOAD_LIMITS,
+} from "../../packages/contracts/src/setup-upload.ts";
 
 // The web process only reads the reader switch; no model is called here.
 async function withReader<T>(value: string | undefined, run: () => Promise<T>) {
@@ -333,13 +336,14 @@ test("sixth upload in a session is refused", () =>
     }
   }));
 
-test("twenty-first in 24 hours is refused", () =>
+test("the eleventh in 24 hours is refused", () =>
   withReader("anthropic", async () => {
     const x = await fixture();
     try {
-      // Twenty earlier uploads in this workspace, all removed: removing does
+      // Ten earlier uploads in this workspace, all removed: removing does
       // not reset the cap, and they hold no session slot.
-      for (let i = 0; i < 20; i++)
+      assert.equal(UPLOAD_LIMITS.perOrgPerDay, 10);
+      for (let i = 0; i < UPLOAD_LIMITS.perOrgPerDay; i++)
         await x.q(
           "insert into app.setup_upload(org_id,session_id,kind,name,mime,bytes,state) values($1,$2,'pdf','lama.pdf','application/pdf',10,'removed')",
           [x.f.h.orgA.id, x.sessionId],
@@ -496,9 +500,12 @@ test("type is checked by leading bytes, not by name", () =>
       assert.equal(c.done.status, 200, JSON.stringify(c.done.body));
       assert.equal(c.done.body.data.kind, "sheet");
       assert.equal((await x.row(c.id)).mime, "text/csv");
-      await x.q("update app.setup_upload set state='removed' where session_id=$1", [
-        x.sessionId,
-      ]);
+      // Aged past 24 hours too, so the refusals below stay under the
+      // workspace's daily cap.
+      await x.q(
+        "update app.setup_upload set state='removed',created_at=now()-interval '25 hours' where session_id=$1",
+        [x.sessionId],
+      );
 
       // Refused: CSV text declared as an image, a GIF, text with a NUL byte,
       // bytes that are not UTF-8 text, and any zip (an .xlsx) whatever it is
@@ -780,6 +787,80 @@ test('reader off: create is refused with READER_OFF and the view says reader "of
       }
     });
 });
+
+// The ceiling lives in the one shared app.setup_read_limit row, and the web
+// request runs on its own connection, so the lowered ceiling has to be
+// committed. It is held only for this test and the earlier value is put back
+// in finally. Test files run one at a time (test:local passes
+// --test-concurrency=1) and tests in a file run in order, so no other test
+// sees it.
+test("stored uploads at the ceiling: create and paste are refused with UPLOAD_STORE_FULL; removed and deleted files do not count", () =>
+  withReader("anthropic", async () => {
+    const x = await fixture();
+    let prior: string | undefined;
+    try {
+      prior = (await x.q("select stored_bytes_max from app.setup_read_limit")).rows[0]
+        .stored_bytes_max as string;
+      const held = Number(
+        (
+          await x.q(
+            "select coalesce(sum(bytes),0) as n from app.setup_upload where bytes_deleted_at is null and state<>'removed'",
+          )
+        ).rows[0].n,
+      );
+      await x.q("update app.setup_read_limit set stored_bytes_max=$1", [held + 400]);
+      const count = async () =>
+        Number(
+          (
+            await x.q("select count(*) from app.setup_upload where org_id=$1", [
+              x.f.h.orgA.id,
+            ])
+          ).rows[0].count,
+        );
+      const first = await x.create({ bytes: 300 });
+      assert.equal(first.status, 200, JSON.stringify(first.body));
+      const before = await count();
+      const c = await x.create({ bytes: 300 });
+      assert.equal(c.status, 503, JSON.stringify(c.body));
+      assert.equal(c.body.error.code, "UPLOAD_STORE_FULL");
+      const p = await x.owner.req("POST", `${x.up}/text`, { text: "a".repeat(200) });
+      assert.equal(p.status, 503, JSON.stringify(p.body));
+      assert.equal(p.body.error.code, "UPLOAD_STORE_FULL");
+      assert.equal(await count(), before, "no row is created");
+      // A removed file does not count.
+      assert.equal((await x.remove(first.body.data.id)).status, 200);
+      const second = await x.create({ bytes: 300 });
+      assert.equal(second.status, 200, JSON.stringify(second.body));
+      // Nor does a file whose bytes were deleted.
+      assert.equal(
+        (await x.owner.req("POST", `${x.up}/text`, { text: "a".repeat(200) })).status,
+        503,
+      );
+      await x.q("update app.setup_upload set bytes_deleted_at=now() where id=$1", [
+        second.body.data.id,
+      ]);
+      const pasted = await x.owner.req("POST", `${x.up}/text`, { text: "a".repeat(200) });
+      assert.equal(pasted.status, 200, JSON.stringify(pasted.body));
+      // The web role may ask the question but never read the limit row.
+      const can = async (sql: string) =>
+        (await x.q(sql)).rows[0].ok as boolean;
+      assert.equal(
+        await can("select has_function_privilege('jomcall_app','app_private.setup_upload_room(bigint)','execute') as ok"),
+        true,
+      );
+      assert.equal(
+        await can("select has_table_privilege('jomcall_app','app.setup_read_limit','select') as ok"),
+        false,
+      );
+    } finally {
+      try {
+        if (prior !== undefined)
+          await x.q("update app.setup_read_limit set stored_bytes_max=$1", [prior]);
+      } finally {
+        await x.f.close();
+      }
+    }
+  }));
 
 test("an applied session refuses uploads with 409", () =>
   withReader("anthropic", async () => {

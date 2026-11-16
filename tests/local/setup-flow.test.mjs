@@ -166,9 +166,9 @@ test("workspace creation keeps the owner's own words for Something else", () => 
 test("the bring stage shows the notice in both languages, unconditionally, above the file buttons", () => {
   const bring = readFileSync(join(dir, "bring.tsx"), "utf8");
   const en =
-    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. The file itself is deleted 30 days after you add it, or now with Remove while setup is open. Prices and details read from it stay in your setup until you remove them.";
+    "What you add here is sent to Anthropic, a company outside Malaysia, so its AI can read it. Do not add files or text with your customers' names, phone numbers or other personal details. The file itself is deleted 7 days after you add it, or now with Remove while setup is open. Prices and details read from it stay in your setup until you remove them.";
   const ms =
-    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail itu sendiri dipadam 30 hari selepas anda menambahnya, atau sekarang dengan butang Buang semasa persediaan masih dibuka. Harga dan butiran yang dibaca daripadanya kekal dalam persediaan anda sehingga anda membuangnya.";
+    "Apa yang anda tambah di sini dihantar kepada Anthropic, sebuah syarikat di luar Malaysia, supaya AI mereka boleh membacanya. Jangan tambah fail atau teks yang mengandungi nama, nombor telefon atau butiran peribadi lain pelanggan anda. Fail itu sendiri dipadam 7 hari selepas anda menambahnya, atau sekarang dengan butang Buang semasa persediaan masih dibuka. Harga dan butiran yang dibaca daripadanya kekal dalam persediaan anda sehingga anda membuangnya.";
   assert.ok(bring.includes(en), "English notice");
   assert.ok(bring.includes(ms), "BM notice");
   // The notice paragraph is the first thing directly inside .setup-body:

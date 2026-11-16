@@ -12,7 +12,7 @@ export const UPLOAD_LIMITS = {
   // Chunk writes per upload, re-sends included.
   chunkWrites: 30,
   perSession: 5,
-  perOrgPerDay: 20,
+  perOrgPerDay: 10,
   textChars: 20000,
 } as const;
 
@@ -69,7 +69,7 @@ export type SetupUpload = {
   factCount: number;
   // Rows the reader returned that could not be used ("N rows could not be read").
   droppedCount: number;
-  // When the file's bytes were deleted (30 days after upload); null while kept.
+  // When the file's bytes were deleted (7 days after upload); null while kept.
   bytesDeletedAt: string | null;
   createdAt: string;
 };
