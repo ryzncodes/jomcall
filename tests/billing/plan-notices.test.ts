@@ -241,17 +241,17 @@ test("the engine emails each plan notice to the owners only, in English and Baha
     assert.equal(mine.length, 3);
     const due = bySubject.get("Your JomCall plan fee is due on 28 Feb 2027 / Yuran pelan JomCall anda perlu dibayar pada 28 Feb 2027");
     const unpaid = bySubject.get("Your JomCall plan fee is unpaid / Yuran pelan JomCall anda belum dibayar");
-    const stopped = bySubject.get("Your JomCall plan has stopped / Pelan JomCall anda telah berhenti");
+    const stopped = bySubject.get("Your JomCall plan has stopped / Pelan JomCall anda telah dihentikan");
     assert.ok(due && unpaid && stopped, JSON.stringify(mine.map((m) => m.Subject)));
     const dueText = await mailText(due);
     assert.match(dueText, /Your Starter plan fee of RM 49\.00 is due on 28 Feb 2027\. Your wallet has RM 15\.00\. Top up at least RM 34\.00 before then/);
-    assert.match(dueText, /Yuran pelan Starter anda sebanyak RM 49\.00 perlu dibayar pada 28 Feb 2027\. Dompet anda ada RM 15\.00\. Tambah nilai sekurang-kurangnya RM 34\.00/);
+    assert.match(dueText, /Yuran pelan Starter anda sebanyak RM 49\.00 perlu dibayar pada 28 Feb 2027\. Baki dompet anda RM 15\.00\. Tambah nilai sekurang-kurangnya RM 34\.00/);
     const unpaidText = await mailText(unpaid);
     assert.match(unpaidText, /was due on 28 Feb 2027 and your wallet did not hold it\. Top up at least RM 34\.00 by 6 Mar 2027/);
     assert.match(unpaidText, /sekurang-kurangnya RM 34\.00 selewat-lewatnya 6 Mac 2027/);
     const stoppedText = await mailText(stopped);
-    assert.match(stoppedText, /Your Starter plan stopped because the fee of RM 49\.00 was not paid\./);
-    assert.match(stoppedText, /Pelan Starter anda telah berhenti kerana yuran sebanyak RM 49\.00 tidak dibayar\./);
+    assert.match(stoppedText, /Your Starter plan stopped because the fee of RM 49\.00 was not paid\. The agent no longer answers phone calls\./);
+    assert.match(stoppedText, /Pelan Starter anda telah dihentikan kerana yuran sebanyak RM 49\.00 tidak dibayar\. Ejen tidak lagi menjawab panggilan telefon\./);
     for (const text of [dueText, unpaidText, stoppedText]) {
       assert.match(text, /\/app\/billing/);
       assert.doesNotMatch(text, /Studio Contoh|Cawangan Contoh/, "no organization or branch name");

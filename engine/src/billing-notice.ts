@@ -11,8 +11,10 @@ import { formatSen } from "../../packages/billing/src/money.ts";
 // The same queue carries the plan fee emails (channel "plan"), queued by
 // app_private.queue_plan_notices at most once per organization, reason and
 // period: the next fee is due soon and the wallet is short, a fee is unpaid,
-// or the plan stopped. They carry the plan, the fee, the wallet balance when
-// queued and the dates, and nothing else.
+// or the plan stopped. The database checks each again when it is sent and
+// skips it when it is no longer true. They carry the plan, whether it
+// includes the WhatsApp agent, the fee, the wallet balance at send time and
+// the dates, and nothing else.
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const sen = z.number().int().refine(Number.isSafeInteger);
 const notice = z.union([
@@ -29,6 +31,8 @@ const notice = z.union([
     balanceSen: sen,
     dueDate: date,
     payBy: date.nullable().optional(),
+    // Absent from an older payload: read as false.
+    whatsappAgent: z.boolean().optional(),
   }),
 ]);
 export type BillingNotice = z.infer<typeof notice>;
@@ -79,6 +83,10 @@ function planNoticeMail(n: PlanNotice, where: string) {
   const short = formatSen(Math.max(0, n.amountSen - n.balanceSen));
   const due = { en: noticeDay(n.dueDate, "en"), ms: noticeDay(n.dueDate, "ms") };
   const payBy = n.payBy ? { en: noticeDay(n.payBy, "en"), ms: noticeDay(n.payBy, "ms") } : null;
+  // What the agent stops answering: WhatsApp only on a plan that includes it.
+  const lost = n.whatsappAgent
+    ? { en: "phone calls or WhatsApp", ms: "panggilan telefon atau WhatsApp" }
+    : { en: "phone calls", ms: "panggilan telefon" };
   let subject: { en: string; ms: string }, body: { en: string; ms: string };
   if (n.reason === "PLAN_FEE_DUE") {
     subject = {
@@ -86,36 +94,36 @@ function planNoticeMail(n: PlanNotice, where: string) {
       ms: `Yuran pelan JomCall anda perlu dibayar pada ${due.ms}`,
     };
     body = {
-      en: `Your ${plan} plan fee of ${amount} is due on ${due.en}. Your wallet has ${balance}. Top up at least ${short} before then so the plan carries on. If the fee stays unpaid, the plan stops and the agent no longer answers phone calls or WhatsApp.`,
-      ms: `Yuran pelan ${plan} anda sebanyak ${amount} perlu dibayar pada ${due.ms}. Dompet anda ada ${balance}. Tambah nilai sekurang-kurangnya ${short} sebelum tarikh itu supaya pelan diteruskan. Jika yuran terus tidak dibayar, pelan berhenti dan ejen tidak lagi menjawab panggilan telefon atau WhatsApp.`,
+      en: `Your ${plan} plan fee of ${amount} is due on ${due.en}. Your wallet has ${balance}. Top up at least ${short} before then so the plan carries on. If the fee stays unpaid, the plan stops and the agent no longer answers ${lost.en}.`,
+      ms: `Yuran pelan ${plan} anda sebanyak ${amount} perlu dibayar pada ${due.ms}. Baki dompet anda ${balance}. Tambah nilai sekurang-kurangnya ${short} sebelum tarikh itu supaya pelan diteruskan. Jika yuran terus tidak dibayar, pelan akan dihentikan dan ejen tidak lagi menjawab ${lost.ms}.`,
     };
   } else if (n.reason === "PLAN_FEE_UNPAID") {
     subject = { en: "Your JomCall plan fee is unpaid", ms: "Yuran pelan JomCall anda belum dibayar" };
     // The undated text is a defensive fallback: the database always queues an unpaid notice with payBy, and skips it once the period is no longer unpaid.
     body = payBy
       ? {
-          en: `Your ${plan} plan fee of ${amount} was due on ${due.en} and your wallet did not hold it. Top up at least ${short} by ${payBy.en} and the fee is taken by itself. After that date the plan stops and the agent no longer answers phone calls or WhatsApp.`,
-          ms: `Yuran pelan ${plan} anda sebanyak ${amount} sepatutnya dibayar pada ${due.ms}, tetapi baki dompet anda tidak mencukupi. Tambah nilai sekurang-kurangnya ${short} selewat-lewatnya ${payBy.ms} dan yuran akan ditolak secara automatik. Selepas tarikh itu, pelan berhenti dan ejen tidak lagi menjawab panggilan telefon atau WhatsApp.`,
+          en: `Your ${plan} plan fee of ${amount} was due on ${due.en} and your wallet did not hold it. Top up at least ${short} by ${payBy.en} and the fee is taken by itself. After that date the plan stops and the agent no longer answers ${lost.en}.`,
+          ms: `Yuran pelan ${plan} anda sebanyak ${amount} sepatutnya dibayar pada ${due.ms}, tetapi baki dompet anda tidak mencukupi. Tambah nilai sekurang-kurangnya ${short} selewat-lewatnya ${payBy.ms} dan yuran akan ditolak secara automatik. Selepas tarikh itu, pelan akan dihentikan dan ejen tidak lagi menjawab ${lost.ms}.`,
         }
       : {
-          en: `Your ${plan} plan fee of ${amount} was due on ${due.en} and your wallet did not hold it. Top up at least ${short} soon and the fee is taken by itself. If the fee stays unpaid, the plan stops and the agent no longer answers phone calls or WhatsApp.`,
-          ms: `Yuran pelan ${plan} anda sebanyak ${amount} sepatutnya dibayar pada ${due.ms}, tetapi baki dompet anda tidak mencukupi. Tambah nilai sekurang-kurangnya ${short} secepat mungkin dan yuran akan ditolak secara automatik. Jika yuran terus tidak dibayar, pelan berhenti dan ejen tidak lagi menjawab panggilan telefon atau WhatsApp.`,
+          en: `Your ${plan} plan fee of ${amount} was due on ${due.en} and your wallet did not hold it. Top up at least ${short} soon and the fee is taken by itself. If the fee stays unpaid, the plan stops and the agent no longer answers ${lost.en}.`,
+          ms: `Yuran pelan ${plan} anda sebanyak ${amount} sepatutnya dibayar pada ${due.ms}, tetapi baki dompet anda tidak mencukupi. Tambah nilai sekurang-kurangnya ${short} secepat mungkin dan yuran akan ditolak secara automatik. Jika yuran terus tidak dibayar, pelan akan dihentikan dan ejen tidak lagi menjawab ${lost.ms}.`,
         };
   } else {
-    subject = { en: "Your JomCall plan has stopped", ms: "Pelan JomCall anda telah berhenti" };
+    subject = { en: "Your JomCall plan has stopped", ms: "Pelan JomCall anda telah dihentikan" };
     body = {
-      en: `Your ${plan} plan stopped because the fee of ${amount} was not paid. The agent no longer answers phone calls or WhatsApp. To start again, top up and choose a plan in Billing; it starts the same day.`,
-      ms: `Pelan ${plan} anda telah berhenti kerana yuran sebanyak ${amount} tidak dibayar. Ejen tidak lagi menjawab panggilan telefon atau WhatsApp. Untuk mula semula, tambah nilai dan pilih pelan di Bil; pelan bermula pada hari yang sama.`,
+      en: `Your ${plan} plan stopped because the fee of ${amount} was not paid. The agent no longer answers ${lost.en}. To start again, top up and choose a plan in Billing; it starts the same day.`,
+      ms: `Pelan ${plan} anda telah dihentikan kerana yuran sebanyak ${amount} tidak dibayar. Ejen tidak lagi menjawab ${lost.ms}. Untuk mulakan semula, tambah nilai dan pilih pelan di Bil & penggunaan; pelan bermula pada hari yang sama.`,
     };
   }
   return {
     subject: `${subject.en} / ${subject.ms}`,
     text: [
       body.en,
-      `Wallet page: ${where}`,
+      `Billing: ${where}`,
       "",
       body.ms,
-      `Halaman dompet: ${where}`,
+      `Bil & penggunaan: ${where}`,
       "",
       "(We send this once for each plan period. / Kami hantar ini sekali bagi setiap tempoh pelan.)",
     ].join("\n"),

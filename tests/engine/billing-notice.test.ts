@@ -24,8 +24,12 @@ test("fee due: amounts in RM, the top-up needed never below zero, at least the f
   const due = billingNoticeMail(plan({ reason: "PLAN_FEE_DUE", balanceSen: 2500 }), base);
   assert.equal(due.subject, "Your JomCall plan fee is due on 16 Dec 2026 / Yuran pelan JomCall anda perlu dibayar pada 16 Dis 2026");
   assert.match(due.text, /^Your Growth plan fee of RM 129\.00 is due on 16 Dec 2026\. Your wallet has RM 25\.00\. Top up at least RM 104\.00 before then so the plan carries on\. If the fee stays unpaid, the plan stops/);
-  assert.match(due.text, /Yuran pelan Growth anda sebanyak RM 129\.00 perlu dibayar pada 16 Dis 2026\. Dompet anda ada RM 25\.00\. Tambah nilai sekurang-kurangnya RM 104\.00 sebelum tarikh itu/);
-  assert.match(due.text, /https:\/\/app\.example\.invalid\/app\/billing/);
+  assert.match(due.text, /Yuran pelan Growth anda sebanyak RM 129\.00 perlu dibayar pada 16 Dis 2026\. Baki dompet anda RM 25\.00\. Tambah nilai sekurang-kurangnya RM 104\.00 sebelum tarikh itu/);
+  assert.match(due.text, /^Billing: https:\/\/app\.example\.invalid\/app\/billing$/m);
+  assert.match(due.text, /^Bil & penggunaan: https:\/\/app\.example\.invalid\/app\/billing$/m);
+  assert.doesNotMatch(due.text, /Wallet page|Halaman dompet/);
+  assert.match(due.text, /If the fee stays unpaid, the plan stops and the agent no longer answers phone calls\.\n/);
+  assert.match(due.text, /pelan akan dihentikan dan ejen tidak lagi menjawab panggilan telefon\.\n/);
   assert.doesNotMatch(due.text, /7 days|7 hari/);
   const negative = billingNoticeMail(plan({ reason: "PLAN_FEE_DUE", balanceSen: -500 }), base);
   assert.match(negative.text, /Your wallet has −RM 5\.00\. Top up at least RM 134\.00/);
@@ -44,10 +48,21 @@ test("fee unpaid: with the last day to pay, or without it", () => {
 });
 
 test("plan stopped, and the refusal emails unchanged", () => {
-  const stopped = billingNoticeMail(plan({ reason: "PLAN_STOPPED" }), base);
-  assert.equal(stopped.subject, "Your JomCall plan has stopped / Pelan JomCall anda telah berhenti");
+  const stopped = billingNoticeMail(plan({ reason: "PLAN_STOPPED", whatsappAgent: true }), base);
+  assert.equal(stopped.subject, "Your JomCall plan has stopped / Pelan JomCall anda telah dihentikan");
   assert.match(stopped.text, /^Your Growth plan stopped because the fee of RM 129\.00 was not paid\. The agent no longer answers phone calls or WhatsApp\. To start again, top up and choose a plan in Billing; it starts the same day\./);
-  assert.match(stopped.text, /Pelan Growth anda telah berhenti kerana yuran sebanyak RM 129\.00 tidak dibayar\./);
+  assert.match(
+    stopped.text,
+    /Pelan Growth anda telah dihentikan kerana yuran sebanyak RM 129\.00 tidak dibayar\. Ejen tidak lagi menjawab panggilan telefon atau WhatsApp\. Untuk mulakan semula, tambah nilai dan pilih pelan di Bil & penggunaan; pelan bermula pada hari yang sama\./,
+  );
+  // A plan without the WhatsApp agent: WhatsApp is not named; absent reads as false.
+  for (const whatsappAgent of [false, undefined]) {
+    const phoneOnly = billingNoticeMail(plan({ reason: "PLAN_STOPPED", plan: "starter", amountSen: 4900, whatsappAgent }), base);
+    assert.match(phoneOnly.text, /The agent no longer answers phone calls\. To start again/);
+    assert.match(phoneOnly.text, /Ejen tidak lagi menjawab panggilan telefon\. Untuk mulakan semula/);
+    assert.doesNotMatch(phoneOnly.text, /WhatsApp/);
+  }
+  assert.throws(() => plan({ reason: "PLAN_STOPPED", whatsappAgent: "yes" }));
   const refusal = billingNoticeMail(parseBillingNotice({ channel: "whatsapp", reason: "WALLET_EXHAUSTED", day: "2026-12-16", emails: ["x@example.invalid"] }), base);
   assert.equal(refusal.subject, "JomCall: action needed / tindakan diperlukan");
   assert.equal(refusal.text.split("\n")[0], "Your JomCall agent is not replying on WhatsApp because your wallet balance has run out.");
