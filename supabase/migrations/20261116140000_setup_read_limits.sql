@@ -18,7 +18,8 @@
 --
 -- setup_read is the function from 20261116110100_setup_read_worker.sql with
 -- three changes in its 'claim' action (ceiling check, fair order,
--- first_claimed_at) and the retention in 'maintain' (30 days to 7);
+-- first_claimed_at) and two times in 'maintain' (bytes kept 7 days, was
+-- 30; an unfinished upload abandoned after 1 hour, was 24);
 -- everything else is copied unchanged. Re-runnable.
 
 alter table app.setup_upload add column if not exists first_claimed_at timestamptz;
@@ -101,10 +102,11 @@ begin
   -- The retention sweeps below are time-based and apply to every upload in
   -- this database, whichever namespace runs them (an upload still uploading
   -- has no outbox row to carry one).
-  -- Never finished within a day: removed, bytes deleted.
+  -- Never finished within an hour: removed, bytes deleted. (Was a day; an
+  -- unfinished file holds room under the stored-bytes ceiling meanwhile.)
   with x as (
    select u2.id from app.setup_upload u2
-   where u2.state = 'uploading' and u2.created_at < now() - interval '24 hours'
+   where u2.state = 'uploading' and u2.created_at < now() - interval '1 hour'
    order by u2.created_at limit 100 for update skip locked),
   gone as (delete from app.setup_upload_chunk k using x where k.upload_id = x.id)
   update app.setup_upload t set state = 'removed', fail_code = 'ABANDONED', lease_token = null, lease_until = null, bytes_deleted_at = now() from x where t.id = x.id;
