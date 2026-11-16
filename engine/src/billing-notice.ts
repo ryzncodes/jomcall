@@ -91,6 +91,7 @@ function planNoticeMail(n: PlanNotice, where: string) {
     };
   } else if (n.reason === "PLAN_FEE_UNPAID") {
     subject = { en: "Your JomCall plan fee is unpaid", ms: "Yuran pelan JomCall anda belum dibayar" };
+    // The undated text is a defensive fallback: the database always queues an unpaid notice with payBy, and skips it once the period is no longer unpaid.
     body = payBy
       ? {
           en: `Your ${plan} plan fee of ${amount} was due on ${due.en} and your wallet did not hold it. Top up at least ${short} by ${payBy.en} and the fee is taken by itself. After that date the plan stops and the agent no longer answers phone calls or WhatsApp.`,

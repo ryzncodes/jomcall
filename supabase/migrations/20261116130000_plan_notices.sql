@@ -8,6 +8,7 @@
 --      PLAN_FEE_UNPAID  a period started unpaid; the plan stops when grace ends
 --      PLAN_STOPPED     grace ended unpaid; the plan fell back to pay as you go
 --    At most one email per organization, reason and period. No customer data.
+--    A notice that is no longer true when it is about to be sent is skipped.
 -- 2. plan_entitlements follows the same late-clock rule as
 --    charge_plan_period: a time before the monthly date is read as that
 --    date's midnight, so a call start that began just before a first pick
@@ -30,6 +31,8 @@ alter table app.billing_notice add constraint billing_notice_plan_shape check(
  and(channel<>'plan' or(due_date is not null and plan_code in('starter','growth') and amount_sen>=0)));
 -- One plan email per organization, reason and period (due_date is the day
 -- the fee falls due: the period's first day).
+alter table app.billing_notice drop constraint if exists billing_notice_delivery_state_check;
+alter table app.billing_notice add constraint billing_notice_delivery_state_check check(delivery_state in('pending','sent','failed','skipped'));
 create unique index if not exists billing_notice_plan_once on app.billing_notice(org_id,reason,due_date) where channel='plan';
 
 grant select on app.org_plan,app.plan_period,app.billing_plan,app.wallet_ledger to jomcall_jobs;
@@ -81,6 +84,15 @@ declare o app.outbox;b app.billing_notice;begin
  select * into o from app.outbox where id=p_outbox and namespace=p_namespace and kind='billing.refusal_notice';if not found then return null;end if;
  select * into b from app.billing_notice where id=o.resource_id and org_id=o.org_id for update;
  if not found or b.delivery_state<>'pending' then return null;end if;
+ -- A plan notice that is no longer true when its turn comes (the owner
+ -- topped up, the fee was charged, a plan was started again) is not sent.
+ if b.channel='plan' and(
+  (b.reason='PLAN_FEE_DUE' and(select coalesce(sum(l.amount_sen),0) from app.wallet_ledger l where l.org_id=b.org_id)>=b.amount_sen)
+  or(b.reason='PLAN_FEE_UNPAID' and not exists(select 1 from app.plan_period pp where pp.org_id=b.org_id and pp.period_start=b.due_date and pp.state='unpaid'))
+  or(b.reason='PLAN_STOPPED' and not exists(select 1 from app.plan_period pp where pp.org_id=b.org_id and pp.period_start=b.due_date and pp.state='downgraded')))then
+  update app.billing_notice set delivery_state='skipped',delivered_at=now() where id=b.id;
+  return null;
+ end if;
  return jsonb_build_object('id',b.id,'channel',b.channel,'reason',b.reason,'day',b.kl_day,'operationId',o.operation_id,
   'emails',coalesce((select jsonb_agg(x.email order by x.email)from(select app_private.auth_user_email(m.user_id)email from app.member m
    where m.org_id=b.org_id and m.role='owner' and m.active)x where x.email is not null),'[]'))

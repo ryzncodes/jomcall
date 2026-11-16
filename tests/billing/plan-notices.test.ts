@@ -152,16 +152,16 @@ test("plan stopped: queued once when grace ends unpaid", async () => {
     await subscribe(a);
     assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-01"))).periodState, "unpaid");
     await queue(kl("2027-02-01"));
+    assert.deepEqual((await notices(a)).map((n) => [n.reason, n.plan, n.amountSen, n.dueDate]), [["PLAN_FEE_UNPAID", "starter", 4900, "2027-01-31"]]);
     assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-07"))).periodState, "downgraded");
     await queue(kl("2027-02-07"));
     await queue(kl("2027-02-20"));
+    // Reading the payload skips a notice that is no longer true: the unpaid
+    // notice is stale now that the plan has stopped.
     const sent = await notices(a);
     assert.deepEqual(
-      sent.map((n) => [n.reason, n.plan, n.amountSen, n.dueDate]),
-      [
-        ["PLAN_FEE_UNPAID", "starter", 4900, "2027-01-31"],
-        ["PLAN_STOPPED", "starter", 4900, "2027-01-31"],
-      ],
+      sent.map((n) => n && [n.reason, n.plan, n.amountSen, n.dueDate]),
+      [null, ["PLAN_STOPPED", "starter", 4900, "2027-01-31"]],
     );
     // The next period is pay as you go: nothing more.
     assert.equal((await chargePlanPeriod(worker, a, kl("2027-03-01"))).periodState, "free");
@@ -262,6 +262,113 @@ test("the engine emails each plan notice to the owners only, in English and Baha
     assert.equal((await mailTo(h.alice.confirmedEmail)).length, 3);
   } finally {
     await engine?.close();
+    await close();
+  }
+});
+
+// A notice that is no longer true when its turn comes is not sent: the row
+// becomes 'skipped', the job finishes without mail and without an error.
+async function skipSetup() {
+  const s = await setup();
+  const { h, adjust, subscribe } = s;
+  const a = h.orgA.id;
+  const engine = await Engine.create(h.namespace, { plans: { firstAfterMs: 0, due: async () => [], notify: async () => {} } });
+  const states = async () =>
+    (await h.cleanup.query("select reason,delivery_state from app.billing_notice where org_id=$1 and channel='plan' order by created_at,reason", [a])).rows;
+  // Runs the engine until this organization has no pending notice; a skipped
+  // or sent row is final, so a few more ticks change nothing.
+  const settle = async () => {
+    for (let i = 0; i < 6 && (await states()).some((r) => r.delivery_state === "pending"); i++) await engine.tick();
+    await engine.tick();
+  };
+  const close = async () => {
+    await engine.close();
+    await s.close();
+  };
+  return { ...s, a, engine, states, settle, close, subscribe, adjust, h };
+}
+
+test("a fee due notice is skipped when the wallet now covers the fee", async () => {
+  const { h, worker, a, adjust, subscribe, queue, states, settle, close } = await skipSetup();
+  try {
+    await subscribe(a);
+    await adjust(a, 6400);
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-01"))).periodState, "charged");
+    await queue(kl("2027-02-25"));
+    assert.deepEqual(await states(), [{ reason: "PLAN_FEE_DUE", delivery_state: "pending" }]);
+    await adjust(a, 3400); // RM 15.00 + RM 34.00 = the fee
+    await settle();
+    assert.deepEqual(await states(), [{ reason: "PLAN_FEE_DUE", delivery_state: "skipped" }]);
+    assert.deepEqual(await mailTo(h.alice.confirmedEmail), []);
+  } finally {
+    await close();
+  }
+});
+
+test("a fee due notice still goes out when a top-up leaves the wallet short", async () => {
+  const { h, worker, a, adjust, subscribe, queue, states, settle, close } = await skipSetup();
+  try {
+    await subscribe(a);
+    await adjust(a, 6400);
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-01"))).periodState, "charged");
+    await queue(kl("2027-02-25"));
+    await adjust(a, 1000); // RM 25.00, still below RM 49.00
+    await settle();
+    assert.deepEqual(await states(), [{ reason: "PLAN_FEE_DUE", delivery_state: "sent" }]);
+    assert.equal((await mailTo(h.alice.confirmedEmail)).length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test("a fee unpaid notice is skipped when the fee was charged meanwhile, and goes out while unpaid", async () => {
+  const { h, worker, a, adjust, subscribe, queue, states, settle, close } = await skipSetup();
+  try {
+    await subscribe(a);
+    await adjust(a, 1000);
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-01"))).periodState, "unpaid");
+    await queue(kl("2027-02-01"));
+    await adjust(a, 4900);
+    assert.equal((await chargePlanPeriod(worker, a, kl("2027-02-02"))).periodState, "charged");
+    await settle();
+    assert.deepEqual(await states(), [{ reason: "PLAN_FEE_UNPAID", delivery_state: "skipped" }]);
+    assert.deepEqual(await mailTo(h.alice.confirmedEmail), []);
+    // Still unpaid when sent: the email goes out (the engine test above
+    // covers the full set; this is the unpaid one alone).
+    const b = h.orgB.id;
+    await subscribe(b);
+    await adjust(b, 1000);
+    assert.equal((await chargePlanPeriod(worker, b, kl("2027-02-01"))).periodState, "unpaid");
+    await queue(kl("2027-02-01"));
+    for (let i = 0; i < 6; i++)
+      if ((await h.cleanup.query("select 1 from app.billing_notice where org_id=$1 and delivery_state='pending'", [b])).rowCount) await settle();
+    assert.equal((await h.cleanup.query("select delivery_state from app.billing_notice where org_id=$1", [b])).rows[0].delivery_state, "sent");
+    assert.equal((await mailTo(h.bob.confirmedEmail)).length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test("a plan stopped notice is skipped when the owner started a plan again the same day", async () => {
+  const { h, worker, a, adjust, subscribe, queue, states, settle, close } = await skipSetup();
+  try {
+    // A real-clock period that began today: choose_plan reuses it in place.
+    const today = (await h.cleanup.query("select ((now() at time zone 'Asia/Kuala_Lumpur')::date)::text d")).rows[0].d as string;
+    await subscribe(a, "starter", today);
+    assert.equal((await chargePlanPeriod(worker, a)).periodState, "unpaid");
+    const later = new Date(Date.now() + 8 * 86_400_000);
+    assert.equal((await chargePlanPeriod(worker, a, later)).periodState, "downgraded");
+    await queue(later);
+    assert.ok((await states()).some((r) => r.reason === "PLAN_STOPPED" && r.delivery_state === "pending"));
+    await adjust(a, 4900);
+    const started = (
+      await h.sqlAsApp(h.alice, a, async (tx) => (await tx.query("select app_private.choose_plan($1,'starter') v", [a])).rows[0].v)
+    ) as { outcome: string };
+    assert.equal(started.outcome, "started");
+    await settle();
+    assert.ok((await states()).every((r) => r.delivery_state === "skipped"), JSON.stringify(await states()));
+    assert.deepEqual(await mailTo(h.alice.confirmedEmail), []);
+  } finally {
     await close();
   }
 });
