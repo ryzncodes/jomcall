@@ -533,6 +533,11 @@ test("WhatsApp flow against the local database", async (t) => {
         );
         await f.worker.tick();
         const c = await f.conversation();
+        // A file name stored before the parser cleaned them.
+        await f.h.cleanup.query(
+          "insert into app.message(org_id,conversation_id,direction,author,kind,body,media,status)values($1,$2,'inbound','customer','media','Fail lama',$3,'received')",
+          [f.h.orgA.id, c.id, JSON.stringify({ kind: "document", id: "MEDIAFAKE78", mimeType: "application/pdf", sha256: "", filename: "\u202Eharga.pdf\u0085" })],
+        );
         const contact = (await f.req("GET", `/contacts/${c.contact_id}`)).body
           .data;
         const job = await f.req("POST", `/contacts/${c.contact_id}/export`, {
@@ -555,6 +560,7 @@ test("WhatsApp flow against the local database", async (t) => {
         const exported = r.body.conversations.flatMap((x: any) => x.messages);
         const doc = exported.find((m: any) => m.kind === "media");
         assert.deepEqual(doc.media, { kind: "document", filename: "sebut-harga.pdf" });
+        assert.deepEqual(exported.find((m: any) => m.body === "Fail lama").media, { kind: "document", filename: "harga.pdf" });
         assert.ok(exported.filter((m: any) => m.kind !== "media").every((m: any) => m.media === null));
         // Facts only: no provider media id, hash or file type.
         assert.doesNotMatch(JSON.stringify(r.body.conversations), /MEDIAFAKE77|c2hhLWZha2U=|application\/pdf/);
@@ -1338,6 +1344,20 @@ test("a captionless photo is named in the inbox, alerts staff and gets the notic
     const again = (await f.req("GET", `/conversations/${c.id}`)).body.data;
     const voice = again.messages.find((m: any) => m.body === "Dengar ni");
     assert.deepEqual(voice.media, { kind: "audio" });
+
+    // File names stored before the parser cleaned them are cleaned on read;
+    // a name with nothing else left is dropped.
+    for (const [body, filename] of [
+      ["Fail lama", "harga\u202Efdp.exe\u0007"],
+      ["Fail kosong", "\u0001\u2066\u009f"],
+    ])
+      await f.h.cleanup.query(
+        "insert into app.message(org_id,conversation_id,direction,author,kind,body,media,status)values($1,$2,'inbound','customer','media',$3,$4,'received')",
+        [f.h.orgA.id, c.id, body, JSON.stringify({ kind: "document", id: "MEDIAFAKE03", mimeType: "application/pdf", sha256: "", filename })],
+      );
+    const cleaned = (await f.req("GET", `/conversations/${c.id}`)).body.data.messages;
+    assert.deepEqual(cleaned.find((m: any) => m.body === "Fail lama").media, { kind: "document", filename: "hargafdp.exe" });
+    assert.deepEqual(cleaned.find((m: any) => m.body === "Fail kosong").media, { kind: "document" });
   } finally {
     await f.close();
   }

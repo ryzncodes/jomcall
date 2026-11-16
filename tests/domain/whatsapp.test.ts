@@ -163,6 +163,15 @@ test("webhook parsing names each media type, keeps non-text types, and drops rea
       { type: "reaction", reaction: { message_id: "wamid.OUT1", emoji: "👍" } },
     ]),
   );
+  // A customer's file name loses control and bidirectional characters; one
+  // with nothing else left has no name.
+  const named = (filename: string) =>
+    (parseWebhook(deliver([{ type: "document", document: media("MEDIA9", { filename }) }]))[0].payload as any).media;
+  assert.equal(named("\u202Efdp.exe\u0000harga\u2066\u009f").filename, "fdp.exeharga");
+  assert.equal(named("a\u0007b\u007fc\u202ad\u2069").filename, "abcd");
+  const emptied = named("\u0001\u202e\u0085");
+  assert.equal("filename" in emptied, false);
+  assert.equal("filename" in named(""), false);
   // The reaction (sixth message) is not stored at all.
   assert.deepEqual(
     events.map((e) => e.key),

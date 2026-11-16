@@ -29,7 +29,7 @@ import {
   consentServiceSql,
   fallbackSql,
 } from "./send-facts-sql.ts";
-import { mediaFactsSql } from "./media-sql.ts";
+import { cleanMediaFacts, mediaFactsSql } from "./media-sql.ts";
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
@@ -196,7 +196,7 @@ async function conversationDetail(
           where m.org_id=$1 and m.conversation_id=$2 order by m.created_at desc,m.id desc limit 200) recent order by created_at,id`,
         [ctx.orgId, id],
       )
-    ).rows,
+    ).rows.map((m) => ({ ...m, media: cleanMediaFacts(m.media) })),
     proposals: (
       await tx.query(
         "select id,kind,details,state,created_at from app.conversation_proposal where org_id=$1 and conversation_id=$2 order by created_at,id",

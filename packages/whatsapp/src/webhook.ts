@@ -2,6 +2,7 @@
 // functions: no database, no network. Shapes follow Meta's webhook
 // documentation as read on 2026-11-14 (docs/research/whatsapp-go-live.md).
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { cleanFileName } from "../../contracts/src/setup-upload.ts";
 
 // Meta documents webhook payloads of up to 3 MB.
 export const maxWebhookBytes = 3 * 1024 * 1024;
@@ -110,6 +111,9 @@ export function parseWebhook(body: unknown): IntakeEvent[] {
         // alerted.
         if (type === "reaction") continue;
         const media = mediaTypes.includes(type) ? record(m[type]) : null;
+        const filename = media
+          ? cleanFileName(text(media.filename, 200))
+          : undefined;
         // A tapped button or list row is the customer's answer in words.
         const reply = record(record(m.interactive).button_reply).title
           ? record(record(m.interactive).button_reply).title
@@ -149,7 +153,9 @@ export function parseWebhook(body: unknown): IntakeEvent[] {
                     mimeType: text(media.mime_type, 100),
                     sha256: text(media.sha256, 100),
                     caption: text(media.caption, 1024),
-                    filename: text(media.filename, 200),
+                    // Customer-supplied: control and bidirectional
+                    // characters are removed; an emptied name is left out.
+                    ...(filename !== undefined ? { filename } : {}),
                   },
                 }
               : {}),
