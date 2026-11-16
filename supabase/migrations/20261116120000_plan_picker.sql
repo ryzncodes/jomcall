@@ -160,3 +160,82 @@ declare t app.billing_topup;ev app.billing_provider_event;v_outcome text;v_ledge
  insert into app.billing_provider_event(org_id,provider,event_key,topup_id,source,paid,amount_sen,outcome)values(t.org_id,p_provider,p_event_key,t.id,p_source,p_paid,p_amount,v_outcome);
  return jsonb_build_object('outcome',v_outcome,'topupId',t.id);
 end$$;
+
+-- Starts (or retries) the period containing p_at. Same rules as before
+-- (fee debited at most once per organization and period, never into a
+-- negative balance) with two additions for the plan picker:
+--   * No period is ever created before the monthly date. A first pick moves
+--     that date to today; a caller whose clock is a little behind (a
+--     transaction that began before midnight) is given today's period
+--     instead of a backdated one with its own fee.
+--   * A paid plan waiting on a pay-as-you-go row is a first pick: it starts
+--     only when the wallet holds the fee, and is dropped otherwise. It never
+--     starts unpaid in grace.
+create or replace function app_private.charge_plan_period(p_org uuid,p_at timestamptz default now())returns jsonb language plpgsql security definer set search_path='' as $$
+declare op app.org_plan;pl app.billing_plan;pp app.plan_period;v_start date;v_end date;v_code text;v_balance bigint;v_ledger uuid;v_dup boolean:=true;v_at timestamptz;begin
+ if p_org is null or p_at is null then raise exception 'INVALID_PLAN';end if;
+ if not exists(select 1 from app.organization where id=p_org)then raise exception 'NOT_FOUND';end if;
+ perform pg_advisory_xact_lock(hashtextextended('wallet:'||p_org::text,0));
+ select * into op from app.org_plan where org_id=p_org for update;
+ -- No plan chosen: pay as you go, nothing to charge.
+ if not found then return jsonb_build_object('plan','payg','periodState','none','duplicate',true)||app_private.wallet_snapshot(p_org);end if;
+ v_at=greatest(p_at,op.anchor_date::timestamp at time zone 'Asia/Kuala_Lumpur');
+ select b.period_start,b.period_end into v_start,v_end from app_private.plan_period_bounds(op.anchor_date,v_at)b;
+ select * into pp from app.plan_period where org_id=p_org and period_start=v_start for update;
+ if not found then
+  v_dup=false;
+  if op.plan_code='payg' and op.pending_plan_code is not null and op.pending_plan_code<>'payg' then
+   pl=app_private.plan_for(op.pending_plan_code,v_at);
+   select coalesce(sum(amount_sen),0) into v_balance from app.wallet_ledger where org_id=p_org;
+   if v_balance<pl.monthly_fee_sen then
+    insert into app.audit_log(org_id,action,target_type,target_id,metadata)values(p_org,'billing.plan_start_skipped','organization',p_org,jsonb_build_object('plan',op.pending_plan_code,'feeSen',pl.monthly_fee_sen,'balanceSen',v_balance));
+    op.pending_plan_code=null;
+   end if;
+  end if;
+  -- A change requested during the previous period takes effect now.
+  v_code=coalesce(op.pending_plan_code,op.plan_code);
+  pl=app_private.plan_for(v_code,v_at);
+  update app.org_plan set plan_code=v_code,pending_plan_code=null,updated_at=now() where org_id=p_org;
+  insert into app.plan_period(org_id,plan_id,plan_code,period_start,period_end,starts_at,ends_at,fee_sen,included_voice_seconds,phone_numbers,whatsapp_agent,state,grace_until)
+  values(p_org,pl.id,pl.code,v_start,v_end,v_start::timestamp at time zone 'Asia/Kuala_Lumpur',v_end::timestamp at time zone 'Asia/Kuala_Lumpur',
+   pl.monthly_fee_sen,pl.included_voice_seconds,pl.phone_numbers,pl.whatsapp_agent,case when pl.monthly_fee_sen=0 then 'free' else 'unpaid' end,
+   case when pl.monthly_fee_sen=0 then null else (v_start::timestamp at time zone 'Asia/Kuala_Lumpur')+make_interval(days=>pl.grace_days) end)
+  returning * into pp;
+ end if;
+ if pp.state='unpaid' then
+  select coalesce(sum(amount_sen),0) into v_balance from app.wallet_ledger where org_id=p_org;
+  if v_balance>=pp.fee_sen then
+   insert into app.wallet_ledger(org_id,kind,amount_sen,reason,idempotency_key)
+   values(p_org,'plan_fee',-pp.fee_sen,initcap(pp.plan_code)||' plan, '||pp.period_start||' to '||pp.period_end,'plan_fee:'||pp.id::text)returning id into v_ledger;
+   update app.plan_period set state='charged',ledger_id=v_ledger,charged_at=now(),grace_until=null,updated_at=now() where id=pp.id returning * into pp;
+   insert into app.audit_log(org_id,action,target_type,target_id,metadata)values(p_org,'billing.plan_charged','plan_period',pp.id,jsonb_build_object('plan',pp.plan_code,'feeSen',pp.fee_sen,'periodStart',pp.period_start));
+   v_dup=false;
+  elsif v_at>=pp.grace_until then
+   -- Grace ended unpaid: the rest of this period and later ones are payg.
+   -- A call in progress is never cut; usage keeps billing from the wallet.
+   update app.plan_period set state='downgraded',updated_at=now() where id=pp.id returning * into pp;
+   update app.org_plan set plan_code='payg',pending_plan_code=null,updated_at=now() where org_id=p_org;
+   insert into app.audit_log(org_id,action,target_type,target_id,metadata)values(p_org,'billing.plan_downgraded','plan_period',pp.id,jsonb_build_object('plan',pp.plan_code,'feeSen',pp.fee_sen,'balanceSen',v_balance));
+   v_dup=false;
+  elsif not v_dup then
+   insert into app.audit_log(org_id,action,target_type,target_id,metadata)values(p_org,'billing.plan_unpaid','plan_period',pp.id,jsonb_build_object('plan',pp.plan_code,'feeSen',pp.fee_sen,'balanceSen',v_balance,'graceUntil',pp.grace_until));
+  end if;
+ end if;
+ return app_private.plan_period_json(pp)||jsonb_build_object('duplicate',v_dup)||app_private.wallet_snapshot(p_org);
+end$$;
+
+-- For the scheduled job: the organizations whose plan needs attention at
+-- p_at, which are those with no period covering p_at yet or with an unpaid
+-- one. The job then charges each in its own short transaction, so one
+-- organization's wallet lock is never held while another is processed.
+drop function if exists app_private.plan_orgs_due(timestamptz);
+create function app_private.plan_orgs_due(p_at timestamptz default now())returns setof uuid language sql stable security definer set search_path='' as $$
+ select op.org_id from app.org_plan op
+ where not exists(select 1 from app.plan_period pp where pp.org_id=op.org_id and pp.starts_at<=p_at and pp.ends_at>p_at and pp.state<>'unpaid')
+ order by op.org_id
+$$;
+grant create on schema app_private to jomcall_billing;
+alter function app_private.plan_orgs_due(timestamptz) owner to jomcall_billing;
+revoke create on schema app_private from jomcall_billing;
+revoke all on function app_private.plan_orgs_due(timestamptz) from public;
+grant execute on function app_private.plan_orgs_due(timestamptz) to jomcall_worker,postgres;
