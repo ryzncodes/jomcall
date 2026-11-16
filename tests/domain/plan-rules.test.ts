@@ -5,6 +5,8 @@ import {
   addMonth,
   cardState,
   dayText,
+  firstFeePending,
+  keepPlanKey,
   klDate,
   lastGraceDay,
   minutesUsed,
@@ -14,6 +16,7 @@ import {
   topUpNeeded,
   type PlanOffer,
 } from "../../web/lib/core/plan-rules.ts";
+import { CoreError, ProxyError, failureOf } from "../../web/lib/core/client.ts";
 
 const plans: PlanOffer[] = [
   { code: "growth", feeSen: 12900, includedVoiceSeconds: 24000, phoneNumbers: 1, whatsappAgent: true, graceDays: 7 },
@@ -88,4 +91,19 @@ test("dates: today in Kuala Lumpur, one month on, last day of grace", () => {
   assert.equal(lastGraceDay("2027-02-07T00:00:00+08:00"), "2027-02-06");
   assert.equal(dayText("2026-12-16", false), "16 Dec 2026");
   assert.match(dayText("2026-12-16", true), /16 Dis 2026/);
+});
+
+test("a paid plan whose first period has not started: fee within the hour, the plan's grace days", () => {
+  assert.deepEqual(firstFeePending({ plan: "starter", periodState: "none", plans }), { graceDays: 7 });
+  assert.deepEqual(firstFeePending({ plan: "growth", periodState: "none", plans }), { graceDays: 7 });
+  assert.equal(firstFeePending({ plan: "payg", periodState: "none", plans }), null);
+  assert.equal(firstFeePending({ plan: "starter", periodState: "charged", plans }), null);
+  assert.equal(firstFeePending({ plan: "starter", periodState: "unpaid", plans }), null);
+});
+
+test("a plan choice keeps its key only when no answer came from JomCall", () => {
+  assert.equal(keepPlanKey(failureOf(Error("offline"))), true);
+  assert.equal(keepPlanKey(failureOf(new ProxyError(504))), true);
+  assert.equal(keepPlanKey(failureOf(new CoreError("PLAN_START_FAILED", 500))), false);
+  assert.equal(keepPlanKey(failureOf(new CoreError("FORBIDDEN", 403))), false);
 });

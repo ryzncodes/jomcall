@@ -85,3 +85,21 @@ export function dayText(date: string, ms: boolean) {
     dateStyle: "medium",
   });
 }
+
+// A paid plan set but its first period not started yet (an operator set it,
+// or the hourly run has not reached it): the first fee is taken within the
+// hour, and a short wallet gets the plan's grace days. Null otherwise.
+export function firstFeePending(s: Pick<PlanSummary, "plan" | "periodState" | "plans">): { graceDays: number } | null {
+  if (s.plan === "payg" || s.periodState !== "none") return null;
+  return { graceDays: s.plans.find((p) => p.code === s.plan)?.graceDays ?? 0 };
+}
+
+// Whether a plan choice that failed may be sent again with the same
+// idempotency key. Only when no answer came from JomCall (offline, timed
+// out, or a proxy's page, which does not say whether the request arrived):
+// the plan may have started, and the same key returns that answer instead
+// of a second fee. Any answer from JomCall, an outcome or an error, makes
+// the next attempt a new request with a new key.
+export function keepPlanKey(failure: { status: number | null; code: string | null }) {
+  return failure.code === null || failure.code === "PROXY";
+}

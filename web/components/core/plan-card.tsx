@@ -5,11 +5,13 @@
 import { useEffect, useRef, useState } from "react";
 import { formatSen } from "../../../packages/billing/src/money";
 import type { PlanChoice } from "../../../packages/contracts/src/billing";
-import { CoreError } from "@/lib/core/client";
+import { CoreError, failureOf } from "@/lib/core/client";
 import {
   addMonth,
   cardState,
   dayText,
+  firstFeePending,
+  keepPlanKey,
   klDate,
   lastGraceDay,
   minutesUsed,
@@ -43,6 +45,8 @@ export function PlanCard({
   const heading = useRef<HTMLHeadingElement>(null);
   const confirmBox = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLButtonElement | null>(null);
+  // One idempotency key per plan code (see pick).
+  const keys = useRef(new Map<PlanCode, string>());
   // A top-up that lands (and retries an unpaid fee) changes the balance.
   const seenBalance = useRef(walletBalanceSen);
   useEffect(() => {
@@ -86,10 +90,22 @@ export function PlanCard({
     setConfirm(null);
     opener.current?.focus();
   };
-  // The client keeps one idempotency key per plan code until an answer
-  // comes back, so a retry after a failure cannot charge twice.
+  // A retry after no answer (offline, a proxy's page) reuses the plan code's
+  // key, so it cannot charge twice. Any answer from JomCall, wallet_short or
+  // an error included, ends the key: the next attempt is a new request.
   const pick = async (code: PlanCode, date: string | null) => {
-    const choice = await choose.run(() => client.execute("choosePlan", { code }));
+    const key = keys.current.get(code) ?? crypto.randomUUID();
+    keys.current.set(code, key);
+    const choice = await choose.run(async () => {
+      try {
+        const answer = await client.execute("choosePlan", { code }, key);
+        keys.current.delete(code);
+        return answer;
+      } catch (e) {
+        if (!keepPlanKey(failureOf(e))) keys.current.delete(code);
+        throw e;
+      }
+    });
     if (!choice) return;
     setDone({ choice, code, feeSen: offer(code)?.feeSen ?? 0, from: s.plan, date });
     setConfirm(null);
@@ -125,12 +141,12 @@ export function PlanCard({
       <li>
         {p.whatsappAgent ? w("WhatsApp agent included", "Ejen WhatsApp termasuk") : w("No WhatsApp agent", "Tiada ejen WhatsApp")}
       </li>
-      {p.whatsappAgent && <li>{w("Meta bills its own fees to your business", "Meta mengebil yurannya sendiri terus kepada perniagaan anda")}</li>}
+      {p.whatsappAgent && <li>{w("Meta bills its own fees to your business", "Meta mengenakan caj sendiri terus kepada perniagaan anda")}</li>}
       {payg && (
         <li>
           {w(
             "The agent does not answer phone calls or WhatsApp on this plan. Test calls still work.",
-            "Ejen tidak menjawab panggilan telefon atau WhatsApp dengan pelan ini. Panggilan ujian masih berfungsi.",
+            "Ejen tidak menjawab panggilan telefon atau WhatsApp di bawah pelan ini. Panggilan ujian masih berfungsi.",
           )}
         </li>
       )}
@@ -168,7 +184,7 @@ export function PlanCard({
         <p className="storage-warning" role="status">
           {w(
             `Your wallet has ${formatSen(balance)}. ${name(code)} needs ${formatSen(needed)}. Top up ${x}, then start the plan.`,
-            `Dompet anda ada ${formatSen(balance)}. ${name(code)} memerlukan ${formatSen(needed)}. Tambah nilai ${x}, kemudian mula pelan.`,
+            `Dompet anda ada ${formatSen(balance)}. ${name(code)} memerlukan ${formatSen(needed)}. Tambah nilai ${x}, kemudian mulakan pelan.`,
           )}
         </p>
       );
@@ -201,7 +217,7 @@ export function PlanCard({
           <p className="storage-warning">
             {w(
               "Your plan stopped because the fee was not paid. Choose a plan to start again.",
-              "Pelan anda berhenti kerana yuran tidak dibayar. Pilih pelan untuk mula semula.",
+              "Pelan anda berhenti kerana yuran tidak dibayar. Pilih pelan untuk mulakan semula.",
             )}
           </p>
         )}
@@ -218,7 +234,7 @@ export function PlanCard({
                 {p.feeSen > 0 &&
                   (short > 0 ? (
                     <button className="button secondary-button" onClick={() => onTopUp(short)}>
-                      {w(`Top up ${formatSen(short)} to start`, `Tambah nilai ${formatSen(short)} untuk mula`)}
+                      {w(`Top up ${formatSen(short)} to start`, `Tambah nilai ${formatSen(short)} untuk bermula`)}
                     </button>
                   ) : (
                     <button
@@ -227,16 +243,16 @@ export function PlanCard({
                       disabled={choose.busy}
                       onClick={(e) => openConfirm(p.code, e.currentTarget)}
                     >
-                      {w(`Start ${name(p.code)} — ${fee} now`, `Mula ${name(p.code)} — ${fee} sekarang`)}
+                      {w(`Start ${name(p.code)} — ${fee} now`, `Mulakan ${name(p.code)} — ${fee} sekarang`)}
                     </button>
                   ))}
                 {confirm === p.code &&
                   confirmPanel(
                     w(
                       `Start ${name(p.code)} today? ${fee} will be taken from your wallet now. Next fee on ${nextDate}.`,
-                      `Mula ${name(p.code)} hari ini? ${fee} akan ditolak daripada dompet anda sekarang. Yuran seterusnya pada ${nextDate}.`,
+                      `Mulakan ${name(p.code)} hari ini? ${fee} akan ditolak daripada dompet anda sekarang. Yuran seterusnya pada ${nextDate}.`,
                     ),
-                    w("Start plan", "Mula pelan"),
+                    w("Start plan", "Mulakan pelan"),
                     () => void pick(p.code, null),
                   )}
               </li>
@@ -254,6 +270,7 @@ export function PlanCard({
   }
 
   const next = nextFee(s);
+  const firstFee = firstFeePending(s);
   const title = w(`Your plan: ${name(s.plan)} · ${formatSen(currentFee)} a month`, `Pelan anda: ${name(s.plan)} · ${formatSen(currentFee)} sebulan`);
   if (state === "unpaid") {
     const x = topUpNeeded(currentFee, s.balanceSen);
@@ -286,8 +303,17 @@ export function PlanCard({
       <h2 id="plan-card-title" ref={heading} tabIndex={-1}>
         {title}
       </h2>
+      {firstFee && (
+        <p>
+          {w(
+            `Your first fee is taken from your wallet within the hour. If the wallet is short you have ${firstFee.graceDays} days to top up.`,
+            `Yuran pertama anda akan ditolak daripada dompet dalam masa sejam. Jika baki tidak mencukupi, anda ada ${firstFee.graceDays} hari untuk tambah nilai.`,
+          )}
+        </p>
+      )}
       {result}
-      {lines(s, false, s.periodState === "charged" ? s.usedIncludedSeconds : undefined)}
+      {/* Before the first period the entitlements read zero: show the plan's own. */}
+      {lines((firstFee && offer(s.plan)) || s, false, s.periodState === "charged" ? s.usedIncludedSeconds : undefined)}
       {next?.kind === "stop" ? (
         <p>
           {w(
@@ -312,7 +338,7 @@ export function PlanCard({
       <div className="core-actions">
         {s.pendingPlan ? (
           <button className="button secondary-button" disabled={choose.busy} onClick={() => void pick(s.plan, null)}>
-            {w("Cancel change", "Batal pertukaran")}
+            {w("Cancel change", "Batalkan pertukaran")}
           </button>
         ) : (
           <button className="button secondary-button" aria-expanded={changing} onClick={() => setChanging((v) => !v)}>
