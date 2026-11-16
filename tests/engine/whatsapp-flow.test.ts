@@ -1145,14 +1145,14 @@ test("template statuses are copied from the provider", async (t) => {
       assert.deepEqual([en.status, en.provider_status], ["disabled", "NOT_FOUND"]);
 
       // Switching on: any other status asked for. The synced Malay one takes
-      // the provider's last status; the one not found stays disabled until a
-      // check finds it.
+      // the provider's last status; the one not found gets the status it had
+      // before it was switched off.
       const onMy = await patch(my, "pending");
       assert.equal(onMy.status, 200, JSON.stringify(onMy.body));
       assert.deepEqual([onMy.body.data.status, onMy.body.data.disabled_by_staff], ["approved", false]);
       const onEn = await patch(en, "approved");
       assert.equal(onEn.status, 200, JSON.stringify(onEn.body));
-      assert.deepEqual([onEn.body.data.status, onEn.body.data.disabled_by_staff], ["disabled", false]);
+      assert.deepEqual([onEn.body.data.status, onEn.body.data.disabled_by_staff], ["approved", false]);
       // Switched on, other manual changes on a synced template stay refused.
       const refused = await patch(onMy.body.data, "rejected");
       assert.equal(refused.status, 409, JSON.stringify(refused.body));
@@ -1170,6 +1170,68 @@ test("template statuses are copied from the provider", async (t) => {
       const out = await staffReply("Templat dihidupkan.");
       assert.equal(out.status, "sent");
       assert.equal(out.kind, "template");
+    });
+
+    await t.test("switching on restores the earlier status when WhatsApp's status is unknown", async () => {
+      const mk = async (name: string) => {
+        const r = await f.req("POST", "/channels/whatsapp/templates", {
+          name,
+          language: "en",
+          category: "utility",
+          purpose: "reengage",
+          body: "Hello",
+          variables: 0,
+        });
+        assert.equal(r.status, 200, JSON.stringify(r.body));
+        return r.body.data.id as string;
+      };
+      const row = async (id: string) =>
+        (await db.query("select status,provider_status,disabled_by_staff,status_before_off,revision from app.whatsapp_template where id=$1", [id])).rows[0];
+      const patch = async (id: string, status: string) => {
+        const cur = await row(id);
+        return f.req("PATCH", `/channels/whatsapp/templates/${id}`, { status, expectedRevision: cur.revision });
+      };
+      const cycle = async (id: string, status: string, provider: string | null, ask = "pending") => {
+        await db.query("update app.whatsapp_template set status=$2,provider_status=$3 where id=$1", [id, status, provider]);
+        const off = await patch(id, "disabled");
+        assert.equal(off.status, 200, JSON.stringify(off.body));
+        const mid = await row(id);
+        assert.deepEqual([mid.status, mid.disabled_by_staff, mid.status_before_off], ["disabled", true, status]);
+        const on = await patch(id, ask);
+        assert.equal(on.status, 200, JSON.stringify(on.body));
+        const end = await row(id);
+        assert.equal(end.disabled_by_staff, false);
+        assert.equal(end.status_before_off, null);
+        assert.equal("status_before_off" in on.body.data, false);
+        return end.status;
+      };
+      const a = await mk("restore_flagged");
+      assert.equal(await cycle(a, "approved", "FLAGGED"), "approved");
+      const b = await mk("restore_notfound");
+      assert.equal(await cycle(b, "approved", "NOT_FOUND"), "approved");
+      const c2 = await mk("restore_paused");
+      assert.equal(await cycle(c2, "approved", "PAUSED"), "paused");
+      const d = await mk("restore_unsynced");
+      assert.equal(await cycle(d, "pending", null, "approved"), "pending");
+      // A second switch-off while already off keeps the first earlier status.
+      const e = await mk("restore_twice");
+      await db.query("update app.whatsapp_template set status='approved' where id=$1", [e]);
+      assert.equal((await patch(e, "disabled")).status, 200);
+      assert.equal((await patch(e, "disabled")).status, 200);
+      assert.equal((await row(e)).status_before_off, "approved");
+      // A row already stuck (disabled, not by staff, status unknown at
+      // WhatsApp) can be restored by hand: approved or pending only.
+      const g = await mk("restore_stuck");
+      await db.query("update app.whatsapp_template set status='disabled',provider_status='FLAGGED',disabled_by_staff=false,status_before_off=null where id=$1", [g]);
+      assert.equal((await patch(g, "rejected")).status, 409);
+      const fix = await patch(g, "pending");
+      assert.equal(fix.status, 200, JSON.stringify(fix.body));
+      assert.deepEqual([fix.body.data.status, fix.body.data.disabled_by_staff], ["pending", false]);
+      // Not stuck when the map knows the status: still refused.
+      await db.query("update app.whatsapp_template set status='disabled',provider_status='ARCHIVED' where id=$1", [g]);
+      assert.equal((await patch(g, "pending")).status, 409);
+      // Leave no extra templates for the count checks that follow.
+      await db.query("delete from app.whatsapp_template where id=any($1)", [[a, b, c2, d, e, g]]);
     });
 
     await t.test("channels without a business account id, not connected, or without credentials are skipped", async () => {

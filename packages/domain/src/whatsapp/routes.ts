@@ -12,6 +12,7 @@ import {
   channelSave,
   conversationList,
   providerStatusMap,
+  providerStatusNotFound,
   staffReply,
   type ReplyOutlook,
   templateCreate,
@@ -398,30 +399,50 @@ export async function whatsappRoute(
       async () => {
         const cur = (
           await tx.query(
-            "select status,provider_status,disabled_by_staff,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
+            "select status,provider_status,disabled_by_staff,status_before_off,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
             [ctx.orgId, id],
           )
         ).rows[0];
         if (!cur || cur.revision !== v.expectedRevision)
           throw new AppError("CONFLICT", 409);
         let status: string = v.status,
-          byStaff: boolean = cur.disabled_by_staff;
+          byStaff: boolean = cur.disabled_by_staff,
+          before: string | null = cur.status_before_off;
+        const seen =
+          cur.provider_status !== null &&
+          cur.provider_status !== providerStatusNotFound;
+        const mapped = seen
+          ? (providerStatusMap as Record<string, string>)[cur.provider_status]
+          : undefined;
         if (v.status === "disabled") {
           // Staff can always switch a template off; a check never switches
-          // it back on.
+          // it back on. The status it had is kept to restore on switch-on.
           byStaff = true;
+          if (cur.status !== "disabled") before = cur.status;
         } else if (cur.disabled_by_staff) {
-          // Switching back on. A template seen at the provider takes the
-          // status the provider last reported; one not found there, or with
-          // a status the map does not know, stays disabled until a check
-          // reports a known status. The next hourly check confirms it (the
-          // web role cannot bring that check forward).
+          // Switching back on. A synced template takes the status the
+          // provider last reported when the map knows it; when WhatsApp's
+          // status is unknown (unmapped, or not found) it gets the status it
+          // had before it was switched off, else pending. An unsynced one
+          // gets that earlier status, else the status asked for. The next
+          // hourly check confirms it.
           byStaff = false;
-          if (cur.provider_status !== null)
-            status =
-              providerStatusMap[
-                cur.provider_status as keyof typeof providerStatusMap
-              ] ?? "disabled";
+          status =
+            cur.provider_status !== null
+              ? (mapped ?? before ?? "pending")
+              : (before ?? v.status);
+          before = null;
+        } else if (
+          cur.status === "disabled" &&
+          cur.provider_status !== null &&
+          mapped === undefined &&
+          (v.status === "approved" || v.status === "pending")
+        ) {
+          // A row stuck disabled by an earlier version of the switch-on:
+          // WhatsApp's status is unknown, so staff can restore it by hand.
+          status =
+            before === "approved" || before === "pending" ? before : v.status;
+          before = null;
         } else if (cur.provider_status !== null) {
           // A template seen at the provider takes its status from there; the
           // agent process copies it about once an hour.
@@ -429,8 +450,8 @@ export async function whatsappRoute(
         }
         const row = (
           await tx.query(
-            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
-            [ctx.orgId, id, status, byStaff],
+            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,status_before_off=$5,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
+            [ctx.orgId, id, status, byStaff, before],
           )
         ).rows[0];
         await audit(
