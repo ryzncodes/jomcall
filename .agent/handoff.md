@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-11-16 — plan picker leftovers
+
+Branch `feat/plan-leftovers`, pull request not yet open, not merged. Nothing on hosted staging.
+
+**Changed**
+- Migration `20261116130000_plan_notices.sql` (by the controller): `queue_plan_notices` queues owner emails about the fee (`PLAN_FEE_DUE`, `PLAN_FEE_UNPAID`, `PLAN_STOPPED`) on the refusal-email queue; `billing_notice_payload` carries plan, amount, balance and dates; `plan_entitlements` follows the late-clock rule.
+- Engine: the hourly run calls `queue_plan_notices` after its charging pass (failure logs `PLAN_NOTICE_RUN_FAILED`, stops nothing); `engine/src/billing-notice.ts` parses the payload with zod and writes the three emails, English then BM, RM amounts, "16 Dec 2026" / "16 Dis 2026".
+- Operator `plan` command (`scripts/billing/plan-admin.ts`) mirrors `choose_plan`: starts a first paid plan today with the fee, refuses a short wallet with exit 1 and no change, schedules changes from a paid plan. Tests compare it with `choose_plan` side by side.
+- Tests: `tests/billing/plan-notices.test.ts`, `tests/billing/plan-admin.test.ts`, `tests/engine/billing-notice.test.ts`, late-clock admission in `tests/billing/plans.test.ts`, notify timing in `tests/engine/plan-charge.test.ts`.
+- Docs: AGENTS.md, billing design §13 (leftovers note, operator command), RUNBOOK step 13.
+
+**Verified (2026-11-16, local database, Mailpit and fakes only)**
+- typecheck: pass. guards: 69 of 69 (one earlier run 68 of 69, `tests/local/model.test.mjs` "runtime ownership", intermittent). check:core: 804 of 805 (same intermittent guard test). verify-migrations: pass (58 RLS tables). build:hosted, build:mock: pass.
+
+**Next**
+- Owner: apply migration `20261116130000_plan_notices.sql` on staging BEFORE rebuilding the engine (RUNBOOK step 13); without it the hourly run logs `PLAN_NOTICE_RUN_FAILED` and sends no fee emails.
+- No real mail service was used and no person has read the emails; someone should read all three in both languages.
+- Open the pull request.
+
 ## 2026-11-16 — plan picker, after review
 
 Branch `feat/plan-picker`, pull request not yet open, not merged. Nothing on hosted staging.
