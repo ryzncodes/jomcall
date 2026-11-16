@@ -4,7 +4,8 @@
 -- agent process now asks the provider for the business account's templates
 -- about once an hour and copies each one's status onto the matching local
 -- row (same name and language). It never creates or deletes a template and
--- never changes a body. Built and tested against the fake provider only;
+-- never changes a body. A template that was seen at the provider and is
+-- later gone from its list is marked disabled. Built and tested against the fake provider only;
 -- the provider's status names other than APPROVED and PAUSED are
 -- unconfirmed, so an unknown name leaves the local status alone and is kept
 -- in provider_status for staff to see.
@@ -45,7 +46,9 @@ declare h app.whatsapp_channel;t record;v_new text;v_raw text;v_changed integer:
    and exists(select 1 from app.whatsapp_template x where x.org_id=c.org_id and x.channel_id=c.id)
   order by c.templates_synced_at nulls first,c.id limit 1 for update skip locked;
   if not found then return null;end if;
-  update app.whatsapp_channel set templates_synced_at=now() where id=h.id;
+  -- Marked as not answered until the result arrives, so a lost answer
+  -- does not read as a successful check.
+  update app.whatsapp_channel set templates_synced_at=now(),templates_sync_reason='TEMPLATE_SYNC_PENDING' where id=h.id;
   return jsonb_build_object('id',h.id,'orgId',h.org_id,'wabaId',h.waba_id,'credentials',h.credentials);
  elsif p_action='result' then
   select * into h from app.whatsapp_channel c where c.id=p_id and c.namespace=p_namespace for update;
@@ -62,10 +65,15 @@ declare h app.whatsapp_channel;t record;v_new text;v_raw text;v_changed integer:
    from app.whatsapp_template x where x.org_id=h.org_id and x.channel_id=h.id for update
   loop
    v_raw=case when t.raw~'^[A-Z_]{1,60}$' then t.raw else null end;
-   -- Not at the provider (never submitted, or deleted there): the local
-   -- status stays as staff left it.
+   -- Not at the provider. Never seen there (not submitted yet): the local
+   -- status stays as staff left it. Seen there before and now gone (deleted
+   -- at the provider): disabled, so it is no longer chosen for sending; it
+   -- comes back by itself if a later check finds it again.
    if v_raw is null then
-    update app.whatsapp_template set provider_status=null,synced_at=now() where id=t.id and provider_status is not null;
+    if t.provider_status is not null and t.provider_status<>'NOT_FOUND' then
+     update app.whatsapp_template set status='disabled',provider_status='NOT_FOUND',synced_at=now(),revision=revision+1,updated_at=now() where id=t.id;
+     v_changed=v_changed+1;
+    end if;
     continue;
    end if;
    v_seen=v_seen+1;
