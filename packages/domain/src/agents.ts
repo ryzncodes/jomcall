@@ -9,8 +9,12 @@ import {
 import { agentSettings, knowledgeInput } from "../../contracts/src/agent.ts";
 import { command, audit } from "../../db/src/receipts.ts";
 import { manager } from "./authorization.ts";
-import { freezeCore, restoreCore } from "./knowledge/snapshot.ts";
-import { loadHours } from "./knowledge/hours.ts";
+import {
+  ensureFactUnits,
+  freezeCatalogue,
+  restoreCore,
+} from "./knowledge/snapshot.ts";
+import { agentChanges, changeToken, draftFreeze } from "./agent-changes.ts";
 export async function agentsRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -21,7 +25,7 @@ export async function agentsRoute(
   query: URLSearchParams,
 ) {
   const m = path.match(
-    /^\/agents\/([^/]+)\/(draft|knowledge|publish|versions|restore)(?:\/([^/]+))?$/,
+    /^\/agents\/([^/]+)\/(draft|knowledge|publish|versions|restore|changes)(?:\/([^/]+))?$/,
   );
   if (!m) return;
   const id = uuid.parse(m[1]),
@@ -51,6 +55,7 @@ export async function agentsRoute(
   if (method === "GET") {
     await load();
     if (action === "draft") return load();
+    if (action === "changes") return agentChanges(tx, ctx.orgId, id);
     if (action === "knowledge")
       return (
         await tx.query(
@@ -84,7 +89,13 @@ export async function agentsRoute(
       .parse(body);
   else if (action === "publish" && method === "POST")
     value = z
-      .object({ expectedRevision: z.number().int().positive() })
+      .object({
+        expectedRevision: z.number().int().positive(),
+        changeToken: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+      })
       .strict()
       .parse(body);
   else if (action === "restore" && method === "POST")
@@ -159,12 +170,11 @@ export async function agentsRoute(
           (settings.recordingEnabled && !settings.recordingDisclosure.trim())
         )
           throw new AppError("DISCLOSURE_REQUIRED", 422);
-        const knowledge = (
-          await tx.query(
-            "select kind,name,content from app.knowledge_item where org_id=$1 and agent_id=$2 order by created_at,id",
-            [ctx.orgId, id],
-          )
-        ).rows;
+        const freeze = await draftFreeze(tx, ctx.orgId, id);
+        if (value.changeToken && value.changeToken !== changeToken(freeze))
+          throw new AppError("CHANGES_MOVED", 409);
+        const catalogue = await freezeCatalogue(tx, ctx.orgId, id);
+        await ensureFactUnits(tx, ctx.orgId, freeze.facts);
         version = (
           await tx.query(
             "insert into app.agent_version(org_id,agent_id,sequence,snapshot,actor_id)select $1,$2,coalesce(max(sequence),0)+1,$3,$4 from app.agent_version where org_id=$1 and agent_id=$2 returning *",
@@ -175,10 +185,13 @@ export async function agentsRoute(
               // set (by id and hash) are part of every published version, and
               // so are the hours of every active branch.
               {
-                settings,
-                knowledge,
-                ...(await freezeCore(tx, ctx.orgId, id)),
-                hours: await loadHours(tx, ctx.orgId),
+                settings: freeze.settings,
+                knowledge: freeze.knowledge,
+                packs: freeze.packs,
+                facts: freeze.facts,
+                rules: freeze.rules,
+                catalogue,
+                hours: freeze.hours,
               },
               ctx.identity.userId,
             ],

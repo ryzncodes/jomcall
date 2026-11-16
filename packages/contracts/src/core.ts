@@ -174,6 +174,21 @@ export type Version = {
     hours?: FrozenHours[];
   };
 };
+export type AgentChange = {
+  kind: "setting" | "knowledge" | "pack" | "fact" | "rule" | "price" | "hours";
+  op: "added" | "changed" | "removed";
+  // setting: the settings key; pack: the pack id; hours: the branch name;
+  // others: the row's name, title, item or the rule text (first 120 characters).
+  label: string;
+  // Present on a collapsed line: how many rows it stands for.
+  count?: number;
+};
+export type AgentChanges = {
+  count: number;
+  token: string;
+  published: boolean;
+  changes: AgentChange[];
+};
 export type Contact = {
   id: string;
   org_id: string;
@@ -453,10 +468,14 @@ export const commands = {
       .strict(),
     out<Agent>(),
   ),
+  agentChanges: route("GET", "/agents/:id/changes", id, out<AgentChanges>()),
   publish: route(
     "POST",
     "/agents/:id/publish",
-    id.extend(revision),
+    id.extend({
+      ...revision,
+      changeToken: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    }),
     out<Version>(),
   ),
   versions: route(
