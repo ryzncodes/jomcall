@@ -32,7 +32,13 @@ grant select(templates_synced_at,templates_sync_reason) on app.whatsapp_channel 
 
 -- Staff can always switch a template off; a check never switches it back on.
 alter table app.whatsapp_template add column if not exists disabled_by_staff boolean not null default false;
-grant update(disabled_by_staff) on app.whatsapp_template to jomcall_app;
+-- The status a template had when staff switched it off, so switching it on
+-- can put it back when the provider's own status is unknown.
+alter table app.whatsapp_template add column if not exists status_before_off text;
+alter table app.whatsapp_template drop constraint if exists whatsapp_template_status_before_off_check;
+alter table app.whatsapp_template add constraint whatsapp_template_status_before_off_check
+ check(status_before_off is null or status_before_off in('draft','pending','approved','rejected','paused'));
+grant update(disabled_by_staff,status_before_off) on app.whatsapp_template to jomcall_app;
 
 grant create on schema app_private to jomcall_agent_jobs;
 -- Agent process only.
