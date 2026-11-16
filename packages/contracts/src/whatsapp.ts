@@ -89,6 +89,9 @@ export const mappedProviderStatuses = [
   "PENDING_DELETION",
   "LIMIT_EXCEEDED",
 ] as const;
+// Stored in `provider_status` when a template that was seen at the provider
+// is gone from a later list (the database also sets its status to disabled).
+export const providerStatusNotFound = "NOT_FOUND";
 export type WhatsAppTemplate = {
   id: string;
   name: string;

@@ -7,6 +7,7 @@ import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import {
   mappedProviderStatuses,
+  providerStatusNotFound,
   type WhatsAppOverview,
   type WhatsAppTemplate,
 } from "../../../packages/contracts/src/whatsapp";
@@ -425,7 +426,15 @@ function Templates({
                 <strong>{t.name}</strong> <code>{t.language}</code>{" "}
                 <span className="remaining-chip">{w(s[0], s[1])}</span>
                 <p>{t.body}</p>
-                {synced && (
+                {synced && t.provider_status === providerStatusNotFound && (
+                  <p className="editor-note">
+                    {w(
+                      "No longer found at WhatsApp",
+                      "Tidak lagi ditemui di WhatsApp",
+                    )}
+                  </p>
+                )}
+                {synced && t.provider_status !== providerStatusNotFound && (
                   <p className="editor-note">
                     {t.synced_at
                       ? w(

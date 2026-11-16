@@ -22,7 +22,7 @@ import {
   decideSend,
   type SendFacts,
 } from "../../packages/domain/src/whatsapp/policy.ts";
-import { mappedProviderStatuses } from "../../packages/contracts/src/whatsapp.ts";
+import { mappedProviderStatuses, providerStatusNotFound } from "../../packages/contracts/src/whatsapp.ts";
 
 const secret = "test-app-secret-0123456789";
 
@@ -416,6 +416,15 @@ test("the screen's list of mapped provider statuses matches the sync migration",
   const block = sql.slice(sql.indexOf("v_new=case v_raw"), sql.indexOf("else t.status end"));
   const names = [...block.matchAll(/when '([A-Z_]+)'/g)].map((m) => m[1]).sort();
   assert.deepEqual(names, [...mappedProviderStatuses].sort());
+});
+
+test("the screen's NOT_FOUND marker is the one the sync migration writes, and is not a mapped status", () => {
+  const sql = readFileSync(
+    "supabase/migrations/20261116150000_whatsapp_template_sync.sql",
+    "utf8",
+  );
+  assert.ok(sql.includes(`provider_status='${providerStatusNotFound}'`));
+  assert.ok(!(mappedProviderStatuses as readonly string[]).includes(providerStatusNotFound));
 });
 
 const now = "2026-11-14T10:00:00.000Z";

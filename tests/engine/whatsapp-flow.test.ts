@@ -790,7 +790,7 @@ test("template statuses are copied from the provider", async (t) => {
       assert.equal(my.provider_status, "APPROVED");
       assert.ok(my.synced_at);
       assert.equal(my.revision, ms.revision + 1);
-      // Absent at the provider: untouched.
+      // Never seen at the provider and absent from its list: untouched.
       assert.equal(en.status, "pending");
       assert.equal(en.provider_status, null);
       assert.equal(en.revision, absent.revision);
@@ -889,6 +889,91 @@ test("template statuses are copied from the provider", async (t) => {
       assert.equal(await f.worker.syncTemplatesOne(), true);
       assert.equal((await channel()).templates_sync_reason, null);
       assert.equal((await templates())[1].status, "approved");
+    });
+
+    await t.test("a claimed check reads as pending until its result arrives, then clears", async () => {
+      await due();
+      const claim = (await db.query("select app_private.whatsapp_template_sync('claim',$1) as value", [f.h.namespace]))
+        .rows[0].value;
+      assert.ok(claim, "the channel is claimed");
+      assert.equal((await channel()).templates_sync_reason, "TEMPLATE_SYNC_PENDING");
+      assert.equal(
+        (await f.req("GET", "/channels/whatsapp")).body.data.channel.templates_sync_reason,
+        "TEMPLATE_SYNC_PENDING",
+      );
+      await db.query("select app_private.whatsapp_template_sync('result',$1,$2,$3)", [
+        f.h.namespace,
+        claim.id,
+        JSON.stringify({ ok: true, templates: [{ name: tplName, language: "ms", status: "APPROVED" }] }),
+      ]);
+      assert.equal((await channel()).templates_sync_reason, null);
+      // A failed result replaces the pending marker with its reason.
+      await due();
+      const again = (await db.query("select app_private.whatsapp_template_sync('claim',$1) as value", [f.h.namespace]))
+        .rows[0].value;
+      await db.query("select app_private.whatsapp_template_sync('result',$1,$2,$3)", [
+        f.h.namespace,
+        again.id,
+        JSON.stringify({ ok: false, reason: "META_190" }),
+      ]);
+      assert.equal((await channel()).templates_sync_reason, "META_190");
+    });
+
+    await t.test("a template seen at the provider and then gone is disabled, then comes back", async () => {
+      // Both templates are seen first (the English one was never seen before).
+      await due();
+      f.provider.setTemplates([
+        { name: tplName, language: "ms", status: "APPROVED" },
+        { name: tplName, language: "en", status: "APPROVED" },
+      ]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      let [en, my] = await templates();
+      assert.deepEqual([en.status, en.provider_status, my.status], ["approved", "APPROVED", "approved"]);
+      const seenRevision = en.revision;
+
+      // Gone from the list: disabled and marked, revision bumped.
+      await due();
+      f.provider.setTemplates([]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      [en, my] = await templates();
+      for (const x of [en, my]) {
+        assert.equal(x.status, "disabled");
+        assert.equal(x.provider_status, "NOT_FOUND");
+        assert.ok(x.synced_at);
+      }
+      assert.equal(en.revision, seenRevision + 1);
+      assert.equal((await channel()).templates_sync_reason, null);
+      // The screen's read carries the marker.
+      const o = (await f.req("GET", "/channels/whatsapp")).body.data;
+      assert.equal(o.templates.find((x: any) => x.language === "en").provider_status, "NOT_FOUND");
+      // A second check that still finds nothing changes nothing more.
+      await due();
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      assert.equal((await templates())[0].revision, seenRevision + 1);
+
+      // The outside-window fallback no longer picks either template.
+      await f.say("Hai lagi");
+      await f.worker.tick();
+      c = await f.conversation();
+      await expire();
+      const sentBefore = f.provider.sent.length;
+      const blocked = await staffReply("Tiada templat.");
+      assert.equal(blocked.status, "blocked");
+      assert.equal(blocked.error_code, "WINDOW_CLOSED");
+      assert.equal(f.provider.sent.length, sentBefore);
+
+      // Present again: mapped normally.
+      await due();
+      f.provider.setTemplates([{ name: tplName, language: "ms", status: "APPROVED" }]);
+      assert.equal(await f.worker.syncTemplatesOne(), true);
+      [en, my] = await templates();
+      assert.equal(my.status, "approved");
+      assert.equal(my.provider_status, "APPROVED");
+      // The English one is still gone: unchanged by the second NOT_FOUND pass.
+      assert.deepEqual([en.status, en.provider_status], ["disabled", "NOT_FOUND"]);
+      const out = await staffReply("Sudah ada templat.");
+      assert.equal(out.status, "sent");
+      assert.equal(out.kind, "template");
     });
 
     await t.test("channels without a business account id, not connected, or without credentials are skipped", async () => {
