@@ -22,6 +22,36 @@ const payload = z
 function dsn(name: "WORKER_DATABASE_URL" | "QUEUE_DATABASE_URL") {
   return databaseConnection(process.env[name], name, process.env, "LOCAL_ONLY");
 }
+// Monthly plan fees (billing design §13). app_private.charge_due_plans
+// starts or retries the current period of every organization that has a
+// plan. It takes no namespace argument because plans are per database, not
+// per queue namespace: each environment's engine runs it on its own
+// database. Safe to run from several engines at once (one fee per period).
+export type PlanChargeOptions = {
+  // Delay before the first run after start, the gap after a run that
+  // worked, and the gap after one that failed.
+  firstAfterMs?: number;
+  everyMs?: number;
+  retryMs?: number;
+  now?: () => number;
+  run?: (pool: pg.Pool) => Promise<void>;
+};
+async function chargeDuePlans(pool: pg.Pool) {
+  const c = await pool.connect();
+  try {
+    await c.query("begin");
+    // An organization whose wallet lock is held (a call starting) is
+    // skipped after a second and retried by the next run.
+    await c.query("set local lock_timeout='1s'");
+    await c.query("select app_private.charge_due_plans()");
+    await c.query("commit");
+  } catch (e) {
+    await c.query("rollback").catch(() => {});
+    throw e;
+  } finally {
+    c.release();
+  }
+}
 export class Engine {
   private pool: pg.Pool;
   private boss: PgBoss;
@@ -31,8 +61,22 @@ export class Engine {
   lastTickAt = 0;
   private closed = false;
   private reconciliationCursor: string | null = null;
-  private constructor(readonly namespace: string) {
+  private plans: Required<PlanChargeOptions>;
+  private plansDueAt: number;
+  private constructor(
+    readonly namespace: string,
+    plans: PlanChargeOptions = {},
+  ) {
     validNamespace(namespace);
+    this.plans = {
+      firstAfterMs: 60_000,
+      everyMs: 3_600_000,
+      retryMs: 300_000,
+      now: Date.now,
+      run: chargeDuePlans,
+      ...plans,
+    };
+    this.plansDueAt = this.plans.now() + this.plans.firstAfterMs;
     // Local mode: Mailpit on loopback. Hosted mode: SMTP with TLS, or
     // Cloudflare Email Service when JOMCALL_MAIL_PROVIDER=cloudflare.
     this.mail = createMailSender();
@@ -49,8 +93,11 @@ export class Engine {
     this.boss.on("error", () => console.error("QUEUE_ERROR"));
     this.queue = "core_" + namespace;
   }
-  static async create(namespace = "local") {
-    const e = new Engine(namespace);
+  static async create(
+    namespace = "local",
+    options: { plans?: PlanChargeOptions } = {},
+  ) {
+    const e = new Engine(namespace, options.plans);
     try {
       await e.boss.start();
       await e.boss.createQueue(e.queue, {
@@ -86,8 +133,22 @@ export class Engine {
     this.reconciliationCursor =
       pending.rows.length === 20 ? pending.rows.at(-1)!.id : null;
   }
+  // At most once per interval; a failure is logged and retried sooner, and
+  // never stops the tick.
+  private async chargeDuePlans() {
+    const now = this.plans.now();
+    if (now < this.plansDueAt) return;
+    try {
+      await this.plans.run(this.pool);
+      this.plansDueAt = now + this.plans.everyMs;
+    } catch {
+      this.plansDueAt = now + this.plans.retryMs;
+      console.error("PLAN_CHARGE_RUN_FAILED");
+    }
+  }
   async tick(failAt?: "after-enqueue" | "before-commit") {
     if (failAt && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
+    await this.chargeDuePlans();
     await this.pool.query("select app_private.maintain_jobs($1)", [
       this.namespace,
     ]);
