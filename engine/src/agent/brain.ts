@@ -36,6 +36,10 @@ import {
   type CoreSnapshotFull,
   type CoreToolResult,
   type KnowledgeAccess,
+  TRUNCATED_RETRY,
+  typedLanguageReminder,
+  typedShownResult,
+  typedToolTail,
 } from "../../../packages/domain/src/knowledge/tools.ts";
 import {
   typedSystemPrompt,
@@ -163,12 +167,14 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
   }
   const usage = [];
   let steps = 0;
-  for (let n = 0; n < 3; n++) {
-    signal.throwIfAborted();
+  // One retry per turn when a reply is cut off at the output limit. A retry is
+  // another model call, not a tool step, so the tool limit is unchanged.
+  let retried = false;
+  const generate = async (sent: ModelInput["messages"]) => {
     let abort!: () => void;
-    const decision = await Promise.race([
+    return Promise.race([
       input.model.generate(
-        core ? { messages, decision: "core" } : { messages },
+        core ? { messages: sent, decision: "core" } : { messages: sent },
         signal,
       ),
       new Promise<never>((_, reject) => {
@@ -176,6 +182,18 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
         signal.addEventListener("abort", abort, { once: true });
       }),
     ]).finally(() => signal.removeEventListener("abort", abort));
+  };
+  for (let n = 0; n < 3; n++) {
+    signal.throwIfAborted();
+    let decision;
+    try {
+      decision = await generate(messages);
+    } catch (e) {
+      if (retried || !(e instanceof Error) || e.message !== "MODEL_OUTPUT_TRUNCATED") throw e;
+      retried = true;
+      signal.throwIfAborted();
+      decision = await generate([...messages, { role: "user", content: TRUNCATED_RETRY }]);
+    }
     if (input.model.usage) usage.push({ ...input.model.usage });
     const parsed = core
       ? parseCoreDecision(decision)
@@ -188,7 +206,7 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
       const result: CoreToolResult = { kind: "catalogue", found: false, items: [], invalid: true, next: BAD_LOOKUP_NEXT };
       calls.push({ call, result });
       optional.push(...latest);
-      latest = toolTurn({ kind: "tool", call }, result, "Now answer the original question using this result, or take a message.");
+      latest = toolTurn({ kind: "tool", call }, result, "Now answer the original question using this result, or take a message." + typedLanguageReminder(input.text));
       messages = packConversationInput(required, optional, latest, input.history, budget).messages;
       continue;
     }
@@ -221,11 +239,16 @@ export async function runTextBrain(input: BrainInput): Promise<BrainAnswer> {
     }
     if (result.kind === "availability")
       shown = { kind: "availability", items: result.items.slice(0, 5) };
+    // Knowledge-core snapshots: a compact proposal and a tail that repeats the
+    // language and wording rules. Older snapshots keep the old messages.
+    if (core && result.kind === "proposal") shown = typedShownResult(result);
     optional.push(...latest);
     latest = toolTurn(
       parsed,
       shown,
-      "Now answer the original question using this result, or make the remaining booking proposal. Do not repeat a completed tool.",
+      core
+        ? typedToolTail(input.text, result.kind === "proposal")
+        : "Now answer the original question using this result, or make the remaining booking proposal. Do not repeat a completed tool.",
     );
     messages = packConversationInput(
       required,
