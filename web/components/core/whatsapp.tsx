@@ -117,8 +117,12 @@ function WhatsAppBody({
             {readiness.provider === "fake" && (
               <p className="editor-note">
                 {w(
-                  "Practice mode: messages go to a stand-in on this computer, not to WhatsApp. Use npm run whatsapp:simulate to send a test message.",
-                  "Mod latihan: mesej dihantar kepada pengganti pada komputer ini, bukan kepada WhatsApp. Guna npm run whatsapp:simulate untuk menghantar mesej ujian.",
+                  HOSTED
+                    ? "Practice mode: messages go to a stand-in, not to WhatsApp."
+                    : "Practice mode: messages go to a stand-in on this computer, not to WhatsApp. Use npm run whatsapp:simulate to send a test message.",
+                  HOSTED
+                    ? "Mod latihan: mesej dihantar kepada pengganti, bukan kepada WhatsApp."
+                    : "Mod latihan: mesej dihantar kepada pengganti pada komputer ini, bukan kepada WhatsApp. Guna npm run whatsapp:simulate untuk menghantar mesej ujian.",
                 )}
               </p>
             )}

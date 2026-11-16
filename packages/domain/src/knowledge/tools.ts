@@ -64,12 +64,70 @@ const NO_EVIDENCE_NEXT =
 
 export const coreToolRules =
   " lookup_catalogue {\"item\",\"code\",\"fits\"} for prices, stock and items in the catalogue (use \"\" for an unknown argument; code is a part number or code the customer said, fits is a model or size); take_message {\"text\",\"unanswered\"}: unanswered is true when you are taking the message because the business's knowledge did not answer the question.";
+// Typed path, knowledge-core snapshots only (2026-11-16). The hosted model
+// answered English customers in Bahasa Melayu after a tool result, and said a
+// recorded proposal was "sent" ("dihantar", "dah hantar"). These two sentences
+// replace their older wording inside coreAgentRules (the second also takes in
+// the older "Never claim" sentence, to stay inside the small local model's
+// input budget). agentRules itself is unchanged, so snapshots from before the
+// knowledge core keep their prompt.
+// The banned words sit in one clause after "Never", which claimsFalseSuccess
+// reads as a denial.
+export const typedLanguageRule =
+  "LANGUAGE: reply in the language of the customer's latest message (English, Bahasa Melayu, Manglish or Mandarin), also after tool results, even when facts, rules, names, evidence or tool results use another; never repeat the reply in a second language.";
+export const typedProposalRule =
+  "Never claim an appointment is booked or confirmed. After a proposal result, say only that it is noted for staff to review and not confirmed; never say sent or submitted or forwarded or hantar or dihantar or 已发送.";
+const OLD_LANGUAGE_RULE =
+  "Reply only in the language of the latest customer message, even when evidence or business configuration is in another language; never repeat the reply in a second language.";
+const OLD_CLAIM_RULE =
+  " Never claim an appointment is booked/confirmed or a message/call was sent.";
+const OLD_PROPOSAL_RULE =
+  "After a proposal result, return an answer explaining it awaits human review.";
 // Typed rules: the shared text, the extended tool list and the not-found path.
 export const coreAgentRules =
-  agentRules.replace(
-    ' take_message {"text"} when asked to leave a message;',
-    ' take_message {"text","unanswered"} when asked to leave a message;',
-  ) + coreToolRules;
+  agentRules
+    .replace(OLD_LANGUAGE_RULE, typedLanguageRule)
+    .replace(OLD_CLAIM_RULE, "")
+    .replace(OLD_PROPOSAL_RULE, typedProposalRule)
+    .replace(
+      ' take_message {"text"} when asked to leave a message;',
+      ' take_message {"text","unanswered"} when asked to leave a message;',
+    ) + coreToolRules;
+
+// The user message that follows a tool result on the typed path (knowledge-core
+// snapshots). It repeats the language rule next to the answer, quoting the
+// start of the customer's message, and after a proposal it gives the wording.
+// The tool result itself is shown in a compact form (see typedShownResult).
+export function typedLanguageReminder(customerText: string): string {
+  const quote = Array.from(customerText.replace(/[\s\p{Cc}\p{Cf}\u2028\u2029]+/gu, " ").trim())
+    .slice(0, 40)
+    .join("");
+  return ` Reply in the language of the customer's message (it begins ${JSON.stringify(quote)}).`;
+}
+export function typedToolTail(customerText: string, proposal: boolean): string {
+  return (
+    (proposal
+      ? "Noted for staff to review, not confirmed. Say only that, in at most two short sentences; never say sent or submitted or forwarded or hantar or dihantar or 已发送."
+      : "Now answer the original question using this result, or make the remaining booking proposal. Do not repeat a completed tool.") +
+    typedLanguageReminder(customerText)
+  );
+}
+// A proposal result as the typed model sees it: no ids, and a status the
+// model can repeat safely. The stored step keeps the full result.
+export function typedShownResult(result: Extract<ToolResult, { kind: "proposal" }>) {
+  const p = result.proposal;
+  return {
+    kind: "proposal",
+    recorded: p.kind,
+    status: "noted_for_staff_review",
+    confirmed: false,
+    details: p.kind === "booking" ? { title: p.details.title, startAt: p.details.startAt } : p.details,
+  };
+}
+// Sent once when the model's reply was cut off (output limit): the same step
+// is asked again, without a new tool step.
+export const TRUNCATED_RETRY =
+  "Your previous reply was cut off. Return the JSON decision again, with an answer of at most two short sentences.";
 export const coreVoiceRules =
   voiceRules +
   " Use lookup_catalogue for prices, stock and items in the catalogue; pass an empty string for an argument you do not know. When the knowledge does not answer, say you will ask staff and call take_message with unanswered true.";

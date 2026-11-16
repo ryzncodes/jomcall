@@ -1,4 +1,5 @@
 "use client";
+import { HOSTED } from "@/lib/hosted";
 import { useEffect, useState } from "react";
 import type { SessionDetail } from "../../../packages/contracts/src/agent-test";
 import { useWords } from "./state";
@@ -71,13 +72,15 @@ export function TestTranscript({
                 <p role="status">
                   {t.state === "queued"
                     ? w(
-                        "Waiting for local worker…",
-                        "Menunggu pekerja setempat…",
+                        HOSTED ? "Waiting for the agent…" : "Waiting for local worker…",
+                        HOSTED ? "Menunggu ejen…" : "Menunggu pekerja setempat…",
                       )
                     : t.state === "running"
                       ? w(
-                          "Thinking with local model…",
-                          "Sedang memproses dengan model setempat…",
+                          HOSTED ? "Thinking…" : "Thinking with local model…",
+                          HOSTED
+                            ? "Sedang memproses…"
+                            : "Sedang memproses dengan model setempat…",
                         )
                       : t.state === "cancelled"
                         ? w(
