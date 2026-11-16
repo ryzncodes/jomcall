@@ -588,6 +588,9 @@ function ConversationView({
     changed();
   };
   const forbidden = error instanceof CoreError && error.status === 403;
+  // The "JomCall does not download files" line goes under the first media
+  // message in view only.
+  const firstMediaId = detail?.messages.find((m) => m.media)?.id;
   const replyRefusal =
     replyAction.error instanceof CoreError &&
     replyAction.error.status === 409 &&
@@ -707,7 +710,12 @@ function ConversationView({
           )}
           <ol className="wa-messages">
             {detail.messages.map((m) => (
-              <Message key={m.id} m={m} time={time} />
+              <Message
+                key={m.id}
+                m={m}
+                time={time}
+                mediaHelp={m.id === firstMediaId}
+              />
             ))}
           </ol>
           {detail.state === "closed" ? (
@@ -888,15 +896,40 @@ function Compliance({
   );
 }
 
+// Names the kind of file a customer sent. Plain wording calls rather than a
+// wording table: "Video" is the same word in English and BM.
+function useMediaLabel() {
+  const w = useWords();
+  return (media: NonNullable<ChatMessage["media"]>) => {
+    switch (media.kind) {
+      case "image":
+        return w("Photo", "Gambar");
+      case "audio":
+        return w("Voice or audio message", "Mesej suara atau audio");
+      case "video":
+        return w("Video", "Video");
+      case "sticker":
+        return w("Sticker", "Pelekat");
+      default:
+        return media.filename
+          ? w(`Document: ${media.filename}`, `Dokumen: ${media.filename}`)
+          : w("Document", "Dokumen");
+    }
+  };
+}
+
 function Message({
   m,
   time,
+  mediaHelp,
 }: {
   m: ChatMessage;
   time: (iso: string, full?: boolean) => string;
+  mediaHelp: boolean;
 }) {
   const w = useWords(),
-    say = usePair();
+    say = usePair(),
+    mediaLabel = useMediaLabel();
   const notice = m.notice ? noticeWords[m.notice] : null;
   const why =
     m.status === "blocked" || m.status === "failed"
@@ -922,7 +955,32 @@ function Message({
           {say(author)} ·{" "}
           <time dateTime={m.created_at}>{time(m.created_at, true)}</time>
         </span>
-        <p dir="auto">{m.body}</p>
+        {m.media && (
+          <p dir="auto">
+            <strong>{mediaLabel(m.media)}</strong>
+          </p>
+        )}
+        {m.kind === "unsupported" && m.direction === "inbound" && (
+          <p>
+            <strong>
+              {w(
+                "Message type JomCall cannot show",
+                "Jenis mesej yang JomCall tidak dapat paparkan",
+              )}
+            </strong>
+          </p>
+        )}
+        {(m.body || (!m.media && m.kind !== "unsupported")) && (
+          <p dir="auto">{m.body}</p>
+        )}
+        {mediaHelp && (
+          <span className="wa-status">
+            {w(
+              "JomCall does not download files. Open WhatsApp on the business phone to see it.",
+              "JomCall tidak memuat turun fail. Buka WhatsApp pada telefon perniagaan untuk melihatnya.",
+            )}
+          </span>
+        )}
         {m.reply_request && (
           <span className="wa-why">
             {w(

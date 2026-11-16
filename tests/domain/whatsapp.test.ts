@@ -123,6 +123,66 @@ test("webhook parsing keys deliveries for idempotency and skips unknown shapes",
   );
 });
 
+test("webhook parsing names each media type, keeps non-text types, and drops reactions", () => {
+  const deliver = (messages: Record<string, unknown>[]) => ({
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "0",
+        changes: [
+          {
+            field: "messages",
+            value: {
+              metadata: { phone_number_id: "100000001" },
+              contacts: [{ profile: { name: "Aina Contoh" }, wa_id: "60123456789" }],
+              messages: messages.map((m, i) => ({
+                from: "60123456789",
+                id: "wamid.M" + i,
+                timestamp: "1700000000",
+                ...m,
+              })),
+            },
+          },
+        ],
+      },
+    ],
+  });
+  const media = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    mime_type: "application/octet-stream",
+    sha256: "c2hhLWZha2U=",
+    ...extra,
+  });
+  const events = parseWebhook(
+    deliver([
+      { type: "image", image: media("MEDIA1", { mime_type: "image/jpeg", caption: "Rosak macam ni" }) },
+      { type: "audio", audio: media("MEDIA2", { mime_type: "audio/ogg; codecs=opus", voice: true }) },
+      { type: "document", document: media("MEDIA3", { mime_type: "application/pdf", filename: "sebut-harga.pdf" }) },
+      { type: "sticker", sticker: media("MEDIA4", { mime_type: "image/webp", animated: false }) },
+      { type: "location", location: { latitude: 3.139, longitude: 101.6869, name: "Contoh" } },
+      { type: "reaction", reaction: { message_id: "wamid.OUT1", emoji: "👍" } },
+    ]),
+  );
+  // The reaction (sixth message) is not stored at all.
+  assert.deepEqual(
+    events.map((e) => e.key),
+    ["m:wamid.M0", "m:wamid.M1", "m:wamid.M2", "m:wamid.M3", "m:wamid.M4"],
+  );
+  const [image, audio, doc, sticker, location] = events.map((e) => e.payload as any);
+  assert.equal(image.type, "image");
+  assert.equal(image.media.kind, "image");
+  assert.equal(image.media.caption, "Rosak macam ni");
+  assert.equal(image.text, undefined);
+  assert.equal(audio.media.kind, "audio");
+  assert.equal(audio.media.mimeType, "audio/ogg; codecs=opus");
+  assert.equal(doc.media.kind, "document");
+  assert.equal(doc.media.filename, "sebut-harga.pdf");
+  assert.equal(sticker.media.kind, "sticker");
+  assert.equal(location.type, "location");
+  assert.equal(location.media, undefined);
+  assert.deepEqual(parseWebhook(deliver([{ type: "reaction", reaction: { message_id: "wamid.X", emoji: "" } }])), []);
+});
+
 test("credentials are sealed per organization and never open elsewhere", () => {
   const key = randomBytes(32).toString("hex");
   const sealed = sealCredentials(

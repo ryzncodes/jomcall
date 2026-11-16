@@ -28,6 +28,7 @@ import {
   consentServiceSql,
   fallbackSql,
 } from "./send-facts-sql.ts";
+import { mediaFactsSql } from "./media-sql.ts";
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
@@ -186,7 +187,8 @@ async function conversationDetail(
         `select * from (select m.id,m.direction,m.author,m.kind,m.body,m.status,m.error_code,m.created_at,
            case when t.kind like 'notice\\_%' then t.kind end as notice,
            (m.id=c.disclosure_message_id) is true as disclosure,
-           (m.kind='template' and p.purpose='reengage') is true as reply_request
+           (m.kind='template' and p.purpose='reengage') is true as reply_request,
+           ${mediaFactsSql("m")} as media
           from app.message m join app.conversation c on(c.org_id=m.org_id and c.id=m.conversation_id)
           left join app.conversation_turn t on(t.org_id=m.org_id and t.id=m.turn_id)
           left join app.whatsapp_template p on(p.org_id=m.org_id and p.id=m.template_id)

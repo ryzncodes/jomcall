@@ -142,6 +142,13 @@ export type ChatMessage = {
   // True when the reply-request template went out in place of this text, so
   // the customer never saw the text itself.
   reply_request: boolean;
+  // For a customer's photo, voice note, video, document or sticker: its kind
+  // and, when sent, the file name. Nothing else about the file reaches the
+  // browser, and JomCall never downloads it.
+  media: {
+    kind: "image" | "audio" | "video" | "document" | "sticker";
+    filename?: string;
+  } | null;
 };
 // What the send rules say about a plain staff text right now, read on the
 // server from the same facts the agent process uses. The agent process

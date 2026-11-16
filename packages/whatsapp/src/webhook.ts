@@ -83,7 +83,7 @@ const mediaTypes = ["image", "audio", "video", "document", "sticker"];
 
 // Reduces a webhook body to the facts JomCall stores. Anything it does not
 // recognise is skipped, never guessed. Media is recorded by ID and type only;
-// nothing is downloaded.
+// nothing is downloaded. Reactions are dropped.
 export function parseWebhook(body: unknown): IntakeEvent[] {
   const root = record(body);
   if (root.object !== "whatsapp_business_account") return [];
@@ -105,6 +105,10 @@ export function parseWebhook(body: unknown): IntakeEvent[] {
         const id = text(m.id, 256);
         if (!id || events.length >= maxEvents) continue;
         const type = text(m.type, 40);
+        // A reaction (an emoji on an earlier message) is not a message to
+        // answer: nothing is stored, so no notice goes out and nobody is
+        // alerted.
+        if (type === "reaction") continue;
         const media = mediaTypes.includes(type) ? record(m[type]) : null;
         // A tapped button or list row is the customer's answer in words.
         const reply = record(record(m.interactive).button_reply).title
@@ -138,6 +142,9 @@ export function parseWebhook(body: unknown): IntakeEvent[] {
             ...(media
               ? {
                   media: {
+                    // Which of the media types it is; the stored row keeps
+                    // this, as the type is not otherwise recorded.
+                    kind: type,
                     id: text(media.id, 200),
                     mimeType: text(media.mime_type, 100),
                     sha256: text(media.sha256, 100),

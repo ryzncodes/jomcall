@@ -176,6 +176,29 @@ async function setup(opts: { core?: boolean; entitled?: boolean; token?: boolean
   };
 }
 
+// A customer's non-text message in Meta's shape. Fictional ids only.
+const mediaDelivery = (id: string, message: Record<string, unknown>) => ({
+  object: "whatsapp_business_account",
+  entry: [
+    {
+      id: "0",
+      changes: [
+        {
+          field: "messages",
+          value: {
+            messaging_product: "whatsapp",
+            metadata: { display_phone_number: "", phone_number_id: phone },
+            contacts: [{ profile: { name: "Aina Contoh" }, wa_id: customer }],
+            messages: [
+              { from: customer, id, timestamp: String(Math.floor(Date.now() / 1000)), ...message },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
+
 test("WhatsApp flow against the local database", async (t) => {
   const f = await setup();
   try {
@@ -496,6 +519,19 @@ test("WhatsApp flow against the local database", async (t) => {
     await t.test(
       "PDPA export includes the conversation; deletion removes it",
       async () => {
+        // A document from the customer: the export says it existed.
+        await f.deliver(
+          mediaDelivery("wamid.DOC" + randomUUID(), {
+            type: "document",
+            document: {
+              id: "MEDIAFAKE77",
+              mime_type: "application/pdf",
+              sha256: "c2hhLWZha2U=",
+              filename: "sebut-harga.pdf",
+            },
+          }),
+        );
+        await f.worker.tick();
         const c = await f.conversation();
         const contact = (await f.req("GET", `/contacts/${c.contact_id}`)).body
           .data;
@@ -516,6 +552,12 @@ test("WhatsApp flow against the local database", async (t) => {
         assert.equal(r.status, 200);
         assert.ok(r.body.conversations.length >= 1);
         assert.ok(r.body.conversations[0].messages.length >= 1);
+        const exported = r.body.conversations.flatMap((x: any) => x.messages);
+        const doc = exported.find((m: any) => m.kind === "media");
+        assert.deepEqual(doc.media, { kind: "document", filename: "sebut-harga.pdf" });
+        assert.ok(exported.filter((m: any) => m.kind !== "media").every((m: any) => m.media === null));
+        // Facts only: no provider media id, hash or file type.
+        assert.doesNotMatch(JSON.stringify(r.body.conversations), /MEDIAFAKE77|c2hhLWZha2U=|application\/pdf/);
         await f.h.cleanup.query("delete from app.contact where id=$1", [
           c.contact_id,
         ]);
@@ -900,6 +942,73 @@ test("template statuses are copied from the provider", async (t) => {
     await t.test("no template was created or deleted by any sync", async () => {
       assert.equal(await count(), 2);
     });
+  } finally {
+    await f.close();
+  }
+});
+
+// ---- media and reactions (no download: design open item O4) ---------------
+test("a captionless photo is named in the inbox, alerts staff and gets the notice once; a reaction stores nothing", async () => {
+  const f = await setup();
+  try {
+    f.answer([{ kind: "answer", text: "MODEL SHOULD NOT ANSWER", citations: [] }]);
+    const photo = await f.deliver(
+      mediaDelivery("wamid.IMG" + randomUUID(), {
+        type: "image",
+        image: { id: "MEDIAFAKE01", mime_type: "image/jpeg", sha256: "c2hhLWZha2U=" },
+      }),
+    );
+    assert.equal(photo.status, 200);
+    await f.worker.tick();
+    await f.worker.tick();
+    const c = await f.conversation();
+    assert.equal(c.needs_attention, true);
+    assert.equal(c.attention_reason, "UNSUPPORTED_MESSAGE");
+    const detail = (await f.req("GET", `/conversations/${c.id}`)).body.data;
+    const inbound = detail.messages.filter((m: any) => m.direction === "inbound");
+    assert.equal(inbound.length, 1);
+    assert.equal(inbound[0].kind, "media");
+    assert.equal(inbound[0].body, "");
+    assert.deepEqual(inbound[0].media, { kind: "image" });
+    assert.doesNotMatch(JSON.stringify(detail), /MEDIAFAKE01|c2hhLWZha2U=|image\/jpeg/);
+    // The existing "I can only read text" notice, once, and no model answer.
+    const out = detail.messages.filter((m: any) => m.direction === "outbound");
+    assert.equal(out.length, 1);
+    assert.equal(out[0].author, "system");
+    assert.equal(out[0].notice, "notice_unsupported");
+    assert.equal(out[0].media, null);
+    assert.equal(f.provider.sent.length, 1);
+    assert.equal(f.seen.length, 0);
+
+    // A reaction on the notice: no event, no message, no alert, no notice.
+    const before = (await f.messages()).length;
+    const rid = "wamid.REACT" + randomUUID();
+    assert.equal(
+      (
+        await f.deliver(
+          mediaDelivery(rid, { type: "reaction", reaction: { message_id: out[0].id, emoji: "\u{1F44D}" } }),
+        )
+      ).status,
+      200,
+    );
+    await f.worker.tick();
+    const stored = await f.h.cleanup.query(
+      "select count(*)::int as n from app.whatsapp_event where dedupe_key=$1",
+      ["m:" + rid],
+    );
+    assert.equal(stored.rows[0].n, 0);
+    assert.equal((await f.messages()).length, before);
+    assert.equal(f.provider.sent.length, 1);
+
+    // A row stored before the parser kept the kind falls back to the file
+    // type's family.
+    await f.h.cleanup.query(
+      "insert into app.message(org_id,conversation_id,direction,author,kind,body,media,status)values($1,$2,'inbound','customer','media','Dengar ni',$3,'received')",
+      [f.h.orgA.id, c.id, JSON.stringify({ id: "MEDIAFAKE02", mimeType: "audio/ogg", sha256: "", caption: "Dengar ni", filename: "" })],
+    );
+    const again = (await f.req("GET", `/conversations/${c.id}`)).body.data;
+    const voice = again.messages.find((m: any) => m.body === "Dengar ni");
+    assert.deepEqual(voice.media, { kind: "audio" });
   } finally {
     await f.close();
   }

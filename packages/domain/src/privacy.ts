@@ -7,6 +7,7 @@ import {
 } from "../../contracts/src/index.ts";
 import { command, audit } from "../../db/src/receipts.ts";
 import { manager, namespace } from "./authorization.ts";
+import { mediaFactsSql } from "./whatsapp/media-sql.ts";
 export async function privacyRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -144,10 +145,13 @@ export async function privacyRoute(
           [ctx.orgId, c.id],
         )
       ).rows,
-      // WhatsApp conversations with their messages and staff proposals.
+      // WhatsApp conversations with their messages and staff proposals. A
+      // media message says it was a photo, voice note, video, document or
+      // sticker (and a document's file name); the file itself was never
+      // downloaded, so there is nothing more to give.
       conversations: (
         await tx.query(
-          "select c.id,c.wa_id,c.state,c.owner,c.created_at,c.closed_at,coalesce((select jsonb_agg(jsonb_build_object('direction',m.direction,'author',m.author,'kind',m.kind,'body',m.body,'status',m.status,'created_at',m.created_at)order by m.created_at,m.id)from app.message m where m.org_id=c.org_id and m.conversation_id=c.id),'[]')as messages,coalesce((select jsonb_agg(jsonb_build_object('kind',p.kind,'details',p.details,'state',p.state,'created_at',p.created_at)order by p.created_at,p.id)from app.conversation_proposal p where p.org_id=c.org_id and p.conversation_id=c.id),'[]')as proposals from app.conversation c where c.org_id=$1 and c.contact_id=$2 order by c.created_at,c.id",
+          `select c.id,c.wa_id,c.state,c.owner,c.created_at,c.closed_at,coalesce((select jsonb_agg(jsonb_build_object('direction',m.direction,'author',m.author,'kind',m.kind,'body',m.body,'status',m.status,'created_at',m.created_at,'media',${mediaFactsSql("m")})order by m.created_at,m.id)from app.message m where m.org_id=c.org_id and m.conversation_id=c.id),'[]')as messages,coalesce((select jsonb_agg(jsonb_build_object('kind',p.kind,'details',p.details,'state',p.state,'created_at',p.created_at)order by p.created_at,p.id)from app.conversation_proposal p where p.org_id=c.org_id and p.conversation_id=c.id),'[]')as proposals from app.conversation c where c.org_id=$1 and c.contact_id=$2 order by c.created_at,c.id`,
           [ctx.orgId, c.id],
         )
       ).rows,
