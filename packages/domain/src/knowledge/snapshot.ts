@@ -5,6 +5,7 @@ import { AppError } from "../../../contracts/src/index.ts";
 import { LIMITS } from "../../../contracts/src/knowledge.ts";
 import { activePacks, packIds, type RuleKind } from "../packs/index.ts";
 import { sha256 } from "./text.ts";
+import type { FrozenHours } from "./hours.ts";
 
 export type CoreFact = {
   id: string;
@@ -26,6 +27,8 @@ export type CoreSnapshot = {
   rules?: CoreRule[];
   catalogue?: { setId: string; hash: string; rows: number } | null;
   context?: SessionContext;
+  // Every branch's opening hours, frozen at publish. Absent in older snapshots.
+  hours?: FrozenHours[];
   // Snapshots also hold settings and free-text knowledge.
   [key: string]: unknown;
 };

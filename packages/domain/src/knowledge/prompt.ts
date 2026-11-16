@@ -4,6 +4,7 @@
 import type { CoreSnapshot, SessionContext } from "./snapshot.ts";
 import { factText } from "./snapshot.ts";
 import { packById } from "../packs/index.ts";
+import { hoursBudget, renderHoursBlock } from "./hours.ts";
 
 const kindLabel: Record<string, string> = {
   never: "Never",
@@ -24,7 +25,7 @@ export const notFoundRuleShared =
 export type CoreTools = "core" | "shared";
 
 // Text from the owner goes into the system role: one line per item.
-const line = (value: string, max: number) =>
+export const line = (value: string, max: number) =>
   Array.from(value.replace(/[\s\p{Cc}\p{Cf}\u2028\u2029]+/gu, " ").trim())
     .slice(0, max)
     .join("");
@@ -55,7 +56,7 @@ export function rulesSection(snapshot: CoreSnapshot, maxBytes = Infinity, tools:
   return [head, ...lines, tail].join("\n");
 }
 
-const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+export const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 export function renderHours(schedule: SessionContext["schedule"]): string[] {
   if (!schedule) return [];
   // weekdays[0] is Monday, as in app.location_schedule.
@@ -76,12 +77,21 @@ export function renderHours(schedule: SessionContext["schedule"]): string[] {
   return out;
 }
 
-export function factsSection(snapshot: CoreSnapshot, maxBytes: number): string {
+// A snapshot with an hours key carries every branch's hours: that block
+// replaces the single schedule line and has its own byte budget, so it never
+// takes room from the facts.
+export function factsSection(snapshot: CoreSnapshot, maxBytes: number, hoursMax = 1500): string {
   const head = ["BUSINESS FACTS (true for this business; use them without searching):"];
   const ctx = snapshot.context;
   if (ctx) {
     head.push(`Business: ${line(ctx.business.name, 120)} (${line(ctx.business.type, 80)}); branch: ${line(ctx.location.name, 120)}`);
-    head.push(...renderHours(ctx.schedule));
+    if (!Array.isArray(snapshot.hours)) head.push(...renderHours(ctx.schedule));
+  }
+  let blockBytes = 0;
+  if (Array.isArray(snapshot.hours)) {
+    const block = renderHoursBlock(snapshot.hours, hoursMax);
+    head.push(...block);
+    blockBytes = block.reduce((n, l) => n + Buffer.byteLength(l) + 1, 0);
   }
   let out = head.join("\n");
   for (const f of snapshot.facts ?? []) {
@@ -90,7 +100,7 @@ export function factsSection(snapshot: CoreSnapshot, maxBytes: number): string {
       : f.title;
     const next = `${out}\n- ${line(label, 200)}: ${line(factText(f.value), 1500)}`;
     // Facts that do not fit stay searchable through search_knowledge.
-    if (Buffer.byteLength(next) > maxBytes) break;
+    if (Buffer.byteLength(next) - blockBytes > maxBytes) break;
     out = next;
   }
   return out;
@@ -111,7 +121,7 @@ export function coreSections(
   if (!snapshot || !usesCore(snapshot)) return [];
   return [
     rulesSection(snapshot, rulesBudget(inputBudget), tools),
-    factsSection(snapshot, factsBudget(inputBudget)),
+    factsSection(snapshot, factsBudget(inputBudget), hoursBudget(inputBudget)),
   ];
 }
 
