@@ -18,6 +18,7 @@ import {
   jsonbOrder,
   sessionContext,
 } from "../knowledge/snapshot.ts";
+import { loadHours } from "../knowledge/hours.ts";
 export type StoredSession = TestSession & {
   snapshot: Snapshot;
   creator_id: string;
@@ -107,6 +108,7 @@ export async function startSession(
             )
           ).rows,
           ...(await freezeCore(tx, ctx.orgId, agent.id)),
+          hours: await loadHours(tx, ctx.orgId),
         };
       } else {
         const version = (

@@ -1,5 +1,6 @@
 // Every branch's opening hours as prompt lines. Pure: the loader and the
 // freeze step live elsewhere.
+import type { PoolClient } from "pg";
 import { days, line } from "./prompt.ts";
 
 export type FrozenHours = {
@@ -10,6 +11,33 @@ export type FrozenHours = {
   weekdays: { start: string; end: string }[][] | null;
   closures: { date: string; reason: string }[];
 };
+
+// Every active branch's hours, main branch first. Closures before today
+// (Kuala Lumpur) are dropped; at most 60 are kept per branch, soonest first.
+// A branch with no saved schedule has weekdays null.
+export async function loadHours(tx: PoolClient, orgId: string): Promise<FrozenHours[]> {
+  const rows = (
+    await tx.query(
+      `select l.id as "locationId",l.name,l.primary_location as main,s.weekdays,
+        coalesce((select jsonb_agg(c order by c->>'date')
+          from (select c from jsonb_array_elements(s.closures) c
+                where c->>'date' >= (now() at time zone 'Asia/Kuala_Lumpur')::date::text
+                order by c->>'date' limit 60) q),'[]'::jsonb) as closures
+       from app.location l
+       left join app.location_schedule s on s.org_id=l.org_id and s.location_id=l.id
+       where l.org_id=$1 and l.archived_at is null
+       order by l.primary_location desc,l.created_at,l.id`,
+      [orgId],
+    )
+  ).rows;
+  return rows.map((r) => ({
+    locationId: r.locationId,
+    name: r.name,
+    main: r.main,
+    weekdays: r.weekdays ?? null,
+    closures: r.closures.map((c: { date: string; reason?: string }) => ({ date: c.date, reason: c.reason ?? "" })),
+  }));
+}
 
 export const hoursBudget = (inputBudget: number) => (inputBudget <= 6000 ? 400 : 1500);
 

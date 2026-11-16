@@ -72,3 +72,55 @@ test("text sessions freeze draft knowledge, hide snapshots, enforce manager/tena
     await f.close();
   }
 });
+
+test("a draft test carries live hours; a published test carries the version's", async () => {
+  const f = await createPhase2Harness();
+  try {
+    const agentPath = `/agents/${f.h.orgA.agentId}`;
+    const draft = (await f.req("GET", agentPath + "/draft")).body.data;
+    const saved = await f.req("PUT", agentPath + "/draft", {
+      expectedRevision: draft.revision,
+      settings: {
+        ...draft.draft,
+        aiDisclosure: "Saya pembantu AI.",
+        greeting: "Hai.",
+      },
+    });
+    assert.equal(saved.status, 200);
+    const stored = async (id: string) =>
+      (await f.h.cleanup.query("select snapshot from app.test_session where id=$1", [id])).rows[0].snapshot;
+    const started = await f.req("POST", "/agent-tests", {
+      agentId: f.h.orgA.agentId,
+      locationId: f.h.orgA.locationId,
+      source: { kind: "draft", expectedRevision: saved.body.data.revision },
+    });
+    assert.equal(started.status, 200);
+    const s1 = await stored(started.body.data.id);
+    assert.equal(s1.hours.length, 1);
+    assert.equal(s1.hours[0].locationId, f.h.orgA.locationId);
+    assert.deepEqual(s1.hours[0].weekdays[0], [{ start: "09:00", end: "18:00" }]);
+    assert.ok(s1.context.schedule);
+    const published = await f.req("POST", agentPath + "/publish", { expectedRevision: saved.body.data.revision });
+    assert.equal(published.status, 200);
+    const sp = `/locations/${f.h.orgA.locationId}/schedule`;
+    const cur = (await f.req("GET", sp)).body.data;
+    const changed = await f.req("PUT", sp, {
+      expectedRevision: cur.revision,
+      timezone: "Asia/Kuala_Lumpur",
+      weekdays: Array.from({ length: 7 }, () => [{ start: "07:00", end: "11:00" }]),
+      closures: [],
+    });
+    assert.equal(changed.status, 200);
+    const fromVersion = await f.req("POST", "/agent-tests", {
+      agentId: f.h.orgA.agentId,
+      locationId: f.h.orgA.locationId,
+      source: { kind: "published", versionId: published.body.data.id },
+    });
+    assert.equal(fromVersion.status, 200);
+    const s2 = await stored(fromVersion.body.data.id);
+    assert.deepEqual(s2.hours[0].weekdays[0], [{ start: "09:00", end: "18:00" }]);
+    assert.deepEqual(s2.context.schedule.weekdays[0], [{ start: "07:00", end: "11:00" }]);
+  } finally {
+    await f.close();
+  }
+});

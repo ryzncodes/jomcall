@@ -10,6 +10,7 @@ import { agentSettings, knowledgeInput } from "../../contracts/src/agent.ts";
 import { command, audit } from "../../db/src/receipts.ts";
 import { manager } from "./authorization.ts";
 import { freezeCore, restoreCore } from "./knowledge/snapshot.ts";
+import { loadHours } from "./knowledge/hours.ts";
 export async function agentsRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -171,8 +172,14 @@ export async function agentsRoute(
               ctx.orgId,
               id,
               // Packs, confirmed facts, resolved rules and a frozen catalogue
-              // set (by id and hash) are part of every published version.
-              { settings, knowledge, ...(await freezeCore(tx, ctx.orgId, id)) },
+              // set (by id and hash) are part of every published version, and
+              // so are the hours of every active branch.
+              {
+                settings,
+                knowledge,
+                ...(await freezeCore(tx, ctx.orgId, id)),
+                hours: await loadHours(tx, ctx.orgId),
+              },
               ctx.identity.userId,
             ],
           )

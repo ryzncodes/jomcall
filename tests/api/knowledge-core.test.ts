@@ -239,7 +239,7 @@ test("a typed turn calls lookup_catalogue, takes a message and records a gap; ex
     assert.equal(turn.state, "completed", turn.error_code);
     assert.match(prompts[0], /RULES \(/);
     assert.match(prompts[0], /BUSINESS FACTS/);
-    assert.match(prompts[0], /Opening hours \(Asia\/Kuala_Lumpur\)/);
+    assert.match(prompts[0], /Opening hours \(Asia\/Kuala_Lumpur time\):\n- Cawangan Contoh \(main branch\): Mon 09:00-18:00/);
     const steps = (await f.h.cleanup.query("select tool,result from app.test_tool_step where session_id=$1 order by step", [session.id])).rows;
     assert.deepEqual(steps.map((s) => s.tool), ["lookup_catalogue", "take_message"]);
     assert.equal(steps[0].result.found, false);

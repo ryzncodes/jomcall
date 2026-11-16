@@ -92,6 +92,7 @@ import {
   type KnowledgeGap,
 } from "./knowledge.ts";
 import type { PackSummary } from "../../domain/src/packs/index.ts";
+import type { FrozenHours } from "../../domain/src/knowledge/hours.ts";
 import {
   contactInput,
   contactUpdate,
@@ -169,6 +170,8 @@ export type Version = {
     facts?: { title: string; value: unknown }[];
     rules?: { kind: string; text: string }[];
     catalogue?: { setId: string; hash: string; rows: number } | null;
+    // Every active branch's hours at publish; absent on older versions.
+    hours?: FrozenHours[];
   };
 };
 export type Contact = {
