@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-11-16 — WhatsApp template check after review
+
+Branch `feat/whatsapp-sync`, pull request not yet open, not merged. Nothing on hosted staging. Fake WhatsApp provider only; the Cloud API is still not approved and nothing reached Meta.
+
+**Changed**
+- Controller's SQL (`20261116150000_whatsapp_template_sync.sql`, commit `ae7658c`): a missing template is flagged `NOT_FOUND`, not disabled (a short list must not silently stop the fallback; sending a deleted one fails in the open); a result applies only to its own claim (`wabaId` + `revision`, else `TEMPLATE_SYNC_STALE`); duplicates or over 1000 items `TEMPLATE_LIST_INVALID`; status names must be upper case; `whatsapp_template.disabled_by_staff`.
+- Worker: sends `wabaId`/`revision` back in every result; 20 s deadline on the whole list (`TEMPLATE_LIST_TIMEOUT`, injectable timer); sync moved to the end of `tick()`. Cloud client: abort signal stops paging; one malformed item fails the whole list; no upper-casing.
+- PATCH: `disabled` always allowed (sets `disabled_by_staff`); any other status on a staff-disabled template switches it on (synced: provider's last mapped status via `providerStatusMap`, `NOT_FOUND`/unmapped stays disabled; unsynced: status asked for). The web role cannot update `whatsapp_channel.templates_synced_at` (checked with `has_column_privilege`), so switching on waits for the next hourly check. Read returns `disabled_by_staff`.
+- Screen: Switch off / Matikan (confirm in place), Switched off by your team / Dimatikan oleh pasukan anda, Switch on / Hidupkan, Checking with WhatsApp… / Sedang menyemak dengan WhatsApp…, reworded NOT_FOUND line, "Not listed by WhatsApp…" / "Tidak disenaraikan oleh WhatsApp…". Rules in `web/lib/core/whatsapp-template-rules.ts`.
+- Customer file names cleaned (control and bidi characters; `cleanFileName` shared with setup uploads) at parse time and on read (inbox, PDPA export).
+- Reactions are ignored, so a reaction no longer counts as the customer's last message for the 24-hour window; unverified whether Meta counts it.
+
+**Verified (2026-11-16, local database and fakes only)**
+- `npm run typecheck` passes; `npm run test:guards` 69 of 69 on the rerun (first run 68 of 69, only the known flickering `tests/local/model.test.mjs` runtime-ownership guard); `tests/domain/whatsapp.test.ts` 16 of 16, `tests/domain/whatsapp-template-rules.test.ts` 2 of 2, `tests/engine/whatsapp-flow.test.ts` 37 of 37, `tests/engine/privacy.test.ts` 1 of 1; `npm run check:core` 871 of 871; `npm run db:verify-migrations` passes (59 tables with row-level security); `npm run build:local`, `npm run build:mock` and `npm run build:hosted` pass.
+
+**Next**
+- Owner: apply the amended migration on staging (never applied there yet), rebuild `agent` and web.
+- No browser check of the new screen states; nothing against Meta.
+
 ## 2026-11-16 — WhatsApp template status sync and media in the inbox
 
 Branch `feat/whatsapp-sync`, pull request not yet open, not merged. Nothing on hosted staging. Built and tested against the fake WhatsApp provider only; the Cloud API is still not approved and `listTemplates` has never reached Meta.
