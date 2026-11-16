@@ -60,7 +60,7 @@ Migrations: `20261114120000_whatsapp_channel.sql` and `20261114120100_whatsapp_w
 | Table | What it holds | Who writes |
 |---|---|---|
 | `whatsapp_channel` | One per organization: agent, location, `phone_number_id`, `waba_id`, state (`not_connected`, `pending`, `connected`, `failed`, `disabled`), `agent_enabled`, sealed `credentials` | owner/admin (RLS); worker (state after verification) |
-| `whatsapp_template` | Name, language, category, purpose (`reengage` …), status recorded by staff, body, variable count | owner/admin |
+| `whatsapp_template` | Name, language, category, purpose (`reengage` …), status (recorded by staff until the provider lists the template, then copied from the provider; see O8), body, variable count | owner/admin; worker (status after template sync) |
 | `conversation` | One open thread per customer (`wa_id`) per channel: owner (`agent` or `staff`), `needs_attention` + reason, `last_inbound_at`, `disclosure_message_id` | worker; members (takeover, hand-back, resolve) |
 | `message` | Inbound and outbound messages, provider message id, status (`received`, `queued`, `sending`, `sent`, `delivered`, `read`, `failed`, `blocked`, `unknown`) | worker; members may insert their own `queued` staff message only |
 | `conversation_turn` | One agent run on a conversation, under a lease (as `test_turn`) | worker |
@@ -106,7 +106,7 @@ The agent worker processes pending events, messages before statuses. Each event 
    - **Staff words** (`staff`, `staf`, `human`, `manusia`, `人工`, `agent`): **hand off deterministically**. The owner becomes `staff`, the conversation needs attention (`HANDOFF_REQUESTED`), and a fixed acknowledgement is queued. The model is not involved. This is the "prompt, clear, direct escalation path" Meta requires.
    - **Staff owns the conversation, or the agent is switched off:** set needs attention (`CUSTOMER_REPLIED`). No turn.
    - **Text:** queue an agent turn. Messages arriving while a turn waits are appended to it, so several quick messages get one answer.
-   - **Media and other types:** needs attention, plus a fixed "I can only read text" notice.
+   - **Media and other types:** needs attention, plus a fixed "I can only read text" notice. Reactions never get here: the webhook parser drops them (2026-11-16).
 
 **Status events:**
 
@@ -214,11 +214,11 @@ npm run whatsapp:simulate -- --to <phone_number_id> --from 60123456789 --text "P
 - **O1, Embedded Signup.** Needs the app ID and `config_id`. The browser part loads Meta's SDK, so it is a second approval point. Not built.
 - **O2, `subscribed_apps` call** after connecting. A small addition to the cloud client and the verification step. Not built.
 - **O3, username-only customers** (business-scoped user IDs). Contacts are keyed on phone numbers, so such messages are ignored today. Store `user_id` and send with `recipient` once confirmed.
-- **O4, media.** Stored by id and type only, never downloaded. Download would need the 5-minute URL and storage.
+- **O4, media.** Stored by id and type only, never downloaded. Download would need the 5-minute URL and storage. **Still open, deliberately (2026-11-16):** staff see the kind of file and a document's name in the inbox and are told to open WhatsApp on the business phone; nothing is fetched or stored beyond what the webhook carries.
 - **O5, missed-call text-back.** Needs the phone line. It will queue a `missed_call` template through the same send path.
 - **O6, owner daily summary.** A scheduled job sends the `owner_summary` template to the owner's number. The owner's own consent is recorded when they enable it.
 - **O7, billing.** Record a `usage_event` per delivered message from status `pricing`.
-- **O8, template sync.** Read status from `GET /<WABA_ID>/message_templates` instead of staff recording it.
+- **O8, template sync.** Read status from `GET /<WABA_ID>/message_templates` instead of staff recording it. **Built 2026-11-16 against the fake only** (see the as-built note below).
 - **O9, mark as read and typing indicator.**
 - **O10, mTLS on the webhook**, and a rate limit per IP.
 
@@ -227,3 +227,21 @@ npm run whatsapp:simulate -- --to <phone_number_id> --from 60123456789 --text "P
 - The real client is written and unit-tested against a fake `fetch`, but has never reached Meta.
 - The signature form, payload fields, error codes and Graph version come from documentation read on 2026-11-14.
 - The checklist in go-live §10 lists the first real checks (step 13: non-ASCII signature).
+
+## 14. As built, 2026-11-16: template sync (O8) and media in the inbox (O4 unchanged)
+
+Branch `feat/whatsapp-sync`. Built and tested against the fake provider only; the Cloud API is still not approved (D1) and `listTemplates` has never reached Meta.
+
+**Template sync.**
+- Migration `20261116150000_whatsapp_template_sync.sql` adds `whatsapp_template.provider_status` and `synced_at`, `whatsapp_channel.templates_synced_at` and `templates_sync_reason`, and `app_private.whatsapp_template_sync(action, namespace, id, data)`, executable by the agent login role only.
+- `claim` picks one connected channel with a business account id, stored credentials and at least one template, not checked in the last hour, and marks it checked at once, so a failing provider is asked once an hour, not in a loop.
+- The worker attempts a claim at most once a minute per process (`templateSyncEveryMs`), unseals the token exactly as the number check does (fake mode never unseals), calls `listTemplates` and reports `result`. Failures are stored on the channel as a fixed code and logged as `WHATSAPP_TEMPLATE_SYNC_<code>` without ids or the token.
+- `result` copies each status onto the local template with the same name and language. Mapped names: APPROVED, PAUSED; PENDING, IN_REVIEW, IN_APPEAL to pending; REJECTED; DISABLED, ARCHIVED, PENDING_DELETION, LIMIT_EXCEEDED to disabled. Any other name leaves the local status and is kept in `provider_status`. A template not in the list keeps the status staff gave it. Nothing is created, deleted or edited.
+- The Cloud client (`listTemplates`, UNCONFIRMED) asks for the fields name, language and status, 100 per page, and builds the next page from `paging.cursors.after` itself; a URL from the response is never fetched. A list longer than 10 pages or 1000 templates is a failure (`TEMPLATE_LIST_TOO_LONG`), never a partial list, because a missing template would read as absent.
+- Screen: per synced template, "Status from WhatsApp, checked …" and, for an unmapped name, "WhatsApp says: …"; Mark approved / Mark rejected are hidden for it. Above the list, the last check time, or "Could not check with WhatsApp. Statuses below may be out of date." `PATCH /channels/whatsapp/templates/:id` refuses a synced template with `CONFLICT`. The list of mapped names lives in `packages/contracts/src/whatsapp.ts` and a test keeps it equal to the migration.
+- Deviation: a channel saved without an access token (local fake mode without one) is never claimed, because the claim requires stored credentials.
+
+**Media and other types (O4 stands: nothing downloaded).**
+- The webhook parser drops `reaction` messages, so a thumbs-up neither alerts staff nor gets the "text only" notice. It now keeps the media type in the stored media facts (`media.kind`); rows stored earlier fall back to the file type's family.
+- The conversation read and the PDPA contact export give, for a media message, only `{kind, filename}` (`packages/domain/src/whatsapp/media-sql.ts`); the provider's media id, hash and file type never leave the database.
+- The inbox names photo, voice or audio, video, document (with its file name) and sticker messages, shows the caption under the label, adds one line under the first such message ("JomCall does not download files. Open WhatsApp on the business phone to see it."), and labels location, contacts and other types "Message type JomCall cannot show".
