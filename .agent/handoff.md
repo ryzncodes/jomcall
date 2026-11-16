@@ -12,7 +12,7 @@ Branch `feat/reading-limits`, pull request not yet open, not merged. Nothing on 
 - Docs: AGENTS.md, setup flow design §12, RUNBOOK step 12 item 5.
 
 **Verified (2026-11-16, local database and fakes only)**
-- typecheck: pass. guards: 69 of 69. check:core: 798 of 799 (the known flickering `tests/local/model.test.mjs` runtime-ownership test, in both full runs; passes alone). verify-migrations: pass (59 RLS tables). build:local, build:mock, build:hosted: pass.
+- typecheck: pass. guards: 69 of 69. check:core: 836 of 837 after merging `main` (the known flickering `tests/local/model.test.mjs` runtime-ownership test, in both full runs; passes alone). verify-migrations: pass (59 RLS tables). build:local, build:mock, build:hosted: pass.
 
 **Next**
 - Owner: apply the migration on staging; optionally set `JOMCALL_OPERATOR_EMAIL` in `engine.env`.

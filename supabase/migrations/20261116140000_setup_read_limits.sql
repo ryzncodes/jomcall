@@ -4,7 +4,7 @@
 -- 1. A daily ceiling for the whole service (default 300 files started in 24
 --    hours, one row in app.setup_read_limit that an operator can change).
 --    When it is reached, queued files wait; the engine emails the operator
---    once a day.
+--    once a day. If the row is missing the ceiling is 0: nothing is read.
 -- 2. A fair queue: the organization with the fewest reads started in the
 --    last hour goes first, so one organization's five slow files no longer
 --    hold everyone else back.
@@ -16,6 +16,8 @@
 
 alter table app.setup_upload add column if not exists first_claimed_at timestamptz;
 create index if not exists setup_upload_first_claimed on app.setup_upload(first_claimed_at) where first_claimed_at is not null;
+-- For the fair order: one organization's reads started in the last hour.
+create index if not exists setup_upload_org_first_claimed on app.setup_upload(org_id, first_claimed_at) where first_claimed_at is not null;
 
 create table if not exists app.setup_read_limit(
  one boolean primary key default true check(one),
@@ -30,7 +32,7 @@ grant select, update on app.setup_read_limit to jomcall_agent_jobs;
 grant create on schema app_private to jomcall_agent_jobs;
 create or replace function app_private.setup_read_ceiling_hit() returns boolean language sql stable security definer set search_path = '' as $$
  select (select count(*) from app.setup_upload where first_claimed_at > now() - interval '24 hours')
-  >= (select daily_reads from app.setup_read_limit)
+  >= coalesce((select daily_reads from app.setup_read_limit), 0)
 $$;
 -- Engine, hourly: true once per Kuala Lumpur day while the ceiling is
 -- reached, so the operator gets one email a day. Returns the counts to put

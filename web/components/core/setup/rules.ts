@@ -576,12 +576,12 @@ export function uploadLabel(
         : now !== undefined && queuedBusy(u, now, since)
           ? review
             ? w(
-                "Reading is busy right now. Your file is in the queue.",
-                "Bacaan sedang sibuk sekarang. Fail anda dalam giliran.",
+                "Lots of files are being read right now. Your file is waiting its turn.",
+                "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran.",
               )
             : w(
-                "Reading is busy right now. Your file is in the queue; you can answer the questions meanwhile.",
-                "Bacaan sedang sibuk sekarang. Fail anda dalam giliran; anda boleh jawab soalan dahulu.",
+                "Lots of files are being read right now. Your file is waiting its turn; you can answer the questions meanwhile.",
+                "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran; sementara itu, anda boleh jawab soalan.",
               )
           : w("Waiting to be read", "Menunggu untuk dibaca");
     case "reading":

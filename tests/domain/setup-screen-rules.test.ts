@@ -504,20 +504,20 @@ test("after 2 minutes queued, by this browser's clock, the line says reading is 
   assert.equal(uploadLabel(queued, en, t + 2 * 60_000, t), "Waiting to be read");
   assert.equal(
     uploadLabel(queued, en, t + 3 * 60_000, t),
-    "Reading is busy right now. Your file is in the queue; you can answer the questions meanwhile.",
+    "Lots of files are being read right now. Your file is waiting its turn; you can answer the questions meanwhile.",
   );
   assert.equal(
     uploadLabel(queued, ms, t + 3 * 60_000, t),
-    "Bacaan sedang sibuk sekarang. Fail anda dalam giliran; anda boleh jawab soalan dahulu.",
+    "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran; sementara itu, anda boleh jawab soalan.",
   );
   // On the review page the offer of the questions is dropped.
   assert.equal(
     uploadLabel(queued, en, t + 3 * 60_000, t, true),
-    "Reading is busy right now. Your file is in the queue.",
+    "Lots of files are being read right now. Your file is waiting its turn.",
   );
   assert.equal(
     uploadLabel(queued, ms, t + 3 * 60_000, t, true),
-    "Bacaan sedang sibuk sekarang. Fail anda dalam giliran.",
+    "Banyak fail sedang dibaca sekarang. Fail anda sedang menunggu giliran.",
   );
   // Still polled for until the 10-minute limit; then the stalled line wins.
   const seen = new Map([[queued.id, t]]);
