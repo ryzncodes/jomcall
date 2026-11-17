@@ -200,6 +200,7 @@ function diffHours(
 ): AgentChange[] {
   const live = (h: FrozenHours) => ({
     name: h.name,
+    main: h.main,
     weekdays: h.weekdays,
     closures: h.closures.filter((c) => c.date >= today),
   });

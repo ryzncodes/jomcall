@@ -140,3 +140,15 @@ test("the token changes when hours change and not when nothing does", () => {
   assert.match(changeToken(draft), /^[a-f0-9]{64}$/);
   assert.notEqual(changeToken(draft), changeToken({ ...draft, hours: [{ ...hq, name: "Other" }] }));
 });
+test("moving the main branch lists both branches as changed", () => {
+  const two = { ...hq, locationId: "loc-2", name: "Cawangan", main: false };
+  const pub = { ...base, hours: [hq, two] };
+  const moved = [
+    { ...hq, main: false },
+    { ...two, main: true },
+  ];
+  assert.deepEqual(d(pub, { hours: moved }), [
+    { kind: "hours", op: "changed", label: "Seri Mawar HQ" },
+    { kind: "hours", op: "changed", label: "Cawangan" },
+  ]);
+});
