@@ -13,7 +13,6 @@ import {
   gapConflictKind,
   gapTitle,
   setDraft,
-  type GapDrafts,
 } from "./rules";
 import { useAgentPage } from "./store";
 
@@ -28,12 +27,12 @@ const isGapConflict = (e: unknown) =>
 export function Questions() {
   const w = useWords(),
     { client } = useCore(),
-    { agentId, reloadKey } = useAgentPage();
+    { agentId, reloadKey, gapDrafts: drafts, updateGapDrafts: setDrafts } =
+      useAgentPage();
   const [filter, setFilter] = useState<Filter>("open"),
     [savedIds, setSavedIds] = useState<string[]>([]),
     [handled, setHandled] = useState(false),
-    [savedNote, setSavedNote] = useState(false),
-    [drafts, setDrafts] = useState<GapDrafts>({});
+    [savedNote, setSavedNote] = useState(false);
   // The key holds the filter and the reload key, so a slow reply for an
   // earlier filter is never shown under the one now chosen.
   const list = useResource(
@@ -213,22 +212,17 @@ function GapCard({
           },
           key,
         );
-        // Saving adds a fact: the agent revision moved by one. Read where
-        // it stands; if that read fails the write still stands.
-        let next = revision + 1;
-        try {
-          next = (await client.execute("draft", { id: agentId })).revision;
-        } catch {
-          /* the plus-one above is what the server did */
-        }
-        result = { revision: next };
+        // Saving adds a fact: the server moves the agent revision by one.
+        // Never read it back: another tab's save in between would make the
+        // queue skip a revision and this tab's next autosave overwrite it.
+        result = { revision: revision + 1 };
         return result;
       } catch (e) {
         if (isGapConflict(e)) {
           const d = await client.execute("draft", { id: agentId });
           if (gapConflictKind(revision, d.revision) === "gap") {
             stale = true;
-            return { revision: d.revision };
+            return { revision };
           }
         }
         throw e;

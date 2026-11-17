@@ -15,7 +15,7 @@ import type {
   AgentSettings,
 } from "../../../../packages/contracts/src/core";
 import { useCore, useWords, Loading } from "../state";
-import { type View, withVoice } from "./rules";
+import { type GapDrafts, type View, withVoice } from "./rules";
 import { createSettingsSync } from "./settings-sync";
 import { createHoursStore } from "./schedule-sync";
 
@@ -68,6 +68,9 @@ export type AgentPage = {
   // Per-branch opening hours state; lives as long as the page, so unsaved
   // hours are still here when the owner comes back to #hours.
   hours: ReturnType<typeof createHoursStore>;
+  // Typed answers on the questions view; they outlive a change of view.
+  gapDrafts: GapDrafts;
+  updateGapDrafts: (update: (drafts: GapDrafts) => GapDrafts) => void;
   changes: AgentChanges | undefined;
   refreshChanges: () => void;
   go: (view: View) => Promise<void>;
@@ -127,6 +130,7 @@ function Store({
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const announced = useRef(false);
+  const gapDraftsRef = useRef<GapDrafts>({});
   const changesTimer = useRef<ReturnType<typeof setTimeout>>(undefined),
     changesSeq = useRef(0),
     wordsRef = useRef(w);
@@ -207,7 +211,10 @@ function Store({
     const unsubscribe = hours.subscribe(() => tick((n) => n + 1));
     const pagehide = () => sync.pagehide();
     const beforeunload = (e: BeforeUnloadEvent) => {
-      if (sync.queue.pending() || sync.unsaved() || hours.unsaved()) {
+      const typed = Object.values(gapDraftsRef.current).some(
+        (d) => d.answer.trim() || d.topic.trim(),
+      );
+      if (sync.queue.pending() || sync.unsaved() || hours.unsaved() || typed) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -249,6 +256,11 @@ function Store({
         error: sync.error(),
         queue: sync.queue,
         hours,
+        gapDrafts: gapDraftsRef.current,
+        updateGapDrafts: (update) => {
+          gapDraftsRef.current = update(gapDraftsRef.current);
+          tick((n) => n + 1);
+        },
         changes,
         refreshChanges,
         go,
