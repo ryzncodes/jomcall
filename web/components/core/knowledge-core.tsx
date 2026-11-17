@@ -1,6 +1,6 @@
 "use client";
 // Knowledge core editor (local app only): packs, pack fact fields, free facts,
-// rules, catalogue rows and the gap log. Mock preview does not use it.
+// rules and catalogue rows. Mock preview does not use it.
 import { useState } from "react";
 import type { Input } from "../../../packages/contracts/src/core";
 import type { Job } from "@/lib/core/save-queue";
@@ -8,7 +8,6 @@ import { queuedWrite, stored } from "@/lib/core/queued-write";
 import type {
   KnowledgeCore,
   KnowledgeFact,
-  KnowledgeGap,
 } from "../../../packages/contracts/src/knowledge";
 import { Field } from "./field";
 import { useCore, useWords, useResource, useAction, Notice } from "./state";
@@ -57,8 +56,8 @@ export function parseRows(text: string) {
   return { rows };
 }
 
-type Section = "packs" | "facts" | "rules" | "catalogue" | "gaps";
-const ALL: Section[] = ["packs", "facts", "rules", "catalogue", "gaps"];
+type Section = "packs" | "facts" | "rules" | "catalogue";
+const ALL: Section[] = ["packs", "facts", "rules", "catalogue"];
 // The agent page's save queue: every write that checks the agent revision
 // goes through it, so it is sent in order with the revision the queue holds.
 export type WriteQueue = { push: (job: Job) => Promise<void> };
@@ -91,17 +90,12 @@ export function KnowledgeCoreEditor({
   const show = (s: Section) => sections.includes(s);
   const packs = useResource(() => client.execute("packs", {}), "packs");
   const core = useResource(() => client.execute("knowledgeCore", { id: agentId }), agentId + "|core|" + reloadKey);
-  const gaps = useResource(
-    () => (show("gaps") ? client.execute("knowledgeGaps", { id: agentId }) : Promise.resolve([] as KnowledgeGap[])),
-    agentId + "|gaps|" + reloadKey + "|" + show("gaps"),
-  );
   const [picked, setPicked] = useState<string[]>();
   const [paste, setPaste] = useState("");
   const [pasteError, setPasteError] = useState("");
   const [fact, setFact] = useState({ title: "", value: "" });
   const [rule, setRule] = useState<{ kind: Kind; text: string }>({ kind: "never", text: "" });
   const [edits, setEdits] = useState<Record<string, string>>({});
-  const [answers, setAnswers] = useState<Record<string, string>>({});
 
   // Resolves true only when the write was stored; a form clears its text
   // only then.
@@ -425,89 +419,6 @@ export function KnowledgeCoreEditor({
             </li>
           ))}
         </ul>
-      </section>
-      )}
-
-      {show("gaps") && (
-      <section aria-labelledby="kc-gaps">
-        <h3 id="kc-gaps">{w("Questions the agent could not answer", "Soalan yang ejen tidak dapat jawab")}</h3>
-        <p className="core-hint">
-          {w("Only the question is kept, never who asked.", "Hanya soalan disimpan, bukan siapa yang bertanya.")}
-        </p>
-        {gaps.error ? (
-          <Notice error={gaps.error} />
-        ) : !gaps.data?.length ? (
-          <p>{w("Nothing yet.", "Belum ada.")}</p>
-        ) : (
-          gaps.data.map((g: KnowledgeGap) => (
-            <article key={g.id} className="core-record">
-              <h4>
-                “{g.question}” <small>×{g.ask_count}</small>
-              </h4>
-              <p className="core-clamp">
-                {w("Agent said:", "Ejen jawab:")} {g.answer}
-              </p>
-              {g.status === "open" ? (
-                <>
-                  <textarea
-                    rows={2}
-                    maxLength={1000}
-                    aria-label={w("The right answer", "Jawapan yang betul")}
-                    placeholder={w("The right answer, or what to do", "Jawapan yang betul, atau apa perlu dibuat")}
-                    value={answers[g.id] ?? ""}
-                    disabled={busy}
-                    onChange={(e) => setAnswers({ ...answers, [g.id]: e.target.value })}
-                  />
-                  <div className="core-actions">
-                    {(["fact", "rule"] as const).map((as) => (
-                      <button
-                        key={as}
-                        className="button"
-                        disabled={busy || !(answers[g.id] ?? "").trim()}
-                        onClick={async () => {
-                          const text = answers[g.id]!.trim();
-                          let ok = false;
-                          await a.run(() =>
-                            queue
-                              .push({
-                                run: async (revision, key) => {
-                                  await client.execute(
-                                    "resolveGap",
-                                    as === "fact"
-                                      ? { agentId, id: g.id, as, expectedRevision: g.revision, expectedAgentRevision: revision, title: g.question.slice(0, 200), value: text }
-                                      : { agentId, id: g.id, as, expectedRevision: g.revision, expectedAgentRevision: revision, kind: "always", text },
-                                    key,
-                                  );
-                                  ok = true;
-                                  // Resolving a gap adds a fact or rule: the agent revision moves by one.
-                                  return revision + 1;
-                                },
-                              }),
-                          );
-                          if (ok) await Promise.all([gaps.reload(), core.reload()]);
-                        }}
-                      >                        {as === "fact" ? w("Save as fact", "Simpan sebagai fakta") : w("Save as rule", "Simpan sebagai peraturan")}
-                      </button>
-                    ))}
-                    <button
-                      disabled={busy}
-                      onClick={async () => {
-                        if (await a.run(() => client.execute("ignoreGap", { agentId, id: g.id, expectedRevision: g.revision })))
-                          await gaps.reload();
-                      }}
-                    >
-                      {w("Ignore", "Abaikan")}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <span className="remaining-chip">
-                  {g.status === "resolved" ? w("Resolved", "Selesai") : w("Ignored", "Diabaikan")}
-                </span>
-              )}
-            </article>
-          ))
-        )}
       </section>
       )}
     </div>
