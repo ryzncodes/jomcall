@@ -1,4 +1,5 @@
 "use client";
+import { useId } from "react";
 import type { AgentSettings } from "../../../../packages/contracts/src/core";
 import { Field } from "../field";
 import { GreetingField } from "../agent-fields";
@@ -23,6 +24,7 @@ export function Greeting() {
     p = useAgentPage(),
     s = p.settings,
     bad = (f: keyof AgentSettings) => p.invalid.includes(f);
+  const recId = useId();
   const name = useFieldEvents("name"),
     greeting = useFieldEvents("greeting"),
     intro = useFieldEvents("aiDisclosure"),
@@ -75,16 +77,19 @@ export function Greeting() {
             {...intro}
           />
         </Field>
-        <label className="product-check">
+        <label className="product-check" htmlFor={recId}>
           <input
+            id={recId}
             type="checkbox"
             checked={s.recordingEnabled}
             onChange={(e) => choose({ recordingEnabled: e.target.checked })}
           />
-          {w(
-            "Record calls when calling is available",
-            "Rakam panggilan apabila panggilan tersedia",
-          )}
+          <span>
+            {w(
+              "Record calls when calling is available",
+              "Rakam panggilan apabila panggilan tersedia",
+            )}
+          </span>
         </label>
         {s.recordingEnabled && (
           <Field
