@@ -1,5 +1,25 @@
 # Handoff
 
+## 2026-11-17: gates and second browser check after the agent page merge
+
+`main` at `7888aaf`. Records only; no code change.
+
+**Done**
+- Typed gate (`npm run check:hosted-model`): 47 of 48, no safety flag; miss `en-07` (English request answered in Bahasa Melayu after tools). Spoken gate (`npm run check:voice-model`): 47 of 48, no safety flag; miss `manglish-07` (asked before recording, per the read-back rule). One run each, paid.
+- The gate fixtures carry no opening hours: the hours block was not in any gate prompt.
+- Browser, local app, made-up workspace: skip a question, Answered tab, knowledge and More views, restore, closed date, second branch, staff account (published summary and read-only hours only; billing refused for staff). Owner plan card in its "choose a plan" state. WhatsApp settings in practice mode (fake provider): connect form, "Checking the number", template section and add-template form.
+
+**Not done**
+- No model turn asked the opening hours.
+- Plan card: unpaid warning, stopped notice and top-up retry not seen. Setup import limits ("Reading is busy", store full) not seen.
+- WhatsApp: synced template states, switch off and on, and media lines in the inbox not seen (they need the agent worker running against the fake provider).
+- No person has used any of it; nothing on hosted staging.
+
+**Next**
+- Owner: staging catch-up (pull `main`, `npm run hosted:migrate`, a plan for every workspace, rebuild web, agent, engine, voice).
+- Small fixes seen in the browser and left: language switch drops the view hash; "Saved to local workspace." after a restore; the recording checkbox's accessible name.
+- Local leftovers: workspace "Kedai Contoh QA" (owner and staff test accounts, two branches, a connected practice WhatsApp number) in the shared local database; launch entries `agent-page-local`, `agent-page-mock`, `agent-page-local-wa` in the main checkout's `.claude/launch.json` (ignored by git).
+
 ## 2026-11-17: one-page agent screen (item 17)
 
 Pull request #37, squash-merged to `main` on 2026-11-17 as commit `7624890` (5 of 5 checks passing). Nothing on hosted staging yet. No migration.

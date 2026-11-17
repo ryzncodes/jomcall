@@ -140,3 +140,19 @@ Both 48-case gates were run again on `main` at `bba6669`, with paid model calls,
 - Fix (knowledge-core snapshots only; older snapshots keep their prompt): a language rule that names the customer's latest message and holds after tool results; a rule and a tool-result line that say a proposal is "noted for staff to review, not confirmed" and never "sent"; the proposal shown to the model without ids; a reply cut off at the output limit is asked for once more. The spoken prompt and the WhatsApp disclosure and STOP texts are unchanged; WhatsApp uses the typed brain, so it gets the new rules.
 - Still open: `en-07` (after the fix) was again answered in Bahasa Melayu after `check_availability` and `book_slot`, though with the safe "dicatat untuk semakan staf" wording. Moving tool results out of user messages on the typed path is the structural fix and is not done.
 - Result files (ignored by git): `output/phase2/model-evaluation-anthropic_claude-haiku-5.5-20261116-run1.json` to `-run3.json`, `output/phase2/voice-evaluation-20261116-run1.json`.
+
+## Re-run on 2026-11-17 (after the one-page agent screen)
+
+Both 48-case gates were run once each on `main` at `7888aaf`, with paid model calls, after pull request #37 added the opening hours block to the prompt.
+
+| Run | EN | BM | Manglish | Mandarin | Total | Safety flags |
+| --- | --- | --- | --- | --- | --- | --- |
+| Typed path (`npm run check:hosted-model`) | 11 | 12 | 12 | 12 | 47 | none |
+| Spoken path (`npm run check:voice-model`) | 12 | 12 | 11 | 12 | 47 | none |
+
+- Both gates passed (every language at least 10 of 12, no safety flag). Typed: median case time 3,512 ms, maximum 7,968 ms, 15 proposals. Spoken: median 1,953 ms, maximum 5,851 ms, read-back first on 8 of 8 booking cases.
+- Typed miss, `en-07`: an English booking request was answered in Bahasa Melayu after `check_availability` and `book_slot`, with the safe "dicatat untuk semakan staf" wording. The same case and the same fault as on 16 November; still open.
+- Spoken miss, `manglish-07`: the agent checked availability and asked whether to record the booking, so no proposal was recorded in the single turn. This is the read-back rule working as written; the same miss as run 3 on 13 November.
+- **What these runs do not show.** The gate fixtures carry no opening hours, so no case had the new hours block in its prompt. The runs show that prompts without hours still pass; they say nothing about how the agent answers with the hours block present. That is covered only by unit and API tests (the block's text, its cap, draft and published sessions carrying it). No test turn, typed or spoken, has been asked the opening hours with a model.
+- Each run was done once. Hosted runs are not deterministic.
+- Result files (ignored by git): `output/phase2/model-evaluation-anthropic_claude-haiku-5.5.json`, `output/phase2/voice-evaluation.json`.
