@@ -11,6 +11,7 @@ import {
   Notice,
   Loading,
 } from "../state";
+import { queuedWrite } from "@/lib/core/queued-write";
 import { useFieldEvents } from "./greeting";
 import { useAgentPage } from "./store";
 
@@ -60,49 +61,47 @@ function History({ onRestored }: { onRestored: () => void }) {
     { agentId, queue, settings } = p;
   const [cursor, setCursor] = useState<string>(),
     [compare, setCompare] = useState<Version>(),
-    [confirm, setConfirm] = useState<string>();
+    [confirm, setConfirm] = useState<string>(),
+    [unsaved, setUnsaved] = useState(false);
   const r = useResource(
     () => client.execute("versions", { id: agentId, cursor }),
     agentId + "|" + cursor + "|" + p.reloadKey,
   );
   async function restore(v: Version) {
-    // A typed edit goes first, so the restore is the last word.
-    p.flush();
-    // Settings edits are refused from here until the restored settings are
-    // read back, so nothing typed meanwhile is sent with an old body.
-    p.beginRestore();
-    const ok = await a.run(async () => {
-      let done = false;
-      await queue.push({
-        run: async (expectedRevision, key) => {
-          const restored = await client.execute(
+    setUnsaved(false);
+    const outcome = await a.run(() =>
+      p.restore(() =>
+        queuedWrite(queue, (expectedRevision, key) =>
+          client.execute(
             "restore",
             { id: agentId, versionId: v.id, expectedRevision },
             key,
-          );
-          done = true;
-          return restored.revision;
-        },
-      });
-      return done;
-    });
-    if (!ok) {
-      p.endRestore();
+          ),
+        ),
+      ),
+    );
+    if (!outcome) return; // failed: the notice shows it, nothing is locked
+    if (outcome === "unsaved") {
+      setUnsaved(true);
       return;
     }
     setConfirm(undefined);
-    try {
-      await p.reloadSettings();
-    } catch {
-      // The page shows an error with Retry and sends no settings until the
-      // restored settings were read.
-    }
+    // "reloadFailed": the page shows an error with Retry, and sends no
+    // settings until the restored settings were read.
     onRestored();
   }
   return (
     <div className="builder-fields">
       <h3>{w("Past versions", "Versi lalu")}</h3>
       <Notice {...a} />
+      {unsaved && (
+        <p role="alert">
+          {w(
+            "Your last edit is not saved yet. Save it first, then restore.",
+            "Suntingan terakhir anda belum disimpan. Simpan dahulu, kemudian pulihkan.",
+          )}
+        </p>
+      )}
       {r.error || !r.data ? (
         <Loading error={r.error} />
       ) : !r.data.items.length ? (

@@ -82,10 +82,15 @@ export function createSettingsSync(o: {
       if (s === "conflict") {
         error = undefined;
         clearTimeout(timer);
-        local = afterConflict(server, local, [
-          ...(focused ? [focused] : []),
-          ...blurred.keys(),
-        ]);
+        // Only a field the owner changed is kept; one merely tabbed
+        // through shows the server's value.
+        local = afterConflict(
+          server,
+          local,
+          [...(focused ? [focused] : []), ...blurred.keys()].filter(
+            (f) => JSON.stringify(local[f]) !== JSON.stringify(lastValid[f]),
+          ),
+        );
         lastValid = server;
         lastSent = server;
         invalid = validSettings(local, server).invalid;
@@ -183,6 +188,38 @@ export function createSettingsSync(o: {
       held = false;
       reloadFailed = false;
       o.onChange();
+    },
+    // A restore: the waiting edit lands first (no restore when it did not
+    // land, so the page is never left locked behind a stopped queue), then
+    // edits are held while `run` writes, and the draft is read back.
+    // "unsaved": nothing was done. "reloadFailed": restored, but the hold
+    // stays until reload() succeeds. A failed `run` releases the hold and
+    // rejects.
+    async restore(
+      run: () => Promise<unknown>,
+    ): Promise<"unsaved" | "restored" | "reloadFailed"> {
+      this.flush();
+      await this.settled();
+      if (
+        status === "error" ||
+        status === "conflict" ||
+        queue.pending() ||
+        unsaved()
+      )
+        return "unsaved";
+      this.hold();
+      try {
+        await run();
+      } catch (e) {
+        this.release();
+        throw e;
+      }
+      try {
+        await this.reload();
+      } catch {
+        return "reloadFailed";
+      }
+      return "restored";
     },
     held: () => held,
     reloadFailed: () => reloadFailed,

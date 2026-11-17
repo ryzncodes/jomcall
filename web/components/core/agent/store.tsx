@@ -51,8 +51,10 @@ export type AgentPage = {
   // edits are refused and nothing is sent.
   locked: boolean;
   reloadFailed: boolean;
-  beginRestore: () => void;
-  endRestore: () => void;
+  // Sends the waiting edit, then runs the restore with settings edits held.
+  restore: (
+    run: () => Promise<unknown>,
+  ) => Promise<"unsaved" | "restored" | "reloadFailed">;
   invalid: (keyof AgentSettings)[];
   // True while an edit is not on the server: waiting, being sent, or failed.
   dirty: boolean;
@@ -220,8 +222,7 @@ function Store({
         reloadSettings: () => sync.reload(),
         locked: sync.held(),
         reloadFailed: sync.reloadFailed(),
-        beginRestore: () => sync.hold(),
-        endRestore: () => sync.release(),
+        restore: (run) => sync.restore(run),
         invalid: sync.invalid(),
         dirty: sync.unsaved(),
         waiting: sync.dirty(),

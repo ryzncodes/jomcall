@@ -279,3 +279,117 @@ test("reload takes the server draft as local and saved", async () => {
   assert.equal(t.sync.unsaved(), false);
   assert.equal(t.sync.dirty(), false);
 });
+
+test("a blurred field nothing was typed in takes the server's value after a conflict", async () => {
+  const server = { ...base, name: "Orang lain" };
+  const t = setup({
+    send: async () => {
+      throw new Conflict();
+    },
+    server: () => server,
+  });
+  t.sync.setFocused("greeting");
+  t.sync.change({ greeting: "Taip" });
+  t.sync.setFocused("name");
+  t.sync.blur("name");
+  t.sync.setFocused("greeting");
+  t.sync.flush();
+  await t.sync.queue.idle();
+  assert.equal(t.sync.settings().name, "Orang lain");
+  assert.equal(t.sync.settings().greeting, "Taip");
+});
+
+test("a focused field equal to the saved value takes the server's value after a conflict", async () => {
+  const server = { ...base, name: "Orang lain" };
+  const t = setup({
+    send: async () => {
+      throw new Conflict();
+    },
+    server: () => server,
+  });
+  t.sync.change({ greeting: "Taip" });
+  t.sync.setFocused("name");
+  t.sync.flush();
+  await t.sync.queue.idle();
+  assert.equal(t.sync.settings().name, "Orang lain");
+});
+
+function restoreSetup(opts: { send?: () => Promise<number>; readFails?: () => boolean }) {
+  const sent: AgentSettings[] = [];
+  const sync = createSettingsSync({
+    initial: base,
+    revision: 1,
+    newKey: () => "k",
+    isConflict: (e) => e instanceof Conflict,
+    isLost: () => false,
+    wait: async () => {},
+    send: async (s, rev) => {
+      sent.push(s);
+      return opts.send ? opts.send() : rev + 1;
+    },
+    read: async () => {
+      if (opts.readFails?.()) throw new Error("offline");
+      return { revision: 9, settings: { ...base, instructions: "Pulih" } };
+    },
+    onChange: () => {},
+    onConflict: () => {},
+  });
+  return { sync, sent };
+}
+
+test("a restore does not start when the flushed edit fails, and nothing stays locked", async () => {
+  const { sync } = restoreSetup({
+    send: async () => {
+      throw new Error("500");
+    },
+  });
+  sync.change({ greeting: "Belum disimpan" });
+  let ran = false;
+  const r = await sync.restore(async () => {
+    ran = true;
+  });
+  assert.equal(r, "unsaved");
+  assert.equal(ran, false);
+  assert.equal(sync.held(), false);
+  sync.change({ greeting: "Lagi" });
+  assert.equal(sync.settings().greeting, "Lagi");
+});
+
+test("a restore sends the waiting edit first, holds while it runs, then reads the draft back", async () => {
+  const { sync, sent } = restoreSetup({});
+  sync.change({ greeting: "Dahulu" });
+  let heldDuring = false;
+  const r = await sync.restore(async () => {
+    heldDuring = sync.held();
+    sync.change({ greeting: "Ditolak" });
+  });
+  assert.equal(r, "restored");
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.greeting, "Dahulu");
+  assert.equal(heldDuring, true);
+  assert.equal(sync.held(), false);
+  assert.equal(sync.settings().instructions, "Pulih");
+  assert.equal(sync.settings().greeting, base.greeting);
+});
+
+test("a restore that fails releases the hold and rejects", async () => {
+  const { sync } = restoreSetup({});
+  await assert.rejects(
+    sync.restore(async () => {
+      throw new Error("500");
+    }),
+  );
+  assert.equal(sync.held(), false);
+});
+
+test("a restore whose reload fails keeps the hold with reloadFailed for a retry", async () => {
+  let fail = true;
+  const { sync } = restoreSetup({ readFails: () => fail });
+  const r = await sync.restore(async () => {});
+  assert.equal(r, "reloadFailed");
+  assert.equal(sync.held(), true);
+  assert.equal(sync.reloadFailed(), true);
+  fail = false;
+  await sync.reload();
+  assert.equal(sync.held(), false);
+});
