@@ -138,7 +138,7 @@ export const SETTINGS: Setting[] = [
     secret: false,
     required: false,
     description:
-      "Optional: disabled (default), fake or cloud. cloud is not approved yet",
+      "Optional: disabled (default), fake or cloud. cloud is approved for hosted staging only",
   },
   {
     name: "WHATSAPP_APP_SECRET",
