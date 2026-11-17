@@ -637,3 +637,24 @@ test("draftsAfter: saved, skipped and handled drop the draft; failed keeps it", 
   assert.equal(kept.g1!.answer, "a");
   assert.equal(kept.g2!.answer, "b");
 });
+
+test("normalizeTime reads 24:00 for a closing time only", () => {
+  for (const t of ["2400", "24", "24:00", " 2400 "])
+    assert.equal(normalizeTime(t, "end"), "24:00");
+  // An opening time never takes it.
+  assert.equal(normalizeTime("2400", "start"), "2400");
+  assert.equal(normalizeTime("24"), "24");
+  // Past midnight stays refused for an end too.
+  for (const bad of ["2401", "2430", "25", "2460"])
+    assert.equal(normalizeTime(bad, "end"), bad);
+  // Other end times read as before.
+  assert.equal(normalizeTime("1730", "end"), "17:30");
+  assert.equal(normalizeTime("9", "end"), "09:00");
+});
+
+test("a day that runs to 24:00 is valid and reads sensibly", () => {
+  const day = [{ start: "09:00", end: "24:00" }];
+  assert.equal(dayError(day), null);
+  assert.equal(dayError([{ start: "00:00", end: "24:00" }]), null);
+  assert.equal(weekSummary([day, day, day, day, day, [], []]).en, "Mon to Fri 9:00 to 24:00");
+});

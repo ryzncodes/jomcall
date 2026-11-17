@@ -375,3 +375,56 @@ test("a late reload read cannot undo a save that finished meanwhile", async () =
   await sync.idle();
   assert.deepEqual(sent, [3, 4]);
 });
+
+function setupFresh() {
+  const sent: { body: ScheduleBody; rev: number }[] = [];
+  const sync = createScheduleSync({
+    initial: {
+      timezone: "Asia/Kuala_Lumpur",
+      weekdays: closedWeek.map((d) => d.map((b) => ({ ...b }))),
+      closures: [],
+      revision: 0,
+    },
+    newKey: () => "k",
+    isConflict: () => false,
+    isLost: () => false,
+    wait: async () => {},
+    send: async (body, rev) => {
+      sent.push({ body, rev });
+      return { ...body, revision: rev + 1 };
+    },
+    read: async () => ({
+      timezone: "Asia/Kuala_Lumpur",
+      weekdays: closedWeek,
+      closures: [],
+      revision: 0,
+    }),
+    onChange: () => {},
+  });
+  return { sync, sent };
+}
+
+test("a branch with no hours yet: opening a day and closing it again saves 'closed every day' once", async () => {
+  const t = setupFresh();
+  const on = closedWeek.map((d, i) =>
+    i === 0 ? [{ start: "09:00", end: "17:00" }] : d,
+  );
+  t.sync.setWeek(on);
+  t.sync.setWeek(closedWeek);
+  t.sync.save();
+  await t.sync.idle();
+  assert.equal(t.sent.length, 1);
+  assert.equal(t.sent[0]!.rev, 0);
+  assert.equal(t.sync.revision(), 1);
+  assert.equal(t.sync.state().server.revision, 1);
+});
+
+test("a branch with no hours yet: opening it and doing nothing sends nothing", async () => {
+  const t = setupFresh();
+  // A row losing focus tidies and saves without any change.
+  t.sync.setWeek(t.sync.state().weekdays);
+  t.sync.save();
+  await t.sync.idle();
+  assert.equal(t.sent.length, 0);
+  assert.equal(t.sync.revision(), 0);
+});

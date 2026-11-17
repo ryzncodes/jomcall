@@ -93,7 +93,15 @@ function History({ onRestored }: { onRestored: () => void }) {
   return (
     <div className="builder-fields">
       <h3>{w("Past versions", "Versi lalu")}</h3>
-      <Notice {...a} saved={a.saved && !unsaved} />
+      <Notice error={a.error} />
+      {a.saved && !a.error && !unsaved && (
+        <p className="core-success" role="status">
+          {w(
+            "Restored to your draft. Publish to make it live.",
+            "Dipulihkan ke draf anda. Terbitkan untuk mengaktifkannya.",
+          )}
+        </p>
+      )}
       {unsaved && (
         <p role="alert">
           {w(

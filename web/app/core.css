@@ -2301,9 +2301,15 @@
 
 /* Agent page sub-views: greeting, knowledge and more. */
 .agent-view {
+  --danger: #b3261e;
   display: grid;
   gap: 16px;
   min-width: 0;
+}
+/* The dark error colour the product error box already uses. Set here, not on
+   :root, so other screens that read --danger with their own fallback keep it. */
+[data-theme="dark"] .agent-view {
+  --danger: #f2c2ac;
 }
 .agent-view h2 {
   font-size: 20px;

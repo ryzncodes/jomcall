@@ -64,6 +64,10 @@ export function createScheduleSync(o: {
   let saving = false;
   let error: unknown;
   let conflicted = false;
+  // The owner changed something (not just opened or tidied a row). On a
+  // branch that never had hours (revision 0) the default equals "closed every
+  // day", so only this tells a real choice from an opened page.
+  let touched = false;
   let lastSent: ScheduleBody | undefined;
   let settleWaiters: (() => void)[] = [];
   const notify = () => o.onChange();
@@ -127,7 +131,8 @@ export function createScheduleSync(o: {
           // Built once, on the first try: a retry after a lost answer sends
           // the same body under the same key.
           body ??= build();
-          if (sameBody(body, server)) return server.revision;
+          if (sameBody(body, server) && !(server.revision === 0 && touched))
+            return server.revision;
           lastSent = body;
           const saved = clean(await o.send(body, revision, key));
           server = saved;
@@ -155,12 +160,14 @@ export function createScheduleSync(o: {
         !sameClosures(closures, server.closures),
     }),
     setWeek(next: Interval[][]) {
+      if (!sameWeek(next, weekdays)) touched = true;
       weekdays = copyWeek(next);
       error = undefined;
       conflicted = false;
       notify();
     },
     setClosures(next: Closure[]) {
+      if (!sameClosures(next, closures)) touched = true;
       closures = copyClosures(next);
       error = undefined;
       conflicted = false;
