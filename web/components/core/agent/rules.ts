@@ -271,11 +271,20 @@ const END = /^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/;
 export const isStart = (t: string) => TIME.test(t);
 export const isEnd = (t: string) => END.test(t);
 
-// What a typed time becomes when the field loses focus: "9:00" is "09:00".
-// Anything else is left as typed so the owner sees it and fixes it.
+// What a typed time becomes when the field loses focus. A phone's number
+// pad has no colon, so "9", "900", "0900" and "1730" are read as times
+// (hours 0 to 23, minutes 0 to 59), and "9:00" is "09:00". Anything else is
+// left as typed so the owner sees it and fixes it.
 export function normalizeTime(raw: string): string {
   const t = raw.trim();
-  return /^\d:[0-5]\d$/.test(t) ? "0" + t : t;
+  let h: string, m: string;
+  if (/^\d{1,2}$/.test(t)) [h, m] = [t, "00"];
+  else if (/^\d{3}$/.test(t)) [h, m] = [t.slice(0, 1), t.slice(1)];
+  else if (/^\d{4}$/.test(t)) [h, m] = [t.slice(0, 2), t.slice(2)];
+  else if (/^\d:[0-5]\d$/.test(t)) return "0" + t;
+  else return t;
+  if (Number(h) > 23 || Number(m) > 59) return t;
+  return `${h.padStart(2, "0")}:${m}`;
 }
 
 // A day the server would refuse, by the first problem found. Only checks

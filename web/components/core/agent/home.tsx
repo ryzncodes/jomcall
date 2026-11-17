@@ -76,7 +76,9 @@ export function Home() {
   );
 
   const name =
-    version.data?.snapshot.settings.name || settings.name || w("Your agent", "Ejen anda");
+    version.data?.snapshot.settings.name ||
+    settings.name ||
+    w("Your agent", "Ejen anda");
   const when = version.data
     ? new Date(version.data.created_at).toLocaleDateString(
         locale === "ms" ? "ms-MY" : "en-MY",
@@ -92,10 +94,7 @@ export function Home() {
         ? w("Answers on the phone", "Menjawab di telefon")
         : ch.whatsapp
           ? w("Answers on WhatsApp", "Menjawab di WhatsApp")
-          : w(
-              "Answers test calls only",
-              "Menjawab panggilan ujian sahaja",
-            );
+          : w("Answers test calls only", "Menjawab panggilan ujian sahaja");
 
   const langName = {
     ms: "BM",
@@ -113,7 +112,9 @@ export function Home() {
       <section className="agent-card" aria-labelledby="agent-status">
         {status.state === "unpublished" ? (
           <>
-            <h2 id="agent-status">{w("Not published yet", "Belum diterbitkan")}</h2>
+            <h2 id="agent-status">
+              {w("Not published yet", "Belum diterbitkan")}
+            </h2>
             <p>{channelLine || loading}</p>
             <a className="agent-link" href={href("/app/setup")}>
               {w(
@@ -133,14 +134,19 @@ export function Home() {
               </span>
             </div>
             <p>
-              {[channelLine, when && w("published " + when, "diterbitkan " + when)]
+              {[
+                channelLine,
+                when && w("published " + when, "diterbitkan " + when),
+              ]
                 .filter(Boolean)
                 .join(" · ") || loading}
             </p>
             {status.state === "pending" && (
               <span className="agent-pill agent-pill-warn">
                 {w(
-                  n === 1 ? "1 change not live yet" : n + " changes not live yet",
+                  n === 1
+                    ? "1 change not live yet"
+                    : n + " changes not live yet",
                   n + " perubahan belum aktif",
                 )}
               </span>
@@ -149,7 +155,10 @@ export function Home() {
         )}
       </section>
 
-      <nav className="agent-rows" aria-label={w("Agent sections", "Bahagian ejen")}>
+      <nav
+        className="agent-rows"
+        aria-label={w("Agent sections", "Bahagian ejen")}
+      >
         {row(
           "questions",
           w("Questions it could not answer", "Soalan yang tidak dapat dijawab"),
@@ -184,7 +193,15 @@ export function Home() {
                     ? "1 branch"
                     : hours.data.branches + " branches",
                   hours.data.branches + " cawangan",
-                )}`
+                )}${
+                  page.hours.unsavedBranches().length
+                    ? " · " +
+                      w(
+                        "Hours not saved. Open to finish.",
+                        "Waktu belum disimpan. Buka untuk menyelesaikan.",
+                      )
+                    : ""
+                }`
               : loading,
         )}
         {row(

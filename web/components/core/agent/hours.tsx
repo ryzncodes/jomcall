@@ -7,7 +7,11 @@ import { Field } from "../field";
 import { Notice, errorText, useCore, useWords, useResource } from "../state";
 import { HoursWeek, type Sync } from "./hours-week";
 import { closedWeek, weekSummary, type Interval } from "./rules";
-import { createScheduleSync, type ScheduleData } from "./schedule-sync";
+import {
+  createScheduleSync,
+  createHoursStore,
+  type ScheduleData,
+} from "./schedule-sync";
 
 const KL = "Asia/Kuala_Lumpur";
 const isConflict = (e: unknown) =>
@@ -36,12 +40,17 @@ type Props = {
   editable: boolean;
   // Moves home's "changes not live" count after a save.
   refreshChanges?: () => void;
+  // The page's syncs, so typed and unsaved rows outlive this view.
+  store?: ReturnType<typeof createHoursStore>;
 };
 
 // Opening hours, one branch at a time. Saves go through the branch's own
 // sync (one at a time, with that schedule's revision); they do not use the
 // agent's save queue because they do not check the agent revision.
-export function Hours({ editable, refreshChanges }: Props) {
+// Stands in for the page's store in the read-only view, which never uses it.
+const readOnlyStore = createHoursStore();
+export function Hours({ editable, refreshChanges, store: given }: Props) {
+  const store = given ?? readOnlyStore;
   const w = useWords(),
     { client, workspace } = useCore(),
     { href } = useExperience();
@@ -61,8 +70,9 @@ export function Hours({ editable, refreshChanges }: Props) {
   const [chosen, setChosen] = useState<string>(""),
     [adding, setAdding] = useState(false),
     [, tick] = useState(0);
-  const syncs = useRef(new Map<string, Sync>()),
-    loading = useRef(new Set<string>()),
+  // The page's store; the unsaved-hours leave warning lives with it.
+  useEffect(() => store.subscribe(() => tick((n) => n + 1)), [store]);
+  const loading = useRef(new Set<string>()),
     [loadErrors, setLoadErrors] = useState<Record<string, unknown>>({});
   const changed = useRef(refreshChanges);
   changed.current = refreshChanges;
@@ -83,21 +93,20 @@ export function Hours({ editable, refreshChanges }: Props) {
         ) as Promise<ScheduleData>,
       read: () =>
         client.execute("schedule", { id: branch }) as Promise<ScheduleData>,
-      onChange: () => tick((n) => n + 1),
+      onChange: () => store.notify(),
       onSaved: () => changed.current?.(),
     });
-    syncs.current.set(branch, sync);
+    store.set(branch, sync);
     return sync;
   };
 
   const load = (branch: string) => {
-    if (!branch || syncs.current.has(branch) || loading.current.has(branch))
-      return;
+    if (!branch || store.get(branch) || loading.current.has(branch)) return;
     loading.current.add(branch);
     client
       .execute("schedule", { id: branch })
       .then((s) => {
-        if (!syncs.current.has(branch)) make(branch, s as ScheduleData);
+        if (!store.get(branch)) make(branch, s as ScheduleData);
         setLoadErrors(({ [branch]: _g, ...rest }) => rest);
         tick((n) => n + 1);
       })
@@ -110,22 +119,9 @@ export function Hours({ editable, refreshChanges }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, editable]);
 
-  useEffect(() => {
-    const leave = (e: BeforeUnloadEvent) => {
-      for (const s of syncs.current.values())
-        if (s.pending() || s.state().unsaved) {
-          e.preventDefault();
-          e.returnValue = "";
-          return;
-        }
-    };
-    window.addEventListener("beforeunload", leave);
-    return () => window.removeEventListener("beforeunload", leave);
-  }, []);
-
   if (!editable) return <ReadOnlyHours branches={branches} />;
 
-  const sync = syncs.current.get(id);
+  const sync = store.get(id);
   return (
     <section className="agent-view" aria-labelledby="agent-hours-h">
       <h2 id="agent-hours-h">{w("Opening hours", "Waktu operasi")}</h2>
@@ -164,8 +160,7 @@ export function Hours({ editable, refreshChanges }: Props) {
           onCancel={() => setAdding(false)}
           onMade={(location) => setMade((m) => [...m, location])}
           onReady={(location, initial, copy) => {
-            const s =
-              syncs.current.get(location.id) ?? make(location.id, initial);
+            const s = store.get(location.id) ?? make(location.id, initial);
             setChosen(location.id);
             setAdding(false);
             if (copy) {

@@ -112,7 +112,13 @@ function Sub({ view }: { view: Exclude<View, "home"> }) {
     case "more":
       return <More />;
     case "hours":
-      return <Hours editable refreshChanges={page.refreshChanges} />;
+      return (
+        <Hours
+          editable
+          refreshChanges={page.refreshChanges}
+          store={page.hours}
+        />
+      );
     case "questions":
       return <Questions />;
     case "publish":

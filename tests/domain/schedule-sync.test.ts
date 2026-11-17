@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  createHoursStore,
   createScheduleSync,
   type ScheduleBody,
   type ScheduleData,
@@ -195,4 +196,96 @@ test("reload reads in place and keeps typed days", async () => {
   assert.deepEqual(s.weekdays[0], [{ start: "7:00", end: "9:00" }]);
   assert.deepEqual(s.weekdays[1], theirs.weekdays[1]);
   assert.equal(t.sync.revision(), 6);
+});
+
+test("settled waits for a save in flight and does not hang after a failure", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const t = setup({
+    send: async (body, rev) => {
+      await gate;
+      return { ...body, revision: rev + 1 };
+    },
+  });
+  const w = t.sync.state().weekdays.map((d) => d.map((b) => ({ ...b })));
+  w[5] = [{ start: "10:00", end: "14:00" }];
+  t.sync.setWeek(w);
+  t.sync.save();
+  let done = false;
+  void t.sync.settled().then(() => (done = true));
+  await Promise.resolve();
+  assert.equal(done, false);
+  release();
+  await t.sync.settled();
+  assert.equal(t.sync.state().server.revision, 4);
+
+  const bad = setup({
+    send: async () => {
+      throw new Refused();
+    },
+  });
+  const w2 = bad.sync.state().weekdays.map((d) => d.map((b) => ({ ...b })));
+  w2[5] = [{ start: "10:00", end: "14:00" }];
+  bad.sync.setWeek(w2);
+  bad.sync.save();
+  const w3 = w2.map((d) => d.map((b) => ({ ...b })));
+  w3[6] = [{ start: "10:00", end: "12:00" }];
+  bad.sync.setWeek(w3);
+  bad.sync.save();
+  await bad.sync.settled();
+  assert.ok(bad.sync.state().error instanceof Refused);
+});
+
+test("the store keeps a sync, its typed rows and its save across leaving the view", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const t = setup({
+    send: async (body, rev) => {
+      await gate;
+      return { ...body, revision: rev + 1 };
+    },
+  });
+  const store = createHoursStore();
+  store.set("b1", t.sync);
+  const w = t.sync.state().weekdays.map((d) => d.map((b) => ({ ...b })));
+  w[5] = [{ start: "10:00", end: "14:00" }];
+  t.sync.setWeek(w);
+  t.sync.save();
+  // The owner leaves the view; a row typed but refused stays too.
+  const other = setup({
+    send: async () => {
+      throw new Refused();
+    },
+  });
+  store.set("b2", other.sync);
+  const w2 = other.sync.state().weekdays.map((d) => d.map((b) => ({ ...b })));
+  w2[0] = [];
+  other.sync.setWeek(w2);
+  other.sync.save();
+  assert.equal(store.get("b1"), t.sync);
+  assert.equal(store.unsaved(), true);
+  let left = false;
+  void store.settled().then(() => (left = true));
+  await Promise.resolve();
+  assert.equal(left, false);
+  release();
+  await store.settled();
+  // Back on the view: same sync, save landed on it, no false conflict.
+  const again = store.get("b1")!;
+  assert.equal(again.state().server.revision, 4);
+  assert.equal(again.state().conflicted, false);
+  assert.equal(again.state().unsaved, false);
+  // The refused branch still holds its typed row.
+  assert.deepEqual(store.get("b2")!.state().weekdays[0], []);
+  assert.deepEqual(store.unsavedBranches(), ["b2"]);
+});
+
+test("the store tells listeners about changes and stops after unsubscribe", () => {
+  const store = createHoursStore();
+  let n = 0;
+  const off = store.subscribe(() => n++);
+  store.notify();
+  off();
+  store.notify();
+  assert.equal(n, 1);
 });

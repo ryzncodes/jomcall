@@ -17,6 +17,7 @@ import type {
 import { useCore, useWords, Loading } from "../state";
 import { type View, withVoice } from "./rules";
 import { createSettingsSync } from "./settings-sync";
+import { createHoursStore } from "./schedule-sync";
 
 const defaults: AgentSettings = {
   name: "",
@@ -64,6 +65,9 @@ export type AgentPage = {
   // The error behind status "error", for the save line.
   error: unknown;
   queue: Queue;
+  // Per-branch opening hours state; lives as long as the page, so unsaved
+  // hours are still here when the owner comes back to #hours.
+  hours: ReturnType<typeof createHoursStore>;
   changes: AgentChanges | undefined;
   refreshChanges: () => void;
   go: (view: View) => Promise<void>;
@@ -178,18 +182,25 @@ function Store({
       },
     });
   const sync = syncRef.current;
+  const hoursRef = useRef<ReturnType<typeof createHoursStore>>(undefined);
+  if (!hoursRef.current) hoursRef.current = createHoursStore();
+  const hours = hoursRef.current;
 
   async function go(view: View) {
     sync.flush();
-    await sync.settled();
+    // Schedule saves in flight land first; a sync stopped by an error is
+    // not waited on.
+    await Promise.all([sync.settled(), hours.settled()]);
     location.hash = view === "home" ? "" : view;
   }
 
   useEffect(() => {
     refreshChanges();
+    // Home shows a hint while hours are unsaved, so it follows the store.
+    const unsubscribe = hours.subscribe(() => tick((n) => n + 1));
     const pagehide = () => sync.pagehide();
     const beforeunload = (e: BeforeUnloadEvent) => {
-      if (sync.queue.pending() || sync.unsaved()) {
+      if (sync.queue.pending() || sync.unsaved() || hours.unsaved()) {
         e.preventDefault();
         e.returnValue = "";
       }
@@ -197,6 +208,7 @@ function Store({
     window.addEventListener("pagehide", pagehide);
     window.addEventListener("beforeunload", beforeunload);
     return () => {
+      unsubscribe();
       window.removeEventListener("pagehide", pagehide);
       window.removeEventListener("beforeunload", beforeunload);
       // Leaving the page inside the app: an edit still waiting is sent.
@@ -229,6 +241,7 @@ function Store({
         status: sync.status(),
         error: sync.error(),
         queue: sync.queue,
+        hours,
         changes,
         refreshChanges,
         go,

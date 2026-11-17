@@ -60,6 +60,7 @@ export function createScheduleSync(o: {
   let conflicted = false;
   let lastSent: ScheduleBody | undefined;
   let dead = false;
+  let settleWaiters: (() => void)[] = [];
   const notify = () => {
     if (!dead) o.onChange();
   };
@@ -102,6 +103,11 @@ export function createScheduleSync(o: {
           conflicted = true;
           o.onConflict?.();
         }
+        // A stopped queue (error, conflict) is settled: nothing more runs
+        // until the owner saves again.
+        const waiters = settleWaiters;
+        settleWaiters = [];
+        for (const f of waiters) f();
       }
       notify();
     },
@@ -171,10 +177,47 @@ export function createScheduleSync(o: {
       notify();
     },
     pending: () => queue.pending(),
+    // Resolves when no save is running: after the saves in flight land, or
+    // at once after one stopped with an error. Never waits on a stopped sync.
+    settled(): Promise<void> {
+      if (!saving) return Promise.resolve();
+      return new Promise<void>((r) => settleWaiters.push(r));
+    },
     idle: () => queue.idle(),
     revision: () => queue.revision(),
     dispose() {
       dead = true;
     },
+  };
+}
+
+type Sync = ReturnType<typeof createScheduleSync>;
+
+// The syncs of one agent page, keyed by branch. It lives as long as the page
+// (not the hours view), so typed, refused and unsaved rows and saves in
+// flight are still there when the owner comes back to the hours.
+export function createHoursStore() {
+  const syncs = new Map<string, Sync>();
+  const listeners = new Set<() => void>();
+  const all = () => [...syncs.values()];
+  return {
+    get: (branch: string) => syncs.get(branch),
+    set(branch: string, sync: Sync) {
+      syncs.set(branch, sync);
+    },
+    notify() {
+      for (const f of [...listeners]) f();
+    },
+    subscribe(f: () => void) {
+      listeners.add(f);
+      return () => {
+        listeners.delete(f);
+      };
+    },
+    // Branches holding text the server does not have.
+    unsavedBranches: () =>
+      [...syncs].filter(([, s]) => s.state().unsaved).map(([id]) => id),
+    unsaved: () => all().some((s) => s.state().unsaved || s.pending()),
+    settled: () => Promise.all(all().map((s) => s.settled())).then(() => {}),
   };
 }

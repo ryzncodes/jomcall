@@ -72,7 +72,15 @@ test("weekSummary", () => {
   });
   const gaps = [day, [], day, [], day, [], []];
   assert.equal(weekSummary(gaps).en, "Mon, Wed, Fri 9:00 to 17:00");
-  const vary = [day, day, day, day, day, [{ start: "09:00", end: "13:00" }], []];
+  const vary = [
+    day,
+    day,
+    day,
+    day,
+    day,
+    [{ start: "09:00", end: "13:00" }],
+    [],
+  ];
   assert.deepEqual(weekSummary(vary), {
     en: "Hours vary by day",
     ms: "Waktu berbeza mengikut hari",
@@ -113,7 +121,12 @@ test("afterConflict keeps only the focused field", () => {
 });
 
 test("saveLineOf picks the line for the save state", () => {
-  const idle = { status: "idle", invalid: [], waiting: false, unsaved: false } as const;
+  const idle = {
+    status: "idle",
+    invalid: [],
+    waiting: false,
+    unsaved: false,
+  } as const;
   assert.equal(saveLineOf(idle), "none");
   assert.equal(saveLineOf({ ...idle, status: "saved" }), "saved");
   // In flight with nothing newer waiting: Saving, though still unsaved.
@@ -152,7 +165,10 @@ test("validSettings maps an empty, free-text or unknown voice to the default", (
     const { send } = validSettings({ ...base, voicePreference: v }, base);
     assert.equal(send.voicePreference, voiceFor(""));
   }
-  const keep = validSettings({ ...base, voicePreference: VOICE_PRESETS[1] }, base);
+  const keep = validSettings(
+    { ...base, voicePreference: VOICE_PRESETS[1] },
+    base,
+  );
   assert.equal(keep.send.voicePreference, VOICE_PRESETS[1]);
 });
 
@@ -172,7 +188,10 @@ test("channelWords: names known channels and drops unknown ones", () => {
     en: "Voice test",
     ms: "Ujian suara",
   });
-  assert.deepEqual(channelWords(["text", "phone", "whatsapp", "text"]).en, "Typed test, Phone, WhatsApp");
+  assert.deepEqual(
+    channelWords(["text", "phone", "whatsapp", "text"]).en,
+    "Typed test, Phone, WhatsApp",
+  );
   assert.deepEqual(channelWords([]), { en: "", ms: "" });
 });
 
@@ -191,7 +210,9 @@ test("drafts: a reload that replaces the list leaves typed text alone", () => {
 });
 
 test("drafts: only a stored save drops its draft", () => {
-  const d = setDraft(setDraft({}, "g1", { answer: "a" }), "g2", { answer: "b" });
+  const d = setDraft(setDraft({}, "g1", { answer: "a" }), "g2", {
+    answer: "b",
+  });
   const after = dropDraft(d, "g1");
   assert.equal("g1" in after, false);
   assert.equal(after.g2!.answer, "b");
@@ -200,7 +221,10 @@ test("drafts: only a stored save drops its draft", () => {
 
 test("gapConflictAction: still open retries once with the fresh revision", () => {
   const fresh = [{ id: "g1", status: "open" as const, revision: 5 }];
-  assert.deepEqual(gapConflictAction(fresh, "g1", 0), { kind: "retry", revision: 5 });
+  assert.deepEqual(gapConflictAction(fresh, "g1", 0), {
+    kind: "retry",
+    revision: 5,
+  });
   assert.deepEqual(gapConflictAction(fresh, "g1", 1), { kind: "error" });
 });
 
@@ -237,7 +261,10 @@ test("applyPreset fills from the first open day", () => {
   );
   const ten = [{ start: "10:00", end: "18:00" }];
   assert.deepEqual(applyPreset(w, "weekdays"), week([0, 1, 2, 3, 4], ten));
-  assert.deepEqual(applyPreset(w, "everyday"), week([0, 1, 2, 3, 4, 5, 6], ten));
+  assert.deepEqual(
+    applyPreset(w, "everyday"),
+    week([0, 1, 2, 3, 4, 5, 6], ten),
+  );
   assert.deepEqual(applyPreset(closedWeek, "weekdays"), week([0, 1, 2, 3, 4]));
   assert.deepEqual(
     applyPreset(closedWeek, "everyday"),
@@ -302,11 +329,21 @@ test("closedWeek is seven empty days", () => {
   assert.ok(closedWeek.every((d) => d.length === 0));
 });
 
+test("normalizeTime reads what a phone number pad can type", () => {
+  assert.equal(normalizeTime("9"), "09:00");
+  assert.equal(normalizeTime("17"), "17:00");
+  assert.equal(normalizeTime("900"), "09:00");
+  assert.equal(normalizeTime("0900"), "09:00");
+  assert.equal(normalizeTime("1730"), "17:30");
+  assert.equal(normalizeTime("2400"), "2400");
+  for (const bad of ["2460", "99", "1a", "123456", "2530", "960"])
+    assert.equal(normalizeTime(bad), bad);
+});
+
 test("normalizeTime pads a single digit hour and keeps the rest", () => {
   assert.equal(normalizeTime("9:00"), "09:00");
   assert.equal(normalizeTime(" 17:30 "), "17:30");
   assert.equal(normalizeTime("24:00"), "24:00");
-  assert.equal(normalizeTime("9"), "9");
   assert.equal(normalizeTime("abc"), "abc");
 });
 
