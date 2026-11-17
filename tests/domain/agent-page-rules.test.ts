@@ -9,6 +9,10 @@ import {
   afterConflict,
   saveLineOf,
 } from "../../web/components/core/agent/rules.ts";
+import {
+  VOICE_PRESETS,
+  voiceFor,
+} from "../../packages/contracts/src/voices.ts";
 import type { AgentSettings } from "../../packages/contracts/src/core.ts";
 
 const base: AgentSettings = {
@@ -112,4 +116,23 @@ test("saveLineOf picks the line for the save state", () => {
     saveLineOf({ ...idle, status: "error", unsaved: true }),
     "error",
   );
+});
+
+test("afterConflict keeps every field in the set", () => {
+  const server = { ...base, name: "S", greeting: "S", instructions: "S" };
+  const local = { ...base, name: "L", greeting: "L", instructions: "L" };
+  const kept = afterConflict(server, local, ["name", "instructions"]);
+  assert.equal(kept.name, "L");
+  assert.equal(kept.instructions, "L");
+  assert.equal(kept.greeting, "S");
+  assert.deepEqual(afterConflict(server, local, []), server);
+});
+
+test("validSettings maps an empty, free-text or unknown voice to the default", () => {
+  for (const v of ["", "warm and calm", "Nobody"]) {
+    const { send } = validSettings({ ...base, voicePreference: v }, base);
+    assert.equal(send.voicePreference, voiceFor(""));
+  }
+  const keep = validSettings({ ...base, voicePreference: VOICE_PRESETS[1] }, base);
+  assert.equal(keep.send.voicePreference, VOICE_PRESETS[1]);
 });

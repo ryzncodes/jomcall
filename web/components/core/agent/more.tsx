@@ -30,7 +30,7 @@ export function More() {
         reloadKey={p.reloadKey + restored}
         sections={["packs"]}
       />
-      <div className="builder-fields">
+      <fieldset className="builder-fields agent-lock" disabled={p.locked}>
         <Field
           label={w("Written instructions", "Arahan bertulis")}
           hint={w(
@@ -46,7 +46,7 @@ export function More() {
             {...instructions}
           />
         </Field>
-      </div>
+      </fieldset>
       <History onRestored={() => setRestored((n) => n + 1)} />
     </section>
   );
@@ -68,6 +68,9 @@ function History({ onRestored }: { onRestored: () => void }) {
   async function restore(v: Version) {
     // A typed edit goes first, so the restore is the last word.
     p.flush();
+    // Settings edits are refused from here until the restored settings are
+    // read back, so nothing typed meanwhile is sent with an old body.
+    p.beginRestore();
     const ok = await a.run(async () => {
       let done = false;
       await queue.push({
@@ -83,12 +86,16 @@ function History({ onRestored }: { onRestored: () => void }) {
       });
       return done;
     });
-    if (!ok) return;
+    if (!ok) {
+      p.endRestore();
+      return;
+    }
     setConfirm(undefined);
     try {
       await p.reloadSettings();
     } catch {
-      // The restore is saved; the page shows the old text until it reloads.
+      // The page shows an error with Retry and sends no settings until the
+      // restored settings were read.
     }
     onRestored();
   }

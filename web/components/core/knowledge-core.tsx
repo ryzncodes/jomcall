@@ -4,6 +4,7 @@
 import { useState } from "react";
 import type { Input } from "../../../packages/contracts/src/core";
 import type { Job } from "@/lib/core/save-queue";
+import { queuedWrite, stored } from "@/lib/core/queued-write";
 import type {
   KnowledgeCore,
   KnowledgeFact,
@@ -102,28 +103,25 @@ export function KnowledgeCoreEditor({
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  const done = async (r: KnowledgeCore | undefined) => {
-    if (!r) return;
-    setEdits({});
-    await core.reload();
-  };
+  // Resolves true only when the write was stored; a form clears its text
+  // only then.
+  const done = (r: KnowledgeCore | undefined) =>
+    stored(r, async () => {
+      setEdits({});
+      await core.reload();
+    });
   // One write through the page's queue. The queue gives the agent revision
   // and the idempotency key; a rejection (conflict, error) shows in the
   // notice and leaves what was typed as it is.
   const exec = (fn: (call: <K extends Write>(command: K, input: Omit<Input<K>, "expectedAgentRevision">) => Promise<KnowledgeCore>) => Promise<KnowledgeCore>) =>
     a
-      .run(async () => {
-        let result: KnowledgeCore | undefined;
-        await queue.push({
-          run: async (revision, key) => {
-            result = await fn((command, input) =>
-              client.execute(command, { ...input, expectedAgentRevision: revision } as Input<typeof command>, key) as Promise<KnowledgeCore>,
-            );
-            return result.revision;
-          },
-        });
-        return result as KnowledgeCore | undefined;
-      })
+      .run(() =>
+        queuedWrite(queue, (revision, key) =>
+          fn((command, input) =>
+            client.execute(command, { ...input, expectedAgentRevision: revision } as Input<typeof command>, key) as Promise<KnowledgeCore>,
+          ),
+        ),
+      )
       .then(done);
   const data = core.data;
   const active = ["every-business", ...(picked ?? data?.packs ?? [])];
@@ -251,7 +249,7 @@ export function KnowledgeCoreEditor({
                 value: fact.value,
                 language: "mixed",
               }),
-            ).then(() => setFact({ title: "", value: "" }));
+            ).then((ok) => ok && setFact({ title: "", value: "" }));
           }}
         >
           <Field label={w("Other fact: title", "Fakta lain: tajuk")}>
@@ -326,7 +324,7 @@ export function KnowledgeCoreEditor({
             e.preventDefault();
             exec((call) =>
               call("saveRule", { agentId, kind: rule.kind, text: rule.text, enabled: true }),
-            ).then(() => setRule({ ...rule, text: "" }));
+            ).then((ok) => ok && setRule({ ...rule, text: "" }));
           }}
         >
           <Field label={w("Your rule: when", "Peraturan anda: bila")}>
@@ -395,7 +393,7 @@ export function KnowledgeCoreEditor({
                   ...(data.packs[0] ? { packId: data.packs[0] } : {}),
                   rows: parsed.rows.map((r) => ({ ...r, attributes: {}, language: "mixed" as const })),
                 }),
-              ).then(() => setPaste(""));
+              ).then((ok) => ok && setPaste(""));
             }}
           >
             {w("Add as drafts", "Tambah sebagai draf")}

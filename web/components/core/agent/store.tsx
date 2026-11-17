@@ -15,7 +15,7 @@ import type {
   AgentSettings,
 } from "../../../../packages/contracts/src/core";
 import { useCore, useWords, Loading } from "../state";
-import { type View } from "./rules";
+import { type View, withVoice } from "./rules";
 import { createSettingsSync } from "./settings-sync";
 
 const defaults: AgentSettings = {
@@ -29,7 +29,8 @@ const defaults: AgentSettings = {
   recordingDisclosure: "",
   voicePreference: "",
 };
-const merged = (a: Agent): AgentSettings => ({ ...defaults, ...a.draft });
+const merged = (a: Agent): AgentSettings =>
+  withVoice({ ...defaults, ...a.draft });
 const CHANGES_DELAY_MS = 2000;
 
 export type Queue = ReturnType<typeof createSettingsSync>["queue"];
@@ -46,6 +47,12 @@ export type AgentPage = {
   blur: (field: keyof AgentSettings) => void;
   // Reads the draft settings again (after a restore).
   reloadSettings: () => Promise<void>;
+  // A restore is in flight, or its reload has not succeeded: settings
+  // edits are refused and nothing is sent.
+  locked: boolean;
+  reloadFailed: boolean;
+  beginRestore: () => void;
+  endRestore: () => void;
   invalid: (keyof AgentSettings)[];
   // True while an edit is not on the server: waiting, being sent, or failed.
   dirty: boolean;
@@ -211,6 +218,10 @@ function Store({
         setFocused: sync.setFocused,
         blur: (field) => sync.blur(field),
         reloadSettings: () => sync.reload(),
+        locked: sync.held(),
+        reloadFailed: sync.reloadFailed(),
+        beginRestore: () => sync.hold(),
+        endRestore: () => sync.release(),
         invalid: sync.invalid(),
         dirty: sync.unsaved(),
         waiting: sync.dirty(),

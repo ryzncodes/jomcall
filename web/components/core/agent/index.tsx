@@ -61,6 +61,21 @@ function Shell() {
       <header className="agent-head">
         <h1>{w("Your agent", "Ejen anda")}</h1>
         <SaveLine />
+        {page.reloadFailed && (
+          <p role="alert" className="agent-notice">
+            {w(
+              "The restored version is saved, but this page could not read it back. Nothing is sent until it does.",
+              "Versi yang dipulihkan sudah disimpan, tetapi halaman ini tidak dapat membacanya semula. Tiada apa dihantar sehingga ia berjaya.",
+            )}{" "}
+            <button
+              type="button"
+              className="button button-small"
+              onClick={() => void page.reloadSettings().catch(() => {})}
+            >
+              {w("Try again", "Cuba lagi")}
+            </button>
+          </p>
+        )}
         {page.notice && (
           <p role="status" className="agent-notice">
             {page.notice}

@@ -7,7 +7,12 @@ import {
   type QueueStatus,
 } from "../../../lib/core/save-queue.ts";
 import type { AgentSettings } from "../../../../packages/contracts/src/core.ts";
-import { afterConflict, sameSettings, validSettings } from "./rules.ts";
+import {
+  afterConflict,
+  sameSettings,
+  validSettings,
+  withVoice,
+} from "./rules.ts";
 
 const DEBOUNCE_MS = 800;
 
@@ -35,6 +40,14 @@ export function createSettingsSync(o: {
     lastSent = o.initial,
     server = o.initial,
     focused: keyof AgentSettings | null = null,
+    // Fields left while their send was not settled, each with the token of
+    // its blur; kept through a conflict like the focused field.
+    blurred = new Map<keyof AgentSettings, number>(),
+    blurSeq = 0,
+    // True while a restore is in flight, and after it until the settings
+    // were read again: nothing is typed or sent meanwhile.
+    held = false,
+    reloadFailed = false,
     dirty = false,
     invalid: (keyof AgentSettings)[] = [],
     status: QueueStatus = "idle",
@@ -69,7 +82,10 @@ export function createSettingsSync(o: {
       if (s === "conflict") {
         error = undefined;
         clearTimeout(timer);
-        local = afterConflict(server, local, focused);
+        local = afterConflict(server, local, [
+          ...(focused ? [focused] : []),
+          ...blurred.keys(),
+        ]);
         lastValid = server;
         lastSent = server;
         invalid = validSettings(local, server).invalid;
@@ -89,6 +105,7 @@ export function createSettingsSync(o: {
 
   function push() {
     clearTimeout(timer);
+    if (held) return;
     const { send, invalid: bad } = validSettings(local, lastValid);
     invalid = bad;
     dirty = false;
@@ -120,8 +137,12 @@ export function createSettingsSync(o: {
     unsaved,
     setFocused(f: keyof AgentSettings | null) {
       focused = f;
+      // Focused again: kept as the focused field, so a stale blur must not
+      // release it.
+      if (f) blurred.delete(f);
     },
     change(partial: Partial<AgentSettings>) {
+      if (held) return;
       local = { ...local, ...partial };
       invalid = validSettings(local, lastValid).invalid;
       dirty = true;
@@ -138,23 +159,50 @@ export function createSettingsSync(o: {
         !sameSettings(local, lastValid);
       if (dirty || failed) push();
     },
-    // A text field lost focus: send its edit now, and only after the queue
-    // settles (a conflict keeps the field still counted as focused until
-    // then) forget it was focused, unless another field took over.
+    // A text field lost focus: send its edit now. It stays kept through a
+    // conflict until its send settles (the queue goes idle), unless the
+    // owner focused it again meanwhile.
     blur(field: keyof AgentSettings) {
+      if (focused === field) focused = null;
+      const token = ++blurSeq;
+      blurred.set(field, token);
       this.flush();
       void queue.idle().then(() => {
-        if (focused === field) focused = null;
+        if (blurred.get(field) === token) blurred.delete(field);
       });
     },
-    // Reads the draft again and takes it as both local and saved (after a
-    // restore, which replaces the settings on the server).
-    async reload() {
-      const a = await o.read();
+    // A restore starts: settings edits are refused and nothing is sent
+    // until reload() succeeds (or release() after a failed restore).
+    hold() {
       clearTimeout(timer);
-      local = lastValid = lastSent = server = a.settings;
+      held = true;
+      reloadFailed = false;
+      o.onChange();
+    },
+    release() {
+      held = false;
+      reloadFailed = false;
+      o.onChange();
+    },
+    held: () => held,
+    reloadFailed: () => reloadFailed,
+    // Reads the draft again and takes it as both local and saved (after a
+    // restore). On failure the hold stays and reloadFailed is set.
+    async reload() {
+      let a;
+      try {
+        a = await o.read();
+      } catch (e) {
+        reloadFailed = true;
+        o.onChange();
+        throw e;
+      }
+      clearTimeout(timer);
+      local = lastValid = lastSent = server = withVoice(a.settings);
       dirty = false;
       invalid = [];
+      held = false;
+      reloadFailed = false;
       o.onChange();
     },
     // Waits for the queue, but never after an error (the queue may keep

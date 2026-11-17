@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createSettingsSync } from "../../web/components/core/agent/settings-sync.ts";
+import { voiceFor } from "../../packages/contracts/src/voices.ts";
 import type { AgentSettings } from "../../packages/contracts/src/core.ts";
 
 class Conflict extends Error {}
@@ -13,7 +14,7 @@ const base: AgentSettings = {
   aiDisclosure: "AI",
   recordingEnabled: false,
   recordingDisclosure: "",
-  voicePreference: "",
+  voicePreference: voiceFor(""),
 };
 
 function setup(opts: {
@@ -147,8 +148,8 @@ test("while a save is in flight it is unsaved but nothing is waiting", async () 
   assert.equal(t.sync.unsaved(), false);
 });
 
-test("a blurred field keeps its text through a conflict on its own send", async () => {
-  const server = { ...base, greeting: "Orang lain" };
+test("tabbing to the next field keeps the first field's text through a conflict", async () => {
+  const server = { ...base, instructions: "Orang lain" };
   const t = setup({
     send: async () => {
       throw new Conflict();
@@ -158,30 +159,114 @@ test("a blurred field keeps its text through a conflict on its own send", async 
   t.sync.setFocused("name");
   t.sync.change({ name: "Aina Baru" });
   t.sync.blur("name");
+  t.sync.setFocused("greeting");
   await t.sync.queue.idle();
   assert.equal(t.events.conflicts, 1);
   assert.equal(t.sync.settings().name, "Aina Baru");
-  assert.equal(t.sync.settings().greeting, "Orang lain");
+  assert.equal(t.sync.settings().instructions, "Orang lain");
   assert.equal(t.sync.unsaved(), true);
 });
 
-test("blur forgets the focus after the send, unless another field took it", async () => {
-  const server = { ...base, name: "Lain", greeting: "Lain" };
+test("a field focused again during its own send is not released when the queue goes idle", async () => {
+  let calls = 0;
+  const server = { ...base, greeting: "Orang lain" };
   const t = setup({
-    send: async () => {
-      throw new Conflict();
+    send: async (_s, rev) => {
+      if (++calls === 2) throw new Conflict();
+      return rev + 1;
     },
     server: () => server,
   });
   t.sync.setFocused("name");
-  t.sync.change({ name: "X" });
+  t.sync.change({ name: "A" });
   t.sync.blur("name");
-  t.sync.setFocused("greeting");
-  t.sync.change({ greeting: "Y" });
+  t.sync.setFocused("name");
   await t.sync.queue.idle();
-  // greeting is still focused: its text stays, name takes the server's.
-  assert.equal(t.sync.settings().greeting, "Y");
+  t.sync.change({ name: "AB" });
+  t.sync.flush();
+  await t.sync.queue.idle();
+  assert.equal(t.events.conflicts, 1);
+  assert.equal(t.sync.settings().name, "AB");
+});
+
+test("a blurred field is released once its send settles", async () => {
+  let calls = 0;
+  const server = { ...base, name: "Lain" };
+  const t = setup({
+    send: async (_s, rev) => {
+      if (++calls === 2) throw new Conflict();
+      return rev + 1;
+    },
+    server: () => server,
+  });
+  t.sync.change({ name: "A" });
+  t.sync.blur("name");
+  await t.sync.queue.idle();
+  t.sync.change({ greeting: "G" });
+  t.sync.flush();
+  await t.sync.queue.idle();
+  // name was settled, so the server's copy wins for it; greeting is not kept either.
   assert.equal(t.sync.settings().name, "Lain");
+});
+
+test("while held nothing is typed or sent; a failed reload keeps the hold", async () => {
+  let readFails = true;
+  const { sync, sent } = (() => {
+    const sent: AgentSettings[] = [];
+    const sync = createSettingsSync({
+      initial: base,
+      revision: 1,
+      newKey: () => "k",
+      isConflict: (e) => e instanceof Conflict,
+      isLost: () => false,
+      wait: async () => {},
+      send: async (s, rev) => {
+        sent.push(s);
+        return rev + 1;
+      },
+      read: async () => {
+        if (readFails) throw new Error("offline");
+        return { revision: 9, settings: { ...base, instructions: "Pulih" } };
+      },
+      onChange: () => {},
+      onConflict: () => {},
+    });
+    return { sync, sent };
+  })();
+  sync.hold();
+  sync.change({ greeting: "Taip semasa pulih" });
+  sync.flush();
+  await sync.queue.idle();
+  assert.equal(sync.settings().greeting, base.greeting);
+  assert.equal(sent.length, 0);
+  await assert.rejects(() => sync.reload());
+  assert.equal(sync.held(), true);
+  assert.equal(sync.reloadFailed(), true);
+  sync.change({ greeting: "Masih ditahan" });
+  sync.flush();
+  await sync.queue.idle();
+  assert.equal(sent.length, 0);
+  readFails = false;
+  await sync.reload();
+  assert.equal(sync.held(), false);
+  assert.equal(sync.reloadFailed(), false);
+  assert.equal(sync.settings().instructions, "Pulih");
+  sync.change({ greeting: "Selepas pulih" });
+  sync.flush();
+  await sync.queue.idle();
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.instructions, "Pulih");
+  assert.equal(sent[0]!.greeting, "Selepas pulih");
+});
+
+test("release after a failed restore lets edits through again", async () => {
+  const t = setup({});
+  t.sync.hold();
+  t.sync.release();
+  t.sync.change({ greeting: "Baru" });
+  t.sync.flush();
+  await t.sync.queue.idle();
+  assert.equal(t.sent.length, 1);
 });
 
 test("reload takes the server draft as local and saved", async () => {

@@ -1,6 +1,13 @@
 // Pure rules for the agent page: no React, no DOM, so they run under node:test.
 import { agentSettings } from "../../../../packages/contracts/src/agent.ts";
 import type { AgentSettings } from "../../../../packages/contracts/src/core.ts";
+import { voiceFor } from "../../../../packages/contracts/src/voices.ts";
+
+// An empty, old free-text or unknown voice is the voice the picker shows.
+export const withVoice = (s: AgentSettings): AgentSettings => ({
+  ...s,
+  voicePreference: voiceFor(s.voicePreference),
+});
 
 export type View =
   | "home"
@@ -79,7 +86,7 @@ export function validSettings(
   next: AgentSettings,
   lastValid: AgentSettings,
 ): { send: AgentSettings; invalid: (keyof AgentSettings)[] } {
-  const send = { ...next } as Record<string, unknown>;
+  const send = { ...withVoice(next) } as Record<string, unknown>;
   const invalid: (keyof AgentSettings)[] = [];
   for (const key of Object.keys(agentSettings.shape) as (keyof AgentSettings)[]) {
     const field = agentSettings.shape[key] as {
@@ -98,14 +105,22 @@ export function sameSettings(a: AgentSettings, b: AgentSettings): boolean {
   return keys.every((k) => JSON.stringify(a[k]) === JSON.stringify(b[k]));
 }
 
-// After a conflict: the server's settings, except the field the owner is
-// typing in.
+// After a conflict: the server's settings, except the fields the owner is
+// typing in or typed in whose send has not settled yet (kept).
 export function afterConflict(
   server: AgentSettings,
   local: AgentSettings,
-  focused: keyof AgentSettings | null,
+  kept: keyof AgentSettings | null | Iterable<keyof AgentSettings>,
 ): AgentSettings {
-  return focused ? { ...server, [focused]: local[focused] } : { ...server };
+  const fields: (keyof AgentSettings)[] =
+    kept === null
+      ? []
+      : typeof kept === "string"
+        ? [kept]
+        : [...(kept as Iterable<keyof AgentSettings>)];
+  const out = { ...server } as Record<string, unknown>;
+  for (const f of fields) out[f] = local[f];
+  return out as AgentSettings;
 }
 
 // Which line the save line shows. "Saving…" wins while a save is in flight

@@ -40,7 +40,7 @@ export function Greeting() {
   return (
     <section className="agent-view" aria-labelledby="agent-greeting-h">
       <h2 id="agent-greeting-h">{w("Greeting and voice", "Salam dan suara")}</h2>
-      <div className="builder-fields">
+      <fieldset className="builder-fields agent-lock" disabled={p.locked}>
         <Field label={w("Agent name", "Nama ejen")}>
           <input
             maxLength={120}
@@ -146,7 +146,7 @@ export function Greeting() {
           value={s.voicePreference}
           onChange={(voicePreference) => choose({ voicePreference })}
         />
-      </div>
+      </fieldset>
     </section>
   );
 }

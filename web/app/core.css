@@ -2314,3 +2314,9 @@
   font-size: 13px;
   color: var(--danger, #b3261e);
 }
+.agent-view fieldset.agent-lock {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
