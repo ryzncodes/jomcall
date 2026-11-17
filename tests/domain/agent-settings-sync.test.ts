@@ -393,3 +393,67 @@ test("a restore whose reload fails keeps the hold with reloadFailed for a retry"
   await sync.reload();
   assert.equal(sync.held(), false);
 });
+
+test("a restore whose job failed with a 500 can be tried again", async () => {
+  const { sync } = restoreSetup({});
+  await assert.rejects(
+    sync.restore(() =>
+      sync.queue.push({
+        run: async () => {
+          throw new Error("500");
+        },
+      }),
+    ),
+  );
+  assert.equal(sync.held(), false);
+  assert.equal(sync.status(), "error");
+  const again = await sync.restore(() =>
+    sync.queue.push({ run: async () => sync.queue.revision() + 1 }),
+  );
+  assert.equal(again, "restored");
+});
+
+test("a restore whose job conflicted can be tried again", async () => {
+  const { sync } = restoreSetup({});
+  await assert.rejects(
+    sync.restore(() =>
+      sync.queue.push({
+        run: async () => {
+          throw new Conflict();
+        },
+      }),
+    ),
+  );
+  assert.equal(sync.status(), "conflict");
+  const again = await sync.restore(() =>
+    sync.queue.push({ run: async () => sync.queue.revision() + 1 }),
+  );
+  assert.equal(again, "restored");
+});
+
+test("an earlier failed non-settings job does not block a restore", async () => {
+  const { sync } = restoreSetup({});
+  await sync.queue
+    .push({
+      run: async () => {
+        throw new Error("500");
+      },
+    })
+    .catch(() => {});
+  assert.equal(sync.status(), "error");
+  const r = await sync.restore(() =>
+    sync.queue.push({ run: async () => sync.queue.revision() + 1 }),
+  );
+  assert.equal(r, "restored");
+});
+
+test("a failure during the restore's own flush still refuses it", async () => {
+  const { sync } = restoreSetup({
+    send: async () => {
+      throw new Error("500");
+    },
+  });
+  sync.change({ greeting: "Belum" });
+  assert.equal(await sync.restore(async () => {}), "unsaved");
+  assert.equal(sync.held(), false);
+});

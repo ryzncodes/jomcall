@@ -48,6 +48,8 @@ export function createSettingsSync(o: {
     // were read again: nothing is typed or sent meanwhile.
     held = false,
     reloadFailed = false,
+    // Counts jobs that ended in error or conflict (any job).
+    failures = 0,
     dirty = false,
     invalid: (keyof AgentSettings)[] = [],
     status: QueueStatus = "idle",
@@ -77,6 +79,7 @@ export function createSettingsSync(o: {
       // settings job is the one that ran last, including when it fails.
       if (s === "saving") settingsRunning = false;
       status = s;
+      if (s === "error" || s === "conflict") failures++;
       if (s === "error") error = e;
       if (s === "saved") error = undefined;
       if (s === "conflict") {
@@ -198,15 +201,13 @@ export function createSettingsSync(o: {
     async restore(
       run: () => Promise<unknown>,
     ): Promise<"unsaved" | "restored" | "reloadFailed"> {
+      const before = failures;
       this.flush();
       await this.settled();
-      if (
-        status === "error" ||
-        status === "conflict" ||
-        queue.pending() ||
-        unsaved()
-      )
-        return "unsaved";
+      // Refused only for an edit that is really unsaved, a job still
+      // pending, or a job that failed while this restore waited. A status
+      // left over from an earlier failure does not block it.
+      if (failures !== before || queue.pending() || unsaved()) return "unsaved";
       this.hold();
       try {
         await run();

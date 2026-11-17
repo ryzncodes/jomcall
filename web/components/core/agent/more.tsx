@@ -93,7 +93,7 @@ function History({ onRestored }: { onRestored: () => void }) {
   return (
     <div className="builder-fields">
       <h3>{w("Past versions", "Versi lalu")}</h3>
-      <Notice {...a} />
+      <Notice {...a} saved={a.saved && !unsaved} />
       {unsaved && (
         <p role="alert">
           {w(
