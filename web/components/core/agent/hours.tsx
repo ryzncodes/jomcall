@@ -5,7 +5,7 @@ import type { Location } from "../../../../packages/contracts/src/core";
 import { useExperience } from "../../experience";
 import { Field } from "../field";
 import { Notice, errorText, useCore, useWords, useResource } from "../state";
-import { HoursWeek, type Sync } from "./hours-week";
+import { HoursWeek, dateWords, type Sync } from "./hours-week";
 import { closedWeek, weekSummary, type Interval } from "./rules";
 import {
   createScheduleSync,
@@ -115,7 +115,13 @@ export function Hours({ editable, refreshChanges, store: given }: Props) {
   };
   useEffect(() => {
     if (!current) return;
-    if (editable) load(id);
+    if (!editable) return;
+    const existing = store.get(id);
+    // Back on a branch already held by the page: read it again in place, so
+    // another tab's change shows and typed rows stay. A failed read is
+    // ignored; the next save reports.
+    if (existing) existing.reload().catch(() => {});
+    else load(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, editable]);
 
@@ -254,11 +260,18 @@ function NewBranch({
     { client } = useCore();
   const [values, setValues] = useState({ name: "", address: "", state: "" }),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState<unknown>();
+    [error, setError] = useState<unknown>(),
+    [nameMissing, setNameMissing] = useState(false);
+  const nameInput = useRef<HTMLInputElement>(null);
   const attempt = useRef<Attempt>(undefined);
   const lock = useRef(false);
   const submit = async () => {
-    if (lock.current || !values.name.trim()) return;
+    if (lock.current) return;
+    if (!values.name.trim()) {
+      setNameMissing(true);
+      nameInput.current?.focus();
+      return;
+    }
     lock.current = true;
     setBusy(true);
     setError(undefined);
@@ -326,12 +339,22 @@ function NewBranch({
       </p>
       <Field label={w("Branch name", "Nama cawangan")}>
         <input
+          ref={nameInput}
           required
           maxLength={120}
+          aria-invalid={nameMissing || undefined}
           value={values.name}
-          onChange={(e) => setValues({ ...values, name: e.target.value })}
+          onChange={(e) => {
+            setNameMissing(false);
+            setValues({ ...values, name: e.target.value });
+          }}
         />
       </Field>
+      {nameMissing && (
+        <p role="alert" className="storage-warning">
+          {w("Give the branch a name.", "Berikan nama cawangan.")}
+        </p>
+      )}
       <Field label={w("Address", "Alamat")}>
         <textarea
           rows={3}
@@ -439,7 +462,7 @@ function ReadOnlyHours({ branches }: { branches: Location[] }) {
                   .map((c) => (
                     <li key={c.date}>
                       <span>
-                        <strong>{c.date}</strong>
+                        <strong>{dateWords(c.date, ms)}</strong>
                         {c.reason && <small>{c.reason}</small>}
                       </span>
                     </li>

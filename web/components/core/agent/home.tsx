@@ -86,7 +86,9 @@ export function Home() {
       )
     : "";
   const ch = channels.data;
-  const channelLine = !ch
+  const channelLine = channels.error
+    ? w("Could not check your channels.", "Tidak dapat menyemak saluran anda.")
+    : !ch
     ? ""
     : ch.phone && ch.whatsapp
       ? w("Answers on phone and WhatsApp", "Menjawab di telefon dan WhatsApp")

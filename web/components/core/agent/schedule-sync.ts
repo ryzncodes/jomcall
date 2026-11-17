@@ -65,11 +65,8 @@ export function createScheduleSync(o: {
   let error: unknown;
   let conflicted = false;
   let lastSent: ScheduleBody | undefined;
-  let dead = false;
   let settleWaiters: (() => void)[] = [];
-  const notify = () => {
-    if (!dead) o.onChange();
-  };
+  const notify = () => o.onChange();
 
   const build = (): ScheduleBody => ({
     timezone: server.timezone,
@@ -191,9 +188,6 @@ export function createScheduleSync(o: {
     },
     idle: () => queue.idle(),
     revision: () => queue.revision(),
-    dispose() {
-      dead = true;
-    },
   };
 }
 

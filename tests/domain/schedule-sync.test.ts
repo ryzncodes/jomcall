@@ -316,3 +316,13 @@ test("a server week with reversed block keys is the same week: not unsaved, rows
     ),
   );
 });
+
+test("reload takes the server's closures when none were typed", async () => {
+  const theirs = start();
+  theirs.closures = [{ date: "2099-12-25", reason: "Holiday" }];
+  theirs.revision = 5;
+  const t = setup({ read: () => theirs });
+  await t.sync.reload();
+  assert.deepEqual(t.sync.state().closures, theirs.closures);
+  assert.equal(t.sync.revision(), 5);
+});

@@ -36,7 +36,7 @@ const DAYS: [string, string][] = [
 ];
 
 // Shows a date typed as 2026-12-25 the way people say it.
-function dateWords(date: string, ms: boolean) {
+export function dateWords(date: string, ms: boolean) {
   const d = new Date(date + "T00:00:00Z");
   return isNaN(+d)
     ? date
@@ -93,7 +93,6 @@ export function HoursWeek({ sync, branch }: { sync: Sync; branch: string }) {
     sync.setWeek(sync.state().weekdays.map((x, i) => (i === d ? tidy : x)));
     sync.save();
   };
-  const errorId = `${id}-error`;
   return (
     <div className="agent-week">
       <div
@@ -170,7 +169,6 @@ export function HoursWeek({ sync, branch }: { sync: Sync; branch: string }) {
                   <span
                     className="agent-day-state"
                     role="status"
-                    id={`${rowId}-state`}
                   >
                     {state}
                   </span>
@@ -272,7 +270,7 @@ export function HoursWeek({ sync, branch }: { sync: Sync; branch: string }) {
         })}
       </ul>
       {s.error != null && (
-        <div className="storage-warning" role="alert" id={errorId}>
+        <div className="storage-warning" role="alert">
           {errorText(s.error, ms, "hours")}{" "}
           <button
             type="button"
