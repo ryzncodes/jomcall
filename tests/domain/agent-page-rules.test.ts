@@ -7,6 +7,7 @@ import {
   validSettings,
   sameSettings,
   afterConflict,
+  saveLineOf,
 } from "../../web/components/core/agent/rules.ts";
 import type { AgentSettings } from "../../packages/contracts/src/core.ts";
 
@@ -86,4 +87,29 @@ test("afterConflict keeps only the focused field", () => {
   assert.equal(kept.greeting, "L");
   assert.equal(kept.name, "Server");
   assert.deepEqual(afterConflict(server, local, null), server);
+});
+
+test("saveLineOf picks the line for the save state", () => {
+  const idle = { status: "idle", invalid: [], waiting: false, unsaved: false } as const;
+  assert.equal(saveLineOf(idle), "none");
+  assert.equal(saveLineOf({ ...idle, status: "saved" }), "saved");
+  // In flight with nothing newer waiting: Saving, though still unsaved.
+  assert.equal(
+    saveLineOf({ ...idle, status: "saving", unsaved: true }),
+    "saving",
+  );
+  // A newer edit is waiting while a save is in flight.
+  assert.equal(
+    saveLineOf({ ...idle, status: "saving", unsaved: true, waiting: true }),
+    "notSaved",
+  );
+  assert.equal(saveLineOf({ ...idle, invalid: ["name"] }), "notSaved");
+  assert.equal(
+    saveLineOf({ ...idle, status: "conflict", unsaved: true }),
+    "notSaved",
+  );
+  assert.equal(
+    saveLineOf({ ...idle, status: "error", unsaved: true }),
+    "error",
+  );
 });

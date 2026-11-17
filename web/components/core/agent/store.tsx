@@ -45,6 +45,8 @@ export type AgentPage = {
   invalid: (keyof AgentSettings)[];
   // True while an edit is not on the server: waiting, being sent, or failed.
   dirty: boolean;
+  // True from an edit until its save is handed to the queue.
+  waiting: boolean;
   status: QueueStatus;
   // The error behind status "error", for the save line.
   error: unknown;
@@ -205,6 +207,7 @@ function Store({
         setFocused: sync.setFocused,
         invalid: sync.invalid(),
         dirty: sync.unsaved(),
+        waiting: sync.dirty(),
         status: sync.status(),
         error: sync.error(),
         queue: sync.queue,

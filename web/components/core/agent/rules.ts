@@ -107,3 +107,20 @@ export function afterConflict(
 ): AgentSettings {
   return focused ? { ...server, [focused]: local[focused] } : { ...server };
 }
+
+// Which line the save line shows. "Saving…" wins while a save is in flight
+// and no newer edit waits; "Not saved yet" is an invalid field, an edit not
+// sent yet, or an edit left unsaved outside a send (a kept field after a
+// conflict).
+export function saveLineOf(s: {
+  status: "idle" | "saving" | "saved" | "error" | "conflict";
+  invalid: readonly string[];
+  waiting: boolean;
+  unsaved: boolean;
+}): "none" | "saving" | "saved" | "notSaved" | "error" {
+  if (s.status === "error") return "error";
+  if (s.invalid.length || s.waiting) return "notSaved";
+  if (s.status === "saving") return "saving";
+  if (s.unsaved) return "notSaved";
+  return s.status === "saved" ? "saved" : "none";
+}

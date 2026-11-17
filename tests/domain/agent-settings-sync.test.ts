@@ -127,3 +127,22 @@ test("an empty name is not sent and stays unsaved", async () => {
   assert.deepEqual(t.sync.invalid(), ["name"]);
   assert.equal(t.sync.unsaved(), true);
 });
+
+test("while a save is in flight it is unsaved but nothing is waiting", async () => {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const t = setup({
+    send: async (_s, rev) => {
+      await gate;
+      return rev + 1;
+    },
+  });
+  t.sync.change({ greeting: "Selamat" });
+  t.sync.flush();
+  assert.equal(t.sync.status(), "saving");
+  assert.equal(t.sync.dirty(), false);
+  assert.equal(t.sync.unsaved(), true);
+  release();
+  await t.sync.queue.idle();
+  assert.equal(t.sync.unsaved(), false);
+});
