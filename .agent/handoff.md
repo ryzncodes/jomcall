@@ -1,5 +1,31 @@
 # Handoff
 
+## 2026-11-17: one-page agent screen (item 17)
+
+Branch `feat/agent-page` in the worktree `.claude/worktrees/agent-page`, head `6079064` plus the records commit. Not pushed, no pull request, not merged. Nothing on hosted staging. No migration.
+
+**Changed**
+- `/app/agent` is one page for owners and admins: home, `#questions`, `#knowledge`, `#hours`, `#greeting`, `#more`, `#publish` (`web/components/core/agent/`). Settings autosave through `web/lib/core/save-queue.ts`.
+- Opening hours frozen into published versions and draft tests and written into the prompt (`packages/domain/src/knowledge/hours.ts`); old snapshots unchanged.
+- `agentChanges` read and a change token checked by `publish` (`packages/domain/src/agent-changes.ts`); `CHANGES_MOVED` (409).
+- Gap list: `status` filter, channels, saved answer.
+- `/app/hours` redirects to `/app/agent#hours` outside the mock preview. Branch editing moved to Settings, Business. Old `agent.tsx` and the local hours screen deleted.
+- Next 16.4.1 to 16.4.6 (owner instruction; 16.4.1 stopped its own build with a security notice). The worktree has a real `node_modules`, not a symlink.
+
+**Verified (2026-11-17, local database and fakes only, at `6079064`)**
+- `npm run typecheck`; `npm run test:guards` 69 of 69; `npm run check:core` 1008 of 1009 (known flickering `tests/local/model.test.mjs` "runtime ownership" only; passed alone 2 of 2); `npm run db:verify-migrations` (59 tables with row-level security); `npm run build:local`, `npm run build:mock`, `npm run build:hosted`.
+- Browser, local app, 390 px, made-up workspace, owner account: first publish; greeting autosave; missing-disclosure message; hours change named on the publish sheet; stale publish refused then accepted; stale second tab told and its typed text kept; `/app/hours` redirect; mock hours page unchanged; Bahasa Melayu and dark theme on home and hours; audit list; a seeded question answered, kept across a view change, saved and listed for publish.
+
+**Not verified**
+- No person has used it. Staff view, knowledge and More views, restore, "+ Branch", closed dates, skipped and answered tabs, a real phone keypad and a screen reader were not seen in a browser.
+- No published test turn was asked the opening hours (paid model call).
+- Typed and spoken 48-case gates not re-run.
+
+**Next**
+- Owner: say go for the two paid gates (design section 11), then for the push and the pull request. After merge: rebuild web, agent, engine and voice on staging; no migration.
+- Known limits and every deviation: `NOTES.md` (2026-11-17) and the build note in `docs/superpowers/specs/2026-11-16-agent-page-design.md` section 13.
+- Local leftovers: a made-up workspace "Kedai Contoh QA" with two seeded questions in the shared local database; launch entries `agent-page-local` and `agent-page-mock` in the main checkout's `.claude/launch.json` (ignored by git).
+
 ## 2026-11-16 — WhatsApp template check after review
 
 Branch `feat/whatsapp-sync`, pull request not yet open, not merged. Nothing on hosted staging. Fake WhatsApp provider only; the Cloud API is still not approved and nothing reached Meta.

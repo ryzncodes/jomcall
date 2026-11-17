@@ -198,3 +198,24 @@ No migration is expected. If the builder finds one is needed, it is a deviation 
 ## 12. Builder check (2026-11-16)
 
 A reviewer read this design against the code before the owner saw it. Confirmed: no migration is needed; `resolveGap` as a fact is frozen by publish; the hours key has no side effect on tools, budgets or gap recording, because every publish since the knowledge core already uses the core prompt. Folded in above: the change token on publish, the queue covering every writer of the agent revision and lost responses, test sessions and the older `context`, the gap title, the hours cap, the phone pin, the first-publish rule, closed dates frozen at publish, the "+ Branch" form, matching rules for the change list, and half-typed saves. No question was left for the owner.
+
+## 13. Build note (2026-11-17)
+
+Built on branch `feat/agent-page` from the plan `docs/superpowers/plans/2026-11-16-agent-page.md`. No migration.
+
+What differs from this design, and why, is listed in `NOTES.md` under 2026-11-17. The points that change behaviour described above:
+
+- 5.3: the "bookings affected" message names no number; the server sends none. Open for the owner.
+- 5.3: a branch's name, address and state are edited in Settings, Business (moved there from the old hours screen).
+- 5.2: a saved answer shows a line in the "To answer" view as well as on the answered card. A save refused because the same question was asked again is retried once.
+- 6: after a publish or a saved gap answer the page counts the revision forward by one; it does not read it back.
+- 7 (change list): owner rules are matched by kind plus text; a change of main branch is listed.
+- 8 (hours cap): the "Other branches" line counts inside the cap.
+
+Checked on 2026-11-17 at commit `6079064` (local database and fakes only): `npm run typecheck`; `npm run test:guards` 69 of 69; `npm run check:core` 1008 of 1009 (the one failure is the known flickering guard `tests/local/model.test.mjs` "runtime ownership", which passed alone, 2 of 2); `npm run db:verify-migrations` (59 tables with row-level security); `npm run build:local`, `npm run build:mock`, `npm run build:hosted`.
+
+Browser check by the controller in the local app at 390 px with a made-up workspace and an owner account: home before and after the first publish; greeting autosave; the publish sheet naming a missing greeting and AI introduction; an hours change saved and named on the sheet; a publish refused after hours changed in a second tab, then accepted; a stale second tab told that someone else changed the agent, with its typed text kept; `/app/hours` landing on `/app/agent#hours`; the mock preview's hours page unchanged; Bahasa Melayu and dark theme on home and hours; the audit list (one row per pause); two seeded questions listed, an answer typed, kept across a view change, saved and listed on the publish sheet. One defect was found this way and fixed (every hours row read "Not saved").
+
+Not checked: no person has used it. No staff account was tried in a browser. The knowledge and More views, restore, "+ Branch", closed dates, the skipped and answered tabs, typing times on a real phone keypad, a screen reader and a real phone were not seen in a browser. No published test turn was asked the opening hours (it needs a paid model call). The typed and spoken 48-case gates were not re-run (section 11: they need the owner's go). Nothing is on hosted staging.
+
+Known limits left for later, from the reviews: a week saved as closed every day on a branch that never had hours is not sent; closed dates merge as one list after a conflict; the home counts draft prices and owner rules only; an archived branch reads "Opening hours changed"; "24:00" cannot be typed on the digit keypad; the error colour has no dark variant; some status lines may not be announced by screen readers; writes other than settings are not held during a restore.
