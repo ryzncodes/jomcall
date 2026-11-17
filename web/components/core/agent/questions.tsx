@@ -8,7 +8,7 @@ import { Field } from "../field";
 import { useCore, useWords, useResource, useAction, Notice } from "../state";
 import {
   channelWords,
-  dropDraft,
+  draftsAfter,
   gapConflictAction,
   gapConflictKind,
   gapTitle,
@@ -130,10 +130,14 @@ export function Questions() {
                 }}
                 onSaved={() => {
                   setSavedIds((s) => [...s, g.id]);
-                  setDrafts((d) => dropDraft(d, g.id));
+                  setDrafts((d) => draftsAfter(d, g.id, "saved"));
                   setSavedNote(true);
                 }}
-                onHandled={() => setHandled(true)}
+                onSkipped={() => setDrafts((d) => draftsAfter(d, g.id, "skipped"))}
+                onHandled={() => {
+                  setDrafts((d) => draftsAfter(d, g.id, "handled"));
+                  setHandled(true);
+                }}
               />
             </li>
           ))}
@@ -151,6 +155,7 @@ function GapCard({
   reload,
   onStart,
   onSaved,
+  onSkipped,
   onHandled,
 }: {
   gap: KnowledgeGap;
@@ -160,6 +165,7 @@ function GapCard({
   reload: () => Promise<boolean>;
   onStart: () => void;
   onSaved: () => void;
+  onSkipped: () => void;
   onHandled: () => void;
 }) {
   const w = useWords(),
@@ -273,6 +279,7 @@ function GapCard({
         if (todo.kind === "error") throw e;
         await send(todo.revision);
       }
+      onSkipped();
       await reload();
       return true;
     });

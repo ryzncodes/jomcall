@@ -326,3 +326,52 @@ test("reload takes the server's closures when none were typed", async () => {
   assert.deepEqual(t.sync.state().closures, theirs.closures);
   assert.equal(t.sync.revision(), 5);
 });
+
+test("a late reload read cannot undo a save that finished meanwhile", async () => {
+  let release!: (d: ScheduleData) => void;
+  let first = true;
+  const t = setup({});
+  // A second sync sharing the same behaviour but with a gated read.
+  const sent: number[] = [];
+  const sync = createScheduleSync({
+    initial: start(),
+    newKey: () => "k" + sent.length,
+    isConflict: (e) => e instanceof Conflict,
+    isLost: (e) => e instanceof Lost,
+    wait: async () => {},
+    send: async (body, rev) => {
+      sent.push(rev);
+      return { ...body, revision: rev + 1 };
+    },
+    read: () => {
+      if (first) {
+        first = false;
+        return new Promise<ScheduleData>((r) => (release = r));
+      }
+      return Promise.resolve(start());
+    },
+    onChange: () => {},
+  });
+  void t;
+  const reloading = sync.reload();
+  await new Promise((r) => setTimeout(r, 0));
+  const w = sync.state().weekdays.map((d) => d.map((b) => ({ ...b })));
+  w[0] = [{ start: "07:00", end: "09:00" }];
+  sync.setWeek(w);
+  sync.save();
+  await sync.idle();
+  assert.equal(sync.revision(), 4);
+  release(start());
+  await reloading;
+  const s = sync.state();
+  assert.equal(s.server.revision, 4);
+  assert.equal(sync.revision(), 4);
+  assert.deepEqual(s.weekdays[0], [{ start: "07:00", end: "09:00" }]);
+  assert.equal(s.unsaved, false);
+  const w2 = s.weekdays.map((d) => d.map((b) => ({ ...b })));
+  w2[1] = [{ start: "10:00", end: "12:00" }];
+  sync.setWeek(w2);
+  sync.save();
+  await sync.idle();
+  assert.deepEqual(sent, [3, 4]);
+});

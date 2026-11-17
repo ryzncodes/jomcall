@@ -171,7 +171,12 @@ export function createScheduleSync(o: {
     // version, typed days stay. Waits for saves in flight first.
     async reload() {
       await queue.idle();
+      const before = queue.revision();
       const fresh = clean(await o.read());
+      // A save started while the read was in flight: this snapshot is older
+      // than what the server holds now. Taking it would roll the revision back.
+      if (queue.pending() || queue.revision() !== before || fresh.revision < queue.revision())
+        return;
       weekdays = mergeWeek(server.weekdays, weekdays, fresh.weekdays);
       if (sameClosures(closures, server.closures))
         closures = copyClosures(fresh.closures);

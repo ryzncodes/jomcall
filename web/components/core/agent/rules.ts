@@ -197,6 +197,16 @@ export function dropDraft(drafts: GapDrafts, id: string): GapDrafts {
   const { [id]: _gone, ...rest } = drafts;
   return rest;
 }
+// What a gap's draft becomes once its action ended: a stored save, a skip or
+// a gap someone else already handled leave no text box, so the draft goes; a
+// failed save or skip keeps the text.
+export function draftsAfter(
+  drafts: GapDrafts,
+  id: string,
+  outcome: "saved" | "skipped" | "handled" | "failed",
+): GapDrafts {
+  return outcome === "failed" ? drafts : dropDraft(drafts, id);
+}
 
 // After a 409 on a gap write that did not move the agent: the fresh list of
 // open gaps says what happened. A gap still open only had a newer ask, so

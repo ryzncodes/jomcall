@@ -14,6 +14,7 @@ import {
   gapConflictKind,
   setDraft,
   dropDraft,
+  draftsAfter,
   gapConflictAction,
   presetOf,
   applyPreset,
@@ -621,4 +622,18 @@ test("sameDay ignores the key order of a block and sees real differences", () =>
   assert.equal(sameDay(a, [{ start: "10:00", end: "17:00" }]), false);
   assert.equal(sameDay(a, [...b, { start: "18:00", end: "20:00" }]), false);
   assert.equal(sameDay(a, []), false);
+});
+
+test("draftsAfter: saved, skipped and handled drop the draft; failed keeps it", () => {
+  const d = setDraft(setDraft({}, "g1", { answer: "a" }), "g2", {
+    answer: "b",
+  });
+  for (const outcome of ["saved", "skipped", "handled"] as const) {
+    const after = draftsAfter(d, "g1", outcome);
+    assert.equal("g1" in after, false);
+    assert.equal(after.g2!.answer, "b");
+  }
+  const kept = draftsAfter(d, "g1", "failed");
+  assert.equal(kept.g1!.answer, "a");
+  assert.equal(kept.g2!.answer, "b");
 });
