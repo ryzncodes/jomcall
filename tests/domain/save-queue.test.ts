@@ -289,3 +289,24 @@ test("a save pushed from the conflict callback runs", async () => {
   await next;
   assert.deepEqual(h.ran, ["next"]);
 });
+
+test("an onStatus that throws still lets idle resolve and a later push run", async () => {
+  const ran: string[] = [];
+  const queue = createSaveQueue({
+    revision: 1,
+    newKey: () => "k",
+    isConflict: () => false,
+    isLost: () => false,
+    reread: async () => ({ revision: 1, same: false }),
+    onStatus: () => {
+      throw new Error("callback broke");
+    },
+    wait: async () => {},
+  });
+  await queue.push({ run: async () => (ran.push("a"), 2) });
+  await queue.idle();
+  await queue.push({ run: async () => (ran.push("b"), 3) });
+  await queue.idle();
+  assert.deepEqual(ran, ["a", "b"]);
+  assert.equal(queue.pending(), false);
+});

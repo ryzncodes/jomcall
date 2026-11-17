@@ -34,6 +34,15 @@ export function createSaveQueue(options: {
   let pumping = false;
   let idleWaiters: (() => void)[] = [];
 
+  // A throwing callback must not stop the pump or leave idle() waiting.
+  function report(status: QueueStatus, error?: unknown) {
+    try {
+      options.onStatus(status, error);
+    } catch {
+      // The page's status handler broke; the queue carries on.
+    }
+  }
+
   function settleIdle() {
     if (running || queued.length) return;
     const waiters = idleWaiters;
@@ -92,7 +101,7 @@ export function createSaveQueue(options: {
       while (queued.length) {
         const entry = queued.shift()!;
         running = entry;
-        options.onStatus("saving");
+        report("saving");
         const outcome = await runEntry(entry);
         running = undefined;
         if (outcome.stop) {
@@ -105,7 +114,7 @@ export function createSaveQueue(options: {
     } finally {
       running = undefined;
       pumping = false;
-      if (final?.status) options.onStatus(final.status, final.error);
+      if (final?.status) report(final.status, final.error);
       settleIdle();
     }
   }
