@@ -381,6 +381,8 @@ export function mergeWeek(
   );
 }
 
+// One day's blocks: equal times, whatever the order of a block's keys.
+export const sameDay = same;
 export const sameWeek = (a: Interval[][], b: Interval[][]) =>
   a.length === b.length && a.every((d, i) => same(d, b[i]!));
 export const sameClosures = (a: Closure[], b: Closure[]) =>

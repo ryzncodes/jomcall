@@ -289,3 +289,30 @@ test("the store tells listeners about changes and stops after unsubscribe", () =
   store.notify();
   assert.equal(n, 1);
 });
+
+test("a server week with reversed block keys is the same week: not unsaved, rows equal", async () => {
+  const flip = (w: ScheduleData["weekdays"]) =>
+    w.map((d) => d.map((b) => ({ end: b.end, start: b.start })));
+  const t = setup({
+    send: async (body, rev) => ({
+      ...body,
+      weekdays: flip(body.weekdays),
+      revision: rev + 1,
+    }),
+    read: () => ({ ...start(), weekdays: flip(start().weekdays) }),
+  });
+  const w = t.sync.state().weekdays.map((d) => d.map((b) => ({ ...b })));
+  w[5] = [{ start: "10:00", end: "14:00" }];
+  t.sync.setWeek(w);
+  t.sync.save();
+  await t.sync.idle();
+  const s = t.sync.state();
+  assert.equal(s.unsaved, false);
+  // One shape: the stored copy has { start, end } in that key order.
+  assert.deepEqual(Object.keys(s.server.weekdays[5]![0]!), ["start", "end"]);
+  assert.ok(
+    s.weekdays.every(
+      (d, i) => JSON.stringify(d) === JSON.stringify(s.server.weekdays[i]),
+    ),
+  );
+});

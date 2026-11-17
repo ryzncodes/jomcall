@@ -27,6 +27,12 @@ export type ScheduleBody = Omit<ScheduleData, "revision">;
 
 const copyWeek = (w: Interval[][]) =>
   w.map((d) => d.map((b) => ({ start: b.start, end: b.end })));
+// The server's week as { start, end }: its jsonb answers with the keys in
+// another order, and one shape keeps every comparison and send alike.
+const clean = (d: ScheduleData): ScheduleData => ({
+  ...d,
+  weekdays: copyWeek(d.weekdays),
+});
 const copyClosures = (c: Closure[]) => c.map((x) => ({ ...x }));
 const sameBody = (a: ScheduleBody, b: ScheduleBody) =>
   a.timezone === b.timezone &&
@@ -52,7 +58,7 @@ export function createScheduleSync(o: {
   // After a 409 that left a different schedule on the server.
   onConflict?: () => void;
 }) {
-  let server = o.initial;
+  let server = clean(o.initial);
   let weekdays = copyWeek(o.initial.weekdays);
   let closures = copyClosures(o.initial.closures);
   let saving = false;
@@ -78,7 +84,7 @@ export function createScheduleSync(o: {
     isLost: o.isLost,
     wait: o.wait,
     reread: async () => {
-      const fresh = await o.read();
+      const fresh = clean(await o.read());
       if (lastSent && sameBody(fresh, lastSent)) {
         server = fresh;
         notify();
@@ -126,7 +132,7 @@ export function createScheduleSync(o: {
           body ??= build();
           if (sameBody(body, server)) return server.revision;
           lastSent = body;
-          const saved = await o.send(body, revision, key);
+          const saved = clean(await o.send(body, revision, key));
           server = saved;
           notify();
           o.onSaved?.();
@@ -168,7 +174,7 @@ export function createScheduleSync(o: {
     // version, typed days stay. Waits for saves in flight first.
     async reload() {
       await queue.idle();
-      const fresh = await o.read();
+      const fresh = clean(await o.read());
       weekdays = mergeWeek(server.weekdays, weekdays, fresh.weekdays);
       if (sameClosures(closures, server.closures))
         closures = copyClosures(fresh.closures);

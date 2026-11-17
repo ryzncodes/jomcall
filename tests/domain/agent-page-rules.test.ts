@@ -6,6 +6,7 @@ import {
   weekSummary,
   validSettings,
   sameSettings,
+  sameDay,
   afterConflict,
   saveLineOf,
   gapTitle,
@@ -468,7 +469,10 @@ test("changeLine for facts, prices, hours, packs and collapsed lines", () => {
     changeLine({ kind: "pack", op: "added", label: "salon" }, (id) =>
       id === "salon" ? "Salon" : undefined,
     ),
-    { en: "Call type switched on: Salon", ms: "Jenis panggilan dihidupkan: Salon" },
+    {
+      en: "Call type switched on: Salon",
+      ms: "Jenis panggilan dihidupkan: Salon",
+    },
   );
   assert.deepEqual(changeLine({ kind: "pack", op: "removed", label: "x1" }), {
     en: "Call type switched off: x1",
@@ -494,13 +498,19 @@ test("groupChanges collapses 13 lines of one kind and not 12", () => {
   );
   assert.equal(groupTotal(g13[1]!.lines), 13);
   assert.equal(
-    groupTotal([{ kind: "price", op: "changed", label: "", count: 5 }, fact("a")]),
+    groupTotal([
+      { kind: "price", op: "changed", label: "", count: 5 },
+      fact("a"),
+    ]),
     6,
   );
 });
 
 test("missingDisclosure", () => {
-  assert.deepEqual(missingDisclosure({ ...base, greeting: "Hi", aiDisclosure: "AI" }), []);
+  assert.deepEqual(
+    missingDisclosure({ ...base, greeting: "Hi", aiDisclosure: "AI" }),
+    [],
+  );
   assert.deepEqual(
     missingDisclosure({
       ...base,
@@ -600,4 +610,15 @@ test("runPublish rethrows any other error, a revision CONFLICT included", async 
     }),
     (e) => e === conflict,
   );
+});
+
+test("sameDay ignores the key order of a block and sees real differences", () => {
+  const a = [{ end: "17:00", start: "09:00" }];
+  const b = [{ start: "09:00", end: "17:00" }];
+  assert.equal(sameDay(a, b), true);
+  assert.equal(sameDay([], []), true);
+  assert.equal(sameDay(a, [{ start: "09:00", end: "18:00" }]), false);
+  assert.equal(sameDay(a, [{ start: "10:00", end: "17:00" }]), false);
+  assert.equal(sameDay(a, [...b, { start: "18:00", end: "20:00" }]), false);
+  assert.equal(sameDay(a, []), false);
 });

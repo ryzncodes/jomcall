@@ -15,6 +15,7 @@ import {
   normalizeTime,
   presetOf,
   sameClosures,
+  sameDay,
   todayKL,
   type Closure,
   type Interval,
@@ -131,9 +132,7 @@ export function HoursWeek({ sync, branch }: { sync: Sync; branch: string }) {
       </div>
       <ul className="agent-days">
         {s.weekdays.map((blocks, d) => {
-          const typed = JSON.stringify(blocks),
-            held = JSON.stringify(s.server.weekdays[d]),
-            dirty = typed !== held,
+          const dirty = !sameDay(blocks, s.server.weekdays[d] ?? []),
             problem = dayProblem(blocks),
             rowId = `${id}-day-${d}`,
             open = blocks.length > 0;
