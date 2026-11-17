@@ -12,6 +12,7 @@ import {
   isChangesMoved,
   missingDisclosure,
   publishBlock,
+  runPublish,
   trySuggestion,
   type View,
 } from "./rules";
@@ -47,6 +48,7 @@ export function Publish() {
     const mine = ++seq.current;
     setReading(true);
     setReadError(undefined);
+    setError(undefined);
     page.flush();
     await Promise.all([page.queue.idle(), page.hours.settled()]);
     if (!alive.current || mine !== seq.current) return;
@@ -74,7 +76,9 @@ export function Publish() {
   // On open, and again after a conflict reset the page.
   useEffect(() => {
     setMoved(false);
-    void load();
+    // After a conflict reset the old publish error is stale; the list has
+    // been read again by the time this settles.
+    void load().then(() => alive.current && setError(undefined));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reloadKey]);
   // Edits that were unsaved and now landed make the list stale: read again.
@@ -103,29 +107,17 @@ export function Publish() {
       page.flush();
       await page.queue.push({
         run: async (expectedRevision, key) => {
-          try {
-            await client.execute(
+          const r = await runPublish(expectedRevision, token, (t) =>
+            client.execute(
               "publish",
-              { id: agentId, expectedRevision, changeToken: token },
+              { id: agentId, expectedRevision, changeToken: t },
               key,
-            );
-          } catch (e) {
-            // The list moved under the sheet. Nothing was published and the
-            // agent revision did not move, so this is not a conflict.
-            if (isChangesMoved(e)) {
-              refused = true;
-              return expectedRevision;
-            }
-            throw e;
-          }
-          // Publishing can move the agent revision; read where it stands.
-          let next = expectedRevision + 1;
-          try {
-            next = (await client.execute("draft", { id: agentId })).revision;
-          } catch {
-            /* the plus-one above is what the server did */
-          }
-          return next;
+            ),
+          );
+          // A refused list moved under the sheet: nothing was published and
+          // the agent revision did not move, so this is not a conflict.
+          refused = r.refused;
+          return r.revision;
         },
       });
       if (refused) {

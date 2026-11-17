@@ -563,3 +563,41 @@ test("publishBlock says why Publish is not offered", () => {
   assert.equal(publishBlock({ ...ok, count: 0 }), "nothing");
   assert.equal(publishBlock({ ...ok, published: false, count: 0 }), null);
 });
+
+import { runPublish } from "../../web/components/core/agent/rules.ts";
+
+test("runPublish returns the revision publish moved, with no later read", async () => {
+  const sent: string[] = [];
+  const r = await runPublish(5, "tok1", async (t) => {
+    sent.push(t);
+  });
+  assert.deepEqual(r, { revision: 6, refused: false });
+  assert.deepEqual(sent, ["tok1"]);
+});
+
+test("runPublish: CHANGES_MOVED keeps the revision; a second press sends the new token", async () => {
+  const sent: string[] = [];
+  const send = async (t: string) => {
+    sent.push(t);
+    if (t === "old") throw { status: 409, code: "CHANGES_MOVED" };
+  };
+  assert.deepEqual(await runPublish(5, "old", send), {
+    revision: 5,
+    refused: true,
+  });
+  assert.deepEqual(await runPublish(5, "new", send), {
+    revision: 6,
+    refused: false,
+  });
+  assert.deepEqual(sent, ["old", "new"]);
+});
+
+test("runPublish rethrows any other error, a revision CONFLICT included", async () => {
+  const conflict = { status: 409, code: "CONFLICT" };
+  await assert.rejects(
+    runPublish(5, "t", async () => {
+      throw conflict;
+    }),
+    (e) => e === conflict,
+  );
+});

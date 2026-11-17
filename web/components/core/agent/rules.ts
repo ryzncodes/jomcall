@@ -569,3 +569,21 @@ export function publishBlock(s: {
   if (s.published && s.count === 0) return "nothing";
   return null;
 }
+
+// What the publish job returns. A successful publish moves the agent
+// revision by exactly one, so that is the answer; no later read, which could
+// pick up another tab's save and skip a conflict. CHANGES_MOVED keeps the
+// revision and marks the refusal; anything else is rethrown.
+export async function runPublish(
+  expectedRevision: number,
+  token: string,
+  send: (token: string) => Promise<unknown>,
+): Promise<{ revision: number; refused: boolean }> {
+  try {
+    await send(token);
+  } catch (e) {
+    if (isChangesMoved(e)) return { revision: expectedRevision, refused: true };
+    throw e;
+  }
+  return { revision: expectedRevision + 1, refused: false };
+}
