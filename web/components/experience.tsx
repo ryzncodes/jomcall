@@ -34,15 +34,27 @@ export function Controls() {
   const { t, locale, theme, href, setTheme } = useExperience();
   const pathname = usePathname();
   const params = useSearchParams();
+  // The server cannot see the URL hash, so the plain link is rendered without
+  // it and the browser adds the current hash (a view of the agent page) after
+  // load and on every change. Without JavaScript the plain link still works.
+  const [hash, setHash] = useState("");
+  useEffect(() => {
+    const read = () => setHash(window.location.hash);
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, []);
   return (
     <div className="site-controls">
       <a
         className="locale-switch"
         aria-label={`${locale === "en" ? "BM" : "EN"} — ${t.language}`}
-        href={href(`${pathname}?${params}`).replace(
-          `lang=${locale}`,
-          `lang=${locale === "en" ? "ms" : "en"}`,
-        )}
+        href={
+          href(`${pathname}?${params}`).replace(
+            `lang=${locale}`,
+            `lang=${locale === "en" ? "ms" : "en"}`,
+          ) + hash
+        }
       >
         {locale === "en" ? "BM" : "EN"}
       </a>
