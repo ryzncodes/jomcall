@@ -73,6 +73,8 @@ export type AgentPage = {
   go: (view: View) => Promise<void>;
   // Set after a conflict: the sentence to show.
   notice: string | null;
+  // Shows a sentence in the header until the next move to another view.
+  announce: (text: string) => void;
   // Changes after a conflict; views key their data on it to load again.
   reloadKey: number;
 };
@@ -124,6 +126,7 @@ function Store({
   const [changes, setChanges] = useState<AgentChanges>();
   const [notice, setNotice] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const announced = useRef(false);
   const changesTimer = useRef<ReturnType<typeof setTimeout>>(undefined),
     changesSeq = useRef(0),
     wordsRef = useRef(w);
@@ -187,6 +190,10 @@ function Store({
   const hours = hoursRef.current;
 
   async function go(view: View) {
+    if (announced.current) {
+      announced.current = false;
+      setNotice(null);
+    }
     sync.flush();
     // Schedule saves in flight land first; a sync stopped by an error is
     // not waited on.
@@ -246,6 +253,10 @@ function Store({
         refreshChanges,
         go,
         notice,
+        announce: (text) => {
+          announced.current = true;
+          setNotice(text);
+        },
         reloadKey,
       }}
     >

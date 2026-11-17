@@ -415,3 +415,151 @@ test("mergeWeek: untouched rows take the server, typed rows stay", () => {
   assert.deepEqual(out[1], draft[1]);
   assert.deepEqual(out[2], server[2]);
 });
+
+import {
+  changeLine,
+  groupChanges,
+  groupTotal,
+  missingDisclosure,
+  trySuggestion,
+  isChangesMoved,
+  publishBlock,
+} from "../../web/components/core/agent/rules.ts";
+import type { AgentChange } from "../../packages/contracts/src/core.ts";
+
+const fact = (label: string, op: AgentChange["op"] = "added"): AgentChange => ({
+  kind: "fact",
+  op,
+  label,
+});
+
+test("changeLine names a setting field and never its text", () => {
+  assert.deepEqual(
+    changeLine({ kind: "setting", op: "changed", label: "greeting" }),
+    { en: "Greeting changed", ms: "Ucapan diubah" },
+  );
+  assert.deepEqual(
+    changeLine({ kind: "setting", op: "changed", label: "somethingNew" }),
+    { en: "Setting changed", ms: "Tetapan diubah" },
+  );
+});
+
+test("changeLine for facts, prices, hours, packs and collapsed lines", () => {
+  assert.deepEqual(changeLine(fact("Parking")), {
+    en: "Fact added: Parking",
+    ms: "Fakta ditambah: Parking",
+  });
+  assert.deepEqual(
+    changeLine({ kind: "price", op: "removed", label: "Haircut" }),
+    { en: "Price removed: Haircut", ms: "Harga dibuang: Haircut" },
+  );
+  assert.deepEqual(
+    changeLine({ kind: "hours", op: "changed", label: "Main" }),
+    {
+      en: "Opening hours changed: Main",
+      ms: "Waktu operasi diubah: Main",
+    },
+  );
+  assert.deepEqual(
+    changeLine({ kind: "price", op: "changed", label: "", count: 3 }),
+    { en: "Price list changed, 3 rows", ms: "Senarai harga diubah, 3 baris" },
+  );
+  assert.deepEqual(
+    changeLine({ kind: "pack", op: "added", label: "salon" }, (id) =>
+      id === "salon" ? "Salon" : undefined,
+    ),
+    { en: "Call type switched on: Salon", ms: "Jenis panggilan dihidupkan: Salon" },
+  );
+  assert.deepEqual(changeLine({ kind: "pack", op: "removed", label: "x1" }), {
+    en: "Call type switched off: x1",
+    ms: "Jenis panggilan dimatikan: x1",
+  });
+});
+
+test("groupChanges collapses 13 lines of one kind and not 12", () => {
+  const n = (k: number) => Array.from({ length: k }, (_, i) => fact("f" + i));
+  const g12 = groupChanges(n(12));
+  assert.equal(g12.length, 1);
+  assert.equal(g12[0]!.collapsed, false);
+  const g13 = groupChanges([
+    ...n(13),
+    { kind: "setting", op: "changed", label: "name" },
+  ]);
+  assert.deepEqual(
+    g13.map((g) => [g.kind, g.collapsed, g.lines.length]),
+    [
+      ["setting", false, 1],
+      ["fact", true, 13],
+    ],
+  );
+  assert.equal(groupTotal(g13[1]!.lines), 13);
+  assert.equal(
+    groupTotal([{ kind: "price", op: "changed", label: "", count: 5 }, fact("a")]),
+    6,
+  );
+});
+
+test("missingDisclosure", () => {
+  assert.deepEqual(missingDisclosure({ ...base, greeting: "Hi", aiDisclosure: "AI" }), []);
+  assert.deepEqual(
+    missingDisclosure({
+      ...base,
+      greeting: "Hi",
+      aiDisclosure: "AI",
+      recordingEnabled: true,
+      recordingDisclosure: "  ",
+    }),
+    ["recordingDisclosure"],
+  );
+  assert.deepEqual(
+    missingDisclosure({
+      ...base,
+      greeting: "",
+      aiDisclosure: " ",
+      recordingEnabled: false,
+      recordingDisclosure: "",
+    }),
+    ["greeting", "aiDisclosure"],
+  );
+});
+
+test("trySuggestion", () => {
+  assert.deepEqual(
+    trySuggestion([{ kind: "hours", op: "changed", label: "Main" }]),
+    {
+      en: "What time do you open on Saturday?",
+      ms: "Pukul berapa anda buka pada hari Sabtu?",
+    },
+  );
+  assert.deepEqual(trySuggestion([fact("Parking")]), {
+    en: "Ask the question you just answered.",
+    ms: "Tanya soalan yang baru anda jawab.",
+  });
+  assert.equal(
+    trySuggestion([{ kind: "setting", op: "changed", label: "greeting" }]),
+    null,
+  );
+  assert.equal(trySuggestion([fact("Parking", "removed")]), null);
+});
+
+test("isChangesMoved is a plain refusal, not a revision conflict", () => {
+  assert.equal(isChangesMoved({ status: 409, code: "CHANGES_MOVED" }), true);
+  assert.equal(isChangesMoved({ status: 409, code: "CONFLICT" }), false);
+  assert.equal(isChangesMoved({ status: 422, code: "CHANGES_MOVED" }), false);
+  assert.equal(isChangesMoved(new TypeError("x")), false);
+  assert.equal(isChangesMoved(null), false);
+});
+
+test("publishBlock says why Publish is not offered", () => {
+  const ok = {
+    settingsUnsaved: false,
+    hoursUnsaved: false,
+    published: true,
+    count: 2,
+  };
+  assert.equal(publishBlock(ok), null);
+  assert.equal(publishBlock({ ...ok, settingsUnsaved: true }), "unsaved");
+  assert.equal(publishBlock({ ...ok, hoursUnsaved: true }), "unsaved");
+  assert.equal(publishBlock({ ...ok, count: 0 }), "nothing");
+  assert.equal(publishBlock({ ...ok, published: false, count: 0 }), null);
+});

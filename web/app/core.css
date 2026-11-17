@@ -2491,3 +2491,66 @@
   gap: 12px;
   min-width: 0;
 }
+
+/* Agent page: publish sheet */
+.agent-publish-status {
+  margin: 0;
+  min-height: 1.4em;
+  font-size: 14px;
+  color: var(--secondary);
+}
+.agent-publish-count {
+  margin: 0;
+  font-size: 15px;
+}
+.agent-publish-block {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.agent-publish-block p {
+  margin: 0;
+  font-size: 14px;
+}
+.agent-group {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.agent-group h3 {
+  font-size: 15px;
+}
+.agent-group-sum {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.agent-changes {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-changes li {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.agent-bar-one {
+  grid-template-columns: 1fr;
+}
+.agent-publish-block a:focus-visible,
+.agent-group-sum .agent-mini:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}

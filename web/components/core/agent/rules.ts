@@ -1,6 +1,9 @@
 // Pure rules for the agent page: no React, no DOM, so they run under node:test.
 import { agentSettings } from "../../../../packages/contracts/src/agent.ts";
-import type { AgentSettings } from "../../../../packages/contracts/src/core.ts";
+import type {
+  AgentChange,
+  AgentSettings,
+} from "../../../../packages/contracts/src/core.ts";
 import { voiceFor } from "../../../../packages/contracts/src/voices.ts";
 
 // An empty, old free-text or unknown voice is the voice the picker shows.
@@ -383,3 +386,186 @@ export const sameWeek = (a: Interval[][], b: Interval[][]) =>
 export const sameClosures = (a: Closure[], b: Closure[]) =>
   a.length === b.length &&
   a.every((c, i) => c.date === b[i]!.date && c.reason === b[i]!.reason);
+
+// ---- Publish sheet ----
+
+type Words = { en: string; ms: string };
+
+export const SETTING_FIELDS: Record<keyof AgentSettings, Words> = {
+  name: { en: "Name", ms: "Nama" },
+  greeting: { en: "Greeting", ms: "Ucapan" },
+  aiDisclosure: { en: "AI introduction", ms: "Pengenalan AI" },
+  recordingEnabled: { en: "Recording", ms: "Rakaman" },
+  recordingDisclosure: { en: "Recording notice", ms: "Notis rakaman" },
+  languages: { en: "Languages", ms: "Bahasa" },
+  manglish: { en: "Manglish", ms: "Manglish" },
+  voicePreference: { en: "Voice", ms: "Suara" },
+  instructions: { en: "Instructions", ms: "Arahan" },
+};
+
+const KIND_WORDS: Record<
+  Exclude<AgentChange["kind"], "setting" | "hours" | "pack">,
+  { one: Words; many: Words }
+> = {
+  knowledge: {
+    one: { en: "Knowledge item", ms: "Item pengetahuan" },
+    many: { en: "Knowledge items", ms: "Item pengetahuan" },
+  },
+  fact: {
+    one: { en: "Fact", ms: "Fakta" },
+    many: { en: "Facts", ms: "Fakta" },
+  },
+  rule: {
+    one: { en: "Rule", ms: "Peraturan" },
+    many: { en: "Rules", ms: "Peraturan" },
+  },
+  price: {
+    one: { en: "Price", ms: "Harga" },
+    many: { en: "Price list", ms: "Senarai harga" },
+  },
+};
+const OP_EN = { added: "added", changed: "changed", removed: "removed" };
+const OP_MS = { added: "ditambah", changed: "diubah", removed: "dibuang" };
+
+// One line of the publish list, in both languages. A setting names its
+// field only, never before or after text. `packName` gives a pack's display
+// name when the page has it; the id is the fallback.
+export function changeLine(
+  change: AgentChange,
+  packName?: (id: string) => string | undefined,
+): Words {
+  const { kind, op, label } = change;
+  if (kind === "setting") {
+    const f = (SETTING_FIELDS as Record<string, Words | undefined>)[label];
+    return f
+      ? { en: `${f.en} ${OP_EN[op]}`, ms: `${f.ms} ${OP_MS[op]}` }
+      : { en: "Setting changed", ms: "Tetapan diubah" };
+  }
+  if (kind === "hours")
+    return {
+      en: `Opening hours changed: ${label}`,
+      ms: `Waktu operasi diubah: ${label}`,
+    };
+  if (kind === "pack") {
+    const name = packName?.(label) || label;
+    if (op === "added")
+      return {
+        en: `Call type switched on: ${name}`,
+        ms: `Jenis panggilan dihidupkan: ${name}`,
+      };
+    if (op === "removed")
+      return {
+        en: `Call type switched off: ${name}`,
+        ms: `Jenis panggilan dimatikan: ${name}`,
+      };
+    return {
+      en: `Call type changed: ${name}`,
+      ms: `Jenis panggilan diubah: ${name}`,
+    };
+  }
+  const words = KIND_WORDS[kind];
+  if (change.count !== undefined && !label) {
+    const n = change.count;
+    const unit =
+      kind === "price"
+        ? { en: n === 1 ? "row" : "rows", ms: "baris" }
+        : { en: n === 1 ? "item" : "items", ms: "item" };
+    return {
+      en: `${words.many.en} ${OP_EN[op]}, ${n} ${unit.en}`,
+      ms: `${words.many.ms} ${OP_MS[op]}, ${n} ${unit.ms}`,
+    };
+  }
+  return {
+    en: `${words.one.en} ${OP_EN[op]}: ${label}`,
+    ms: `${words.one.ms} ${OP_MS[op]}: ${label}`,
+  };
+}
+
+const KIND_ORDER: AgentChange["kind"][] = [
+  "setting",
+  "hours",
+  "pack",
+  "knowledge",
+  "fact",
+  "rule",
+  "price",
+];
+export const MAX_GROUP_LINES = 12;
+
+export const KIND_HEADING: Record<AgentChange["kind"], Words> = {
+  setting: { en: "Settings", ms: "Tetapan" },
+  hours: { en: "Opening hours", ms: "Waktu operasi" },
+  pack: { en: "Call types", ms: "Jenis panggilan" },
+  knowledge: { en: "Knowledge", ms: "Pengetahuan" },
+  fact: { en: "Facts", ms: "Fakta" },
+  rule: { en: "Rules", ms: "Peraturan" },
+  price: { en: "Prices", ms: "Harga" },
+};
+
+// Changes grouped by kind in a fixed order; a kind with more than 12 lines
+// is collapsed to a count.
+export function groupChanges(changes: AgentChange[]): {
+  kind: AgentChange["kind"];
+  lines: AgentChange[];
+  collapsed: boolean;
+}[] {
+  return KIND_ORDER.flatMap((kind) => {
+    const lines = changes.filter((c) => c.kind === kind);
+    return lines.length
+      ? [{ kind, lines, collapsed: lines.length > MAX_GROUP_LINES }]
+      : [];
+  });
+}
+
+// How many rows a group's lines stand for.
+export const groupTotal = (lines: AgentChange[]): number =>
+  lines.reduce((n, c) => n + (c.count ?? 1), 0);
+
+export function missingDisclosure(
+  s: AgentSettings,
+): ("greeting" | "aiDisclosure" | "recordingDisclosure")[] {
+  const out: ("greeting" | "aiDisclosure" | "recordingDisclosure")[] = [];
+  if (!s.greeting.trim()) out.push("greeting");
+  if (!s.aiDisclosure.trim()) out.push("aiDisclosure");
+  if (s.recordingEnabled && !s.recordingDisclosure.trim())
+    out.push("recordingDisclosure");
+  return out;
+}
+
+// A question worth asking in a test after these changes, or null.
+export function trySuggestion(changes: AgentChange[]): Words | null {
+  if (changes.some((c) => c.kind === "hours"))
+    return {
+      en: "What time do you open on Saturday?",
+      ms: "Pukul berapa anda buka pada hari Sabtu?",
+    };
+  if (changes.some((c) => c.kind === "fact" && c.op === "added"))
+    return {
+      en: "Ask the question you just answered.",
+      ms: "Tanya soalan yang baru anda jawab.",
+    };
+  return null;
+}
+
+// publish refuses a draft that moved after the list was read. It is a plain
+// refusal: the agent revision did not move, so it is not a CONFLICT and the
+// queue must not treat it as someone else's edit.
+export function isChangesMoved(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const x = e as { status?: unknown; code?: unknown };
+  return x.status === 409 && x.code === "CHANGES_MOVED";
+}
+
+// Why the sheet does not offer Publish: "unsaved" (settings or hours the
+// owner typed are not saved, so publishing would ship less) or "nothing"
+// (a version is live and the draft equals it). Null: offer it.
+export function publishBlock(s: {
+  settingsUnsaved: boolean;
+  hoursUnsaved: boolean;
+  published: boolean;
+  count: number;
+}): "unsaved" | "nothing" | null {
+  if (s.settingsUnsaved || s.hoursUnsaved) return "unsaved";
+  if (s.published && s.count === 0) return "nothing";
+  return null;
+}

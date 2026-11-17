@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useCore, useWords, useAction, Heading, Notice } from "../state";
+import { useCore, useWords, Heading } from "../state";
 import { Greeting } from "./greeting";
 import { Hours } from "./hours";
 import { Knowledge } from "./knowledge";
 import { More } from "./more";
 import { PublishedAgent } from "./published";
+import { Publish } from "./publish";
 import { AgentPageProvider, useAgentPage } from "./store";
 import { viewOf, type View } from "./rules";
 import { Home } from "./home";
@@ -78,11 +79,9 @@ function Shell() {
             </button>
           </p>
         )}
-        {page.notice && (
-          <p role="status" className="agent-notice">
-            {page.notice}
-          </p>
-        )}
+        <div role="status">
+          {page.notice && <p className="agent-notice">{page.notice}</p>}
+        </div>
       </header>
       {view === "home" ? (
         <Home />
@@ -122,57 +121,6 @@ function Sub({ view }: { view: Exclude<View, "home"> }) {
     case "questions":
       return <Questions />;
     case "publish":
-      return <PublishStandIn />;
+      return <Publish />;
   }
-}
-
-// Stand-in until the publish view is built: a plain publish button.
-function PublishStandIn() {
-  const w = useWords(),
-    a = useAction(),
-    page = useAgentPage(),
-    { client, refresh } = useCore();
-  const [done, setDone] = useState(false);
-  const publish = async () => {
-    page.flush();
-    const ok = await a.run(async () => {
-      let sent = false;
-      await page.queue.push({
-        run: async (expectedRevision, key) => {
-          await client.execute(
-            "publish",
-            { id: page.agentId, expectedRevision },
-            key,
-          );
-          sent = true;
-          // Publishing can move the agent revision; read where it stands.
-          return (await client.execute("draft", { id: page.agentId })).revision;
-        },
-      });
-      return sent;
-    });
-    if (ok) {
-      setDone(true);
-      refresh();
-    }
-  };
-  return (
-    <section className="agent-view" aria-labelledby="agent-publish-h">
-      <h2 id="agent-publish-h">{w("Publish", "Terbitkan")}</h2>
-      <Notice {...a} />
-      {done && (
-        <p role="status" className="core-success">
-          {w("Published.", "Diterbitkan.")}
-        </p>
-      )}
-      <button
-        type="button"
-        className="button button-dark"
-        disabled={a.busy}
-        onClick={() => void publish()}
-      >
-        {w("Publish configuration", "Terbitkan konfigurasi")}
-      </button>
-    </section>
-  );
 }
