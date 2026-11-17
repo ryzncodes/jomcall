@@ -11,6 +11,9 @@ import {
   gapTitle,
   channelWords,
   gapConflictKind,
+  setDraft,
+  dropDraft,
+  gapConflictAction,
 } from "../../web/components/core/agent/rules.ts";
 import {
   VOICE_PRESETS,
@@ -163,4 +166,39 @@ test("channelWords: names known channels and drops unknown ones", () => {
 test("gapConflictKind: an unmoved agent revision means the gap was stale", () => {
   assert.equal(gapConflictKind(7, 7), "gap");
   assert.equal(gapConflictKind(7, 8), "agent");
+});
+
+test("drafts: a reload that replaces the list leaves typed text alone", () => {
+  let d = setDraft({}, "g1", { answer: "Open Sundays" });
+  d = setDraft(d, "g1", { topic: "Hours" });
+  d = setDraft(d, "g2", { answer: "Second" });
+  assert.deepEqual(d.g1, { answer: "Open Sundays", topic: "Hours" });
+  // No call drops a draft except dropDraft: g1 is not in a new list, still kept.
+  assert.deepEqual(d.g2, { answer: "Second", topic: "" });
+});
+
+test("drafts: only a stored save drops its draft", () => {
+  const d = setDraft(setDraft({}, "g1", { answer: "a" }), "g2", { answer: "b" });
+  const after = dropDraft(d, "g1");
+  assert.equal("g1" in after, false);
+  assert.equal(after.g2!.answer, "b");
+  assert.equal("g1" in d, true);
+});
+
+test("gapConflictAction: still open retries once with the fresh revision", () => {
+  const fresh = [{ id: "g1", status: "open" as const, revision: 5 }];
+  assert.deepEqual(gapConflictAction(fresh, "g1", 0), { kind: "retry", revision: 5 });
+  assert.deepEqual(gapConflictAction(fresh, "g1", 1), { kind: "error" });
+});
+
+test("gapConflictAction: gone or no longer open means handled", () => {
+  assert.deepEqual(gapConflictAction([], "g1", 0), { kind: "handled" });
+  assert.deepEqual(
+    gapConflictAction([{ id: "g1", status: "resolved", revision: 6 }], "g1", 0),
+    { kind: "handled" },
+  );
+});
+
+test("gapConflictAction: no fresh list means error", () => {
+  assert.deepEqual(gapConflictAction(undefined, "g1", 0), { kind: "error" });
 });

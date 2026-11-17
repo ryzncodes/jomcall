@@ -176,3 +176,36 @@ export function gapConflictKind(
 ): "gap" | "agent" {
   return draftRevision === sentRevision ? "gap" : "agent";
 }
+
+// Typed text per gap id, kept by the view so a list reload or a remount
+// never loses it. Only dropDraft removes one, after its save was stored.
+export type GapDraft = { answer: string; topic: string };
+export type GapDrafts = Record<string, GapDraft>;
+export function setDraft(
+  drafts: GapDrafts,
+  id: string,
+  part: Partial<GapDraft>,
+): GapDrafts {
+  const cur = drafts[id] ?? { answer: "", topic: "" };
+  return { ...drafts, [id]: { ...cur, ...part } };
+}
+export function dropDraft(drafts: GapDrafts, id: string): GapDrafts {
+  const { [id]: _gone, ...rest } = drafts;
+  return rest;
+}
+
+// After a 409 on a gap write that did not move the agent: the fresh list of
+// open gaps says what happened. A gap still open only had a newer ask, so
+// the same action is tried once more with its fresh revision; a gap that is
+// not open any more was handled by someone else. No fresh list, or a second
+// failure, is an error the card shows with the text kept.
+export function gapConflictAction(
+  fresh: { id: string; status: string; revision: number }[] | undefined,
+  id: string,
+  attempt: number,
+): { kind: "retry"; revision: number } | { kind: "handled" } | { kind: "error" } {
+  if (!fresh) return { kind: "error" };
+  const g = fresh.find((x) => x.id === id);
+  if (!g || g.status !== "open") return { kind: "handled" };
+  return attempt === 0 ? { kind: "retry", revision: g.revision } : { kind: "error" };
+}

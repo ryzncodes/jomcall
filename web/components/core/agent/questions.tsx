@@ -1,12 +1,20 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CoreError } from "@/lib/core/client";
 import { queuedWrite, stored } from "@/lib/core/queued-write";
 import type { KnowledgeGap } from "../../../../packages/contracts/src/knowledge";
 import { useExperience } from "../../experience";
 import { Field } from "../field";
 import { useCore, useWords, useResource, useAction, Notice } from "../state";
-import { channelWords, gapConflictKind, gapTitle } from "./rules";
+import {
+  channelWords,
+  dropDraft,
+  gapConflictAction,
+  gapConflictKind,
+  gapTitle,
+  setDraft,
+  type GapDrafts,
+} from "./rules";
 import { useAgentPage } from "./store";
 
 type Filter = "open" | "resolved" | "ignored";
@@ -23,13 +31,24 @@ export function Questions() {
     { agentId, reloadKey } = useAgentPage();
   const [filter, setFilter] = useState<Filter>("open"),
     [savedIds, setSavedIds] = useState<string[]>([]),
-    [handled, setHandled] = useState(false);
+    [handled, setHandled] = useState(false),
+    [savedNote, setSavedNote] = useState(false),
+    [drafts, setDrafts] = useState<GapDrafts>({});
   // The key holds the filter and the reload key, so a slow reply for an
   // earlier filter is never shown under the one now chosen.
   const list = useResource(
     () => client.execute("knowledgeGaps", { id: agentId, status: filter }),
-    `${agentId}|gaps|${filter}|${reloadKey}`,
+    `${agentId}|gaps|${filter}`,
   );
+  // After a conflict the list is read again in place, so the cards stay
+  // mounted and keep what the owner typed.
+  const seen = useRef(reloadKey);
+  useEffect(() => {
+    if (seen.current === reloadKey) return;
+    seen.current = reloadKey;
+    void list.reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadKey]);
   const names: Record<Filter, string> = {
     open: w("To answer", "Perlu dijawab"),
     resolved: w("Answered", "Dijawab"),
@@ -67,6 +86,7 @@ export function Questions() {
             onClick={() => {
               setFilter(f);
               setHandled(false);
+              setSavedNote(false);
             }}
           >
             {names[f]}
@@ -78,6 +98,14 @@ export function Questions() {
           {w(
             "That question was already answered or skipped by someone else. The list is up to date.",
             "Soalan itu sudah dijawab atau dilangkau oleh orang lain. Senarai ini sudah dikemas kini.",
+          )}
+        </p>
+      )}
+      {savedNote && filter === "open" && (
+        <p role="status" className="core-success">
+          {w(
+            "Saved. Goes live when you publish.",
+            "Disimpan. Ia aktif apabila anda menerbitkan.",
           )}
         </p>
       )}
@@ -94,8 +122,18 @@ export function Questions() {
               <GapCard
                 gap={g}
                 justSaved={savedIds.includes(g.id)}
+                draft={drafts[g.id]}
+                setDraft={(part) => setDrafts((d) => setDraft(d, g.id, part))}
                 reload={list.reload}
-                onSaved={() => setSavedIds((s) => [...s, g.id])}
+                onStart={() => {
+                  setHandled(false);
+                  setSavedNote(false);
+                }}
+                onSaved={() => {
+                  setSavedIds((s) => [...s, g.id]);
+                  setDrafts((d) => dropDraft(d, g.id));
+                  setSavedNote(true);
+                }}
                 onHandled={() => setHandled(true)}
               />
             </li>
@@ -109,13 +147,19 @@ export function Questions() {
 function GapCard({
   gap,
   justSaved,
+  draft,
+  setDraft,
   reload,
+  onStart,
   onSaved,
   onHandled,
 }: {
   gap: KnowledgeGap;
   justSaved: boolean;
+  draft: { answer: string; topic: string } | undefined;
+  setDraft: (part: { answer?: string; topic?: string }) => void;
   reload: () => Promise<boolean>;
+  onStart: () => void;
   onSaved: () => void;
   onHandled: () => void;
 }) {
@@ -124,8 +168,8 @@ function GapCard({
     { client } = useCore(),
     { agentId, queue, refreshChanges } = useAgentPage(),
     a = useAction();
-  const [answer, setAnswer] = useState(""),
-    [topic, setTopic] = useState("");
+  const answer = draft?.answer ?? "",
+    topic = draft?.topic ?? "";
   const ms = locale === "ms";
   const when = new Intl.DateTimeFormat(ms ? "ms-MY" : "en-MY", {
     timeZone: KL,
@@ -142,85 +186,103 @@ function GapCard({
     onHandled();
     await reload();
   };
+  // The open gaps as they are now, or undefined when they cannot be read.
+  const freshOpen = () =>
+    client
+      .execute("knowledgeGaps", { id: agentId, status: "open" })
+      .catch(() => undefined);
 
-  const save = async () => {
+  // One try at saving with the given gap revision. "stale" is a 409 that did
+  // not move the agent revision, so it is about the gap; an agent conflict
+  // is rethrown and takes the normal route (the page reloads).
+  const trySave = async (gapRevision: number, text: string) => {
+    let result: { revision: number } | undefined,
+      stale = false;
+    await queuedWrite(queue, async (revision, key) => {
+      try {
+        await client.execute(
+          "resolveGap",
+          {
+            agentId,
+            id: gap.id,
+            as: "fact",
+            expectedRevision: gapRevision,
+            expectedAgentRevision: revision,
+            title: gapTitle(topic, text),
+            value: text,
+          },
+          key,
+        );
+        // Saving adds a fact: the agent revision moved by one. Read where
+        // it stands; if that read fails the write still stands.
+        let next = revision + 1;
+        try {
+          next = (await client.execute("draft", { id: agentId })).revision;
+        } catch {
+          /* the plus-one above is what the server did */
+        }
+        result = { revision: next };
+        return result;
+      } catch (e) {
+        if (isGapConflict(e)) {
+          const d = await client.execute("draft", { id: agentId });
+          if (gapConflictKind(revision, d.revision) === "gap") {
+            stale = true;
+            return { revision: d.revision };
+          }
+        }
+        throw e;
+      }
+    });
+    return stale ? ("stale" as const) : result ? ("stored" as const) : ("none" as const);
+  };
+
+  const save = () => {
     const text = answer.trim();
     if (!text) return;
-    const done = await a.run(async () => {
-      let result: { revision: number } | undefined,
-        stale = false;
-      await queuedWrite(queue, async (revision, key) => {
-        try {
-          await client.execute(
-            "resolveGap",
-            {
-              agentId,
-              id: gap.id,
-              as: "fact",
-              expectedRevision: gap.revision,
-              expectedAgentRevision: revision,
-              title: gapTitle(topic, text),
-              value: text,
-            },
-            key,
-          );
-          // Saving adds a fact: the agent revision moved by one. Read where
-          // it stands; if that read fails the write still stands.
-          let next = revision + 1;
-          try {
-            next = (await client.execute("draft", { id: agentId })).revision;
-          } catch {
-            /* the plus-one above is what the server did */
-          }
-          result = { revision: next };
-          return result;
-        } catch (e) {
-          // A 409 is the gap's own revision or the agent's. When the agent
-          // revision has not moved, the gap was answered or skipped by
-          // someone else: this is not an agent conflict.
-          if (isGapConflict(e)) {
-            const d = await client.execute("draft", { id: agentId });
-            if (gapConflictKind(revision, d.revision) === "gap") {
-              stale = true;
-              return { revision: d.revision };
-            }
-          }
-          throw e;
+    onStart();
+    return a.run(async () => {
+      let outcome = await trySave(gap.revision, text);
+      if (outcome === "stale") {
+        // A new ask also moves the gap's revision: look before deciding.
+        const todo = gapConflictAction(await freshOpen(), gap.id, 0);
+        if (todo.kind === "handled") {
+          await alreadyHandled();
+          return false;
         }
-      });
-      if (stale) {
-        await alreadyHandled();
-        return false;
+        if (todo.kind === "error") throw new CoreError("CONFLICT", 409);
+        outcome = await trySave(todo.revision, text);
+        if (outcome === "stale") throw new CoreError("CONFLICT", 409);
       }
-      return stored(result, async () => {
+      return stored(outcome === "stored" ? { revision: 0 } : undefined, async () => {
         onSaved();
-        setAnswer("");
-        setTopic("");
         refreshChanges();
         await reload();
       });
     });
-    return done;
   };
 
-  const skip = () =>
-    a.run(async () => {
+  const skip = () => {
+    onStart();
+    return a.run(async () => {
+      const send = (expectedRevision: number) =>
+        client.execute("ignoreGap", { agentId, id: gap.id, expectedRevision });
       try {
-        await client.execute("ignoreGap", {
-          agentId,
-          id: gap.id,
-          expectedRevision: gap.revision,
-        });
+        await send(gap.revision);
       } catch (e) {
-        if (isGapConflict(e)) {
+        if (!isGapConflict(e)) throw e;
+        const todo = gapConflictAction(await freshOpen(), gap.id, 0);
+        if (todo.kind === "handled") {
           await alreadyHandled();
           return false;
         }
-        throw e;
+        if (todo.kind === "error") throw e;
+        await send(todo.revision);
       }
       await reload();
       return true;
     });
+  };
 
   return (
     <article className="agent-card agent-gap">
@@ -252,7 +314,7 @@ function GapCard({
                     "Apa yang ejen patut cakap",
                   )}
                   value={answer}
-                  onChange={(e) => setAnswer(e.target.value)}
+                  onChange={(e) => setDraft({ answer: e.target.value })}
                 />
               </Field>
               <Field label={w("Topic (optional)", "Topik (pilihan)")}>
@@ -260,7 +322,7 @@ function GapCard({
                   maxLength={200}
                   placeholder={w("For example: Sunday hours", "Contoh: Waktu hari Ahad")}
                   value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
+                  onChange={(e) => setDraft({ topic: e.target.value })}
                 />
               </Field>
             </div>
