@@ -139,3 +139,40 @@ export function saveLineOf(s: {
   if (s.unsaved) return "notSaved";
   return s.status === "saved" ? "saved" : "none";
 }
+
+// The title of a fact made from an answered gap. It comes from the owner
+// (the topic, else the start of the answer), never from the customer's
+// question, so customer words are not copied into a published version.
+export function gapTitle(topic: string, answer: string): string {
+  const t = topic.trim();
+  if (t) return t.slice(0, 200);
+  return answer.replace(/\s+/g, " ").trim().slice(0, 60);
+}
+
+const CHANNEL_WORDS: Record<string, { en: string; ms: string }> = {
+  text: { en: "Typed test", ms: "Ujian taip" },
+  voice: { en: "Voice test", ms: "Ujian suara" },
+  phone: { en: "Phone", ms: "Telefon" },
+  whatsapp: { en: "WhatsApp", ms: "WhatsApp" },
+};
+// Names the channels a question was asked on; unknown values are dropped.
+export function channelWords(channels: string[]): { en: string; ms: string } {
+  const known = [...new Set(channels)]
+    .map((c) => CHANNEL_WORDS[c])
+    .filter((c): c is { en: string; ms: string } => !!c);
+  return {
+    en: known.map((c) => c.en).join(", "),
+    ms: known.map((c) => c.ms).join(", "),
+  };
+}
+
+// A 409 on resolving a gap is either a stale gap (someone answered or skipped
+// it) or a stale agent revision. Both look the same, so the draft is read
+// again: when its revision is still the one that was sent, the agent did not
+// move and the gap is the stale part.
+export function gapConflictKind(
+  sentRevision: number,
+  draftRevision: number,
+): "gap" | "agent" {
+  return draftRevision === sentRevision ? "gap" : "agent";
+}

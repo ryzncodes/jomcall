@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useCore, useWords, useAction, Heading, Notice } from "../state";
-import { KnowledgeCoreEditor } from "../knowledge-core";
 import { LocalHours } from "../settings";
 import { Greeting } from "./greeting";
 import { Knowledge } from "./knowledge";
@@ -10,6 +9,7 @@ import { PublishedAgent } from "./published";
 import { AgentPageProvider, useAgentPage } from "./store";
 import { viewOf, type View } from "./rules";
 import { Home } from "./home";
+import { Questions } from "./questions";
 import { SaveLine } from "./save-line";
 
 export { PublishedAgent };
@@ -111,26 +111,13 @@ function Sub({ view }: { view: Exclude<View, "home"> }) {
     case "hours":
       return <LocalHours />; // stands in until the hours view is built
     case "questions":
-      return <QuestionsStandIn />;
+      return <Questions />;
     case "publish":
       return <PublishStandIn />;
   }
 }
 
-// Stand-ins until the questions and publish views are built: the gap list
-// of the knowledge editor, and a plain publish button.
-function QuestionsStandIn() {
-  const { agentId, queue, reloadKey } = useAgentPage();
-  return (
-    <KnowledgeCoreEditor
-      agentId={agentId}
-      queue={queue}
-      reloadKey={reloadKey}
-      sections={["gaps"]}
-    />
-  );
-}
-
+// Stand-in until the publish view is built: a plain publish button.
 function PublishStandIn() {
   const w = useWords(),
     a = useAction(),

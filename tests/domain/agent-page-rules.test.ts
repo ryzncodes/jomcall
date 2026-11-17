@@ -8,6 +8,9 @@ import {
   sameSettings,
   afterConflict,
   saveLineOf,
+  gapTitle,
+  channelWords,
+  gapConflictKind,
 } from "../../web/components/core/agent/rules.ts";
 import {
   VOICE_PRESETS,
@@ -135,4 +138,29 @@ test("validSettings maps an empty, free-text or unknown voice to the default", (
   }
   const keep = validSettings({ ...base, voicePreference: VOICE_PRESETS[1] }, base);
   assert.equal(keep.send.voicePreference, VOICE_PRESETS[1]);
+});
+
+test("gapTitle: topic wins, else the start of the answer, never longer than 200", () => {
+  const answer =
+    "  Yes, we open   on Sundays from 10 to 4 and also on public holidays unless stated ";
+  const collapsed = answer.replace(/\s+/g, " ").trim().slice(0, 60);
+  assert.equal(gapTitle("", answer), collapsed);
+  assert.equal(collapsed.length <= 60, true);
+  assert.equal(gapTitle("  Sunday hours ", answer), "Sunday hours");
+  assert.equal(gapTitle("x".repeat(300), "a").length, 200);
+  assert.equal(gapTitle.length, 2);
+});
+
+test("channelWords: names known channels and drops unknown ones", () => {
+  assert.deepEqual(channelWords(["voice", "x"]), {
+    en: "Voice test",
+    ms: "Ujian suara",
+  });
+  assert.deepEqual(channelWords(["text", "phone", "whatsapp", "text"]).en, "Typed test, Phone, WhatsApp");
+  assert.deepEqual(channelWords([]), { en: "", ms: "" });
+});
+
+test("gapConflictKind: an unmoved agent revision means the gap was stale", () => {
+  assert.equal(gapConflictKind(7, 7), "gap");
+  assert.equal(gapConflictKind(7, 8), "agent");
 });
