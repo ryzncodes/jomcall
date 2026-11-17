@@ -12,6 +12,7 @@ import { useExperience } from "../experience";
 import { Field } from "./field";
 import { GreetingField } from "./agent-fields";
 import { KnowledgeCoreEditor } from "./knowledge-core";
+import { PublishedAgent } from "./agent/published";
 import { VoicePicker } from "./voice-picker";
 import { voiceFor } from "../../../packages/contracts/src/voices";
 import {
@@ -138,27 +139,13 @@ export function LocalAgent({ setup }: { setup: boolean }) {
     </>
   );
 }
-function PublishedAgent({ id }: { id: string }) {
-  const { workspace, client } = useCore(),
-    r = useResource(
-      () => client.execute("version", { agentId: workspace.agent.id, id }),
-      id,
-    ),
-    w = useWords();
-  return r.data ? (
-    <section className="core-panel">
-      <h2>{r.data.snapshot.settings.name}</h2>
-      <p>{r.data.snapshot.settings.greeting}</p>
-      <p>
-        {w("Published configuration", "Konfigurasi diterbitkan")} #
-        {r.data.sequence}
-      </p>
-    </section>
-  ) : (
-    <Loading error={r.error} />
-  );
-}
-function AgentEditor({ initial }: { initial: Agent }) {
+export function AgentEditor({
+  initial,
+  initialTab = "voice",
+}: {
+  initial: Agent;
+  initialTab?: "voice" | "knowledge" | "core" | "history";
+}) {
   const { client } = useCore(),
     w = useWords(),
     a = useAction();
@@ -168,7 +155,7 @@ function AgentEditor({ initial }: { initial: Agent }) {
     }),
     [revision, setRevision] = useState(initial.revision),
     [tab, setTab] = useState<"voice" | "knowledge" | "core" | "history">(
-      "voice",
+      initialTab,
     ),
     [dirty, setDirty] = useState(false),
     [published, setPublished] = useState(false);

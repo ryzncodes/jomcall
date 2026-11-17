@@ -14,7 +14,7 @@ import { LocalBookings } from "./bookings";
 import { LocalAgentTest } from "./agent-test";
 import { BookingSummary } from "./booking-summary";
 import { LocalContacts } from "./contacts";
-import { LocalAgent } from "./agent";
+import { LocalAgent } from "./agent/index";
 import { LocalSettings, LocalHours } from "./settings";
 import { LocalBilling } from "./billing";
 import { LocalPhoneNumbers, LocalCalls } from "./phone";
