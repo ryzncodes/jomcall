@@ -88,7 +88,7 @@ export function HoursWeek({ sync, branch }: { sync: Sync; branch: string }) {
   const leaveRow = (d: number) => {
     const tidy = sync.state().weekdays[d]!.map((b) => ({
       start: normalizeTime(b.start),
-      end: normalizeTime(b.end),
+      end: normalizeTime(b.end, "end"),
     }));
     sync.setWeek(sync.state().weekdays.map((x, i) => (i === d ? tidy : x)));
     sync.save();

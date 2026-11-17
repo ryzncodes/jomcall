@@ -287,9 +287,11 @@ export const isEnd = (t: string) => END.test(t);
 // What a typed time becomes when the field loses focus. A phone's number
 // pad has no colon, so "9", "900", "0900" and "1730" are read as times
 // (hours 0 to 23, minutes 0 to 59), and "9:00" is "09:00". Anything else is
-// left as typed so the owner sees it and fixes it.
-export function normalizeTime(raw: string): string {
+// left as typed so the owner sees it and fixes it. For a closing time
+// ("end") "24", "2400" and "24:00" read as "24:00", the server's end of day.
+export function normalizeTime(raw: string, field?: "start" | "end"): string {
   const t = raw.trim();
+  if (field === "end" && /^(?:24|2400|24:00)$/.test(t)) return "24:00";
   let h: string, m: string;
   if (/^\d{1,2}$/.test(t)) [h, m] = [t, "00"];
   else if (/^\d{3}$/.test(t)) [h, m] = [t.slice(0, 1), t.slice(1)];
