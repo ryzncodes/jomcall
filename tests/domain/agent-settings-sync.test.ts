@@ -146,3 +146,51 @@ test("while a save is in flight it is unsaved but nothing is waiting", async () 
   await t.sync.queue.idle();
   assert.equal(t.sync.unsaved(), false);
 });
+
+test("a blurred field keeps its text through a conflict on its own send", async () => {
+  const server = { ...base, greeting: "Orang lain" };
+  const t = setup({
+    send: async () => {
+      throw new Conflict();
+    },
+    server: () => server,
+  });
+  t.sync.setFocused("name");
+  t.sync.change({ name: "Aina Baru" });
+  t.sync.blur("name");
+  await t.sync.queue.idle();
+  assert.equal(t.events.conflicts, 1);
+  assert.equal(t.sync.settings().name, "Aina Baru");
+  assert.equal(t.sync.settings().greeting, "Orang lain");
+  assert.equal(t.sync.unsaved(), true);
+});
+
+test("blur forgets the focus after the send, unless another field took it", async () => {
+  const server = { ...base, name: "Lain", greeting: "Lain" };
+  const t = setup({
+    send: async () => {
+      throw new Conflict();
+    },
+    server: () => server,
+  });
+  t.sync.setFocused("name");
+  t.sync.change({ name: "X" });
+  t.sync.blur("name");
+  t.sync.setFocused("greeting");
+  t.sync.change({ greeting: "Y" });
+  await t.sync.queue.idle();
+  // greeting is still focused: its text stays, name takes the server's.
+  assert.equal(t.sync.settings().greeting, "Y");
+  assert.equal(t.sync.settings().name, "Lain");
+});
+
+test("reload takes the server draft as local and saved", async () => {
+  const server = { ...base, instructions: "Dipulihkan" };
+  const t = setup({ server: () => server });
+  t.sync.change({ greeting: "Tidak dihantar" });
+  await t.sync.reload();
+  assert.equal(t.sync.settings().instructions, "Dipulihkan");
+  assert.equal(t.sync.settings().greeting, base.greeting);
+  assert.equal(t.sync.unsaved(), false);
+  assert.equal(t.sync.dirty(), false);
+});

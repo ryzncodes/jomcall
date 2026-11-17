@@ -138,6 +138,25 @@ export function createSettingsSync(o: {
         !sameSettings(local, lastValid);
       if (dirty || failed) push();
     },
+    // A text field lost focus: send its edit now, and only after the queue
+    // settles (a conflict keeps the field still counted as focused until
+    // then) forget it was focused, unless another field took over.
+    blur(field: keyof AgentSettings) {
+      this.flush();
+      void queue.idle().then(() => {
+        if (focused === field) focused = null;
+      });
+    },
+    // Reads the draft again and takes it as both local and saved (after a
+    // restore, which replaces the settings on the server).
+    async reload() {
+      const a = await o.read();
+      clearTimeout(timer);
+      local = lastValid = lastSent = server = a.settings;
+      dirty = false;
+      invalid = [];
+      o.onChange();
+    },
     // Waits for the queue, but never after an error (the queue may keep
     // jobs) and never past one that happens meanwhile.
     async settled() {

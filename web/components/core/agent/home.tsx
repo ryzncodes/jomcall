@@ -97,7 +97,11 @@ export function Home() {
               "Menjawab panggilan ujian sahaja",
             );
 
-  const langName = { ms: "BM", en: "English", zh: w("Mandarin", "Mandarin") };
+  const langName = {
+    ms: "BM",
+    en: w("English", "Inggeris"),
+    zh: w("Mandarin", "Mandarin"),
+  };
   const languages = settings.languages
     .map((l) => langName[l])
     .join(w(" and ", " dan "));

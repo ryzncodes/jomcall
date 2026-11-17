@@ -1,8 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useCore, useWords, useResource, Heading, Loading, Notice } from "../state";
-import { AgentEditor } from "../agent";
+import { useCore, useWords, useAction, Heading, Notice } from "../state";
+import { KnowledgeCoreEditor } from "../knowledge-core";
 import { LocalHours } from "../settings";
+import { Greeting } from "./greeting";
+import { Knowledge } from "./knowledge";
+import { More } from "./more";
 import { PublishedAgent } from "./published";
 import { AgentPageProvider, useAgentPage } from "./store";
 import { viewOf, type View } from "./rules";
@@ -75,39 +78,90 @@ function Shell() {
           >
             {w("Back to your agent", "Kembali ke ejen anda")}
           </button>
-          <Placeholder view={view} />
+          <Sub view={view} />
         </>
       )}
     </div>
   );
 }
 
-// Until the other views are built, each shows the matching part of the old
-// editor. It saves by itself with its own button, as before.
-const legacyTab = {
-  questions: "core",
-  knowledge: "core",
-  greeting: "voice",
-  more: "history",
-  publish: "voice",
-} as const;
-function Placeholder({ view }: { view: Exclude<View, "home"> }) {
-  const { client } = useCore(),
-    { agentId, reloadKey } = useAgentPage(),
-    r = useResource(
-      () => client.execute("draft", { id: agentId }),
-      agentId + "|" + reloadKey + "|" + view,
-    );
-  if (view === "hours") return <LocalHours />;
-  if (!r.data) return <Loading error={r.error} />;
+function Sub({ view }: { view: Exclude<View, "home"> }) {
+  switch (view) {
+    case "greeting":
+      return <Greeting />;
+    case "knowledge":
+      return <Knowledge />;
+    case "more":
+      return <More />;
+    case "hours":
+      return <LocalHours />; // stands in until the hours view is built
+    case "questions":
+      return <QuestionsStandIn />;
+    case "publish":
+      return <PublishStandIn />;
+  }
+}
+
+// Stand-ins until the questions and publish views are built: the gap list
+// of the knowledge editor, and a plain publish button.
+function QuestionsStandIn() {
+  const { agentId, queue, reloadKey } = useAgentPage();
   return (
-    <>
-      <Notice error={r.error} />
-      <AgentEditor
-        key={agentId + reloadKey + view}
-        initial={r.data}
-        initialTab={legacyTab[view]}
-      />
-    </>
+    <KnowledgeCoreEditor
+      agentId={agentId}
+      queue={queue}
+      reloadKey={reloadKey}
+      sections={["gaps"]}
+    />
+  );
+}
+
+function PublishStandIn() {
+  const w = useWords(),
+    a = useAction(),
+    page = useAgentPage(),
+    { client, refresh } = useCore();
+  const [done, setDone] = useState(false);
+  const publish = async () => {
+    page.flush();
+    const ok = await a.run(async () => {
+      let sent = false;
+      await page.queue.push({
+        run: async (expectedRevision, key) => {
+          await client.execute(
+            "publish",
+            { id: page.agentId, expectedRevision },
+            key,
+          );
+          sent = true;
+          // Publishing can move the agent revision; read where it stands.
+          return (await client.execute("draft", { id: page.agentId })).revision;
+        },
+      });
+      return sent;
+    });
+    if (ok) {
+      setDone(true);
+      refresh();
+    }
+  };
+  return (
+    <section className="agent-view" aria-labelledby="agent-publish-h">
+      <h2 id="agent-publish-h">{w("Publish", "Terbitkan")}</h2>
+      <Notice {...a} />
+      {done && (
+        <p role="status" className="core-success">
+          {w("Published.", "Diterbitkan.")}
+        </p>
+      )}
+      <button
+        type="button"
+        className="button button-dark"
+        disabled={a.busy}
+        onClick={() => void publish()}
+      >
+        {w("Publish configuration", "Terbitkan konfigurasi")}
+      </button>
+    </section>
   );
 }

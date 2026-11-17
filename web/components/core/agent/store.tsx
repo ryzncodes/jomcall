@@ -42,6 +42,10 @@ export type AgentPage = {
   flush: () => void;
   // Fields report which one the owner is typing in (kept after a conflict).
   setFocused: (field: keyof AgentSettings | null) => void;
+  // A field lost focus: sends its edit, then forgets the focus once settled.
+  blur: (field: keyof AgentSettings) => void;
+  // Reads the draft settings again (after a restore).
+  reloadSettings: () => Promise<void>;
   invalid: (keyof AgentSettings)[];
   // True while an edit is not on the server: waiting, being sent, or failed.
   dirty: boolean;
@@ -205,6 +209,8 @@ function Store({
         },
         flush: sync.flush,
         setFocused: sync.setFocused,
+        blur: (field) => sync.blur(field),
+        reloadSettings: () => sync.reload(),
         invalid: sync.invalid(),
         dirty: sync.unsaved(),
         waiting: sync.dirty(),

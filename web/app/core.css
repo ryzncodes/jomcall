@@ -2298,3 +2298,19 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Agent page sub-views: greeting, knowledge and more. */
+.agent-view {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.agent-view h2 {
+  font-size: 20px;
+  line-height: 1.2;
+}
+.agent-field-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger, #b3261e);
+}
