@@ -2,7 +2,7 @@
 
 ## 2026-11-17: one-page agent screen (item 17)
 
-Branch `feat/agent-page` in the worktree `.claude/worktrees/agent-page`, head `6079064` plus the records commit. Not pushed, no pull request, not merged. Nothing on hosted staging. No migration.
+Pull request #37, squash-merged to `main` on 2026-11-17 as commit `7624890` (5 of 5 checks passing). Nothing on hosted staging yet. No migration.
 
 **Changed**
 - `/app/agent` is one page for owners and admins: home, `#questions`, `#knowledge`, `#hours`, `#greeting`, `#more`, `#publish` (`web/components/core/agent/`). Settings autosave through `web/lib/core/save-queue.ts`.
@@ -22,7 +22,7 @@ Branch `feat/agent-page` in the worktree `.claude/worktrees/agent-page`, head `6
 - Typed and spoken 48-case gates not re-run.
 
 **Next**
-- Owner: say go for the two paid gates (design section 11), then for the push and the pull request. After merge: rebuild web, agent, engine and voice on staging; no migration.
+- Owner: rebuild web, agent, engine and voice on staging; no migration. The two paid gates (design section 11) were not run before the merge, by the owner's choice, and are still owed.
 - Known limits and every deviation: `NOTES.md` (2026-11-17) and the build note in `docs/superpowers/specs/2026-11-16-agent-page-design.md` section 13.
 - Local leftovers: a made-up workspace "Kedai Contoh QA" with two seeded questions in the shared local database; launch entries `agent-page-local` and `agent-page-mock` in the main checkout's `.claude/launch.json` (ignored by git).
 
