@@ -170,6 +170,8 @@ export function WorkspaceChrome({
           // WhatsApp switch.
           ...(channels?.whatsapp ? [] : ["inbox"]),
           ...(channels?.integrations ? [] : ["integrations"]),
+          // Opening hours live on the agent page here; mock keeps its screen.
+          "hours",
           ...(workspace.complete && active !== "setup" ? ["setup"] : []),
         ]
       : [];

@@ -1,7 +1,7 @@
 "use client";
 import { HOSTED } from "@/lib/hosted";
 import { useEffect, useState } from "react";
-import type { Location, Schedule } from "../../../packages/contracts/src/core";
+import type { Location } from "../../../packages/contracts/src/core";
 import { useExperience } from "../experience";
 import { Field } from "./field";
 import {
@@ -163,6 +163,7 @@ export function LocalSettings() {
               </button>
             </form>
           </section>
+          {manager && <BranchSettings />}
         </div>
       ) : tab === "team" ? (
         <Team />
@@ -408,114 +409,39 @@ function Audit() {
     </section>
   );
 }
-export function LocalHours() {
-  const { client, workspace } = useCore(),
-    w = useWords(),
-    { href } = useExperience(),
-    a = useAction();
-  const [chosen, setChosen] = useState(workspace.locations[0]?.id ?? ""),
-    [adding, setAdding] = useState(false),
-    [reload, setReload] = useState(0);
+// Name, address and state of each branch. Opening hours are on the agent page.
+function BranchSettings() {
+  const w = useWords(),
+    { client } = useCore(),
+    { href } = useExperience();
   const branches = useResource(
-      () => client.execute("locations", {}),
-      "locations",
-    ),
-    r = useResource(
-      () =>
-        chosen
-          ? client.execute("schedule", { id: chosen })
-          : Promise.resolve(null),
-      chosen,
-    );
-  const selected = branches.data?.find((l) => l.id === chosen);
-  useEffect(() => {
-    if (branches.data && !adding && !branches.data.some((l) => l.id === chosen))
-      setChosen(branches.data[0]?.id ?? "");
-  }, [branches.data, chosen, adding]);
+    () => client.execute("locations", {}),
+    "settings-branches",
+  );
   return (
-    <>
-      <Heading
-        title={w("Open at the right time.", "Buka pada waktu yang tepat.")}
-        description={w(
-          "Branches, weekly hours and closure dates. These records do not write to an external calendar.",
-          "Cawangan, waktu mingguan dan tarikh tutup. Rekod ini tidak menulis ke kalendar luaran.",
-        )}
-      />
-      <div className="core-actions">
-        <a href={href("/app/bookings")}>
+    <div>
+      <h2>{w("Branches", "Cawangan")}</h2>
+      <p>
+        <a href={href("/app/agent") + "#hours"}>
           {w(
-            HOSTED ? "Open bookings" : "Open local bookings",
-            HOSTED ? "Buka tempahan" : "Buka tempahan setempat",
+            "Opening hours are on the agent page.",
+            "Waktu operasi ada di halaman ejen.",
           )}
         </a>
-      </div>
-      <Notice {...a} />
-      <div className="core-workspace-switch">
-        <Field label={w("Branch", "Cawangan")}>
-          <select
-            value={chosen}
-            onChange={(e) => {
-              setChosen(e.target.value);
-              setAdding(false);
-              setReload((v) => v + 1);
-            }}
-          >
-            {branches.data?.map((l) => (
-              <option value={l.id} key={l.id}>
-                {l.name}
-                {l.primary_location ? " · " + w("Primary", "Utama") : ""}
-              </option>
-            ))}
-          </select>
-        </Field>
-        {workspace.role !== "staff" && (
-          <button
-            className="button secondary-button"
-            onClick={() => setAdding(!adding)}
-          >
-            {w("Add branch", "Tambah cawangan")}
-          </button>
-        )}
-        <button
-          className="button secondary-button"
-          onClick={async () => {
-            const [b, s] = await Promise.all([branches.reload(), r.reload()]);
-            if (b && s) setReload((v) => v + 1);
-          }}
-        >
-          {w("Reload latest values", "Muat semula nilai terkini")}
-        </button>
-      </div>
+      </p>
       <Notice error={branches.error} />
-      <Notice error={r.error} />
-      {adding ? (
-        <BranchForm
-          onSaved={(l) => {
-            setChosen(l.id);
-            setAdding(false);
-          }}
-        />
-      ) : selected ? (
-        <div className="core-two-columns">
-          <BranchForm
-            key={"branch-" + chosen + reload}
-            branch={selected}
-            onSaved={() => {}}
-          />
-          {!r.data ? (
-            <Loading error={r.error} />
-          ) : (
-            <ScheduleForm
-              key={"schedule-" + chosen + reload}
-              branch={selected}
-              initial={r.data}
-            />
-          )}
-        </div>
+      {!branches.data ? (
+        <Loading error={branches.error} />
       ) : (
-        <Loading />
+        branches.data.map((l) => (
+          <BranchForm
+            key={l.id + ":" + l.revision}
+            branch={l}
+            onSaved={() => void branches.reload()}
+          />
+        ))
       )}
-    </>
+    </div>
   );
 }
 function BranchForm({
@@ -613,197 +539,6 @@ function BranchForm({
               {w("Archive branch", "Arkibkan cawangan")}
             </button>
           )}
-        </fieldset>
-      </form>
-    </section>
-  );
-}
-function ScheduleForm({
-  branch,
-  initial,
-}: {
-  branch: Location;
-  initial: Schedule;
-}) {
-  const w = useWords(),
-    { client, workspace } = useCore(),
-    a = useAction();
-  const [s, setS] = useState(initial),
-    [date, setDate] = useState(""),
-    [reason, setReason] = useState("");
-  const days = [
-    w("Monday", "Isnin"),
-    w("Tuesday", "Selasa"),
-    w("Wednesday", "Rabu"),
-    w("Thursday", "Khamis"),
-    w("Friday", "Jumaat"),
-    w("Saturday", "Sabtu"),
-    w("Sunday", "Ahad"),
-  ];
-  return (
-    <section className="core-panel">
-      <h2>{w("Weekly hours", "Waktu mingguan")}</h2>
-      <Notice {...a} />
-      <form
-        className="core-form"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const r = await a.run(() =>
-            client.execute("saveSchedule", {
-              id: branch.id,
-              expectedRevision: s.revision,
-              timezone: s.timezone,
-              weekdays: s.weekdays,
-              closures: s.closures,
-            }),
-          );
-          if (r) setS(r);
-        }}
-      >
-        <fieldset disabled={workspace.role === "staff" || a.busy}>
-          <Field label={w("Schedule time zone", "Zon masa jadual")}>
-            <input
-              required
-              value={s.timezone}
-              onChange={(e) =>
-                setS((v) => ({ ...v, timezone: e.target.value }))
-              }
-            />
-          </Field>
-          {s.weekdays.map((intervals, day) => (
-            <div key={day} className="core-hours-day">
-              <strong>{days[day]}</strong>
-              {!intervals.length && <span>{w("Closed", "Tutup")}</span>}
-              {intervals.map((interval, i) => (
-                <div className="core-hour-pair" key={i}>
-                  {(["start", "end"] as const).map((key) => (
-                    <Field
-                      key={key}
-                      label={
-                        days[day] +
-                        " " +
-                        (key === "start"
-                          ? w("opens", "buka")
-                          : w("closes", "tutup"))
-                      }
-                    >
-                      <input
-                        required
-                        aria-label={days[day] + " " + key + " " + (i + 1)}
-                        placeholder="09:00"
-                        pattern={
-                          key === "end"
-                            ? "([01][0-9]|2[0-3]):[0-5][0-9]|24:00"
-                            : "([01][0-9]|2[0-3]):[0-5][0-9]"
-                        }
-                        value={interval[key]}
-                        onChange={(e) =>
-                          setS((v) => ({
-                            ...v,
-                            weekdays: v.weekdays.map((xs, d) =>
-                              d === day
-                                ? xs.map((x, j) =>
-                                    j === i
-                                      ? { ...x, [key]: e.target.value }
-                                      : x,
-                                  )
-                                : xs,
-                            ),
-                          }))
-                        }
-                      />
-                    </Field>
-                  ))}
-                  <button
-                    type="button"
-                    aria-label={
-                      w("Remove interval", "Buang waktu") +
-                      " " +
-                      days[day] +
-                      " " +
-                      (i + 1)
-                    }
-                    onClick={() =>
-                      setS((v) => ({
-                        ...v,
-                        weekdays: v.weekdays.map((xs, d) =>
-                          d === day ? xs.filter((_, j) => j !== i) : xs,
-                        ),
-                      }))
-                    }
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-              {intervals.length < 4 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setS((v) => ({
-                      ...v,
-                      weekdays: v.weekdays.map((xs, d) =>
-                        d === day
-                          ? [...xs, { start: "09:00", end: "17:00" }]
-                          : xs,
-                      ),
-                    }))
-                  }
-                >
-                  {w("Add hours", "Tambah waktu")}
-                </button>
-              )}
-            </div>
-          ))}
-          <h3>{w("Closure dates", "Tarikh tutup")}</h3>
-          {s.closures.map((c) => (
-            <div className="core-record" key={c.date}>
-              <strong>{c.date}</strong>
-              <p>{c.reason}</p>
-              <button
-                type="button"
-                onClick={() =>
-                  setS((v) => ({
-                    ...v,
-                    closures: v.closures.filter((x) => x.date !== c.date),
-                  }))
-                }
-              >
-                {w("Remove closure", "Buang penutupan")}
-              </button>
-            </div>
-          ))}
-          <Field label={w("Closure date", "Tarikh penutupan")}>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          </Field>
-          <Field label={w("Closure reason", "Sebab penutupan")}>
-            <input
-              maxLength={300}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </Field>
-          <button
-            type="button"
-            disabled={!date || s.closures.some((c) => c.date === date)}
-            onClick={() => {
-              setS((v) => ({
-                ...v,
-                closures: [...v.closures, { date, reason }],
-              }));
-              setDate("");
-              setReason("");
-            }}
-          >
-            {w("Add closure", "Tambah penutupan")}
-          </button>
-          <button className="button button-dark">
-            {w("Save schedule", "Simpan jadual")}
-          </button>
         </fieldset>
       </form>
     </section>

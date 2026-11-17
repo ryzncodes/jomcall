@@ -143,6 +143,10 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Add greeting, AI introduction and recording notice before publishing.",
       "Tambah salam, pengenalan AI dan notis rakaman sebelum menerbitkan.",
     ],
+    CHANGES_MOVED: [
+      "Something changed since you opened this. Check the list again.",
+      "Ada perubahan sejak anda membuka ini. Semak senarai sekali lagi.",
+    ],
     DELETION_PENDING: [
       "Deletion is pending. Editing is locked.",
       "Pemadaman sedang diproses. Suntingan dikunci.",

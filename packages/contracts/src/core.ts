@@ -92,6 +92,7 @@ import {
   type KnowledgeGap,
 } from "./knowledge.ts";
 import type { PackSummary } from "../../domain/src/packs/index.ts";
+import type { FrozenHours } from "../../domain/src/knowledge/hours.ts";
 import {
   contactInput,
   contactUpdate,
@@ -169,7 +170,24 @@ export type Version = {
     facts?: { title: string; value: unknown }[];
     rules?: { kind: string; text: string }[];
     catalogue?: { setId: string; hash: string; rows: number } | null;
+    // Every active branch's hours at publish; absent on older versions.
+    hours?: FrozenHours[];
   };
+};
+export type AgentChange = {
+  kind: "setting" | "knowledge" | "pack" | "fact" | "rule" | "price" | "hours";
+  op: "added" | "changed" | "removed";
+  // setting: the settings key; pack: the pack id; hours: the branch name;
+  // others: the row's name, title, item or the rule text (first 120 characters).
+  label: string;
+  // Present on a collapsed line: how many rows it stands for.
+  count?: number;
+};
+export type AgentChanges = {
+  count: number;
+  token: string;
+  published: boolean;
+  changes: AgentChange[];
 };
 export type Contact = {
   id: string;
@@ -450,10 +468,14 @@ export const commands = {
       .strict(),
     out<Agent>(),
   ),
+  agentChanges: route("GET", "/agents/:id/changes", id, out<AgentChanges>()),
   publish: route(
     "POST",
     "/agents/:id/publish",
-    id.extend(revision),
+    id.extend({
+      ...revision,
+      changeToken: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    }),
     out<Version>(),
   ),
   versions: route(
@@ -592,7 +614,12 @@ export const commands = {
     z.object({ id: uuid, uploadId: uuid, seq: uploadSeq }).strict(),
     out<Uint8Array>(),
   ),
-  knowledgeGaps: route("GET", "/agents/:id/gaps", id, out<KnowledgeGap[]>()),
+  knowledgeGaps: route(
+    "GET",
+    "/agents/:id/gaps",
+    id.extend({ status: z.enum(["open", "resolved", "ignored"]).optional() }),
+    out<KnowledgeGap[]>(),
+  ),
   resolveGap: route(
     "POST",
     "/agents/:agentId/gaps/:id/resolve",

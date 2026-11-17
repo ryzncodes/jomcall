@@ -65,3 +65,43 @@ test("lost mutation responses reuse the same operation; acknowledged new saves g
     await h.close();
   }
 });
+
+test("keepalive reuses the last CSRF token and sets keepalive on the request", async () => {
+  let csrfFetches = 0;
+  const inits: (RequestInit | undefined)[] = [];
+  const client = new HttpCoreClient({
+    orgId: "org",
+    fetch: async (url, init) => {
+      if (url === "/api/auth/csrf") {
+        csrfFetches++;
+        return Response.json({ ok: true, data: { token: "tok" } });
+      }
+      inits.push(init);
+      return Response.json({ ok: true, data: { id: "c1" } });
+    },
+  });
+  const input = {
+    name: "Contoh Keepalive",
+    phone: null,
+    preferredLanguage: "en" as const,
+  };
+  // No token fetched yet: keepalive fetches one normally.
+  await client.execute("createContact", input, "key-1", undefined, {
+    keepalive: true,
+  });
+  assert.equal(csrfFetches, 1);
+  // Token reused now.
+  await client.execute("createContact", input, "key-2", undefined, {
+    keepalive: true,
+  });
+  assert.equal(csrfFetches, 1);
+  assert.equal(inits[0]?.keepalive, true);
+  assert.equal(
+    new Headers(inits[1]?.headers).get("x-csrf-token"),
+    "tok",
+  );
+  // Without the option nothing changes: token fetched, no keepalive.
+  await client.execute("createContact", input, "key-3");
+  assert.equal(csrfFetches, 2);
+  assert.equal(inits[2]?.keepalive, undefined);
+});

@@ -5,10 +5,14 @@ export function GreetingField({
   value,
   onChange,
   maxLength = 2000,
+  onFocus,
+  onBlur,
 }: {
   value: string;
   onChange: (value: string) => void;
   maxLength?: number;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }) {
   const { t, mode, locale } = useExperience();
   return (
@@ -27,6 +31,8 @@ export function GreetingField({
         maxLength={maxLength}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onFocus={onFocus}
+        onBlur={onBlur}
       />
     </Field>
   );

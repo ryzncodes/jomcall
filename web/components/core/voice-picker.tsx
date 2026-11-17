@@ -75,12 +75,12 @@ export function VoicePicker({
         <p className="agent-voice-note" role="note">
           {earlier
             ? w(
-                `Your earlier note "${earlier}" is not a voice name. Calls use ${DEFAULT_VOICE}. Saving replaces it with the voice selected below.`,
-                `Catatan anda sebelum ini, "${earlier}", bukan nama suara. Panggilan menggunakan ${DEFAULT_VOICE}. Apabila anda simpan draf, catatan itu diganti dengan suara yang dipilih di bawah.`,
+                `Your earlier note "${earlier}" is not a voice name. Calls use ${DEFAULT_VOICE}. The voice selected below replaces it the next time you change anything.`,
+                `Catatan anda sebelum ini, "${earlier}", bukan nama suara. Panggilan menggunakan ${DEFAULT_VOICE}. Suara yang dipilih di bawah akan menggantikannya apabila anda mengubah apa-apa seterusnya.`,
               )
             : w(
-                `No voice chosen yet, so calls use the default voice, ${DEFAULT_VOICE}. Saving the draft stores the voice selected below.`,
-                `Belum ada suara dipilih, jadi panggilan menggunakan suara lalai, ${DEFAULT_VOICE}. Apabila anda simpan draf, suara yang dipilih di bawah akan disimpan.`,
+                `No voice chosen yet, so calls use the default voice, ${DEFAULT_VOICE}. The voice selected below is stored the next time you change anything.`,
+                `Belum ada suara dipilih, jadi panggilan menggunakan suara lalai, ${DEFAULT_VOICE}. Suara yang dipilih di bawah akan disimpan apabila anda mengubah apa-apa seterusnya.`,
               )}
         </p>
       )}

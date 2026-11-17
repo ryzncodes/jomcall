@@ -418,7 +418,7 @@ test("a phone turn without packs is unchanged", async () => {
     await f.publish();
     const call = (await f.ring(await f.addNumber())).result as { callId: string; token: string };
     // A snapshot from before the knowledge core.
-    await f.h.cleanup.query("update app.call set snapshot=snapshot-'packs'-'context' where id=$1", [call.callId]);
+    await f.h.cleanup.query("update app.call set snapshot=snapshot-'packs'-'context'-'hours' where id=$1", [call.callId]);
     const m = f.scripted(hello);
     await f.turn(call, "Hello", m.model);
     const expected = JSON.parse(readFileSync(new URL("../fixtures/phone-prompt-without-packs.json", import.meta.url), "utf8"));

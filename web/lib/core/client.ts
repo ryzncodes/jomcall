@@ -48,6 +48,9 @@ export class HttpCoreClient implements CoreClient {
   private fetcher: typeof fetch;
   // Retain unresolved operations for explicit retries, scoped to this workspace client.
   private pending = new Map<string, string>();
+  // The last CSRF token fetched, for a keepalive send during page unload,
+  // where an extra round trip would not finish.
+  private lastCsrf: string | undefined;
   constructor(private options: { fetch?: typeof fetch; orgId?: string }) {
     this.fetcher = (options.fetch ?? fetch).bind(undefined);
   }
@@ -57,7 +60,8 @@ export class HttpCoreClient implements CoreClient {
       cache: "no-store",
       signal,
     });
-    return (await this.decode(r)).token as string;
+    this.lastCsrf = (await this.decode(r)).token as string;
+    return this.lastCsrf;
   }
   // A body that is not JSON (a proxy's HTML 413 or 502 page) is a
   // ProxyError with that status: never a raw code on screen, never a record
@@ -112,6 +116,10 @@ export class HttpCoreClient implements CoreClient {
     // Stops the request (a removed upload, a timed-out try). The operation's
     // idempotency key is kept, so sending it again is safe.
     signal?: AbortSignal,
+    // keepalive: lets the request outlive the page (the last save while it
+    // unloads). The token fetched earlier is reused (the cookie lasts 24
+    // hours); one is fetched normally when there is none yet.
+    options?: { keepalive?: boolean },
   ): Promise<Output<K>> {
     const { def, path, value } = this.route(command, input);
     const headers: Record<string, string> = this.orgHeader();
@@ -130,7 +138,10 @@ export class HttpCoreClient implements CoreClient {
       if (query.size) url += "?" + query;
     } else {
       headers["content-type"] = "application/json";
-      headers["x-csrf-token"] = await this.csrf(signal);
+      headers["x-csrf-token"] =
+        options?.keepalive && this.lastCsrf
+          ? this.lastCsrf
+          : await this.csrf(signal);
       headers["idempotency-key"] = key ?? this.pending.get(operation!)!;
       body = JSON.stringify(value);
     }
@@ -142,6 +153,7 @@ export class HttpCoreClient implements CoreClient {
         credentials: "same-origin",
         cache: "no-store",
         signal,
+        ...(options?.keepalive ? { keepalive: true } : {}),
       }),
     );
     if (operation && this.pending.get(operation) === headers["idempotency-key"])

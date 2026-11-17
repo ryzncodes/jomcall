@@ -177,7 +177,7 @@ export function LocalBookings() {
                 {w("Add resource", "Tambah sumber")}
               </button>
             )}
-            <a href={href("/app/hours")}>
+            <a href={href("/app/agent") + "#hours"}>
               {w("Review branch hours", "Semak waktu cawangan")}
             </a>
           </div>

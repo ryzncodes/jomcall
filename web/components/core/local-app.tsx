@@ -14,8 +14,8 @@ import { LocalBookings } from "./bookings";
 import { LocalAgentTest } from "./agent-test";
 import { BookingSummary } from "./booking-summary";
 import { LocalContacts } from "./contacts";
-import { LocalAgent } from "./agent";
-import { LocalSettings, LocalHours } from "./settings";
+import { LocalAgent } from "./agent/index";
+import { LocalSettings } from "./settings";
 import { LocalBilling } from "./billing";
 import { LocalPhoneNumbers, LocalCalls } from "./phone";
 import { LocalWhatsApp } from "./whatsapp";
@@ -140,7 +140,9 @@ function LocalWorkspace({ screen }: { screen: string }) {
       ? "calls"
       : ["platform", "selfhost"].includes(screen)
         ? "settings"
-        : screen
+        : screen === "hours"
+          ? "builder"
+          : screen
   ) as ActiveScreen;
   if (error instanceof CoreError && error.status === 401)
     return <LocalAuth mode="login" />;
@@ -321,7 +323,7 @@ function LocalWorkspace({ screen }: { screen: string }) {
                         )}
                       </small>
                     </a>
-                    <a href={href("/app/hours")}>
+                    <a href={href("/app/agent") + "#hours"}>
                       <span>{w("Branches", "Cawangan")}</span>
                       <strong>{workspace.locations.length}</strong>
                       <small>
@@ -368,7 +370,7 @@ function LocalWorkspace({ screen }: { screen: string }) {
               ) : screen === "settings" ? (
                 <LocalSettings />
               ) : screen === "hours" ? (
-                <LocalHours />
+                <LocalAgent setup={false} />
               ) : screen === "billing" ? (
                 <LocalBilling />
               ) : screen === "phones" ? (

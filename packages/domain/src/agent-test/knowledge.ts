@@ -1,9 +1,12 @@
 import { createHash } from "node:crypto";
 import { AppError } from "../../../contracts/src/index.ts";
 import type { KnowledgeHit } from "../../../contracts/src/agent-test.ts";
+import type { FrozenHours } from "../knowledge/hours.ts";
 export type Snapshot = {
   settings?: Record<string, unknown>;
   knowledge: { kind: string; name: string; content: string }[];
+  // Every active branch's hours; draft sessions and published versions carry it.
+  hours?: FrozenHours[];
 };
 export function snapshotHash(snapshot: Snapshot) {
   return createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");

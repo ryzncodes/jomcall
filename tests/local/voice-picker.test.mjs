@@ -31,7 +31,7 @@ test("the web app takes the voice names from the shared constant, not a copy", (
 });
 
 test("the old free-text hint and field are gone from the Agent builder", () => {
-  const agent = readFileSync("web/components/core/agent.tsx", "utf8");
+  const agent = readFileSync("web/components/core/agent/greeting.tsx", "utf8");
   assert.doesNotMatch(agent, /No speech provider is connected/);
   assert.doesNotMatch(agent, /Tiada penyedia suara disambungkan/);
   assert.doesNotMatch(agent, /Voice preference/);

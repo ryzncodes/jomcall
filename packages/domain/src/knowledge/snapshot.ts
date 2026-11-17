@@ -5,6 +5,7 @@ import { AppError } from "../../../contracts/src/index.ts";
 import { LIMITS } from "../../../contracts/src/knowledge.ts";
 import { activePacks, packIds, type RuleKind } from "../packs/index.ts";
 import { sha256 } from "./text.ts";
+import type { FrozenHours } from "./hours.ts";
 
 export type CoreFact = {
   id: string;
@@ -26,6 +27,8 @@ export type CoreSnapshot = {
   rules?: CoreRule[];
   catalogue?: { setId: string; hash: string; rows: number } | null;
   context?: SessionContext;
+  // Every branch's opening hours, frozen at publish. Absent in older snapshots.
+  hours?: FrozenHours[];
   // Snapshots also hold settings and free-text knowledge.
   [key: string]: unknown;
 };
@@ -107,6 +110,20 @@ export async function loadCore(tx: PoolClient, orgId: string, agentId: string) {
   return { packs, facts, rules: resolveRules(packs, ruleRows) };
 }
 
+// Count and hash of the confirmed catalogue rows (the freeze identity).
+export async function catalogueDigest(
+  tx: PoolClient,
+  orgId: string,
+  agentId: string,
+): Promise<{ rows: number; hash: string }> {
+  return (
+    await tx.query(
+      "select count(*)::int as rows,encode(sha256(convert_to(coalesce(string_agg(concat_ws(chr(31),item,array_to_string(aliases,chr(30)),coalesce(price_sen::text,''),stock_note,attributes::text,language,updated_at::text),chr(29) order by created_at,id),''),'UTF8')),'hex')as hash from app.catalogue_row where org_id=$1 and agent_id=$2 and status='confirmed'",
+      [orgId, agentId],
+    )
+  ).rows[0];
+}
+
 // Hash the confirmed rows; reuse the set with that hash or copy them into a
 // new immutable set in one statement. Returns null for an empty catalogue.
 export async function freezeCatalogue(
@@ -114,12 +131,7 @@ export async function freezeCatalogue(
   orgId: string,
   agentId: string,
 ): Promise<NonNullable<CoreSnapshot["catalogue"]> | null> {
-  const digest = (
-    await tx.query(
-      "select count(*)::int as rows,encode(sha256(convert_to(coalesce(string_agg(concat_ws(chr(31),item,array_to_string(aliases,chr(30)),coalesce(price_sen::text,''),stock_note,attributes::text,language,updated_at::text),chr(29) order by created_at,id),''),'UTF8')),'hex')as hash from app.catalogue_row where org_id=$1 and agent_id=$2 and status='confirmed'",
-      [orgId, agentId],
-    )
-  ).rows[0];
+  const digest = await catalogueDigest(tx, orgId, agentId);
   if (!digest.rows) return null;
   const found = (
     await tx.query(

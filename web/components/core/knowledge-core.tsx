@@ -1,11 +1,13 @@
 "use client";
 // Knowledge core editor (local app only): packs, pack fact fields, free facts,
-// rules, catalogue rows and the gap log. Mock preview does not use it.
+// rules and catalogue rows. Mock preview does not use it.
 import { useState } from "react";
+import type { Input } from "../../../packages/contracts/src/core";
+import type { Job } from "@/lib/core/save-queue";
+import { queuedWrite, stored } from "@/lib/core/queued-write";
 import type {
   KnowledgeCore,
   KnowledgeFact,
-  KnowledgeGap,
 } from "../../../packages/contracts/src/knowledge";
 import { Field } from "./field";
 import { useCore, useWords, useResource, useAction, Notice } from "./state";
@@ -54,53 +56,80 @@ export function parseRows(text: string) {
   return { rows };
 }
 
+type Section = "packs" | "facts" | "rules" | "catalogue";
+const ALL: Section[] = ["packs", "facts", "rules", "catalogue"];
+// The agent page's save queue: every write that checks the agent revision
+// goes through it, so it is sent in order with the revision the queue holds.
+export type WriteQueue = { push: (job: Job) => Promise<void> };
+type Write =
+  | "savePacks"
+  | "saveFact"
+  | "deleteFact"
+  | "saveRule"
+  | "deleteRule"
+  | "saveCatalogue"
+  | "deleteCatalogueRow"
+  | "confirmKnowledge";
+
 export function KnowledgeCoreEditor({
   agentId,
-  revision,
-  onRevision,
-  disabled,
+  queue,
+  sections = ALL,
+  reloadKey = 0,
 }: {
   agentId: string;
-  revision: number;
-  onRevision: (n: number) => void;
-  disabled: boolean;
+  queue: WriteQueue;
+  // Which parts to show (default all). A part left out is not read either.
+  sections?: Section[];
+  // Changes when the page read the agent again (after a conflict).
+  reloadKey?: number;
 }) {
   const { client } = useCore(),
     w = useWords(),
     a = useAction();
+  const show = (s: Section) => sections.includes(s);
   const packs = useResource(() => client.execute("packs", {}), "packs");
-  const core = useResource(() => client.execute("knowledgeCore", { id: agentId }), agentId + "|core");
-  const gaps = useResource(() => client.execute("knowledgeGaps", { id: agentId }), agentId + "|gaps");
+  const core = useResource(() => client.execute("knowledgeCore", { id: agentId }), agentId + "|core|" + reloadKey);
   const [picked, setPicked] = useState<string[]>();
   const [paste, setPaste] = useState("");
   const [pasteError, setPasteError] = useState("");
   const [fact, setFact] = useState({ title: "", value: "" });
   const [rule, setRule] = useState<{ kind: Kind; text: string }>({ kind: "never", text: "" });
   const [edits, setEdits] = useState<Record<string, string>>({});
-  const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  const done = async (r: KnowledgeCore | undefined) => {
-    if (!r) return;
-    onRevision(r.revision);
-    setEdits({});
-    await core.reload();
-  };
-  const exec = (fn: () => Promise<KnowledgeCore>) => a.run(fn).then(done);
+  // Resolves true only when the write was stored; a form clears its text
+  // only then.
+  const done = (r: KnowledgeCore | undefined) =>
+    stored(r, async () => {
+      setEdits({});
+      await core.reload();
+    });
+  // One write through the page's queue. The queue gives the agent revision
+  // and the idempotency key; a rejection (conflict, error) shows in the
+  // notice and leaves what was typed as it is.
+  const exec = (fn: (call: <K extends Write>(command: K, input: Omit<Input<K>, "expectedAgentRevision">) => Promise<KnowledgeCore>) => Promise<KnowledgeCore>) =>
+    a
+      .run(() =>
+        queuedWrite(queue, (revision, key) =>
+          fn((command, input) =>
+            client.execute(command, { ...input, expectedAgentRevision: revision } as Input<typeof command>, key) as Promise<KnowledgeCore>,
+          ),
+        ),
+      )
+      .then(done);
   const data = core.data;
   const active = ["every-business", ...(picked ?? data?.packs ?? [])];
   const factFor = (packId: string, key: string): KnowledgeFact | undefined =>
     data?.facts.find((f) => f.pack_id === packId && f.field_key === key);
-  const busy = a.busy || disabled;
+  const busy = a.busy;
 
   if (core.error) return <Notice error={core.error} />;
   if (!data || !packs.data) return <p role="status">{w("Loading knowledge…", "Memuatkan pengetahuan…")}</p>;
   return (
     <div className="builder-fields knowledge-core">
       <Notice {...a} />
-      {disabled && (
-        <p>{w("Save personality changes before editing knowledge.", "Simpan perubahan personaliti sebelum menyunting pengetahuan.")}</p>
-      )}
 
+      {show("packs") && (
       <section aria-labelledby="kc-packs">
         <h3 id="kc-packs">{w("What are your calls for?", "Panggilan anda untuk apa?")}</h3>
         <p className="core-hint">
@@ -132,13 +161,15 @@ export function KnowledgeCoreEditor({
           className="button button-dark"
           disabled={busy || !picked}
           onClick={() =>
-            exec(() => client.execute("savePacks", { agentId, expectedAgentRevision: revision, packs: picked ?? [] }))
+            exec((call) => call("savePacks", { agentId, packs: picked ?? [] }))
           }
         >
           {w("Save patterns", "Simpan corak")}
         </button>
       </section>
+      )}
 
+      {show("facts") && (
       <section aria-labelledby="kc-facts">
         <h3 id="kc-facts">{w("Business facts (always known)", "Fakta perniagaan (sentiasa diketahui)")}</h3>
         {packs.data
@@ -156,10 +187,9 @@ export function KnowledgeCoreEditor({
                     className="core-form"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      exec(() =>
-                        client.execute("saveFact", {
+                      exec((call) =>
+                        call("saveFact", {
                           agentId,
-                          expectedAgentRevision: revision,
                           packId: p.id,
                           fieldKey: f.key,
                           title: f.label.en.slice(0, 200),
@@ -196,7 +226,7 @@ export function KnowledgeCoreEditor({
               <p className="core-clamp">{valueText(f.value)}</p>
               <button
                 disabled={busy}
-                onClick={() => exec(() => client.execute("deleteFact", { agentId, id: f.id, expectedAgentRevision: revision }))}
+                onClick={() => exec((call) => call("deleteFact", { agentId, id: f.id }))}
               >
                 {w("Remove", "Buang")}
               </button>
@@ -206,15 +236,14 @@ export function KnowledgeCoreEditor({
           className="core-form"
           onSubmit={(e) => {
             e.preventDefault();
-            exec(() =>
-              client.execute("saveFact", {
+            exec((call) =>
+              call("saveFact", {
                 agentId,
-                expectedAgentRevision: revision,
                 title: fact.title,
                 value: fact.value,
                 language: "mixed",
               }),
-            ).then(() => setFact({ title: "", value: "" }));
+            ).then((ok) => ok && setFact({ title: "", value: "" }));
           }}
         >
           <Field label={w("Other fact: title", "Fakta lain: tajuk")}>
@@ -228,7 +257,9 @@ export function KnowledgeCoreEditor({
           </button>
         </form>
       </section>
+      )}
 
+      {show("rules") && (
       <section aria-labelledby="kc-rules">
         <h3 id="kc-rules">{w("Rules (they outrank everything)", "Peraturan (mengatasi semua)")}</h3>
         {packs.data
@@ -240,10 +271,9 @@ export function KnowledgeCoreEditor({
               const on = o ? o.enabled : true;
               const text = edits[id] ?? (o ? o.text : r.text.en);
               const save = (enabled: boolean, t: string) =>
-                exec(() =>
-                  client.execute("saveRule", {
+                exec((call) =>
+                  call("saveRule", {
                     agentId,
-                    expectedAgentRevision: revision,
                     kind: r.kind,
                     text: t,
                     packId: p.id,
@@ -277,7 +307,7 @@ export function KnowledgeCoreEditor({
             <article key={r.id} className="core-record">
               <h4>{w(...kindWords[r.kind as Kind])}</h4>
               <p>{r.text}</p>
-              <button disabled={busy} onClick={() => exec(() => client.execute("deleteRule", { agentId, id: r.id, expectedAgentRevision: revision }))}>
+              <button disabled={busy} onClick={() => exec((call) => call("deleteRule", { agentId, id: r.id }))}>
                 {w("Remove", "Buang")}
               </button>
             </article>
@@ -286,9 +316,9 @@ export function KnowledgeCoreEditor({
           className="core-form"
           onSubmit={(e) => {
             e.preventDefault();
-            exec(() =>
-              client.execute("saveRule", { agentId, expectedAgentRevision: revision, kind: rule.kind, text: rule.text, enabled: true }),
-            ).then(() => setRule({ ...rule, text: "" }));
+            exec((call) =>
+              call("saveRule", { agentId, kind: rule.kind, text: rule.text, enabled: true }),
+            ).then((ok) => ok && setRule({ ...rule, text: "" }));
           }}
         >
           <Field label={w("Your rule: when", "Peraturan anda: bila")}>
@@ -308,7 +338,9 @@ export function KnowledgeCoreEditor({
           </button>
         </form>
       </section>
+      )}
 
+      {show("catalogue") && (
       <section aria-labelledby="kc-catalogue">
         <h3 id="kc-catalogue">{w("Catalogue and price list", "Katalog dan senarai harga")}</h3>
         <p className="core-hint">
@@ -348,15 +380,14 @@ export function KnowledgeCoreEditor({
               const parsed = parseRows(paste);
               if ("error" in parsed) return setPasteError(parsed.error ?? "");
               if (parsed.rows.length > 500) return setPasteError(w("At most 500 rows at a time.", "Paling banyak 500 baris sekali."));
-              exec(() =>
-                client.execute("saveCatalogue", {
+              exec((call) =>
+                call("saveCatalogue", {
                   agentId,
-                  expectedAgentRevision: revision,
                   status: "draft",
                   ...(data.packs[0] ? { packId: data.packs[0] } : {}),
                   rows: parsed.rows.map((r) => ({ ...r, attributes: {}, language: "mixed" as const })),
                 }),
-              ).then(() => setPaste(""));
+              ).then((ok) => ok && setPaste(""));
             }}
           >
             {w("Add as drafts", "Tambah sebagai draf")}
@@ -364,7 +395,7 @@ export function KnowledgeCoreEditor({
           <button
             className="button button-dark"
             disabled={busy || !data.catalogue.drafts}
-            onClick={() => exec(() => client.execute("confirmKnowledge", { agentId, expectedAgentRevision: revision }))}
+            onClick={() => exec((call) => call("confirmKnowledge", { agentId }))}
           >
             {w("I checked the drafts: confirm", "Saya sudah semak draf: sahkan")}
           </button>
@@ -381,7 +412,7 @@ export function KnowledgeCoreEditor({
               <button
                 disabled={busy}
                 aria-label={w("Remove " + r.item, "Buang " + r.item)}
-                onClick={() => exec(() => client.execute("deleteCatalogueRow", { agentId, id: r.id, expectedAgentRevision: revision }))}
+                onClick={() => exec((call) => call("deleteCatalogueRow", { agentId, id: r.id }))}
               >
                 {w("Remove", "Buang")}
               </button>
@@ -389,81 +420,7 @@ export function KnowledgeCoreEditor({
           ))}
         </ul>
       </section>
-
-      <section aria-labelledby="kc-gaps">
-        <h3 id="kc-gaps">{w("Questions the agent could not answer", "Soalan yang ejen tidak dapat jawab")}</h3>
-        <p className="core-hint">
-          {w("Only the question is kept, never who asked.", "Hanya soalan disimpan, bukan siapa yang bertanya.")}
-        </p>
-        {gaps.error ? (
-          <Notice error={gaps.error} />
-        ) : !gaps.data?.length ? (
-          <p>{w("Nothing yet.", "Belum ada.")}</p>
-        ) : (
-          gaps.data.map((g: KnowledgeGap) => (
-            <article key={g.id} className="core-record">
-              <h4>
-                “{g.question}” <small>×{g.ask_count}</small>
-              </h4>
-              <p className="core-clamp">
-                {w("Agent said:", "Ejen jawab:")} {g.answer}
-              </p>
-              {g.status === "open" ? (
-                <>
-                  <textarea
-                    rows={2}
-                    maxLength={1000}
-                    aria-label={w("The right answer", "Jawapan yang betul")}
-                    placeholder={w("The right answer, or what to do", "Jawapan yang betul, atau apa perlu dibuat")}
-                    value={answers[g.id] ?? ""}
-                    disabled={busy}
-                    onChange={(e) => setAnswers({ ...answers, [g.id]: e.target.value })}
-                  />
-                  <div className="core-actions">
-                    {(["fact", "rule"] as const).map((as) => (
-                      <button
-                        key={as}
-                        className="button"
-                        disabled={busy || !(answers[g.id] ?? "").trim()}
-                        onClick={async () => {
-                          const text = answers[g.id]!.trim();
-                          const r = await a.run(() =>
-                            client.execute(
-                              "resolveGap",
-                              as === "fact"
-                                ? { agentId, id: g.id, as, expectedRevision: g.revision, expectedAgentRevision: revision, title: g.question.slice(0, 200), value: text }
-                                : { agentId, id: g.id, as, expectedRevision: g.revision, expectedAgentRevision: revision, kind: "always", text },
-                            ),
-                          );
-                          if (r) {
-                            onRevision(revision + 1);
-                            await Promise.all([gaps.reload(), core.reload()]);
-                          }
-                        }}
-                      >
-                        {as === "fact" ? w("Save as fact", "Simpan sebagai fakta") : w("Save as rule", "Simpan sebagai peraturan")}
-                      </button>
-                    ))}
-                    <button
-                      disabled={busy}
-                      onClick={async () => {
-                        if (await a.run(() => client.execute("ignoreGap", { agentId, id: g.id, expectedRevision: g.revision })))
-                          await gaps.reload();
-                      }}
-                    >
-                      {w("Ignore", "Abaikan")}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <span className="remaining-chip">
-                  {g.status === "resolved" ? w("Resolved", "Selesai") : w("Ignored", "Diabaikan")}
-                </span>
-              )}
-            </article>
-          ))
-        )}
-      </section>
+      )}
     </div>
   );
 }
