@@ -14,6 +14,19 @@ import {
   setDraft,
   dropDraft,
   gapConflictAction,
+  presetOf,
+  applyPreset,
+  copyToOpenDays,
+  dayError,
+  closedWeek,
+  normalizeTime,
+  dayProblem,
+  nextBlock,
+  todayKL,
+  closureProblem,
+  weekToSend,
+  mergeWeek,
+  type Interval,
 } from "../../web/components/core/agent/rules.ts";
 import {
   VOICE_PRESETS,
@@ -201,4 +214,167 @@ test("gapConflictAction: gone or no longer open means handled", () => {
 
 test("gapConflictAction: no fresh list means error", () => {
   assert.deepEqual(gapConflictAction(undefined, "g1", 0), { kind: "error" });
+});
+
+// ---- opening hours helpers ----
+const nine: Interval[] = [{ start: "09:00", end: "17:00" }];
+const week = (open: number[], blocks: Interval[] = nine): Interval[][] =>
+  [0, 1, 2, 3, 4, 5, 6].map((d) => (open.includes(d) ? blocks : []));
+
+test("presetOf reads the week", () => {
+  assert.equal(presetOf(week([0, 1, 2, 3, 4, 5, 6])), "everyday");
+  assert.equal(presetOf(week([0, 1, 2, 3, 4])), "weekdays");
+  assert.equal(presetOf(week([0, 1, 2, 3, 4, 5])), "custom");
+  const mixed = week([0, 1, 2, 3, 4]);
+  mixed[2] = [{ start: "10:00", end: "18:00" }];
+  assert.equal(presetOf(mixed), "custom");
+  assert.equal(presetOf(closedWeek), "custom");
+});
+
+test("applyPreset fills from the first open day", () => {
+  const w = closedWeek.map((_, d) =>
+    d === 1 ? [{ start: "10:00", end: "18:00" }] : [],
+  );
+  const ten = [{ start: "10:00", end: "18:00" }];
+  assert.deepEqual(applyPreset(w, "weekdays"), week([0, 1, 2, 3, 4], ten));
+  assert.deepEqual(applyPreset(w, "everyday"), week([0, 1, 2, 3, 4, 5, 6], ten));
+  assert.deepEqual(applyPreset(closedWeek, "weekdays"), week([0, 1, 2, 3, 4]));
+  assert.deepEqual(
+    applyPreset(closedWeek, "everyday"),
+    week([0, 1, 2, 3, 4, 5, 6]),
+  );
+});
+
+test("applyPreset copies, never shares, the blocks", () => {
+  const out = applyPreset(week([0]), "everyday");
+  out[0]![0]!.end = "12:00";
+  assert.equal(out[1]![0]!.end, "17:00");
+});
+
+test("copyToOpenDays leaves closed days closed", () => {
+  const w = week([0, 2, 4]);
+  w[0] = [
+    { start: "08:00", end: "12:00" },
+    { start: "13:00", end: "17:00" },
+  ];
+  const out = copyToOpenDays(w, 0);
+  assert.deepEqual(out[2], w[0]);
+  assert.deepEqual(out[4], w[0]);
+  assert.deepEqual(out[1], []);
+  assert.deepEqual(out[6], []);
+  assert.notEqual(out[2], out[4]);
+});
+
+test("dayError names the first problem", () => {
+  assert.equal(dayError([{ start: "17:00", end: "09:00" }]), "order");
+  assert.equal(dayError([{ start: "09:00", end: "09:00" }]), "order");
+  assert.equal(
+    dayError([
+      { start: "09:00", end: "13:00" },
+      { start: "12:00", end: "17:00" },
+    ]),
+    "overlap",
+  );
+  assert.equal(
+    dayError([
+      { start: "13:00", end: "17:00" },
+      { start: "09:00", end: "12:00" },
+    ]),
+    "overlap",
+  );
+  const five = [0, 1, 2, 3, 4].map((i) => ({
+    start: `${String(8 + i * 2).padStart(2, "0")}:00`,
+    end: `${String(9 + i * 2).padStart(2, "0")}:00`,
+  }));
+  assert.equal(dayError(five), "tooMany");
+  assert.equal(
+    dayError([
+      { start: "09:00", end: "12:00" },
+      { start: "12:00", end: "17:00" },
+    ]),
+    null,
+  );
+  assert.equal(dayError([]), null);
+});
+
+test("closedWeek is seven empty days", () => {
+  assert.equal(closedWeek.length, 7);
+  assert.ok(closedWeek.every((d) => d.length === 0));
+});
+
+test("normalizeTime pads a single digit hour and keeps the rest", () => {
+  assert.equal(normalizeTime("9:00"), "09:00");
+  assert.equal(normalizeTime(" 17:30 "), "17:30");
+  assert.equal(normalizeTime("24:00"), "24:00");
+  assert.equal(normalizeTime("9"), "9");
+  assert.equal(normalizeTime("abc"), "abc");
+});
+
+test("dayProblem adds a format problem before any other", () => {
+  assert.equal(dayProblem([{ start: "9am", end: "17:00" }]), "format");
+  assert.equal(dayProblem([{ start: "24:00", end: "24:00" }]), "format");
+  assert.equal(dayProblem([{ start: "17:00", end: "09:00" }]), "order");
+  assert.equal(dayProblem([{ start: "09:00", end: "24:00" }]), null);
+});
+
+test("nextBlock starts where the last one ends", () => {
+  assert.deepEqual(nextBlock([]), { start: "09:00", end: "17:00" });
+  assert.deepEqual(nextBlock([{ start: "09:00", end: "12:00" }]), {
+    start: "12:00",
+    end: "16:00",
+  });
+  assert.deepEqual(nextBlock([{ start: "09:00", end: "22:30" }]), {
+    start: "22:30",
+    end: "24:00",
+  });
+  assert.equal(nextBlock([{ start: "09:00", end: "24:00" }]), null);
+  assert.equal(nextBlock([{ start: "09:00", end: "bad" }]), null);
+});
+
+test("todayKL is the date in Kuala Lumpur", () => {
+  assert.equal(todayKL(new Date("2026-11-16T17:00:00Z")), "2026-11-17");
+  assert.equal(todayKL(new Date("2026-11-16T15:59:00Z")), "2026-11-16");
+});
+
+test("closureProblem refuses past, repeated, bad and too many dates", () => {
+  const today = "2026-11-17";
+  const none: { date: string; reason: string }[] = [];
+  assert.equal(closureProblem("2026-11-17", none, today), null);
+  assert.equal(closureProblem("2026-11-16", none, today), "past");
+  assert.equal(closureProblem("", none, today), "invalid");
+  assert.equal(closureProblem("2026-02-30", none, today), "invalid");
+  assert.equal(
+    closureProblem("2026-12-25", [{ date: "2026-12-25", reason: "" }], today),
+    "duplicate",
+  );
+  const many = Array.from({ length: 366 }, (_, i) => ({
+    date: `2027-${String(1 + (i % 12)).padStart(2, "0")}-${i}`,
+    reason: "",
+  }));
+  assert.equal(closureProblem("2026-12-25", many, today), "full");
+});
+
+test("weekToSend keeps the saved day when a typed day cannot be sent", () => {
+  const saved = week([0, 1]);
+  const draft = week([0, 1]);
+  draft[1] = [{ start: "17:00", end: "09:00" }];
+  draft[2] = [{ start: "10:00", end: "14:00" }];
+  const out = weekToSend(draft, saved);
+  assert.deepEqual(out.send[1], saved[1]);
+  assert.deepEqual(out.send[2], draft[2]);
+  assert.deepEqual(out.invalid, [1]);
+});
+
+test("mergeWeek: untouched rows take the server, typed rows stay", () => {
+  const before = week([0, 1, 2]);
+  const draft = week([0, 1, 2]);
+  draft[1] = [{ start: "10:00", end: "12:00" }];
+  const server = week([0, 1, 2]);
+  server[0] = [{ start: "08:00", end: "16:00" }];
+  server[1] = [{ start: "07:00", end: "15:00" }];
+  server[2] = [{ start: "09:00", end: "12:00" }];
+  const out = mergeWeek(before, draft, server);
+  assert.deepEqual(out[0], server[0]);
+  assert.deepEqual(out[1], draft[1]);
+  assert.deepEqual(out[2], server[2]);
 });

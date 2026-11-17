@@ -44,7 +44,7 @@ export function statusOf(
   return { state: changes > 0 ? "pending" : "live", changes };
 }
 
-type Interval = { start: string; end: string };
+export type Interval = { start: string; end: string };
 const DAYS_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAYS_MS = ["Isn", "Sel", "Rab", "Kha", "Jum", "Sab", "Aha"];
 const clock = (t: string) => t.replace(/^0/, "");
@@ -59,8 +59,7 @@ export function weekSummary(weekdays: Interval[][] | null): {
   const open = weekdays
     .map((blocks, i) => ({ blocks, i }))
     .filter((d) => d.blocks.length > 0);
-  if (!open.length)
-    return { en: "Closed every day", ms: "Tutup setiap hari" };
+  if (!open.length) return { en: "Closed every day", ms: "Tutup setiap hari" };
   const key = (b: Interval[]) => JSON.stringify(b.map((x) => [x.start, x.end]));
   if (open.some((d) => key(d.blocks) !== key(open[0]!.blocks)))
     return { en: "Hours vary by day", ms: "Waktu berbeza mengikut hari" };
@@ -88,7 +87,9 @@ export function validSettings(
 ): { send: AgentSettings; invalid: (keyof AgentSettings)[] } {
   const send = { ...withVoice(next) } as Record<string, unknown>;
   const invalid: (keyof AgentSettings)[] = [];
-  for (const key of Object.keys(agentSettings.shape) as (keyof AgentSettings)[]) {
+  for (const key of Object.keys(
+    agentSettings.shape,
+  ) as (keyof AgentSettings)[]) {
     const field = agentSettings.shape[key] as {
       safeParse: (v: unknown) => { success: boolean };
     };
@@ -203,9 +204,173 @@ export function gapConflictAction(
   fresh: { id: string; status: string; revision: number }[] | undefined,
   id: string,
   attempt: number,
-): { kind: "retry"; revision: number } | { kind: "handled" } | { kind: "error" } {
+):
+  | { kind: "retry"; revision: number }
+  | { kind: "handled" }
+  | { kind: "error" } {
   if (!fresh) return { kind: "error" };
   const g = fresh.find((x) => x.id === id);
   if (!g || g.status !== "open") return { kind: "handled" };
-  return attempt === 0 ? { kind: "retry", revision: g.revision } : { kind: "error" };
+  return attempt === 0
+    ? { kind: "retry", revision: g.revision }
+    : { kind: "error" };
 }
+
+// ---- Opening hours ----
+export type Preset = "everyday" | "weekdays" | "custom";
+export type Closure = { date: string; reason: string };
+export const closedWeek: Interval[][] = Array.from({ length: 7 }, () => []);
+export const MAX_BLOCKS = 4;
+export const MAX_CLOSURES = 366;
+export const MAX_REASON = 300;
+
+const clone = (blocks: Interval[]): Interval[] =>
+  blocks.map((b) => ({ start: b.start, end: b.end }));
+const same = (a: Interval[], b: Interval[]) =>
+  a.length === b.length &&
+  a.every((x, i) => x.start === b[i]!.start && x.end === b[i]!.end);
+
+// The week as a shortcut chip: worked out from the blocks, never stored.
+export function presetOf(weekdays: Interval[][]): Preset {
+  if (weekdays.length !== 7) return "custom";
+  const first = weekdays[0]!;
+  if (!first.length) return "custom";
+  const open = (d: number) =>
+    weekdays[d]!.length > 0 && same(weekdays[d]!, first);
+  const weekdaysOpen = [0, 1, 2, 3, 4].every(open);
+  if (!weekdaysOpen) return "custom";
+  if (!weekdays[5]!.length && !weekdays[6]!.length) return "weekdays";
+  return open(5) && open(6) ? "everyday" : "custom";
+}
+
+// Fills the week from the first open day's blocks (09:00 to 17:00 when no
+// day is open). Always returns new arrays.
+export function applyPreset(
+  weekdays: Interval[][],
+  preset: "everyday" | "weekdays",
+): Interval[][] {
+  const source = weekdays.find((d) => d.length > 0);
+  const blocks = source ?? [{ start: "09:00", end: "17:00" }];
+  const days = preset === "everyday" ? 7 : 5;
+  return Array.from({ length: 7 }, (_, d) => (d < days ? clone(blocks) : []));
+}
+
+// Day `from`'s blocks go to every day that is open now; closed days stay.
+export function copyToOpenDays(
+  weekdays: Interval[][],
+  from: number,
+): Interval[][] {
+  const blocks = weekdays[from] ?? [];
+  return weekdays.map((d, i) =>
+    i === from ? clone(d) : d.length ? clone(blocks) : [],
+  );
+}
+
+const TIME = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+const END = /^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/;
+export const isStart = (t: string) => TIME.test(t);
+export const isEnd = (t: string) => END.test(t);
+
+// What a typed time becomes when the field loses focus: "9:00" is "09:00".
+// Anything else is left as typed so the owner sees it and fixes it.
+export function normalizeTime(raw: string): string {
+  const t = raw.trim();
+  return /^\d:[0-5]\d$/.test(t) ? "0" + t : t;
+}
+
+// A day the server would refuse, by the first problem found. Only checks
+// order and overlap on times that are well formed (see dayProblem).
+export function dayError(
+  blocks: Interval[],
+): "order" | "overlap" | "tooMany" | null {
+  if (blocks.length > MAX_BLOCKS) return "tooMany";
+  if (blocks.some((b) => !(b.end > b.start))) return "order";
+  for (let i = 1; i < blocks.length; i++)
+    if (blocks[i]!.start < blocks[i - 1]!.end) return "overlap";
+  return null;
+}
+
+// dayError plus "format": a time that is not hh:mm (an end may be 24:00).
+export function dayProblem(
+  blocks: Interval[],
+): "format" | "order" | "overlap" | "tooMany" | null {
+  if (blocks.some((b) => !isStart(b.start) || !isEnd(b.end))) return "format";
+  return dayError(blocks);
+}
+
+// The block "Add hours" appends: it starts where the last one ends. None
+// when the day already runs to midnight or its last time is not readable.
+export function nextBlock(blocks: Interval[]): Interval | null {
+  if (!blocks.length) return { start: "09:00", end: "17:00" };
+  const last = blocks[blocks.length - 1]!;
+  if (!isEnd(last.end) || last.end === "24:00") return null;
+  const [h, m] = last.end.split(":").map(Number) as [number, number];
+  const end =
+    h + 4 >= 24
+      ? "24:00"
+      : `${String(h + 4).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  return { start: last.end, end };
+}
+
+// Today's date in Kuala Lumpur as YYYY-MM-DD.
+export function todayKL(now: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kuala_Lumpur",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
+}
+
+// Why a closed date cannot be added: not a real date, in the past (before
+// today in Kuala Lumpur), already listed, or the list is full.
+export function closureProblem(
+  date: string,
+  existing: Closure[],
+  today: string,
+): "invalid" | "past" | "duplicate" | "full" | null {
+  const real =
+    /^\d{4}-\d{2}-\d{2}$/.test(date) &&
+    new Date(date + "T00:00:00Z").toISOString().slice(0, 10) === date;
+  if (!real) return "invalid";
+  if (date < today) return "past";
+  if (existing.some((c) => c.date === date)) return "duplicate";
+  if (existing.length >= MAX_CLOSURES) return "full";
+  return null;
+}
+
+// What a save sends: every day the owner typed that can be sent, and the
+// saved version of each day that cannot (listed in `invalid`).
+export function weekToSend(
+  draft: Interval[][],
+  saved: Interval[][],
+): { send: Interval[][]; invalid: number[] } {
+  const invalid: number[] = [];
+  const send = draft.map((blocks, d) => {
+    if (dayProblem(blocks)) {
+      invalid.push(d);
+      return clone(saved[d] ?? []);
+    }
+    return clone(blocks);
+  });
+  return { send, invalid };
+}
+
+// After the server's week was read again: a day the owner did not touch
+// (it still equals the week they started from) takes the server's version;
+// a day with typed, unsaved changes keeps its text.
+export function mergeWeek(
+  before: Interval[][],
+  draft: Interval[][],
+  server: Interval[][],
+): Interval[][] {
+  return draft.map((blocks, d) =>
+    same(blocks, before[d] ?? []) ? clone(server[d] ?? []) : blocks,
+  );
+}
+
+export const sameWeek = (a: Interval[][], b: Interval[][]) =>
+  a.length === b.length && a.every((d, i) => same(d, b[i]!));
+export const sameClosures = (a: Closure[], b: Closure[]) =>
+  a.length === b.length &&
+  a.every((c, i) => c.date === b[i]!.date && c.reason === b[i]!.reason);

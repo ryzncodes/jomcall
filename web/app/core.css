@@ -2369,3 +2369,125 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Agent page: opening hours */
+.agent-week {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.agent-days,
+.agent-closed-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-day {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  min-width: 0;
+}
+.agent-day-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.agent-switch input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--ink);
+}
+.agent-switch input:focus-visible,
+.agent-block input:focus-visible,
+.agent-mini:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.agent-day-state {
+  margin: 0;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.agent-block {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.agent-block input {
+  width: 84px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+.agent-block input[aria-invalid="true"] {
+  border-color: var(--danger, #b3261e);
+}
+.agent-day-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-mini {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+}
+.agent-mini:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.agent-closures {
+  display: grid;
+  gap: 10px;
+}
+.agent-closures h3,
+.agent-branch-form h3 {
+  font-size: 16px;
+}
+.agent-closed-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.agent-closed-list small {
+  display: block;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.agent-closed-add,
+.agent-branch-form {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}

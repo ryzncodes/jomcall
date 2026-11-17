@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useCore, useWords, useAction, Heading, Notice } from "../state";
-import { LocalHours } from "../settings";
 import { Greeting } from "./greeting";
+import { Hours } from "./hours";
 import { Knowledge } from "./knowledge";
 import { More } from "./more";
 import { PublishedAgent } from "./published";
@@ -32,6 +32,8 @@ export function LocalAgent(_props: { setup?: boolean }) {
         {workspace.agent.published_version_id && (
           <PublishedAgent id={workspace.agent.published_version_id} />
         )}
+        {/* Staff could read the hours before; they still can, read only. */}
+        <Hours editable={false} />
       </>
     );
   return (
@@ -101,6 +103,7 @@ function Shell() {
 }
 
 function Sub({ view }: { view: Exclude<View, "home"> }) {
+  const page = useAgentPage();
   switch (view) {
     case "greeting":
       return <Greeting />;
@@ -109,7 +112,7 @@ function Sub({ view }: { view: Exclude<View, "home"> }) {
     case "more":
       return <More />;
     case "hours":
-      return <LocalHours />; // stands in until the hours view is built
+      return <Hours editable refreshChanges={page.refreshChanges} />;
     case "questions":
       return <Questions />;
     case "publish":

@@ -3,9 +3,20 @@ import { CoreError, ProxyError } from "../../lib/core/client";
 
 // Wording for an error code that means something different on one screen.
 // The shared table in state.tsx stays the default for every other case.
-export type ErrorContext = "voice";
+export type ErrorContext = "voice" | "hours";
 
 const overrides: Record<ErrorContext, Record<string, [string, string]>> = {
+  hours: {
+    // The server does not say how many appointments are in the way.
+    BOOKINGS_AFFECTED: [
+      "Some appointments fall outside these hours. Move or cancel them under Bookings, then save again.",
+      "Ada janji temu di luar waktu ini. Alihkan atau batalkannya di Tempahan, kemudian simpan semula.",
+    ],
+    CONFLICT: [
+      "Someone else changed these hours. This shows the latest.",
+      "Orang lain telah mengubah waktu ini. Ini yang terkini.",
+    ],
+  },
   voice: {
     // The same code refuses publishing an agent; here nothing is published.
     DISCLOSURE_REQUIRED: [
