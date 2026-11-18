@@ -28,10 +28,11 @@ alter table app.whatsapp_channel add column if not exists last_check_failed_at t
 alter table app.whatsapp_channel drop constraint if exists whatsapp_channel_last_check_failed_reason_check;
 alter table app.whatsapp_channel add constraint whatsapp_channel_last_check_failed_reason_check
  check(last_check_failed_reason is null or last_check_failed_reason~'^[A-Z0-9_]{1,60}$');
--- A re-check only makes sense for a connected channel.
+-- No constraint ties recheck_wanted to state: an older web build does not
+-- clear the flag on Disconnect or save, and such a write must never fail. The
+-- claim only looks at connected rows, so a stray flag elsewhere is inert.
+-- (Dropped if an earlier version of this migration added it.)
 alter table app.whatsapp_channel drop constraint if exists whatsapp_channel_recheck_state_check;
-alter table app.whatsapp_channel add constraint whatsapp_channel_recheck_state_check
- check(not recheck_wanted or state='connected');
 
 -- The web role reads the channel column by column and the save writes the new
 -- columns. The agent job role already holds table-level select and update.

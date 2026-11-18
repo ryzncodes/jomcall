@@ -137,7 +137,20 @@ export class WhatsAppWorker {
       const r = await this.op("ingest");
       if (!r?.processed) break;
     }
-    await this.verifyOne();
+    // A failing number check (the new SQL function missing, a database
+    // hiccup) must never stop replies: log one line and go on.
+    try {
+      await this.verifyOne();
+    } catch (e) {
+      const raw = (e as { code?: unknown })?.code;
+      const kind =
+        typeof raw === "string" && /^[A-Z0-9_]{1,10}$/.test(raw)
+          ? raw
+          : e instanceof Error && /^[A-Za-z]{1,40}$/.test(e.name)
+            ? e.name
+            : "UNKNOWN";
+      console.error(`WHATSAPP_CHECK_STEP_FAILED kind=${kind}`);
+    }
     for (let i = 0; i < 4; i++) if (!(await this.runOneTurn())) break;
     for (let i = 0; i < 20; i++) if (!(await this.sendOne())) break;
     // Last, so a slow provider list never delays a reply.
