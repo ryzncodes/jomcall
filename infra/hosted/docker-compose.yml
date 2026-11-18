@@ -4,7 +4,10 @@
 #   JOMCALL_IMAGE_TAG=$(git rev-parse --short HEAD) docker compose up -d --build
 # Settings: one root-owned, mode 0600 file per service in ${JOMCALL_ENV_DIR}
 # (default /etc/jomcall), each mounted into its own container only.
-# Published ports (design 6.6): 80, 443, 7881/tcp, 7882/udp. Nothing else.
+# Published ports (design 6.6): 80, 443, 7881/tcp, 7882/udp. Loopback only:
+# 7880 (LiveKit signalling) and 6379 (Valkey), so the SIP service can reach
+# them. The SIP service uses the host's network and listens on 5060 (UDP and
+# TCP) and 10000-10200/udp (phone audio); see RUNBOOK.md step 11.
 # 54633 (voice turns), 54634 (voice health), 54635 and 54636 (worker health)
 # are never published.
 name: jomcall
@@ -52,11 +55,55 @@ services:
     ports:
       - "7881:7881/tcp"
       - "7882:7882/udp"
+      # Loopback only: the SIP service (host network) connects here.
+      - "127.0.0.1:7880:7880/tcp"
     volumes:
       - ./livekit/livekit.yaml:/etc/livekit.yaml:ro
     networks:
       - edge
       - private
+      - sip
+    depends_on:
+      - redis
+
+  # Message bus between LiveKit and its SIP service. Valkey (BSD-3-Clause),
+  # v8.1. Nothing is kept on disk: it holds only live call state.
+  redis:
+    <<: *hardening
+    image: docker.io/valkey/valkey@sha256:2602ace2be6569bc2bbb06f873776516ab9089821525be34f4305c67eb9db02a
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    user: "999:1000"
+    read_only: true
+    tmpfs:
+      - /data
+    ports:
+      - "127.0.0.1:6379:6379/tcp"
+    networks:
+      - sip
+
+  # LiveKit SIP (Apache-2.0), v1.25.0: takes phone calls from a carrier and
+  # puts each caller into a LiveKit room. Its documentation requires the
+  # host's network. Keys come from sip.env (LIVEKIT_API_KEY and
+  # LIVEKIT_API_SECRET); nothing secret is written here.
+  sip:
+    <<: *hardening
+    image: docker.io/livekit/sip@sha256:92361877818f865ece21c171b9703a4c68b133136a3e721f86dda42984c9c400
+    network_mode: host
+    env_file:
+      - ${JOMCALL_ENV_DIR:-/etc/jomcall}/sip.env
+    environment:
+      SIP_CONFIG_BODY: |
+        ws_url: ws://127.0.0.1:7880
+        redis:
+          address: 127.0.0.1:6379
+        sip_port: 5060
+        rtp_port: 10000-10200
+        use_external_ip: true
+        logging:
+          level: info
+    depends_on:
+      - livekit
+      - redis
 
   agent:
     <<: *hardening
@@ -147,6 +194,8 @@ services:
 networks:
   # Caddy and LiveKit only.
   edge: {}
+  # LiveKit and its message bus only.
+  sip: {}
   # Workers and LiveKit. Fixed subnet so the agent's address is known.
   private:
     internal: false
