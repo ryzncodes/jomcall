@@ -1,5 +1,25 @@
 # Handoff
 
+## 2026-11-18: WhatsApp re-check of a connected number
+
+Branch `feat/whatsapp-recheck`, pull request open, not merged. Nothing on hosted staging.
+
+**Changed**
+- Saving a connected number again (same phone number ID) keeps it `connected` and sets `recheck_wanted`; the worker checks it again through `app_private.whatsapp_verify`. A failed re-check leaves replies on and stores a reason and time, shown as a warning on the WhatsApp settings screen. A first connect that fails still ends `failed`.
+- The worker logs `WHATSAPP_CHECK_FAILED step=<verify|subscribe> reason=... provider=...` (never the token) and, when the check step itself throws, `WHATSAPP_CHECK_STEP_FAILED kind=...`; the tick goes on to replies and sends.
+- Migration `20261118100000_whatsapp_recheck.sql` (three columns, the verify function for the agent role only; no constraint ties the flag to the state, so an older web build's Disconnect never fails).
+- `SUBSCRIBE_FAILED` text now points at the system user's two assets; go-live notes section 12 records the 2026-11-18 lasting token findings.
+
+**Verified (local database and the fake provider only, 2026-11-18)**
+- `npm run typecheck`; `npm run test:guards` 69 of 69; `npm run check:core` 1035 of 1035; `npm run db:verify-migrations` (59 tables with row-level security); `npm run build:hosted`.
+
+**Not verified**
+- No browser check of the new screen text; nothing against Meta; nothing on staging.
+
+**Next (owner steps, in this order, `infra/hosted/RUNBOOK.md` step 14)**
+- Apply the migration to staging before the merge reaches `main` (Vercel deploys the web on merge and the new web reads the new columns), then merge, then rebuild the agent.
+- Open: a failed re-check has no email and no automatic retry; the screen does not poll.
+
 ## 2026-11-18: WhatsApp on hosted staging, first real round trip
 
 Branch `feat/whatsapp-subscribe`, pull request to follow, not merged.
