@@ -372,7 +372,12 @@ Typed and browser voice tests only. Real callers wait for the phone line, the Go
 
 Full steps: `docs/research/phone-line-owner-steps.md`. Nothing here has been run against a carrier or a live SIP service.
 
-1. **[OWNER] Decide where LiveKit's SIP service runs.** The Compose file does not include it, because the design recommends LiveKit Cloud for the first test call (no SIP or RTP ports opened on this server). Self-hosting means adding `livekit/sip` (Apache-2.0) and Redis, and opening 5060 UDP/TCP and an RTP range to the provider's addresses only. Either choice needs written approval in `AGENTS.md`.
+1. **LiveKit's SIP service runs on this server** (owner decision 2026-11-18). The Compose file has three parts for it: `sip` (`livekit/sip` v1.25.0, Apache-2.0, on the host's network), `redis` (Valkey 8.1, BSD-3-Clause, the message bus between LiveKit and the SIP service, nothing kept on disk) and a `redis` block in `livekit/livekit.yaml`. Before the first start:
+   - Create `/etc/jomcall/sip.env` (root, mode 0600) with `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`, the same pair as in `voice.env`.
+   - The SIP service listens on 5060 (UDP and TCP) and 10000-10200/udp (phone audio) on the server's public address. If a cloud firewall is in front of the server, open those ports there. LiveKit's signalling port 7880 and Valkey's 6379 are published on 127.0.0.1 only.
+   - `docker compose up -d redis livekit sip`. LiveKit restarts, which ends any browser call in progress. [CHECK] `docker compose logs sip` shows "sip signaling listening on" for udp and tcp, and `docker compose logs livekit` shows "connecting to redis".
+   - Who may call: an inbound trunk accepts calls only for the numbers listed on it. Add the carrier's signalling addresses (`--allowed`) or a username and password; whether a self-hosted server enforces the address list was not verified, so test it with a call from another address.
+   - Checked on 2026-11-18 on a development machine only: the three containers start and connect, and a trunk and a dispatch rule can be created through LiveKit's API. No call has gone through it.
 2. **[OWNER]** Buy a +60 number from a SIP trunk provider with REFER, point its origination at the SIP service, use PCMU/PCMA and an IP allow-list.
 3. Publish the agent; add the number on the Phone numbers screen of this environment.
 4. Generate the trunk and dispatch rule (`npm run telephony:sip-config -- --allowed <provider IPs>`, against this environment's database) and apply them with `lk sip inbound create` and `lk sip dispatch create`.
