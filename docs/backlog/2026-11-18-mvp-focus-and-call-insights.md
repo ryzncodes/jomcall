@@ -38,9 +38,24 @@ Suggested packaging: layer 1 on every plan; layers 2 and 3 on the higher plan.
 
 Rules: original design only (no copying of other products' screens); transcripts and audio are personal data, so export, delete and retention apply; sending transcripts to a model for scoring is a new use and needs the owner's approval when it is built.
 
-## 4. Phone line: fastest route to a first real call (researched 2026-11-18)
+## 4. Phone line: state at the end of 2026-11-18
 
-- The hosted server runs LiveKit only. A phone call needs LiveKit's SIP service and Redis next to it, with port 5060 and the media ports 10000 to 20000 reachable. This is required before any carrier number can work.
-- Trial route: Plivo (USD 10 trial credit, no card stated on its page; LiveKit publishes a Plivo guide). Whether a trial account can rent a number at once, and in which countries, was not confirmed.
-- Malaysian numbers for clients: Plivo local USD 4.00 a month and USD 0.015 a minute inbound (documents not confirmed); Telnyx USD 4.45 a month with a purchase API, business documents and about 72 hours; Twilio USD 4.00 a month and USD 0.0278 a minute, SSM and address proof, no SIP on a trial account.
-- Figures are from vendor pages read on 2026-11-18; items marked not confirmed need checking in the vendor's console.
+Server side (done): LiveKit's SIP service and its message bus run on the hosted server (pull request #46, `66a5b3e`); ports 5060 (UDP and TCP) and 10000 to 10200/udp are open in the DigitalOcean firewall to all sources, to be narrowed to the chosen carrier's addresses; 5060 answers from outside. The agent's phone switch is still off, no number is added in JomCall, no trunk or dispatch rule exists, and no call has gone through. No browser voice test was held after LiveKit moved onto the message bus.
+
+Number suppliers looked at that day (consoles seen by the owner or the controller; nothing bought):
+
+| Supplier | Malaysian numbers | Price seen | State |
+|---|---|---|---|
+| Twilio | Many local numbers in stock (03 Klang, 04, 07) | USD 4.00 a month; inbound about USD 0.028 a minute (pricing page) | Trial account. A Malaysia Local Business regulatory bundle was submitted and is pending review; a number can be bought only against an approved bundle. Front-runner. |
+| Telnyx | None in stock in any type | USD 4.45 a month (pricing page) | Account verified. One local number requested through "Request Number". US numbers: USD 1.00 upfront and USD 1.00 a month, in stock. |
+| DIDLogic | 03 numbers in stock | USD 12.00 a month plus USD 12.00 setup, 12-month minimum term, documents required | Too dear for one number per client. Not used. |
+| SIPPALS (Malaysian) | 03 numbers per its site | RM 0.13 a minute, no contract; monthly price unknown | Email with technical and price questions drafted for the owner to send. |
+| Plivo | - | - | Sign-up refused from Malaysia. |
+
+Facts that shape the design:
+
+- Digitalize Plus Enterprise is registered at an address in Pulau Pinang, and Twilio requires the address to be in the region of the number's prefix, so its own number should be an 04 number.
+- On Twilio's form the honest answer for numbers handed to clients is "ISV, reseller or partner", which may need each client's details. Whether client numbers can sit under JomCall's own bundle is not confirmed. This, not price, may limit instant self-serve phone numbers.
+- Forwarding costs fall on the client: U Mobile states RM 0.05 per 30 seconds outside the plan's free minutes and does not allow forwarding to international numbers; Maxis states RM 3 a month and local call charges. Other telcos' rules were not found. So numbers must be Malaysian, and the forwarding screen must tell owners about their telco's charge and recommend forwarding unanswered calls only.
+- At about RM 18 to 20 a month per number plus about RM 0.12 a minute inbound, "one number and 100 minutes" on the RM 49 plan leaves about RM 19 for speech, the model and margin. Prices need a second look before phone is sold.
+- The business registration certificate lapses on 7 December 2026.
