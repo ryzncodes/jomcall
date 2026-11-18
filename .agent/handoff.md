@@ -1,5 +1,31 @@
 # Handoff
 
+## 2026-11-18: WhatsApp on hosted staging, first real round trip
+
+Branch `feat/whatsapp-subscribe`, pull request to follow, not merged.
+
+**Done on staging (owner approved D1 for hosted staging on 2026-11-17)**
+- `JOMCALL_WHATSAPP_PROVIDER=cloud` plus the three WhatsApp secrets in Vercel staging (owner pasted) and the provider switch plus credentials key in `/etc/jomcall/agent.env` (piped from the owner's file; backup `agent.env.bak-20261117`); agent restarted, `agent: ready`.
+- Meta: verified portfolio "Digitalize Plus Enterprise", app "JomCall" (now published), test number, webhook `https://staging.jomcall.com/api/whatsapp/webhook` verified, `messages` subscribed, app subscribed to the business account by hand (`subscribed_apps`).
+- Staging workspace: operator credit RM 129.00 and Growth plan started by SQL (audit row written); WhatsApp agent entitlement on.
+- Round trip at 12:49 on 2026-11-18 (Asia/Kuala_Lumpur): inbound text stored, agent turn completed in about 3 s, reply `sent`, one status event, one usage window.
+
+**Changed in code (this branch)**
+- The worker subscribes the app to the business account after the number check; a failure leaves the channel failed with `SUBSCRIBE_FAILED`, `META_190` or `PROVIDER_UNREACHABLE`, explained on the settings page in EN and BM.
+- The WhatsApp settings form opts out of password managers and autofill; the token field is a CSS-masked text input; pasted tokens are trimmed.
+- Go-live notes section 12 records what was seen against Meta.
+
+**Verified**
+- Implementer and fixer: `npm run typecheck`; `npm run test:guards` 69 of 69; `npm run check:core` 1022 of 1022; `npm run build:hosted`. Independent review: no critical issue; its one important finding (raw Meta code shown for a missing permission) is fixed.
+
+**Not verified**
+- The automatic subscribe has not run against Meta. The form change has not been seen in a browser with a password manager.
+- Against Meta: templates, `listTemplates`, STOP and staff keywords, media, inbox staff replies. Reply wording was seen by the owner only.
+
+**Next**
+- Owner: a system user token (the stored one is short-lived and will fail with Meta error 190); decide whether a failed re-check should stop ignoring incoming messages; Tech Provider registration and App Review before other businesses can connect.
+- After merge: rebuild the agent on the server and let Vercel redeploy.
+
 ## 2026-11-17: gates and second browser check after the agent page merge
 
 `main` at `7888aaf`. Records only; no code change.
