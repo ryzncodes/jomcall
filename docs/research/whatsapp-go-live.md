@@ -126,7 +126,7 @@ The code in this repository already covers receiving, replying, consent, do-not-
 | Size | Payloads "up to 3 MB" | DOCS/webhooks/overview.md |
 | TLS | A valid certificate is required. Optional mTLS uses Meta's client certificate, CN `client.webhooks.fbclientcerts.com`. | getting-started |
 | Fields | `messages` (needs `whatsapp_business_messaging`). Template, quality and account fields need `whatsapp_business_management`. | DOCS/webhooks/overview.md |
-| Subscribing an account | `POST /<WABA_ID>/subscribed_apps` with no body returns `{"success":true}` | DOCS/solution-providers/manage-webhooks/ |
+| Subscribing an account | `POST /<WABA_ID>/subscribed_apps` with no body returns `{"success":true}`. Observed 2026-11-18; no event reached the webhook until it was called (section 12). | DOCS/solution-providers/manage-webhooks/; section 12 |
 
 **Payload shapes** (https://developers.facebook.com/docs/whatsapp/cloud-api/webhooks/components and its reference pages):
 
@@ -260,7 +260,7 @@ Steps can overlap where noted. Lead times are Meta's own statements unless marke
 | 7 | Set the webhook: callback `https://<jomcall host>/api/whatsapp/webhook`, plus a verify token of your choice (at least 16 characters). Subscribe the `messages` field. Needs a public HTTPS host (production hosting session). | App Dashboard, WhatsApp, Configuration | Minutes | `.env.hosted`: `WHATSAPP_VERIFY_TOKEN` (same value as the dashboard) and `WHATSAPP_APP_SECRET` (App settings, Basic) |
 | 8 | Generate the credentials key with `openssl rand -hex 32`. | Terminal | Minutes | `.env.hosted`: `WHATSAPP_CREDENTIALS_KEY` (web and agent must share it) |
 | 9 | Owner approval for the outbound exception, then set `JOMCALL_WHATSAPP_PROVIDER=cloud` for web and agent. | `AGENTS.md` and env files | Your decision | `.env.local` / `.env.hosted` |
-| 10 | Pilot business, before Embedded Signup exists: in that business's portfolio, add and verify the number. Create a system user with the three permissions, generate a token, and note the phone number ID and WABA ID. | WhatsApp Manager, Business settings | 1 day, plus display name review (time UNCONFIRMED) | JomCall, WhatsApp, Connect: phone number ID, WABA ID, token. JomCall checks the number. Then call `POST /<WABA_ID>/subscribed_apps` once (not built yet). |
+| 10 | Pilot business, before Embedded Signup exists: in that business's portfolio, add and verify the number. Create a system user with the three permissions, generate a token, and note the phone number ID and WABA ID. | WhatsApp Manager, Business settings | 1 day, plus display name review (time UNCONFIRMED) | JomCall, WhatsApp, Connect: phone number ID, WABA ID, token. JomCall checks the number and, once the number is verified, calls `POST /<WABA_ID>/subscribed_apps` itself (the channel stays "failed" with the reason if that call fails). Publish the Meta app (see section 12). |
 | 11 | Submit the "please reply" utility template in `ms`, `en` and `zh_CN` (wording in the design) and add each one in JomCall with the same name, language and text, purpose "reengage". Once the number is connected, JomCall reads each template's status from WhatsApp itself, the first time within about an hour and then about hourly; staff no longer record approval by hand (they can only for a template WhatsApp does not list). Template sync is built but has never run against Meta. | WhatsApp Manager, Templates | "up to 24 hours" each | JomCall, WhatsApp, Templates |
 | 12 | Add a payment method for the business. Without one, service replies stop since 2026-10-01. | WhatsApp Manager | Same day | — |
 | 13 | Send one real message containing non-ASCII text (BM or Chinese) and confirm the webhook signature check passes. | Phone | Minutes | — |
@@ -283,3 +283,18 @@ Expected elapsed time to the first real pilot conversation is **about 3 weeks**,
 11. SSM explicitly accepted; Malaysia on the alcohol and over-the-counter lists in policy §5.
 12. Gazette commencement of A1727; whether CMA s233A is in force; AIGE text.
 13. WhatsApp's own FAQ on unofficial apps; the outcome of the Rockey Tech case.
+
+## 12. Tried against Meta on 2026-11-18 (hosted staging, Meta's test number)
+
+First run of the channel against Meta. Facts observed that day:
+
+- While the Meta app was unpublished, no real event reached the webhook. After the app was published, events arrived. Meta's dashboard says the same. Publish the app before a pilot.
+- Events also needed the app subscribed to the business account (`POST /<WABA_ID>/subscribed_apps`, bearer token, no body, answer `{"success":true}`). JomCall now makes this call itself every time a number is checked, after the number is verified; if it fails, the channel is marked failed with the reason and "Save and check again" retries.
+- The token from the dashboard's "Generate token" button is short-lived: the one stored at about 23:10 on 2026-11-17 (Asia/Kuala_Lumpur) failed at 12:27 on 2026-11-18 with Meta error 190.
+- A lasting token needs a system user in Business settings. This is from Meta's documentation, not from the run.
+- The webhook verification handshake and the signature check passed on a real inbound text message. A reply was accepted by Meta (status `sent`) and a status event came back.
+- On 2026-11-17 Chrome's password manager filled the owner's email into "Business account ID" and a saved password into "Access token", because the token field was a password input. The token field is now a masked text input with autofill opted out. This has not yet been checked in a browser.
+
+Still not tried against Meta: JomCall's own automatic `subscribed_apps` call (on 2026-11-18 the call was made by hand with curl, before this code existed), `listTemplates` and template sync, templates in general, STOP and staff keywords, media, and non-ASCII text in the signature check (so the "signed bytes" point in section 3 stays unconfirmed).
+
+Open for the owner: when a connected channel is saved again and the check fails, messages that arrive meanwhile are ignored until the owner saves again. There is no automatic retry and no email.

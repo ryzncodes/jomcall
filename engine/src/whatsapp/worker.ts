@@ -149,13 +149,42 @@ export class WhatsAppWorker {
     const v = await this.op("verify_claim");
     if (!v) return false;
     let result: { ok: boolean; reason?: string; displayPhone?: string | null };
+    let accessToken = "";
     try {
+      accessToken = this.token(v.credentials, v.orgId);
       result = await this.options.provider.verifyNumber({
         phoneNumberId: v.phoneNumberId,
-        accessToken: this.token(v.credentials, v.orgId),
+        accessToken,
       });
     } catch (e) {
       result = { ok: false, reason: code(e, "VERIFICATION_FAILED") };
+    }
+    // Meta sends no event for the account until the app is subscribed to it.
+    // Only a verified number is subscribed, and the channel is connected
+    // only when both steps succeed. Repeating the call is harmless. An
+    // expired token and an unreachable provider keep their own reason; any
+    // other failure is stored as SUBSCRIBE_FAILED, so the settings page never
+    // shows a raw Meta code that could also mean a failed number check.
+    if (result.ok) {
+      try {
+        const sub = v.wabaId
+          ? await this.options.provider.subscribeApp({
+              wabaId: v.wabaId,
+              accessToken,
+            })
+          : ({ ok: false, reason: "INVALID_TARGET" } as const);
+        if (!sub.ok)
+          result = {
+            ok: false,
+            reason:
+              sub.reason === "META_190" ||
+              sub.reason === "PROVIDER_UNREACHABLE"
+                ? sub.reason
+                : "SUBSCRIBE_FAILED",
+          };
+      } catch (e) {
+        result = { ok: false, reason: code(e, "SUBSCRIBE_FAILED") };
+      }
     }
     await this.op("verify_result", v.id, null, {
       revision: v.revision,

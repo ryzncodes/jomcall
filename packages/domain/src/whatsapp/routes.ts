@@ -222,7 +222,10 @@ export async function whatsappRoute(
 
   if (path === "/channels/whatsapp" && method === "PUT") {
     manager(ctx);
-    const v = channelSave.parse(body);
+    const parsed = channelSave.parse(body);
+    // A pasted token often carries a stray space or newline. A token of only
+    // whitespace counts as blank: the saved one is kept.
+    const v = { ...parsed, accessToken: parsed.accessToken?.trim() || undefined };
     const ready = whatsappReadiness(env);
     if (!ready.configured) throw new AppError("WHATSAPP_NOT_CONFIGURED", 503);
     if (

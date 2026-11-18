@@ -25,6 +25,38 @@ import {
 } from "./state";
 import { Field } from "./field";
 
+// Why a number check failed, in words. Codes with no entry are shown as the
+// code itself, so nothing is hidden.
+function reasonText(
+  reason: string,
+  w: (en: string, ms: string) => string,
+): string {
+  switch (reason) {
+    case "META_190":
+      return w(
+        "WhatsApp rejected the access token. It has expired or been revoked. Save a new token (a token from a system user does not expire quickly) and check again.",
+        "WhatsApp menolak token akses. Ia sudah tamat tempoh atau dibatalkan. Simpan token baharu (token daripada pengguna sistem tidak cepat tamat) dan semak semula.",
+      );
+    case "SUBSCRIBE_FAILED":
+      return w(
+        "JomCall could not register to receive this WhatsApp account's messages. Check that the Business account ID is right and that the token has the whatsapp_business_management permission, then save again.",
+        "JomCall tidak dapat mendaftar untuk menerima mesej daripada akaun WhatsApp ini. Semak ID akaun perniagaan dan pastikan token mempunyai kebenaran whatsapp_business_management, kemudian simpan semula.",
+      );
+    case "INVALID_TARGET":
+      return w(
+        "The phone number ID, business account ID or token is missing or not in the right form.",
+        "ID nombor telefon, ID akaun perniagaan atau token tiada atau formatnya tidak betul.",
+      );
+    case "PROVIDER_UNREACHABLE":
+      return w(
+        "JomCall could not reach WhatsApp. Check again in a moment.",
+        "JomCall tidak dapat menghubungi WhatsApp. Semak semula sebentar lagi.",
+      );
+    default:
+      return reason;
+  }
+}
+
 const stateWords: Record<string, [string, string]> = {
   not_connected: ["Not connected", "Belum disambungkan"],
   pending: ["Checking the number", "Sedang menyemak nombor"],
@@ -153,7 +185,9 @@ function WhatsAppBody({
               </p>
             )}
             {channel?.state_reason && (
-              <p className="storage-warning">{channel.state_reason}</p>
+              <p className="storage-warning">
+                {reasonText(channel.state_reason, w)}
+              </p>
             )}
           </>
         )}
@@ -224,7 +258,7 @@ function ChannelForm({
         phoneNumberId: phoneNumberId.trim(),
         wabaId: wabaId.trim(),
         agentEnabled,
-        ...(token ? { accessToken: token } : {}),
+        ...(token.trim() ? { accessToken: token.trim() } : {}),
         ...(channel ? { expectedRevision: channel.revision } : {}),
       }),
     );
@@ -256,6 +290,12 @@ function ChannelForm({
           )}
         >
           <input
+            name="wa_number_id"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore
+            data-form-type="other"
             inputMode="numeric"
             required
             pattern="[0-9]{5,30}"
@@ -271,6 +311,12 @@ function ChannelForm({
           )}
         >
           <input
+            name="wa_business_id"
+            autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore
+            data-form-type="other"
             inputMode="numeric"
             required
             pattern="[0-9]{5,30}"
@@ -294,9 +340,23 @@ function ChannelForm({
                 )
           }
         >
+          {/* Not type=password: browsers treat that as a login form and
+              autofill the owner's own password into it. The value is hidden
+              by CSS instead (.secret-input). */}
           <input
-            type="password"
+            type="text"
+            name="wa_access_token"
+            className="secret-input"
+            data-gramm="false"
+            data-enable-grammarly="false"
             autoComplete="off"
+            data-1p-ignore
+            data-lpignore="true"
+            data-bwignore
+            data-form-type="other"
+            autoCorrect="off"
+            autoCapitalize="none"
+            spellCheck={false}
             required={!channel?.credentials_set_at}
             value={token}
             onChange={(e) => setToken(e.target.value)}
