@@ -290,8 +290,11 @@ First run of the channel against Meta. Facts observed that day:
 
 - While the Meta app was unpublished, no real event reached the webhook. After the app was published, events arrived. Meta's dashboard says the same. Publish the app before a pilot.
 - Events also needed the app subscribed to the business account (`POST /<WABA_ID>/subscribed_apps`, bearer token, no body, answer `{"success":true}`). JomCall now makes this call itself every time a number is checked, after the number is verified; if it fails, the channel is marked failed with the reason and "Save and check again" retries.
-- The token from the dashboard's "Generate token" button is short-lived: the one stored at 23:10 failed at 12:27 the next day with Meta error 190. A lasting token needs a system user in Business settings.
+- The token from the dashboard's "Generate token" button is short-lived: the one stored at about 23:10 on 2026-11-17 (Asia/Kuala_Lumpur) failed at 12:27 on 2026-11-18 with Meta error 190.
+- A lasting token needs a system user in Business settings. This is from Meta's documentation, not from the run.
 - The webhook verification handshake and the signature check passed on a real inbound text message. A reply was accepted by Meta (status `sent`) and a status event came back.
-- Browser password managers filled the owner's email and a saved password into the settings form, because the token field was a password input. The token field is now a masked text input with autofill ignored.
+- On 2026-11-17 Chrome's password manager filled the owner's email into "Business account ID" and a saved password into "Access token", because the token field was a password input. The token field is now a masked text input with autofill opted out. This has not yet been checked in a browser.
 
-Still not tried against Meta: `listTemplates` and template sync, templates in general, STOP and staff keywords, media, and non-ASCII text in the signature check (so the "signed bytes" point in section 3 stays unconfirmed).
+Still not tried against Meta: JomCall's own automatic `subscribed_apps` call (on 2026-11-18 the call was made by hand with curl, before this code existed), `listTemplates` and template sync, templates in general, STOP and staff keywords, media, and non-ASCII text in the signature check (so the "signed bytes" point in section 3 stays unconfirmed).
+
+Open for the owner: when a connected channel is saved again and the check fails, messages that arrive meanwhile are ignored until the owner saves again. There is no automatic retry and no email.

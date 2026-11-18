@@ -1,8 +1,9 @@
 // Client for Meta's WhatsApp Business Platform Cloud API.
 //
-// NEVER RUN AGAINST META. Written from Meta's public documentation, read on
-// 2026-11-14; every request shape below is exercised only against a fake
-// fetch in tests. See docs/research/whatsapp-go-live.md for the sources.
+// Written from Meta's public documentation, read on 2026-11-14; tests use a
+// fake fetch only. Against Meta, on hosted staging on 2026-11-17 and
+// 2026-11-18, only verifyNumber (the number check on connect) and sendText
+// have run. subscribeApp, listTemplates and sendTemplate have not. See docs/research/whatsapp-go-live.md for the sources.
 //
 // This is a hosted service. The client refuses to exist unless
 // JOMCALL_WHATSAPP_PROVIDER=cloud, and only the agent process may create it.
@@ -152,8 +153,16 @@ export function createCloudProvider(
         return { ok: false, reason: "PROVIDER_UNREACHABLE" };
       }
       const body = await readJson(response);
-      if (!response.ok)
-        return { ok: false, reason: errorCode(body) ?? "SUBSCRIBE_FAILED" };
+      if (!response.ok) {
+        const meta = errorCode(body);
+        if (meta) return { ok: false, reason: meta };
+        // A server error with no Meta code is temporary.
+        return {
+          ok: false,
+          reason:
+            response.status >= 500 ? "PROVIDER_UNREACHABLE" : "SUBSCRIBE_FAILED",
+        };
+      }
       return body?.success === true
         ? { ok: true }
         : { ok: false, reason: "SUBSCRIBE_FAILED" };

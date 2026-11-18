@@ -2574,4 +2574,7 @@
     text-shadow: 0 0 8px rgba(128, 128, 128, 0.9);
     caret-color: CanvasText;
   }
+  .secret-input::selection {
+    color: transparent;
+  }
 }

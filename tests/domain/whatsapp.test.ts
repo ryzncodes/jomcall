@@ -652,7 +652,10 @@ test("cloud subscribeApp posts to the business account's subscribed_apps and rea
   assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "SUBSCRIBE_FAILED" });
   reply = Response.json({ error: { code: 190, message: "Expired" } }, { status: 401 });
   assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "META_190" });
+  // A server error with no Meta code is temporary, not a verdict on the token.
   reply = new Response("", { status: 503 });
+  assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "PROVIDER_UNREACHABLE" });
+  reply = new Response("{}", { status: 400 });
   assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "SUBSCRIBE_FAILED" });
   fail = true;
   assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "PROVIDER_UNREACHABLE" });

@@ -39,13 +39,13 @@ function reasonText(
       );
     case "SUBSCRIBE_FAILED":
       return w(
-        "The number was found, but JomCall could not subscribe to this WhatsApp account's events, so messages would not arrive. Check the business account ID and the token's permissions, then check again.",
-        "Nombor ditemui, tetapi JomCall tidak dapat melanggan peristiwa akaun WhatsApp ini, jadi mesej tidak akan sampai. Semak ID akaun perniagaan dan kebenaran token, kemudian semak semula.",
+        "JomCall could not register to receive this WhatsApp account's messages. Check that the Business account ID is right and that the token has the whatsapp_business_management permission, then save again.",
+        "JomCall tidak dapat mendaftar untuk menerima mesej daripada akaun WhatsApp ini. Semak ID akaun perniagaan dan pastikan token mempunyai kebenaran whatsapp_business_management, kemudian simpan semula.",
       );
     case "INVALID_TARGET":
       return w(
         "The phone number ID, business account ID or token is missing or not in the right form.",
-        "ID nombor telefon, ID akaun perniagaan atau token tiada atau bentuknya tidak betul.",
+        "ID nombor telefon, ID akaun perniagaan atau token tiada atau formatnya tidak betul.",
       );
     case "PROVIDER_UNREACHABLE":
       return w(
@@ -258,7 +258,7 @@ function ChannelForm({
         phoneNumberId: phoneNumberId.trim(),
         wabaId: wabaId.trim(),
         agentEnabled,
-        ...(token ? { accessToken: token } : {}),
+        ...(token.trim() ? { accessToken: token.trim() } : {}),
         ...(channel ? { expectedRevision: channel.revision } : {}),
       }),
     );
@@ -347,6 +347,8 @@ function ChannelForm({
             type="text"
             name="wa_access_token"
             className="secret-input"
+            data-gramm="false"
+            data-enable-grammarly="false"
             autoComplete="off"
             data-1p-ignore
             data-lpignore="true"

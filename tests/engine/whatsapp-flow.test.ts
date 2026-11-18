@@ -1473,12 +1473,44 @@ test("checking a number subscribes the app to the business account", async (t) =
       assert.equal(f.provider.subscribed.length, 3);
     });
 
+    await t.test("a Meta code other than an expired token is stored as SUBSCRIBE_FAILED", async () => {
+      f.provider.failSubscribe("META_200");
+      await save();
+      await f.worker.tick();
+      assert.deepEqual(await state(), { state: "failed", state_reason: "SUBSCRIBE_FAILED" });
+      f.provider.failSubscribe("PROVIDER_UNREACHABLE");
+      await save();
+      await f.worker.tick();
+      assert.deepEqual(await state(), { state: "failed", state_reason: "PROVIDER_UNREACHABLE" });
+      f.provider.failSubscribe(undefined);
+      await save();
+      await f.worker.tick();
+      assert.deepEqual(await state(), { state: "connected", state_reason: null });
+    });
+
+    await t.test("a token that is only spaces keeps the saved one", async () => {
+      const creds = async () =>
+        (await db.query("select credentials::text c from app.whatsapp_channel where org_id=$1", [f.h.orgA.id])).rows[0].c;
+      const before = await creds();
+      const r = await f.req("PUT", "/channels/whatsapp", {
+        expectedRevision: (await channel()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        agentEnabled: true,
+        accessToken: "   ",
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(await creds(), before);
+      await f.worker.tick();
+    });
+
     await t.test("a failed number check does not subscribe", async () => {
+      const calls = f.provider.subscribed.length;
       f.provider.rejectNumber("META_100");
       await save();
       await f.worker.tick();
       assert.deepEqual(await state(), { state: "failed", state_reason: "META_100" });
-      assert.equal(f.provider.subscribed.length, 3);
+      assert.equal(f.provider.subscribed.length, calls);
     });
 
     await t.test("a provider that throws on subscribe fails the check without connecting", async () => {
