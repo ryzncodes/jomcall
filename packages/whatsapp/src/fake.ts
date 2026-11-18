@@ -7,6 +7,7 @@ import type {
   ProviderTemplate,
   SendOutcome,
   SendTarget,
+  SubscribeResult,
   TemplateMessage,
   WhatsAppProvider,
 } from "./provider.ts";
@@ -24,7 +25,12 @@ export type FakeProvider = WhatsAppProvider & {
   sent: FakeSend[];
   // The next send returns this outcome instead of succeeding.
   failNext(outcome: Exclude<SendOutcome, { outcome: "sent" }>): void;
-  rejectNumber(reason: string): void;
+  // Pass undefined to accept the number again.
+  rejectNumber(reason: string | undefined): void;
+  // Every subscribeApp call, in order. The token is never recorded.
+  subscribed: { wabaId: string }[];
+  // subscribeApp fails with this reason until it is called with undefined.
+  failSubscribe(reason: string | undefined): void;
   // What listTemplates answers from now on (default: an empty list).
   setTemplates(list: ProviderTemplate[]): void;
   // listTemplates fails with this reason until setTemplates is called.
@@ -36,6 +42,8 @@ export function createFakeProvider(): FakeProvider {
   let numberReason: string | undefined;
   let templates: ProviderTemplate[] = [];
   let templateReason: string | undefined;
+  let subscribeReason: string | undefined;
+  const subscribed: { wabaId: string }[] = [];
   const sent: FakeSend[] = [];
   function settle(
     entry:
@@ -63,11 +71,21 @@ export function createFakeProvider(): FakeProvider {
   return {
     name: "fake",
     sent,
+    subscribed,
     failNext(outcome) {
       next = outcome;
     },
     rejectNumber(reason) {
       numberReason = reason;
+    },
+    failSubscribe(reason) {
+      subscribeReason = reason;
+    },
+    async subscribeApp(input): Promise<SubscribeResult> {
+      subscribed.push({ wabaId: input.wabaId });
+      return subscribeReason
+        ? { ok: false, reason: subscribeReason }
+        : { ok: true };
     },
     setTemplates(list) {
       templates = list.map((t) => ({ ...t }));

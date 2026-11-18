@@ -620,3 +620,44 @@ test("send rules: after opting out only the confirmation goes out", () => {
     true,
   );
 });
+
+test("cloud subscribeApp posts to the business account's subscribed_apps and reads the answer", async () => {
+  const seen: { url: string; init: RequestInit }[] = [];
+  let reply: Response = Response.json({ success: true });
+  let fail = false;
+  const client = createCloudProvider({
+    env: { JOMCALL_WHATSAPP_PROVIDER: "cloud" },
+    send: async (url, init) => {
+      seen.push({ url: String(url), init: init! });
+      if (fail) throw Error("reset");
+      return reply;
+    },
+  });
+  const input = { wabaId: "200000001", accessToken: "fake-token" };
+  assert.deepEqual(await client.subscribeApp(input), { ok: true });
+  assert.equal(
+    seen[0].url,
+    `https://graph.facebook.com/${graphVersion}/200000001/subscribed_apps`,
+  );
+  assert.equal(seen[0].init.method, "POST");
+  assert.equal(seen[0].init.body, undefined);
+  assert.equal(
+    (seen[0].init.headers as Record<string, string>).authorization,
+    "Bearer fake-token",
+  );
+  // Success only when Meta says so.
+  reply = Response.json({ success: false });
+  assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "SUBSCRIBE_FAILED" });
+  reply = Response.json({});
+  assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "SUBSCRIBE_FAILED" });
+  reply = Response.json({ error: { code: 190, message: "Expired" } }, { status: 401 });
+  assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "META_190" });
+  reply = new Response("", { status: 503 });
+  assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "SUBSCRIBE_FAILED" });
+  fail = true;
+  assert.deepEqual(await client.subscribeApp(input), { ok: false, reason: "PROVIDER_UNREACHABLE" });
+  const before = seen.length;
+  assert.deepEqual(await client.subscribeApp({ wabaId: "x", accessToken: "t" }), { ok: false, reason: "INVALID_TARGET" });
+  assert.deepEqual(await client.subscribeApp({ wabaId: "200000001", accessToken: "" }), { ok: false, reason: "INVALID_TARGET" });
+  assert.equal(seen.length, before);
+});

@@ -56,6 +56,10 @@ export type TemplateList =
   | { ok: true; templates: ProviderTemplate[] }
   | { ok: false; reason: string };
 
+// The answer to subscribing the app to a business account. Meta delivers no
+// webhook event for the account until the app is subscribed.
+export type SubscribeResult = { ok: true } | { ok: false; reason: string };
+
 export interface WhatsAppProvider {
   readonly name: "fake" | "cloud";
   // Every template of the business account with its review status. A list
@@ -77,6 +81,12 @@ export interface WhatsAppProvider {
     phoneNumberId: string;
     accessToken: string;
   }): Promise<NumberCheck>;
+  // Subscribes the app to the business account's webhook events. Safe to
+  // repeat: Meta answers success again when the app is already subscribed.
+  subscribeApp(input: {
+    wabaId: string;
+    accessToken: string;
+  }): Promise<SubscribeResult>;
 }
 
 export type WhatsAppReadiness = {

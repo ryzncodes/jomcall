@@ -13,6 +13,7 @@ import {
   type ProviderTemplate,
   type SendOutcome,
   type SendTarget,
+  type SubscribeResult,
   type TemplateList,
   type TemplateMessage,
   type WhatsAppProvider,
@@ -129,6 +130,33 @@ export function createCloudProvider(
         ok: true,
         displayPhone: /^[1-9][0-9]{1,14}$/.test(digits) ? "+" + digits : null,
       };
+    },
+    // Observed against Meta on 2026-11-18 (hosted staging, test number):
+    // POST /<WABA_ID>/subscribed_apps with the token as a bearer and no body
+    // answers {"success":true}, and events reach the webhook only after it.
+    // Repeating it is harmless. Success only when the answer says so.
+    async subscribeApp(input): Promise<SubscribeResult> {
+      if (!/^[0-9]{5,30}$/.test(input.wabaId) || !input.accessToken)
+        return { ok: false, reason: "INVALID_TARGET" };
+      let response: Response;
+      try {
+        response = await send(
+          `${graphOrigin}/${graphVersion}/${input.wabaId}/subscribed_apps`,
+          {
+            method: "POST",
+            headers: { authorization: "Bearer " + input.accessToken },
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+      } catch {
+        return { ok: false, reason: "PROVIDER_UNREACHABLE" };
+      }
+      const body = await readJson(response);
+      if (!response.ok)
+        return { ok: false, reason: errorCode(body) ?? "SUBSCRIBE_FAILED" };
+      return body?.success === true
+        ? { ok: true }
+        : { ok: false, reason: "SUBSCRIBE_FAILED" };
     },
     // UNCONFIRMED AGAINST META: GET /<WABA_ID>/message_templates with the
     // fields name, language and status, as recorded in the WhatsApp design

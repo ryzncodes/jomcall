@@ -1424,3 +1424,73 @@ test("a captionless photo is named in the inbox, alerts staff and gets the notic
     await f.close();
   }
 });
+
+test("checking a number subscribes the app to the business account", async (t) => {
+  const f = await setup({ token: true });
+  try {
+    const db = f.h.cleanup;
+    const channel = async () =>
+      (
+        await db.query(
+          "select state,state_reason,revision from app.whatsapp_channel where org_id=$1",
+          [f.h.orgA.id],
+        )
+      ).rows[0];
+    const state = async () => {
+      const { revision, ...rest } = await channel();
+      return rest;
+    };
+    const save = async () => {
+      const r = await f.req("PUT", "/channels/whatsapp", {
+        expectedRevision: (await channel()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        agentEnabled: true,
+        accessToken: "stand-in-token",
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+    };
+
+    await t.test("a verified number is subscribed once, then connected", async () => {
+      // setup() already ran the first check.
+      assert.deepEqual(f.provider.subscribed, [{ wabaId: "200000001" }]);
+      assert.deepEqual(await state(), { state: "connected", state_reason: null });
+    });
+
+    await t.test("a failing subscribe leaves the channel failed with the reason", async () => {
+      f.provider.failSubscribe("META_190");
+      await save();
+      await f.worker.tick();
+      assert.deepEqual(await state(), { state: "failed", state_reason: "META_190" });
+      assert.equal(f.provider.subscribed.length, 2);
+    });
+
+    await t.test("a retry that succeeds connects and clears the reason", async () => {
+      f.provider.failSubscribe(undefined);
+      await save();
+      await f.worker.tick();
+      assert.deepEqual(await state(), { state: "connected", state_reason: null });
+      assert.equal(f.provider.subscribed.length, 3);
+    });
+
+    await t.test("a failed number check does not subscribe", async () => {
+      f.provider.rejectNumber("META_100");
+      await save();
+      await f.worker.tick();
+      assert.deepEqual(await state(), { state: "failed", state_reason: "META_100" });
+      assert.equal(f.provider.subscribed.length, 3);
+    });
+
+    await t.test("a provider that throws on subscribe fails the check without connecting", async () => {
+      f.provider.rejectNumber(undefined);
+      f.provider.subscribeApp = async () => {
+        throw Error("boom");
+      };
+      await save();
+      await f.worker.tick();
+      assert.deepEqual(await state(), { state: "failed", state_reason: "SUBSCRIBE_FAILED" });
+    });
+  } finally {
+    await f.close();
+  }
+});

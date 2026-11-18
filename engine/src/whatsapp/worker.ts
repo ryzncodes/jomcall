@@ -150,12 +150,29 @@ export class WhatsAppWorker {
     if (!v) return false;
     let result: { ok: boolean; reason?: string; displayPhone?: string | null };
     try {
+      const accessToken = this.token(v.credentials, v.orgId);
       result = await this.options.provider.verifyNumber({
         phoneNumberId: v.phoneNumberId,
-        accessToken: this.token(v.credentials, v.orgId),
+        accessToken,
       });
     } catch (e) {
       result = { ok: false, reason: code(e, "VERIFICATION_FAILED") };
+    }
+    // Meta sends no event for the account until the app is subscribed to it.
+    // Only a verified number is subscribed, and the channel is connected
+    // only when both steps succeed. Repeating the call is harmless.
+    if (result.ok) {
+      try {
+        const sub = v.wabaId
+          ? await this.options.provider.subscribeApp({
+              wabaId: v.wabaId,
+              accessToken: this.token(v.credentials, v.orgId),
+            })
+          : ({ ok: false, reason: "INVALID_TARGET" } as const);
+        if (!sub.ok) result = { ok: false, reason: sub.reason };
+      } catch (e) {
+        result = { ok: false, reason: code(e, "SUBSCRIBE_FAILED") };
+      }
     }
     await this.op("verify_result", v.id, null, {
       revision: v.revision,

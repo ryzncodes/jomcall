@@ -2560,3 +2560,18 @@
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
+
+/* A secret typed into a plain text input, so browsers do not treat the form
+   as a login and fill in the owner's own password. -webkit-text-security
+   works in Chrome, Safari, Edge and recent Firefox; where it is missing the
+   text is made transparent and blurred, never shown. */
+.secret-input {
+  -webkit-text-security: disc;
+}
+@supports not (-webkit-text-security: disc) {
+  .secret-input {
+    color: transparent;
+    text-shadow: 0 0 8px rgba(128, 128, 128, 0.9);
+    caret-color: CanvasText;
+  }
+}
