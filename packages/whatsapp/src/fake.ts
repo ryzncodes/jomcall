@@ -26,11 +26,12 @@ export type FakeProvider = WhatsAppProvider & {
   // The next send returns this outcome instead of succeeding.
   failNext(outcome: Exclude<SendOutcome, { outcome: "sent" }>): void;
   // Pass undefined to accept the number again.
-  rejectNumber(reason: string | undefined): void;
+  // `detail` is the raw provider code the worker may log (META_100_33).
+  rejectNumber(reason: string | undefined, detail?: string): void;
   // Every subscribeApp call, in order. The token is never recorded.
   subscribed: { wabaId: string }[];
   // subscribeApp fails with this reason until it is called with undefined.
-  failSubscribe(reason: string | undefined): void;
+  failSubscribe(reason: string | undefined, detail?: string): void;
   // What listTemplates answers from now on (default: an empty list).
   setTemplates(list: ProviderTemplate[]): void;
   // listTemplates fails with this reason until setTemplates is called.
@@ -40,6 +41,8 @@ export type FakeProvider = WhatsAppProvider & {
 export function createFakeProvider(): FakeProvider {
   let next: SendOutcome | undefined;
   let numberReason: string | undefined;
+  let numberDetail: string | undefined;
+  let subscribeDetail: string | undefined;
   let templates: ProviderTemplate[] = [];
   let templateReason: string | undefined;
   let subscribeReason: string | undefined;
@@ -75,16 +78,22 @@ export function createFakeProvider(): FakeProvider {
     failNext(outcome) {
       next = outcome;
     },
-    rejectNumber(reason) {
+    rejectNumber(reason, detail) {
       numberReason = reason;
+      numberDetail = detail;
     },
-    failSubscribe(reason) {
+    failSubscribe(reason, detail) {
       subscribeReason = reason;
+      subscribeDetail = detail;
     },
     async subscribeApp(input): Promise<SubscribeResult> {
       subscribed.push({ wabaId: input.wabaId });
       return subscribeReason
-        ? { ok: false, reason: subscribeReason }
+        ? {
+            ok: false,
+            reason: subscribeReason,
+            ...(subscribeDetail ? { detail: subscribeDetail } : {}),
+          }
         : { ok: true };
     },
     setTemplates(list) {
@@ -117,7 +126,11 @@ export function createFakeProvider(): FakeProvider {
     },
     async verifyNumber(): Promise<NumberCheck> {
       return numberReason
-        ? { ok: false, reason: numberReason }
+        ? {
+            ok: false,
+            reason: numberReason,
+            ...(numberDetail ? { detail: numberDetail } : {}),
+          }
         : { ok: true, displayPhone: null };
     },
   };

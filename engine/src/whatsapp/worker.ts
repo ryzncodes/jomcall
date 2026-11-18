@@ -107,6 +107,20 @@ export class WhatsAppWorker {
     lease: string | null = null,
     data: unknown = {},
   ): Promise<any> {
+    // The number check has its own function: a connected number that is
+    // saved again is checked again without being switched off.
+    if (action === "verify_claim" || action === "verify_result")
+      return (
+        await this.pool.query(
+          "select app_private.whatsapp_verify($1,$2,$3,$4)as value",
+          [
+            action === "verify_claim" ? "claim" : "result",
+            this.namespace,
+            id,
+            JSON.stringify(data),
+          ],
+        )
+      ).rows[0].value;
     return (
       await this.pool.query(
         "select app_private.whatsapp_work($1,$2,$3,$4,$5)as value",
@@ -123,7 +137,20 @@ export class WhatsAppWorker {
       const r = await this.op("ingest");
       if (!r?.processed) break;
     }
-    await this.verifyOne();
+    // A failing number check (the new SQL function missing, a database
+    // hiccup) must never stop replies: log one line and go on.
+    try {
+      await this.verifyOne();
+    } catch (e) {
+      const raw = (e as { code?: unknown })?.code;
+      const kind =
+        typeof raw === "string" && /^[A-Z0-9_]{1,10}$/.test(raw)
+          ? raw
+          : e instanceof Error && /^[A-Za-z]{1,40}$/.test(e.name)
+            ? e.name
+            : "UNKNOWN";
+      console.error(`WHATSAPP_CHECK_STEP_FAILED kind=${kind}`);
+    }
     for (let i = 0; i < 4; i++) if (!(await this.runOneTurn())) break;
     for (let i = 0; i < 20; i++) if (!(await this.sendOne())) break;
     // Last, so a slow provider list never delays a reply.
@@ -152,12 +179,17 @@ export class WhatsAppWorker {
     let accessToken = "";
     try {
       accessToken = this.token(v.credentials, v.orgId);
-      result = await this.options.provider.verifyNumber({
+      const check = await this.options.provider.verifyNumber({
         phoneNumberId: v.phoneNumberId,
         accessToken,
       });
+      result = check;
+      if (!check.ok)
+        this.logCheckFailed("verify", check.reason, check.reason, check.detail);
     } catch (e) {
-      result = { ok: false, reason: code(e, "VERIFICATION_FAILED") };
+      const reason = code(e, "VERIFICATION_FAILED");
+      result = { ok: false, reason };
+      this.logCheckFailed("verify", reason, reason);
     }
     // Meta sends no event for the account until the app is subscribed to it.
     // Only a verified number is subscribed, and the channel is connected
@@ -173,17 +205,23 @@ export class WhatsAppWorker {
               accessToken,
             })
           : ({ ok: false, reason: "INVALID_TARGET" } as const);
-        if (!sub.ok)
-          result = {
-            ok: false,
-            reason:
-              sub.reason === "META_190" ||
-              sub.reason === "PROVIDER_UNREACHABLE"
-                ? sub.reason
-                : "SUBSCRIBE_FAILED",
-          };
+        if (!sub.ok) {
+          const stored =
+            sub.reason === "META_190" || sub.reason === "PROVIDER_UNREACHABLE"
+              ? sub.reason
+              : "SUBSCRIBE_FAILED";
+          result = { ok: false, reason: stored };
+          this.logCheckFailed(
+            "subscribe",
+            stored,
+            sub.reason,
+            "detail" in sub ? sub.detail : undefined,
+          );
+        }
       } catch (e) {
-        result = { ok: false, reason: code(e, "SUBSCRIBE_FAILED") };
+        const raw = code(e, "SUBSCRIBE_FAILED");
+        result = { ok: false, reason: raw };
+        this.logCheckFailed("subscribe", raw, raw);
       }
     }
     await this.op("verify_result", v.id, null, {
@@ -193,6 +231,23 @@ export class WhatsAppWorker {
       displayPhone: result.displayPhone,
     });
     return true;
+  }
+
+  // One line per failed check so the provider's own code is not lost when
+  // the stored reason is only a summary. Fixed vocabulary only: the codes
+  // are checked here, so nothing else (token, number, text, names) can get
+  // into the line, and no ids are logged.
+  private logCheckFailed(
+    step: "verify" | "subscribe",
+    stored: string,
+    raw: string,
+    detail?: string,
+  ) {
+    const safe = (value: string | undefined, fallback: string) =>
+      value && /^[A-Z0-9_]{1,60}$/.test(value) ? value : fallback;
+    console.error(
+      `WHATSAPP_CHECK_FAILED step=${step} reason=${safe(stored, "UNKNOWN")} provider=${safe(detail ?? raw, "UNKNOWN")}`,
+    );
   }
 
   // Copies the provider's template statuses onto the local templates of one

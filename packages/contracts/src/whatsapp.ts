@@ -77,6 +77,12 @@ export type WhatsAppChannel = {
   // the fixed code of the last failure (null after a successful check).
   templates_synced_at: string | null;
   templates_sync_reason: string | null;
+  // A connected number saved again is checked again while it stays connected.
+  // True while that check is waiting; the last failed check keeps its reason
+  // and time until a later check passes. Both are only warnings.
+  recheck_wanted: boolean;
+  last_check_failed_reason: string | null;
+  last_check_failed_at: string | null;
 };
 // Provider status names and the local status the database maps each to (see
 // migration 20261116150000_whatsapp_template_sync.sql; a test keeps the two

@@ -1440,7 +1440,13 @@ test("checking a number subscribes the app to the business account", async (t) =
       const { revision, ...rest } = await channel();
       return rest;
     };
+    // A first-time connect: disconnect first, so the save starts a full check
+    // (a connected number saved again is only re-checked, see the re-check test).
     const save = async () => {
+      const d = await f.req("POST", "/channels/whatsapp/disconnect", {
+        expectedRevision: (await channel()).revision,
+      });
+      assert.equal(d.status, 200, JSON.stringify(d.body));
       const r = await f.req("PUT", "/channels/whatsapp", {
         expectedRevision: (await channel()).revision,
         phoneNumberId: phone,
@@ -1522,6 +1528,321 @@ test("checking a number subscribes the app to the business account", async (t) =
       await f.worker.tick();
       assert.deepEqual(await state(), { state: "failed", state_reason: "SUBSCRIBE_FAILED" });
     });
+  } finally {
+    await f.close();
+  }
+});
+
+test("a connected number saved again stays connected while it is checked", async (t) => {
+  const f = await setup({ token: true });
+  const secretToken = "SECRET-TOKEN-" + randomUUID();
+  try {
+    const db = f.h.cleanup;
+    const otherPhone = String(Number(phone) + 1);
+    const row = async () =>
+      (
+        await db.query(
+          "select id,state,state_reason,phone_number_id,recheck_wanted,last_check_failed_reason,last_check_failed_at,revision from app.whatsapp_channel where org_id=$1",
+          [f.h.orgA.id],
+        )
+      ).rows[0];
+    const put = async (extra: Record<string, unknown> = {}) => {
+      const r = await f.req("PUT", "/channels/whatsapp", {
+        expectedRevision: (await row()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        agentEnabled: true,
+        accessToken: secretToken,
+        ...extra,
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      return r.body.data;
+    };
+    const lastEvent = async () =>
+      (
+        await db.query(
+          "select state from app.whatsapp_event where namespace=$1 order by received_at desc,id desc limit 1",
+          [f.h.namespace],
+        )
+      ).rows[0]?.state;
+    // An inbound text is taken in and an agent turn can be claimed.
+    const acceptsMessages = async (id: string, text: string) => {
+      const before = (await f.messages()).length;
+      assert.equal((await f.say(text, id)).status, 200);
+      await f.worker.op("ingest");
+      assert.equal(await lastEvent(), "done");
+      assert.equal(await f.worker.runOneTurn(), true);
+      assert.ok((await f.messages()).length > before);
+    };
+    const quietLog = async (run: () => Promise<unknown>) => {
+      const lines: string[] = [];
+      const original = console.error;
+      console.error = (...a: unknown[]) => void lines.push(a.join(" "));
+      try {
+        await run();
+      } finally {
+        console.error = original;
+      }
+      return lines;
+    };
+
+    await t.test("same number: connected, replies keep working while the check waits", async () => {
+      await put();
+      const r = await row();
+      assert.equal(r.state, "connected");
+      assert.equal(r.state_reason, null);
+      assert.equal(r.recheck_wanted, true);
+      await acceptsMessages("wamid.IN" + randomUUID(), "Berapa harga servis?");
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.recheck_wanted, false);
+      assert.equal(after.last_check_failed_reason, null);
+    });
+
+    await t.test("a re-check that fails at the number step keeps it connected with a warning", async () => {
+      f.provider.rejectNumber("META_100", "META_100_33");
+      await put();
+      assert.equal((await row()).state, "connected");
+      const lines = await quietLog(() => f.worker.tick());
+      const r = await row();
+      assert.equal(r.state, "connected");
+      assert.equal(r.state_reason, null);
+      assert.equal(r.recheck_wanted, false);
+      assert.equal(r.last_check_failed_reason, "META_100");
+      assert.ok(r.last_check_failed_at);
+      const log = lines.filter((l) => l.startsWith("WHATSAPP_CHECK_FAILED"));
+      assert.deepEqual(log, ["WHATSAPP_CHECK_FAILED step=verify reason=META_100 provider=META_100_33"]);
+      for (const l of lines) {
+        assert.ok(!l.includes(secretToken) && !l.includes("fake-token") && !l.includes(phone) && !l.includes(customer), l);
+      }
+      await acceptsMessages("wamid.IN" + randomUUID(), "Masih buka?");
+    });
+
+    await t.test("a later passing check clears the warning", async () => {
+      f.provider.rejectNumber(undefined);
+      await put();
+      assert.equal((await row()).last_check_failed_reason, null);
+      await f.worker.tick();
+      const r = await row();
+      assert.equal(r.state, "connected");
+      assert.equal(r.last_check_failed_reason, null);
+      assert.equal(r.last_check_failed_at, null);
+    });
+
+    await t.test("a re-check that fails at subscribe keeps it connected with a warning", async () => {
+      f.provider.failSubscribe("META_200", "META_200_33");
+      await put();
+      const lines = await quietLog(() => f.worker.tick());
+      const r = await row();
+      assert.equal(r.state, "connected");
+      assert.equal(r.last_check_failed_reason, "SUBSCRIBE_FAILED");
+      assert.ok(r.last_check_failed_at);
+      assert.deepEqual(
+        lines.filter((l) => l.startsWith("WHATSAPP_CHECK_FAILED")),
+        ["WHATSAPP_CHECK_FAILED step=subscribe reason=SUBSCRIBE_FAILED provider=META_200_33"],
+      );
+      await acceptsMessages("wamid.IN" + randomUUID(), "Boleh tempah?");
+      f.provider.failSubscribe(undefined);
+      await put();
+      await f.worker.tick();
+      assert.equal((await row()).last_check_failed_reason, null);
+    });
+
+    await t.test("a new business account id with the same number stays connected and subscribes to it", async () => {
+      const before = f.provider.subscribed.length;
+      await put({ wabaId: "200000009" });
+      assert.equal((await row()).state, "connected");
+      await f.worker.tick();
+      assert.equal((await row()).state, "connected");
+      assert.deepEqual(f.provider.subscribed.slice(before), [{ wabaId: "200000009" }]);
+      f.provider.failSubscribe("META_100");
+      await put({ wabaId: "200000001" });
+      await f.worker.tick();
+      assert.equal((await row()).state, "connected");
+      assert.equal((await row()).last_check_failed_reason, "SUBSCRIBE_FAILED");
+      f.provider.failSubscribe(undefined);
+      await put();
+      await f.worker.tick();
+    });
+
+    await t.test("a changed phone number id goes to pending and its events are ignored until it passes", async () => {
+      await put({ phoneNumberId: otherPhone });
+      const r = await row();
+      assert.equal(r.state, "pending");
+      assert.equal(r.recheck_wanted, false);
+      assert.equal(r.last_check_failed_reason, null);
+      await f.deliver(
+        buildInboundText({ phoneNumberId: otherPhone, from: customer, name: "Aina Contoh", id: "wamid.IN" + randomUUID(), text: "Hai" }),
+      );
+      await f.worker.op("ingest");
+      assert.equal(await lastEvent(), "ignored");
+      await f.worker.tick();
+      assert.equal((await row()).state, "connected");
+      assert.equal((await row()).phone_number_id, otherPhone);
+      await put({ phoneNumberId: phone });
+      await f.worker.tick();
+    });
+
+    await t.test("a first-time connect that fails still ends failed", async () => {
+      const d = await f.req("POST", "/channels/whatsapp/disconnect", { expectedRevision: (await row()).revision });
+      assert.equal(d.status, 200);
+      f.provider.rejectNumber("META_190");
+      await put();
+      assert.equal((await row()).state, "pending");
+      await f.worker.tick();
+      const r = await row();
+      assert.equal(r.state, "failed");
+      assert.equal(r.state_reason, "META_190");
+      assert.equal(r.last_check_failed_reason, null);
+      f.provider.rejectNumber(undefined);
+      await put();
+      await f.worker.tick();
+      assert.equal((await row()).state, "connected");
+    });
+
+    await t.test("a result that arrives after a disconnect does not reconnect the channel", async () => {
+      await put();
+      const claim = await f.worker.op("verify_claim");
+      assert.equal(claim.revision, (await row()).revision);
+      const d = await f.req("POST", "/channels/whatsapp/disconnect", { expectedRevision: claim.revision });
+      assert.equal(d.status, 200);
+      for (const ok of [true, false]) {
+        const a = await f.worker.op("verify_result", claim.id, null, { revision: claim.revision, ok, reason: "META_100" });
+        assert.equal(a.applied, false);
+      }
+      const r = await row();
+      assert.equal(r.state, "not_connected");
+      assert.equal(r.recheck_wanted, false);
+      assert.equal(r.last_check_failed_reason, null);
+      await put();
+      await f.worker.tick();
+    });
+
+    await t.test("a result that arrives after the number changed, or after a newer save, is ignored", async () => {
+      await put();
+      const claim = await f.worker.op("verify_claim");
+      await put({ phoneNumberId: otherPhone });
+      const a = await f.worker.op("verify_result", claim.id, null, { revision: claim.revision, ok: false, reason: "META_100" });
+      assert.equal(a.applied, false);
+      const r = await row();
+      assert.equal(r.state, "pending");
+      assert.equal(r.phone_number_id, otherPhone);
+      assert.equal(r.last_check_failed_reason, null);
+      await f.worker.tick();
+      await put({ phoneNumberId: phone });
+      await f.worker.tick();
+      // Same number saved twice: the first claim's answer is stale.
+      await put();
+      const first = await f.worker.op("verify_claim");
+      await put();
+      const stale = await f.worker.op("verify_result", first.id, null, { revision: first.revision, ok: false, reason: "META_100" });
+      assert.equal(stale.applied, false);
+      const s = await row();
+      assert.equal(s.state, "connected");
+      assert.equal(s.recheck_wanted, true);
+      assert.equal(s.last_check_failed_reason, null);
+      await f.worker.tick();
+      assert.equal((await row()).recheck_wanted, false);
+    });
+  } finally {
+    await f.close();
+  }
+});
+
+test("a failing number check does not stop replies", async () => {
+  const f = await setup();
+  try {
+    assert.equal((await f.say("Berapa harga servis?")).status, 200);
+    await f.worker.op("ingest");
+    // The check step throws (for example the new SQL function is missing).
+    (f.worker as any).verifyOne = async () => {
+      throw new Error("function app_private.whatsapp_verify does not exist");
+    };
+    const sentBefore = f.provider.sent.length;
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (...a: unknown[]) => void lines.push(a.join(" "));
+    try {
+      await f.worker.tick();
+    } finally {
+      console.error = original;
+    }
+    assert.equal(f.provider.sent.length, sentBefore + 1);
+    const log = lines.filter((l) => l.startsWith("WHATSAPP_CHECK_STEP_FAILED"));
+    assert.equal(log.length, 1, lines.join("\n"));
+    assert.ok(!log[0].includes("does not exist"), log[0]);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a stray recheck flag on a channel that is not connected is inert", async () => {
+  const f = await setup({ token: true });
+  try {
+    const db = f.h.cleanup;
+    const row = async () =>
+      (await db.query("select state,recheck_wanted,revision from app.whatsapp_channel where org_id=$1", [f.h.orgA.id])).rows[0];
+    for (const state of ["pending", "not_connected"]) {
+      if (state === "not_connected") {
+        const d = await f.req("POST", "/channels/whatsapp/disconnect", { expectedRevision: (await row()).revision });
+        assert.equal(d.status, 200, JSON.stringify(d.body));
+      } else {
+        await db.query("update app.whatsapp_channel set state='pending' where org_id=$1", [f.h.orgA.id]);
+      }
+      // Stray flag, set by SQL (an older web build never cleared it).
+      await db.query("update app.whatsapp_channel set recheck_wanted=true where org_id=$1", [f.h.orgA.id]);
+      if (state === "not_connected") {
+        assert.equal(await f.worker.op("verify_claim"), null);
+        assert.equal((await row()).state, "not_connected");
+      }
+    }
+    // Disconnect is never blocked by the flag.
+    await db.query("update app.whatsapp_channel set state='connected',recheck_wanted=true where org_id=$1", [f.h.orgA.id]);
+    await db.query("update app.whatsapp_channel set state='failed' where org_id=$1", [f.h.orgA.id]);
+    const d = await f.req("POST", "/channels/whatsapp/disconnect", { expectedRevision: (await row()).revision });
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.equal((await row()).recheck_wanted, false);
+    // A stray flag, then a first-time connect works as usual.
+    await db.query("update app.whatsapp_channel set recheck_wanted=true where org_id=$1", [f.h.orgA.id]);
+    const r = await f.req("PUT", "/channels/whatsapp", {
+      expectedRevision: (await row()).revision,
+      phoneNumberId: phone,
+      wabaId: "200000001",
+      agentEnabled: true,
+      accessToken: "stand-in-token",
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal((await row()).state, "pending");
+    assert.equal((await row()).recheck_wanted, false);
+    await f.worker.tick();
+    assert.equal((await row()).state, "connected");
+  } finally {
+    await f.close();
+  }
+});
+
+test("only the agent login role can run the number check function", async () => {
+  const f = await setup();
+  try {
+    const sig = "app_private.whatsapp_verify(text,text,uuid,jsonb)";
+    const r = (
+      await f.h.cleanup.query(
+        "select has_function_privilege('jomcall_app',$1,'execute') as web,has_function_privilege('jomcall_agent',$1,'execute') as agent",
+        [sig],
+      )
+    ).rows[0];
+    assert.deepEqual(r, { web: false, agent: true });
+    const web = new pg.Client({ connectionString: process.env.APP_DATABASE_URL });
+    await web.connect();
+    try {
+      await assert.rejects(
+        web.query("select app_private.whatsapp_verify('claim',$1)", [f.h.namespace]),
+        /permission denied/,
+      );
+    } finally {
+      await web.end();
+    }
   } finally {
     await f.close();
   }

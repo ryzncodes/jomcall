@@ -120,7 +120,11 @@ export function createCloudProvider(
       }
       const body = await readJson(response);
       if (!response.ok)
-        return { ok: false, reason: errorCode(body) ?? "VERIFICATION_FAILED" };
+        return {
+          ok: false,
+          reason: errorCode(body) ?? "VERIFICATION_FAILED",
+          ...detailOf(body),
+        };
       if (body?.id !== target.phoneNumberId)
         return { ok: false, reason: "NUMBER_MISMATCH" };
       const digits = String(body.display_phone_number ?? "").replace(
@@ -155,7 +159,7 @@ export function createCloudProvider(
       const body = await readJson(response);
       if (!response.ok) {
         const meta = errorCode(body);
-        if (meta) return { ok: false, reason: meta };
+        if (meta) return { ok: false, reason: meta, ...detailOf(body) };
         // A server error with no Meta code is temporary.
         return {
           ok: false,
@@ -261,6 +265,15 @@ function readTemplate(item: any): ProviderTemplate | "invalid" | null {
   )
     return null;
   return { name, language, status };
+}
+
+// Meta's code with its subcode (META_100_33), for the log only.
+function detailOf(body: any): { detail?: string } {
+  const code = errorCode(body);
+  const sub = body?.error?.error_subcode;
+  return code && Number.isInteger(sub) && sub >= 0
+    ? { detail: code + "_" + sub }
+    : {};
 }
 
 async function readJson(response: Response): Promise<any> {

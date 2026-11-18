@@ -39,8 +39,8 @@ function reasonText(
       );
     case "SUBSCRIBE_FAILED":
       return w(
-        "JomCall could not register to receive this WhatsApp account's messages. Check that the Business account ID is right and that the token has the whatsapp_business_management permission, then save again.",
-        "JomCall tidak dapat mendaftar untuk menerima mesej daripada akaun WhatsApp ini. Semak ID akaun perniagaan dan pastikan token mempunyai kebenaran whatsapp_business_management, kemudian simpan semula.",
+        "JomCall could not register to receive this WhatsApp account's messages. In Meta Business settings, check that the system user has both the WhatsApp account and the messaging account (business account) assigned, and that the Business account ID here is right. Then save again.",
+        "JomCall tidak dapat mendaftar untuk menerima mesej daripada akaun WhatsApp ini. Dalam tetapan Meta Business, pastikan pengguna sistem diberi akses kepada akaun WhatsApp dan juga akaun pemesejan (akaun perniagaan), dan ID akaun perniagaan di sini betul. Kemudian simpan semula.",
       );
     case "INVALID_TARGET":
       return w(
@@ -56,6 +56,9 @@ function reasonText(
       return reason;
   }
 }
+
+// A reason that ends a sentence, so more text can follow it.
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : text + ".");
 
 const stateWords: Record<string, [string, string]> = {
   not_connected: ["Not connected", "Belum disambungkan"],
@@ -126,6 +129,7 @@ function WhatsAppBody({
   reload: () => void;
 }) {
   const w = useWords();
+  const time = useKlTime();
   const { readiness, channel } = data;
   const state = channel?.state ?? "not_connected";
   const label = stateWords[state] ?? stateWords.not_connected;
@@ -189,6 +193,31 @@ function WhatsAppBody({
                 {reasonText(channel.state_reason, w)}
               </p>
             )}
+            {channel?.state === "connected" && channel.recheck_wanted && (
+              <p className="editor-note" role="status">
+                {w(
+                  "Connected. Checking the new details…",
+                  "Disambungkan. Sedang menyemak butiran baharu…",
+                )}
+              </p>
+            )}
+            {channel?.state === "connected" &&
+              !channel.recheck_wanted &&
+              channel.last_check_failed_reason && (
+                <p className="storage-warning" role="alert">
+                  {w(
+                    "Still connected, but the last check failed: ",
+                    "Masih disambungkan, tetapi semakan terakhir gagal: ",
+                  )}
+                  {sentence(reasonText(channel.last_check_failed_reason, w))}{" "}
+                  {channel.last_check_failed_at &&
+                    `(${w("Checked ", "Disemak ")}${time(channel.last_check_failed_at)}.) `}
+                  {w(
+                    "Replies may fail until this is fixed. Save again after fixing it.",
+                    "Balasan mungkin gagal sehingga ini dibetulkan. Simpan semula selepas membetulkannya.",
+                  )}
+                </p>
+              )}
           </>
         )}
       </section>

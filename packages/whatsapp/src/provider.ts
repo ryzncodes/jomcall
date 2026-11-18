@@ -40,9 +40,11 @@ export type TemplateMessage = {
   variables: string[];
 };
 
+// `detail` is for the log only: Meta's code with its subcode when it sent
+// one (META_100_33). It is never stored, so it is never shown to staff.
 export type NumberCheck =
   | { ok: true; displayPhone: string | null }
-  | { ok: false; reason: string };
+  | { ok: false; reason: string; detail?: string };
 
 // One template as the provider lists it. The status is the provider's own
 // name, upper case; the database maps it to a local status.
@@ -58,7 +60,9 @@ export type TemplateList =
 
 // The answer to subscribing the app to a business account. Meta delivers no
 // webhook event for the account until the app is subscribed.
-export type SubscribeResult = { ok: true } | { ok: false; reason: string };
+export type SubscribeResult =
+  | { ok: true }
+  | { ok: false; reason: string; detail?: string };
 
 export interface WhatsAppProvider {
   readonly name: "fake" | "cloud";
