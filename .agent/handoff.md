@@ -2,7 +2,13 @@
 
 ## 2026-11-18: WhatsApp re-check of a connected number
 
-Branch `feat/whatsapp-recheck`, pull request open, not merged. Nothing on hosted staging.
+Pull request #43, squash-merged to `main` as `5688b5a` on 2026-11-18. Live on hosted staging the same day.
+
+**Done on staging (each step with the owner's yes, 2026-11-18)**
+- Migration `20261118100000_whatsapp_recheck.sql` applied before the merge, through Supabase SQL in one transaction with its `schema_migrations` row inserted by hand (44 recorded), not through `npm run hosted:migrate`.
+- Vercel staging deployed `5688b5a`; the droplet's agent, engine and voice were rebuilt to image `5688b5a` and are healthy.
+- Round trip after the rebuild: inbound stored 20:58:11, agent reply created 20:58:13, `delivered` 20:58:17 (Asia/Kuala_Lumpur).
+- Re-check: the owner pressed "Save and check again" with the token blank at 20:59; the channel stayed `connected`, revision 10 to 11, the flag was cleared, no failed reason, no `WHATSAPP_CHECK_FAILED` line. The flag was not observed while set, and the "Checking" text was not seen.
 
 **Changed**
 - Saving a connected number again (same phone number ID) keeps it `connected` and sets `recheck_wanted`; the worker checks it again through `app_private.whatsapp_verify`. A failed re-check leaves replies on and stores a reason and time, shown as a warning on the WhatsApp settings screen. A first connect that fails still ends `failed`.
@@ -14,10 +20,9 @@ Branch `feat/whatsapp-recheck`, pull request open, not merged. Nothing on hosted
 - `npm run typecheck`; `npm run test:guards` 69 of 69; `npm run check:core` 1035 of 1035; `npm run db:verify-migrations` (59 tables with row-level security); `npm run build:hosted`.
 
 **Not verified**
-- No browser check of the new screen text; nothing against Meta; nothing on staging.
+- A failed re-check has not happened on staging, so the warning and its time have not been seen in a browser. Bahasa Melayu text not seen.
 
-**Next (owner steps, in this order, `infra/hosted/RUNBOOK.md` step 14)**
-- Apply the migration to staging before the merge reaches `main` (Vercel deploys the web on merge and the new web reads the new columns), then merge, then rebuild the agent.
+**Open**
 - Open: a failed re-check has no email and no automatic retry; the screen does not poll.
 
 ## 2026-11-18: WhatsApp on hosted staging, first real round trip
