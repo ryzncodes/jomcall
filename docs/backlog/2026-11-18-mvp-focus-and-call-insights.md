@@ -54,8 +54,8 @@ Number suppliers looked at that day (consoles seen by the owner or the controlle
 
 Facts that shape the design:
 
-- Digitalize Plus Enterprise is registered at an address in Pulau Pinang, and Twilio requires the address to be in the region of the number's prefix, so its own number should be an 04 number.
+- Twilio requires the business address to be in the region of the number's prefix, so the operating business's own number must match the area code of its registered address (not an 03 number).
 - On Twilio's form the honest answer for numbers handed to clients is "ISV, reseller or partner", which may need each client's details. Whether client numbers can sit under JomCall's own bundle is not confirmed. This, not price, may limit instant self-serve phone numbers.
 - Forwarding costs fall on the client: U Mobile states RM 0.05 per 30 seconds outside the plan's free minutes and does not allow forwarding to international numbers; Maxis states RM 3 a month and local call charges. Other telcos' rules were not found. So numbers must be Malaysian, and the forwarding screen must tell owners about their telco's charge and recommend forwarding unanswered calls only.
 - At about RM 18 to 20 a month per number plus about RM 0.12 a minute inbound, "one number and 100 minutes" on the RM 49 plan leaves about RM 19 for speech, the model and margin. Prices need a second look before phone is sold.
-- The business registration certificate lapses on 7 December 2026.
+- The business registration certificate used for the bundle must be current; check its expiry before relying on the bundle.
