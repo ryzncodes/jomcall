@@ -34,7 +34,7 @@ import { cleanMediaFacts, mediaFactsSql } from "./media-sql.ts";
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
-  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason";
+  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason,recheck_wanted,last_check_failed_reason,last_check_failed_at";
 const templateColumns =
   "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff";
 
@@ -283,8 +283,15 @@ export async function whatsappRoute(
           row = (
             await tx.query(
               // The web role cannot read the credentials column, so a kept
-              // token is simply left untouched.
-              `update app.whatsapp_channel set state='pending',state_reason=null,phone_number_id=$2,waba_id=$3,
+              // token is simply left untouched. One statement decides on the
+              // row as it is now: a connected channel keeping its phone number
+              // ID stays connected and is only checked again; any other save
+              // starts a full check as before. (Every right-hand side reads
+              // the row's old values.)
+              `update app.whatsapp_channel set
+             state=case when state='connected' and phone_number_id is not distinct from $2 then 'connected' else 'pending' end,
+             recheck_wanted=(state='connected' and phone_number_id is not distinct from $2),
+             state_reason=null,last_check_failed_reason=null,last_check_failed_at=null,phone_number_id=$2,waba_id=$3,
              agent_enabled=$4,revision=revision+1,updated_at=now()${sealed ? ",credentials=$5,credentials_set_at=now()" : ""} where org_id=$1 returning ${channelColumns}`,
               [
                 ctx.orgId,
@@ -325,7 +332,7 @@ export async function whatsappRoute(
           throw new AppError("CONFLICT", 409);
         const row = (
           await tx.query(
-            `update app.whatsapp_channel set state='not_connected',state_reason=null,credentials=null,credentials_set_at=null,revision=revision+1,updated_at=now() where org_id=$1 returning ${channelColumns}`,
+            `update app.whatsapp_channel set state='not_connected',state_reason=null,recheck_wanted=false,last_check_failed_reason=null,last_check_failed_at=null,credentials=null,credentials_set_at=null,revision=revision+1,updated_at=now() where org_id=$1 returning ${channelColumns}`,
             [ctx.orgId],
           )
         ).rows[0];

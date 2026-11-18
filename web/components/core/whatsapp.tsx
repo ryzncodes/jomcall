@@ -57,6 +57,9 @@ function reasonText(
   }
 }
 
+// A reason that ends a sentence, so more text can follow it.
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : text + ".");
+
 const stateWords: Record<string, [string, string]> = {
   not_connected: ["Not connected", "Belum disambungkan"],
   pending: ["Checking the number", "Sedang menyemak nombor"],
@@ -189,6 +192,29 @@ function WhatsAppBody({
                 {reasonText(channel.state_reason, w)}
               </p>
             )}
+            {channel?.state === "connected" && channel.recheck_wanted && (
+              <p className="editor-note" role="status">
+                {w(
+                  "Connected. Checking the new details…",
+                  "Disambung. Sedang menyemak butiran baharu…",
+                )}
+              </p>
+            )}
+            {channel?.state === "connected" &&
+              !channel.recheck_wanted &&
+              channel.last_check_failed_reason && (
+                <p className="storage-warning" role="alert">
+                  {w(
+                    "Still connected, but the last check failed: ",
+                    "Masih disambung, tetapi semakan terakhir gagal: ",
+                  )}
+                  {sentence(reasonText(channel.last_check_failed_reason, w))}{" "}
+                  {w(
+                    "Replies may fail until this is fixed. Save again after fixing it.",
+                    "Balasan mungkin gagal sehingga ini dibetulkan. Simpan semula selepas membetulkannya.",
+                  )}
+                </p>
+              )}
           </>
         )}
       </section>
