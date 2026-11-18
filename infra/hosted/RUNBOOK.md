@@ -435,7 +435,7 @@ Branch `feat/plan-picker`. Owners pick a plan on `/app/billing`; a first paid pl
 
 ## Step 14. WhatsApp re-check of a connected number, [OWNER], applies a migration
 
-Branch `feat/whatsapp-recheck`. Saving a connected number again keeps it connected while it is checked again. Nothing here has run on hosted staging.
+Branch `feat/whatsapp-recheck`. Saving a connected number again keeps it connected while it is checked again. Done on hosted staging on 2026-11-18 (migration, then merge, then rebuild).
 
 1. **[OWNER]** Apply the migration first: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. It is `20261118100000_whatsapp_recheck.sql`. Do this before the web is deployed and before the agent is rebuilt. Vercel deploys the web from `main` on merge, so apply the migration before the merge reaches `main`; otherwise the WhatsApp settings screen and the channel save fail until it is applied (the new web reads columns the migration adds).
 2. **[OWNER]** Then rebuild the agent: `docker compose up -d --build agent`. An agent from before this change keeps working after the migration: it connects first-time numbers as before and never claims a re-check, so the screen says "Checking" until the agent is rebuilt.
