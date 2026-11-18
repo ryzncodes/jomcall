@@ -13,6 +13,10 @@ rtc:
 # see RUNBOOK.md step 5. Turning it on also needs 3478/udp and 5349/tcp open.
 turn:
   enabled: false
+# Message bus shared with the SIP service (phone calls). The address is the
+# Compose service on the "sip" network; it is never published to the internet.
+redis:
+  address: redis:6379
 logging:
   level: info
   json: true

@@ -16,7 +16,7 @@ function composeConfig(): any | null {
   }
   const dir = mkdtempSync(join(tmpdir(), "jomcall-compose-"));
   // A harmless marker shows which file reached which container.
-  for (const name of ["agent", "engine", "voice", "livekit", "caddy"])
+  for (const name of ["agent", "engine", "voice", "livekit", "caddy", "sip"])
     writeFileSync(join(dir, `${name}.env`), `JOMCALL_ENV_MARKER=${name}\n`);
   return JSON.parse(
     execFileSync(
@@ -48,9 +48,37 @@ test(
     assert.deepEqual(published.sort(), [
       "caddy:443/tcp:",
       "caddy:80/tcp:",
+      // Loopback only, for the SIP service on the host's network.
+      "livekit:7880/tcp:127.0.0.1",
       "livekit:7881/tcp:",
       "livekit:7882/udp:",
+      "redis:6379/tcp:127.0.0.1",
     ]);
+  },
+);
+
+test(
+  "the SIP service uses the host network, gets only its own env file and holds no key in its config",
+  { skip: !config },
+  () => {
+    const sip = config.services.sip;
+    assert.equal(sip.network_mode, "host");
+    assert.equal(sip.environment.JOMCALL_ENV_MARKER, "sip");
+    assert.deepEqual(sip.cap_drop, ["ALL"]);
+    assert.ok(sip.security_opt.includes("no-new-privileges:true"));
+    assert.equal(sip.restart, "unless-stopped");
+    const body: string = sip.environment.SIP_CONFIG_BODY;
+    assert.match(body, /ws_url: ws:\/\/127\.0\.0\.1:7880/);
+    assert.match(body, /address: 127\.0\.0\.1:6379/);
+    assert.match(body, /rtp_port: 10000-10200/);
+    assert.doesNotMatch(body, /api_key|api_secret/);
+    // The bus is reachable from LiveKit and the host's loopback only.
+    assert.deepEqual(Object.keys(config.services.redis.networks), ["sip"]);
+    assert.ok("sip" in config.services.livekit.networks);
+    for (const name of ["agent", "engine", "voice", "caddy"])
+      assert.ok(!("sip" in config.services[name].networks), name);
+    assert.match(config.services.sip.image, /@sha256:[a-f0-9]{64}$/);
+    assert.match(config.services.redis.image, /@sha256:[a-f0-9]{64}$/);
   },
 );
 
