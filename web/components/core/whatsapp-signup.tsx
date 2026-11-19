@@ -153,9 +153,11 @@ export function WhatsAppSignup({
   const connected = channel?.state === "connected";
   return (
     <section className="core-panel core-form" aria-labelledby="wa-signup">
+      {/* The screen cannot tell how a connected number was connected, so the
+          heading names the action, never a state. */}
       <h2 id="wa-signup">
         {connected
-          ? w("Connected through Facebook", "Disambungkan melalui Facebook")
+          ? w("Connect through Facebook", "Sambung melalui Facebook")
           : w(
               "Connect your WhatsApp number",
               "Sambungkan nombor WhatsApp anda",
