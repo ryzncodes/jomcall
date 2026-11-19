@@ -384,6 +384,13 @@ Full steps: `docs/research/phone-line-owner-steps.md`. Nothing here has been run
 5. Set `JOMCALL_TELEPHONY_PROVIDER=livekit_sip` in Vercel and `agent.env`, and add `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` to `agent.env` (the agent checks the SIP caller and starts transfers). Optional: `JOMCALL_SIP_TRANSFER_URI`, `JOMCALL_MAX_CONCURRENT_CALLS`, `JOMCALL_CALL_CAP_SECONDS`. Compose already sets `JOMCALL_PHONE_URL` for the voice worker. The phone endpoint uses the same private bind and `JOMCALL_VOICE_SERVICE_SECRET` as the browser voice endpoint, on port 54635 (never published).
 6. `docker compose up -d agent voice`; the Phone numbers screen should say "Phone line connected". Prewarm the `Kore` voice and the agent's voice.
 
+Staging, 2026-11-19 (Twilio, owner's choice that day): steps 1, 2, 3 and 5 are done except the Vercel redeploy, and step 4 was done another way. What differed from the steps above:
+
+- Step 4: `npm run telephony:sip-config` refuses a hosted database and the server has no `lk` command line. The trunk and dispatch rule were created with `livekit-server-sdk` from inside the agent container (`SipClient.createSipInboundTrunk` with the number and Twilio's signalling ranges, then `createSipDispatchRule` with a callee rule, room prefix `call-`, `randomize`, and a room configuration that dispatches the agent `jomcall-voice` with metadata `{"channel":"phone"}`). Valkey keeps nothing on disk: after a restart of the `redis` container, create both again.
+- Step 5: the agent needs the build from pull request #56 or later. Earlier builds stop at start with `LOCAL_DATABASE_REQUIRED` when the phone line is on. In `agent.env`, `LIVEKIT_URL=ws://livekit:7880` works.
+- Twilio: Elastic SIP Trunking, one origination URI `sip:<server>:5060;transport=tcp`, Secure Trunking off, the number attached under the trunk's Numbers. A trial account failed both test calls at Twilio (`21264`) with a verified caller; plan on an upgraded account.
+- Port 5060 was probed by scanners within a day. Put the cloud firewall in place before leaving the line on.
+
 [CHECK] the first test call checklist in the owner-steps document: disclosure first, read-back before a booking, transfer and ring-out, the call log, a second caller hearing the busy line.
 
 [ROLLBACK] set `JOMCALL_TELEPHONY_PROVIDER=disabled` in Vercel and `agent.env`, `docker compose up -d agent`; point the provider's number back at the owner's phone.

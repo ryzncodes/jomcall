@@ -1,5 +1,41 @@
 # Handoff
 
+## 2026-11-19 (evening): template submit live, phone line switched on, no call answered yet
+
+**Merged that day**: #53 `c8d66cb` (submit a template to WhatsApp), #54 `e9bd321` (Home channel line, invitation message), #56 `2fef3c1` (call repository connects in hosted mode). Open: #55 (Twilio plan, see the correction below).
+
+**Staging now**
+- Database: 46 migrations recorded, latest `20261119110000`.
+- Images: agent `jomcall-worker:2fef3c1`, engine `jomcall-worker:9e0af3f`, voice `jomcall-voice:66a5b3e`. All healthy at 23:00 (Asia/Kuala_Lumpur).
+- `/etc/jomcall/agent.env` has `JOMCALL_TELEPHONY_PROVIDER=livekit_sip`, `LIVEKIT_URL=ws://livekit:7880` and the LiveKit key pair (copied from `voice.env`, never printed). Backup of the file from before: `agent.env.bak-20261119-phone`. `agent.env.phone-attempt` is a copy of the current content.
+- LiveKit: inbound trunk `ST_LhsjeYrVVz9K` for `+6042253068`, dispatch rule `SDR_Muu3nfdD7CR4`. Created with `livekit-server-sdk` from inside the agent container (`docker compose exec -T -w /app agent node --input-type=module -`), because the server has no `lk` command line and `npm run telephony:sip-config` refuses any database but the local one. They are lost if the `redis` (Valkey) container restarts: create them again the same way.
+- Twilio (trial account): number `+6042253068`, trunk `jomcall-staging`, one origination URI to the server over TCP, recording off, no termination.
+- Vercel staging: `JOMCALL_TELEPHONY_PROVIDER=livekit_sip` saved, not deployed.
+- Staging workspace `f918361d-014a-499f-9fe1-8c21d3a61012`: Growth plan, WhatsApp test number connected, the Twilio number added, agent published on 19 Nov with hours, 29 facts and one reply rule; two members (owner, reviewer as admin).
+
+**What failed and why**
+- First start with the phone line on: the agent stopped with `LOCAL_DATABASE_REQUIRED` and restarted in a loop for about two minutes. Fixed in #56.
+- Two test calls: Twilio marked them Failed with 0 seconds and the server's SIP log shows no request from Twilio. First call's error: `21264 From number not verified`, although the caller is a Verified Caller ID. Twilio's pages do not say whether a trial account can send calls to a SIP trunk; the two tests say it cannot.
+
+**Next**
+1. Owner: upgrade the Twilio account (card and identity check), then call again.
+2. Owner: DigitalOcean cloud firewall for 5060/tcp, 5060/udp and 10000-10200/udp, Twilio's ranges only. Scanners are already probing 5060.
+3. Redeploy Vercel staging (choose the staging deployment, not Production).
+4. On the first call that reaches the server: read `docker compose logs sip voice agent` and `app.call`. The phone code has never taken a real call.
+5. Make the trunk and dispatch rule survive a Valkey restart (a volume, or a script that creates them at start).
+6. Meta App Review: owner records two videos, ticks the three agreements, types the reviewer login, answers the Facebook Login question, submits.
+7. Owner checks the suggested agent facts and fills refund terms, SST and the summary WhatsApp number.
+
+**Correction to pull request #55** (`docs/research/twilio-staging-plan.md`): its first blocker, "staging has no SIP service", is wrong. The SIP service and Valkey have run on the server since #46. Its other points (the generator refusing staging, the trial account) held.
+
+**Defects seen, not fixed**
+- The publish page shows the previous "Published. Your agent now uses these changes." banner before Publish is pressed.
+- WhatsApp replies are long unless the workspace adds its own rule; a product-wide change needs a prompt change and a paid gate run.
+- `telephony:sip-config` cannot read a hosted database.
+
+**Not verified**
+- Any answered phone call. The invitation message for a signed-out visitor in a browser. The reviewer account opening WhatsApp settings. Meta's decision on the submitted template.
+
 ## 2026-11-18: WhatsApp re-check of a connected number
 
 Pull request #43, squash-merged to `main` as `5688b5a` on 2026-11-18. Live on hosted staging the same day.
