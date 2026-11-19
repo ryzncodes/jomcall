@@ -3093,3 +3093,19 @@ a svg {
     animation: call-arrives 0.7s 0.5s var(--ease) both;
   }
 }
+
+/* Home page: the way in. The start link sits in the menu at phone width,
+   where the header button is hidden. */
+.navigation-start {
+  display: none;
+}
+.hero-second {
+  margin-left: 18px;
+}
+@media (max-width: 760px) {
+  .navigation .navigation-start {
+    display: block;
+    color: var(--ink);
+    font-weight: 600;
+  }
+}

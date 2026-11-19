@@ -181,33 +181,65 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
     <div className="setup-flow">
       <header className="setup-head">
         <h1 className="setup-title" ref={heading} tabIndex={-1}>
-          {w(
-            "Your agent is live for testing.",
-            "Ejen anda sudah aktif untuk ujian.",
-          )}
+          {w("Your agent is published.", "Ejen anda sudah diterbitkan.")}
         </h1>
         <p className="setup-lead">
           {w(
-            "Your published version answers test calls and chats. Phone and WhatsApp connect later.",
-            "Versi yang diterbitkan menjawab panggilan dan sembang ujian. Telefon dan WhatsApp disambungkan kemudian.",
+            "It answers test calls and chats now. Three steps put it in front of real customers.",
+            "Ia menjawab panggilan dan sembang ujian sekarang. Tiga langkah lagi untuk pelanggan sebenar.",
           )}
         </p>
       </header>
       <div className="setup-body">
-        <div className="setup-nav">
-          <a className="button button-dark" href={href("/app/agent")}>
-            {w("Go to the Agent page", "Ke halaman Ejen")}
-          </a>
-          <a className="button secondary-button" href={href("/app/test")}>
+        <ol className="setup-next">
+          <li>
+            <strong>{w("Choose a plan", "Pilih pelan")}</strong>
+            <p>
+              {w(
+                "The agent answers customers only on a paid plan. Test calls stay free.",
+                "Ejen menjawab pelanggan hanya dengan pelan berbayar. Panggilan ujian kekal percuma.",
+              )}
+            </p>
+            <a className="button button-dark" href={href("/app/billing")}>
+              {w("Choose a plan", "Pilih pelan")}
+            </a>
+          </li>
+          <li>
+            <strong>{w("Connect WhatsApp", "Sambungkan WhatsApp")}</strong>
+            <p>
+              {w(
+                "Needs a WhatsApp Business number and the Growth plan.",
+                "Memerlukan nombor WhatsApp Business dan pelan Growth.",
+              )}
+            </p>
+            <a className="button secondary-button" href={href("/app/whatsapp")}>
+              {w("Open WhatsApp settings", "Buka tetapan WhatsApp")}
+            </a>
+          </li>
+          <li>
+            <strong>{w("Phone line", "Talian telefon")}</strong>
+            <p>
+              {w(
+                "Phone numbers are not open yet. We will email you when you can get yours.",
+                "Nombor telefon belum dibuka. Kami akan e-mel anda apabila nombor anda boleh didapatkan.",
+              )}
+            </p>
+          </li>
+        </ol>
+        <div className="setup-next-more">
+          <a className="setup-link" href={href("/app/test")}>
             {w("Try a call", "Cuba buat panggilan")}
           </a>
+          <a className="setup-link" href={href("/app/agent")}>
+            {w("Go to the Agent page", "Ke halaman Ejen")}
+          </a>
+          <button type="button" className="setup-link" onClick={onRestart}>
+            {w(
+              "Answer the setup questions again",
+              "Jawab soalan persediaan semula",
+            )}
+          </button>
         </div>
-        <button type="button" className="setup-link" onClick={onRestart}>
-          {w(
-            "Answer the setup questions again",
-            "Jawab soalan persediaan semula",
-          )}
-        </button>
       </div>
     </div>
   );

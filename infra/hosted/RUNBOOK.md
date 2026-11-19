@@ -194,7 +194,7 @@ npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.e
 - Site URL: the staging `APP_ORIGIN`.
 - Redirect allow-list: `<APP_ORIGIN>/api/auth/confirm` and `<APP_ORIGIN>/api/auth/recovery`.
 - SMTP: `smtp.mx.cloudflare.net`, port 465, user `api_token`, password the second Email Sending token from C3, sender `CLOUDFLARE_EMAIL_FROM`. [UNVERIFIED] that Supabase's SMTP form accepts implicit TLS on 465; if it does not, keep the SMTP fallback provider for Auth only.
-- Email templates: paste `supabase/templates/confirmation.html` and `recovery.html`, replacing the words "local account" and "local inbox" with neutral English and BM text.
+- Email templates: under Authentication, Emails, paste `infra/hosted/email-templates/confirmation.html` into "Confirm signup" and `infra/hosted/email-templates/recovery.html` into "Reset password" (English then BM, ready to paste). Subjects: "Confirm your JomCall account / Sahkan akaun JomCall anda" and "Reset your JomCall password / Tetapkan semula kata laluan JomCall anda". Without this step the link in the email goes to the Supabase address and the owner lands on the home page signed out (seen on staging, 2026-11-19).
 - Data API: remove `app` and `app_private` from the exposed schemas if listed.
 
 [CHECK]

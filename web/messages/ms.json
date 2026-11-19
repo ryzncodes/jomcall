@@ -11,6 +11,7 @@
   "navDemo": "Perbualan",
   "navControl": "Kawalan anda",
   "openApp": "Terokai aplikasi",
+  "startFree": "Mula percuma",
   "try": "Cuba contoh panggilan",
   "menu": "Buka menu",
   "closeMenu": "Tutup menu",
@@ -98,7 +99,7 @@
     "可以，谢谢。",
     "示例预约已确认，明天下午三点见！"
   ],
-  "voiceDisclaimer": "Contoh bahasa menunjukkan tingkah laku yang dirancang. Kualiti suara menunggu ujian pertuturan.",
+  "voiceDisclaimer": "Contoh bahasa menunjukkan cara ejen menjawab. Contoh ini teks sahaja.",
   "workflowTitle": "Penyambut tetamu anda, sentiasa selaras.",
   "workflowBody": "Panggilan, tempahan dan susulan. Satu rekod jelas tentang apa yang berlaku dan apa yang perlukan anda.",
   "workflow1": "Kekalkan nombor anda",
@@ -175,7 +176,7 @@
   "control2": "Manusia bila diperlukan",
   "control2Body": "Pilih bila hendak sambungkan kepada staf, dan apa perlu dibuat jika tiada siapa dapat jawab.",
   "control3": "Data yang boleh diurus",
-  "control3Body": "Rekod persetujuan, tetapan jangan hubungi, eksport dan pemadaman termasuk dalam rancangan produk.",
+  "control3Body": "Rekod persetujuan, tetapan jangan hubungi, eksport dan pemadaman sudah tersedia.",
   "faqTitle": "Sebelum anda serahkan telefon.",
   "faqQ": [
     "Perlu tukar nombor telefon?",
@@ -185,7 +186,7 @@
   ],
   "faqA": [
     "Pelan persediaan mengekalkan nombor sedia ada. Anda alihkan panggilan ke nombor JomCall Malaysia, dengan panggilan pengesahan sebelum aktif. Panduan setiap telco masih perlu disahkan.",
-    "Produk direka untuk BM, English, Manglish dan Mandarin, termasuk pertukaran bahasa semasa panggilan. Kualiti suara sebenar akan disahkan melalui ujian pertuturan Malaysia.",
+    "Produk direka untuk BM, English, Manglish dan Mandarin, termasuk pertukaran bahasa semasa panggilan.",
     "Tidak. Frontend ini menggunakan panggilan rekaan dan simulasi teks. Ia tidak mengakses mikrofon, mendail nombor atau membuat tempahan sebenar.",
     "Bil perkhidmatan akan dalam MYR. Kadar dan penyedia pembayaran masih disemak. Jumlah dalam aplikasi ialah kos contoh, bukan tawaran harga."
   ],

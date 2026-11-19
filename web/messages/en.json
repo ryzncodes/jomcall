@@ -11,6 +11,7 @@
   "navDemo": "The conversation",
   "navControl": "Your control",
   "openApp": "Explore the app",
+  "startFree": "Start free",
   "try": "Try a sample call",
   "menu": "Open menu",
   "closeMenu": "Close menu",
@@ -98,7 +99,7 @@
     "可以，谢谢。",
     "示例预约已确认，明天下午三点见！"
   ],
-  "voiceDisclaimer": "Language examples show intended behavior. Voice quality awaits the speech benchmark.",
+  "voiceDisclaimer": "Language examples show how the agent answers. This sample is text only.",
   "workflowTitle": "Your front desk, on the same page.",
   "workflowBody": "The call, the booking, the follow-up. One clear record of what happened and what needs you.",
   "workflow1": "Keep your number",
@@ -175,7 +176,7 @@
   "control2": "A person when it matters",
   "control2Body": "Choose when to transfer to staff, and what to do if nobody can pick up.",
   "control3": "Data you can manage",
-  "control3Body": "Consent records, do-not-contact settings, export and deletion are part of the product plan.",
+  "control3Body": "Consent records, do-not-contact settings, export and deletion are built in.",
   "faqTitle": "Before you hand over the phone.",
   "faqQ": [
     "Do I have to change my number?",
@@ -185,7 +186,7 @@
   ],
   "faqA": [
     "The planned setup keeps your existing number. You forward calls to a Malaysian JomCall number, with a verification call before going live. Telco-specific instructions still need verification.",
-    "The product is designed for BM, English, Manglish and Mandarin, including language changes during a call. Actual voice quality will be validated through the Malaysian speech benchmark.",
+    "The product is designed for BM, English, Manglish and Mandarin, including language changes during a call.",
     "No. This frontend uses fictional calls and text simulations. It does not access your microphone, dial a number or make a real booking.",
     "Hosted billing will use MYR. Rates and payment provider are still being validated. Amounts in the app are sample costs, not a price offer."
   ],

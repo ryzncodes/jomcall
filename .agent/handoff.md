@@ -781,3 +781,27 @@ Branch `docs/speech-decisions`.
 - Local only, not in git: fal voice generator on the spike worktree (`.local/speech-spike`, uncommitted), clips and transcripts under `spikes/speech-benchmark/data/`, keys in `.env.hosted` (`FAL_KEY`, `GOOGLE_CLOUD_API_KEY`, `HF_TOKEN`).
 - Open: per-turn delay of three to four seconds as measured piecewise; Speechmatics and Deepgram untested; PDPA cross-border position.
 - Next: plan for inbound voice (spec §9 sub-project 3), owner sign-off before code.
+
+## 2026-11-19: owner path walk on staging, first fixes
+
+Branch `fix/owner-path-breaks`, pull request open, not merged.
+
+What changed: next steps after publish (`web/components/core/setup/finish.tsx`); phone number note on the plan card (`web/components/core/plan-card.tsx`); help block on the WhatsApp form (`web/components/core/whatsapp.tsx`); Pricing, Log in and Start free on the home page in local and hosted modes (`web/components/marketing.tsx`); hosted email templates in `infra/hosted/email-templates/`.
+
+Verified: typecheck, guards 69 of 69, core 1036 of 1036, hosted and mock builds; home page, phone menu and after-publish page in the local app at 375 px.
+
+Owner step: paste the two email templates in the Supabase dashboard (RUNBOOK step 2c). Until then the confirmation link lands on the home page signed out.
+
+Found in the walk and not fixed yet:
+- Sign-up refuses addresses not on `JOMCALL_SIGNUP_ALLOW`; the pages say "Closed beta".
+- WhatsApp connection asks for a phone number ID, a business account ID and an access token.
+- No phone number can be delivered; the Calls page has nothing to act on.
+- The test panel shows "Configuration source", "Pinned source", a draft hash and the model name above the question box.
+- After creating a workspace the owner lands on a dashboard of zeros with "Continue setup" at the bottom, and its text says phone, WhatsApp and payments come later.
+- Business type is asked at workspace creation and again in setup.
+- The header shows "Studio Contoh" before a workspace exists.
+- Review page labels differ from the questions asked.
+- WhatsApp settings and Inbox show for a workspace with no plan.
+- No terms or privacy link at sign-up; the footer links "Hosted admin" and "Self-host setup" for every visitor.
+
+Left on staging: a test workspace "Salon Ujian Contoh" (made-up data, published agent, RM 20.00 trial credit) and its throwaway owner address on the allow-list.

@@ -2578,3 +2578,53 @@
     color: transparent;
   }
 }
+
+/* Setup, after publish: the steps that put the agent in front of customers. */
+.setup-next {
+  list-style: none;
+  counter-reset: setup-next;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+}
+.setup-next > li {
+  counter-increment: setup-next;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.setup-next > li > strong::before {
+  content: counter(setup-next) ". ";
+}
+.setup-next > li > p {
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.setup-next > li > .button {
+  justify-self: start;
+  min-height: 48px;
+}
+.setup-next-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 18px;
+}
+.core-plan-note {
+  color: var(--secondary);
+  font-size: 13px;
+}
+.core-steps {
+  margin: 0 0 4px;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  color: var(--secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
