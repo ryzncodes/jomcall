@@ -2628,3 +2628,36 @@
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* Test panel: the conversation comes first on a narrow screen once a test is
+   open; the rarely used controls sit behind "More options". */
+.core-test-more {
+  margin: 4px 0 18px;
+}
+.core-test-more > summary {
+  cursor: pointer;
+  font-size: 14px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--secondary);
+}
+.core-test-technical {
+  color: var(--secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.core-invite-waiting {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  margin-bottom: 18px;
+}
+@media (max-width: 1050px) {
+  .core-test-open > .core-test-conversation {
+    order: -1;
+  }
+}
+.core-test-conversation {
+  scroll-margin-top: 90px;
+}

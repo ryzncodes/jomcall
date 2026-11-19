@@ -809,3 +809,7 @@ Left on staging: a test workspace "Salon Ujian Contoh" (made-up data, published 
 ## 2026-11-19: engine email fixed on staging
 
 `SMTP_PORT=2587` in `/etc/jomcall/engine.env` (was 465, blocked by DigitalOcean); engine recreated. An invitation was delivered and accepted with throwaway addresses. Other engine emails not triggered. Hosted email templates are pasted in Supabase and both links work. Left on staging: two throwaway accounts, the second now staff in "Salon Ujian Contoh".
+
+## 2026-11-19: invitation path and test panel wording
+
+Branch `fix/invitation-and-test-panel`, pull request open. The invitation token survives sign-in and sign-up in the same browser; invitation email in English and BM; `WORK_FAILED` logs a kind and a reason; test panel in plain words with the conversation first on a phone. Checks pass (core 1038 of 1038). After merge the engine on the server needs a rebuild for the email text and the log line. Not checked in a browser: sign-in round trip from an invitation, the waiting-invitation box, BM.

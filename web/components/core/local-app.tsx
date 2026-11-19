@@ -10,6 +10,7 @@ import { WorkspaceChrome, type ActiveScreen } from "./chrome";
 import { LocalAuth } from "./auth";
 import { CoreContext, Heading, Loading, Notice, useWords } from "./state";
 import { Field } from "./field";
+import { pendingInvite } from "@/lib/core/invite";
 import { LocalBookings } from "./bookings";
 import { LocalAgentTest } from "./agent-test";
 import { BookingSummary } from "./booking-summary";
@@ -192,6 +193,7 @@ function LocalWorkspace({ screen }: { screen: string }) {
                   : "Cipta ruang kerja pertama anda. Akaun dan rekod kekal di komputer ini.",
               )}
             />
+            <InviteWaiting />
             <form
               className="core-panel core-form"
               onSubmit={async (e) => {
@@ -364,7 +366,9 @@ function LocalWorkspace({ screen }: { screen: string }) {
               ) : screen === "contacts" ? (
                 <LocalContacts />
               ) : screen === "setup" ? (
-                SetupFlow ? <SetupFlow /> : null
+                SetupFlow ? (
+                  <SetupFlow />
+                ) : null
               ) : screen === "builder" ? (
                 <LocalAgent setup={false} />
               ) : screen === "settings" ? (
@@ -438,5 +442,40 @@ function LocalWorkspace({ screen }: { screen: string }) {
         )}
       </main>
     </WorkspaceChrome>
+  );
+}
+
+// Shown to a signed-in person with no workspace. Someone invited to a team
+// should join it, not create a business of their own.
+function InviteWaiting() {
+  const w = useWords(),
+    { href } = useExperience();
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => setToken(pendingInvite()), []);
+  return token ? (
+    <div className="core-panel core-invite-waiting" role="status">
+      <strong>
+        {w(
+          "You have an invitation waiting.",
+          "Anda ada jemputan yang menunggu.",
+        )}
+      </strong>
+      <p>
+        {w(
+          "Join your team instead of creating a new workspace.",
+          "Sertai pasukan anda dan bukannya mencipta ruang kerja baharu.",
+        )}
+      </p>
+      <a className="button button-dark" href={href("/invite?token=" + token)}>
+        {w("Open invitation", "Buka jemputan")}
+      </a>
+    </div>
+  ) : (
+    <p className="core-hint">
+      {w(
+        "Invited to a team? Open the link in your invitation email instead.",
+        "Dijemput ke satu pasukan? Buka pautan dalam e-mel jemputan anda.",
+      )}
+    </p>
   );
 }

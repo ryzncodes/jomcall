@@ -38,8 +38,8 @@ export function TestTranscript({
           </h2>
           <p>
             {w(
-              "Answers use this session’s frozen business knowledge. Tools create proposals for your review.",
-              "Jawapan menggunakan pengetahuan perniagaan yang dibekukan untuk sesi ini. Alat menghasilkan cadangan untuk semakan anda.",
+              "Type a question below. A booking or message the agent would make is shown here for you to check; nothing reaches a customer.",
+              "Taip soalan di bawah. Tempahan atau mesej yang ejen akan buat dipaparkan di sini untuk anda semak; tiada apa-apa sampai kepada pelanggan.",
             )}
           </p>
         </div>
@@ -125,8 +125,8 @@ export function TestTranscript({
                         "Cadangan ujian direkodkan di bawah. Hanya tindakan kalendar yang anda semak mengubah janji temu.",
                       )
                     : w(
-                        "No action proposal was recorded for this turn.",
-                        "Tiada cadangan tindakan direkodkan untuk giliran ini.",
+                        "The agent only answered. It did not try to book or take a message.",
+                        "Ejen hanya menjawab. Ia tidak cuba membuat tempahan atau mengambil mesej.",
                       )}
                 </p>
               )}

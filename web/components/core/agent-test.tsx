@@ -60,6 +60,16 @@ export function LocalAgentTest({
     <AgentTestManager heading={heading} startOn={startOn} resume={resume} />
   );
 }
+// A saved test is kept for 24 hours, so its start is a day before its expiry.
+function startedText(expiresAt: string) {
+  return new Intl.DateTimeFormat("en-MY", {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "Asia/Kuala_Lumpur",
+  }).format(new Date(new Date(expiresAt).getTime() - 24 * 60 * 60 * 1000));
+}
 function AgentTestManager({
   heading,
   startOn,
@@ -84,6 +94,7 @@ function AgentTestManager({
     [inspect, setInspect] = useState(""),
     [voiceLive, setVoiceLive] = useState(false);
   const turnKey = useRef(crypto.randomUUID());
+  const conversation = useRef<HTMLElement>(null);
   const readiness = useResource(
     () => client.execute("testReadiness", {}),
     "test-readiness",
@@ -230,23 +241,28 @@ function AgentTestManager({
         </span>
       </div>
       <Notice error={a.error ?? error ?? readiness.error ?? draft.error} />
-      <div className="core-test-layout">
+      <div
+        className={
+          sessionId ? "core-test-layout core-test-open" : "core-test-layout"
+        }
+      >
         <aside className="core-panel core-test-controls">
-          <p className="eyebrow">
-            {w("Test configuration", "Konfigurasi ujian")}
-          </p>
+          <p className="eyebrow">{w("Test your agent", "Uji ejen anda")}</p>
           <h2>{draft.data?.draft.name ?? w("Your agent", "Ejen anda")}</h2>
-          <Field label={w("Configuration source", "Sumber konfigurasi")}>
+          <Field label={w("Which version to test", "Versi yang diuji")}>
             <select
               value={source}
               onChange={(e) => setSource(e.target.value as typeof source)}
             >
               <option value="draft">
-                {w("Current draft snapshot", "Petikan draf semasa")}
+                {w("Latest changes (draft)", "Perubahan terkini (draf)")}
               </option>
               {workspace.agent.published_version_id && (
                 <option value="published">
-                  {w("Published version", "Versi diterbitkan")}
+                  {w(
+                    "Live version (published)",
+                    "Versi langsung (diterbitkan)",
+                  )}
                 </option>
               )}
             </select>
@@ -274,120 +290,132 @@ function AgentTestManager({
                         },
                 }),
               );
-              if (value) select(value.id);
+              if (value) {
+                select(value.id);
+                // On a narrow screen the conversation moves above these
+                // controls; bring it into view.
+                requestAnimationFrame(() =>
+                  conversation.current?.scrollIntoView({ block: "start" }),
+                );
+              }
             }}
           >
             {w("Start new test", "Mulakan ujian baharu")}
           </button>
-          <Field label={w("Resume a saved test", "Sambung ujian tersimpan")}>
-            <select value={sessionId} onChange={(e) => select(e.target.value)}>
-              <option value="">{w("Choose a test", "Pilih ujian")}</option>
-              {sessions.data?.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.source === "draft"
-                    ? w("Draft", "Draf")
-                    : w("Published", "Diterbitkan")}{" "}
-                  · {s.snapshot_hash.slice(0, 8)} · {s.id.slice(-4)}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Notice error={sessions.error} />
-          {detail && (
-            <>
-              <dl className="core-test-facts">
-                <dt>{w("Pinned source", "Sumber tetap")}</dt>
-                <dd>
-                  {detail.source === "draft"
-                    ? w("Draft snapshot", "Petikan draf")
-                    : w("Published version", "Versi diterbitkan")}{" "}
-                  · {detail.snapshot_hash.slice(0, 12)}
-                </dd>
-                <dt>{w("Model", "Model")}</dt>
-                <dd>
+          <details className="core-test-more">
+            <summary>{w("More options", "Pilihan lain")}</summary>
+            <Field label={w("Resume a saved test", "Sambung ujian tersimpan")}>
+              <select
+                value={sessionId}
+                onChange={(e) => select(e.target.value)}
+              >
+                <option value="">{w("Choose a test", "Pilih ujian")}</option>
+                {sessions.data?.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.source === "draft"
+                      ? w("Draft", "Draf")
+                      : w("Published", "Diterbitkan")}{" "}
+                    · {startedText(s.expires_at)}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Notice error={sessions.error} />
+            {detail && (
+              <>
+                <dl className="core-test-facts">
+                  <dt>{w("This test uses", "Ujian ini menggunakan")}</dt>
+                  <dd>
+                    {detail.source === "draft"
+                      ? w(
+                          "Your changes as they were when it started",
+                          "Perubahan anda seperti semasa ujian bermula",
+                        )
+                      : w("The published version", "Versi yang diterbitkan")}
+                  </dd>
+                  <dt>{w("Kept until", "Disimpan hingga")}</dt>
+                  <dd>
+                    {new Intl.DateTimeFormat("en-MY", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                      timeZone: "Asia/Kuala_Lumpur",
+                    }).format(new Date(detail.expires_at))}
+                  </dd>
+                </dl>
+                <form
+                  className="core-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    setInspect(knowledgeQuery);
+                  }}
+                >
+                  <Field label={w("Inspect knowledge", "Semak pengetahuan")}>
+                    <input
+                      required
+                      maxLength={200}
+                      value={knowledgeQuery}
+                      onChange={(e) => setKnowledgeQuery(e.target.value)}
+                    />
+                  </Field>
+                  <button className="button secondary-button">
+                    {w("Find sources", "Cari sumber")}
+                  </button>
+                </form>
+                <Notice error={knowledge.error} />
+                {inspect && (
+                  <div>
+                    {knowledge.data?.length ? (
+                      knowledge.data.map((h) => (
+                        <details key={h.sourceId} className="core-tool-trace">
+                          <summary>{h.title}</summary>
+                          <p>{h.excerpt}</p>
+                          <small>{h.sourceId}</small>
+                        </details>
+                      ))
+                    ) : (
+                      <p>
+                        {w(
+                          "No matching source. Add business knowledge or ask your team.",
+                          "Tiada sumber sepadan. Tambah pengetahuan atau tanya pasukan anda.",
+                        )}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <button
+                  className="core-back"
+                  disabled={a.busy}
+                  onClick={async () => {
+                    if (
+                      !confirm(
+                        w(
+                          "Delete this saved test and its transcript? Applied appointments remain in your calendar.",
+                          "Padam ujian tersimpan dan transkrip ini? Janji temu yang telah dibuat kekal dalam kalendar.",
+                        ),
+                      )
+                    )
+                      return;
+                    const result = await a.run(() =>
+                      client.execute("deleteAgentTest", {
+                        id: detail.id,
+                        expectedRevision: detail.revision,
+                      }),
+                    );
+                    if (result) select("");
+                  }}
+                >
+                  {w("Delete saved test", "Padam ujian tersimpan")}
+                </button>
+                <p className="core-test-technical">
+                  {w("For support", "Untuk sokongan")}:{" "}
+                  {detail.snapshot_hash.slice(0, 12)} ·{" "}
                   {(detail.model_digest?.startsWith("openrouter:")
                     ? detail.model_digest.slice(11)
-                    : detail.model_digest?.slice(0, 12)) ??
-                    w(
-                      "Pinned on first turn",
-                      "Ditetapkan pada giliran pertama",
-                    )}
-                </dd>
-                <dt>{w("Expiry", "Tamat tempoh")}</dt>
-                <dd>
-                  {new Intl.DateTimeFormat("en-MY", {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                    timeZone: "Asia/Kuala_Lumpur",
-                  }).format(new Date(detail.expires_at))}
-                </dd>
-              </dl>
-              <form
-                className="core-form"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  setInspect(knowledgeQuery);
-                }}
-              >
-                <Field label={w("Inspect knowledge", "Semak pengetahuan")}>
-                  <input
-                    required
-                    maxLength={200}
-                    value={knowledgeQuery}
-                    onChange={(e) => setKnowledgeQuery(e.target.value)}
-                  />
-                </Field>
-                <button className="button secondary-button">
-                  {w("Find sources", "Cari sumber")}
-                </button>
-              </form>
-              <Notice error={knowledge.error} />
-              {inspect && (
-                <div>
-                  {knowledge.data?.length ? (
-                    knowledge.data.map((h) => (
-                      <details key={h.sourceId} className="core-tool-trace">
-                        <summary>{h.title}</summary>
-                        <p>{h.excerpt}</p>
-                        <small>{h.sourceId}</small>
-                      </details>
-                    ))
-                  ) : (
-                    <p>
-                      {w(
-                        "No matching source. Add business knowledge or ask your team.",
-                        "Tiada sumber sepadan. Tambah pengetahuan atau tanya pasukan anda.",
-                      )}
-                    </p>
-                  )}
-                </div>
-              )}
-              <button
-                className="core-back"
-                disabled={a.busy}
-                onClick={async () => {
-                  if (
-                    !confirm(
-                      w(
-                        "Delete this saved test and its transcript? Applied appointments remain in your calendar.",
-                        "Padam ujian tersimpan dan transkrip ini? Janji temu yang telah dibuat kekal dalam kalendar.",
-                      ),
-                    )
-                  )
-                    return;
-                  const result = await a.run(() =>
-                    client.execute("deleteAgentTest", {
-                      id: detail.id,
-                      expectedRevision: detail.revision,
-                    }),
-                  );
-                  if (result) select("");
-                }}
-              >
-                {w("Delete saved test", "Padam ujian tersimpan")}
-              </button>
-            </>
-          )}
+                    : detail.model_digest?.slice(0, 12)) ?? "…"}
+                </p>
+              </>
+            )}
+          </details>
           <p>
             {w(
               "Saved for 24 hours. The microphone is used only for a voice test you start. No external messages or live calls.",
@@ -395,7 +423,10 @@ function AgentTestManager({
             )}
           </p>
         </aside>
-        <section className="core-panel core-test-conversation">
+        <section
+          className="core-panel core-test-conversation"
+          ref={conversation}
+        >
           {!sessionId ? (
             <div className="core-empty core-test-welcome">
               <ChatCircle size={48} weight="light" />
@@ -404,8 +435,8 @@ function AgentTestManager({
               </h2>
               <p>
                 {w(
-                  "Start a test to explore your agent’s answers and decisions. Your business knowledge stays frozen for each session.",
-                  "Mulakan ujian untuk meneroka jawapan dan keputusan ejen. Pengetahuan perniagaan kekal tetap bagi setiap sesi.",
+                  "Press Start new test, then ask what a customer would ask. A test uses your agent as it was when the test started.",
+                  "Tekan Mulakan ujian baharu, kemudian tanya soalan seperti pelanggan. Ujian menggunakan ejen anda seperti semasa ujian bermula.",
                 )}
               </p>
             </div>
@@ -450,21 +481,6 @@ function AgentTestManager({
                   )}
                 />
               ))}
-              {VoiceTest && (
-                <Suspense fallback={null}>
-                  <VoiceTest
-                    detail={detail}
-                    voice={readiness.data?.voice}
-                    onChanged={() => setTick((v) => v + 1)}
-                    onUnavailable={(e) => {
-                      setError(e);
-                      setDetail(undefined);
-                      setInspect("");
-                    }}
-                    onLive={setVoiceLive}
-                  />
-                </Suspense>
-              )}
               <form
                 className="core-test-composer"
                 onSubmit={async (e) => {
@@ -484,7 +500,12 @@ function AgentTestManager({
                   }
                 }}
               >
-                <Field label={w("Customer question", "Soalan pelanggan")}>
+                <Field
+                  label={w(
+                    "Ask as a customer would",
+                    "Tanya seperti pelanggan",
+                  )}
+                >
                   <textarea
                     rows={3}
                     required
@@ -529,6 +550,21 @@ function AgentTestManager({
                   </button>
                 </div>
               </form>
+              {VoiceTest && (
+                <Suspense fallback={null}>
+                  <VoiceTest
+                    detail={detail}
+                    voice={readiness.data?.voice}
+                    onChanged={() => setTick((v) => v + 1)}
+                    onUnavailable={(e) => {
+                      setError(e);
+                      setDetail(undefined);
+                      setInspect("");
+                    }}
+                    onLive={setVoiceLive}
+                  />
+                </Suspense>
+              )}
             </>
           )}
         </section>
