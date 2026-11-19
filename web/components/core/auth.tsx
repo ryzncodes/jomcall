@@ -91,7 +91,10 @@ export function LocalAuth({
             )}
           </span>
           <h2>{title}</h2>
-          <Notice error={error} />
+          <Notice
+            error={error}
+            context={mode === "invite" ? "invite" : undefined}
+          />
           {done ? (
             <div className="access-success" role="status">
               <h3>
