@@ -449,6 +449,26 @@ Branch `feat/whatsapp-recheck`. Saving a connected number again keeps it connect
 
 ---
 
+## Step 15. Connect WhatsApp through Meta's popup (Embedded Signup), [OWNER], applies a migration and gives the agent the Meta app secret
+
+Owners connect a number by pressing "Connect WhatsApp" and finishing Meta's popup, instead of pasting two IDs and a token. Built and tested against a stand-in only: nothing here has run against Meta. Until Meta grants Advanced Access (App Review), only businesses with a role on the JomCall Meta app can finish the popup.
+
+What it adds to the outbound picture: on the WhatsApp settings page, and only after the owner presses the button, the browser loads Meta's script from `connect.facebook.net` and opens a Facebook window. The agent process makes two new kinds of call to Meta (code exchange and number registration) and for that also holds the Meta app secret, which until now only the web held.
+
+Order matters: the migration, then the agent, then the web settings.
+
+1. **[OWNER]** Meta app dashboard, Facebook Login for Business, Configurations: create a configuration with the WhatsApp Embedded Signup variation. Note its configuration ID. In the app's Facebook Login for Business settings, add the site's origin to the allowed domains for the JavaScript SDK.
+2. **[OWNER]** Apply `supabase/migrations/20261119100000_whatsapp_embedded_signup.sql` to the database (one transaction, then record it as the other migrations were).
+3. **[OWNER]** In `/etc/jomcall/agent.env` add `WHATSAPP_APP_ID` (the app's ID) and `WHATSAPP_APP_SECRET` (the same value the web already has). Rebuild the agent.
+4. **[OWNER]** In the web's environment add `WHATSAPP_APP_ID` and `WHATSAPP_SIGNUP_CONFIG_ID`, then redeploy. Without both, the button is not shown and the pasted-values form is the only way, as before. If the web has them and the agent does not, every attempt fails with `SIGNUP_NOT_CONFIGURED` and the owner must start again.
+5. Leave `WHATSAPP_SIGNUP_COEXISTENCE` unset. It lets a business keep its number on the WhatsApp Business app; whether Malaysia is supported is not confirmed, and a number treated wrongly would not be registered.
+
+[CHECK] With a number you control: press Connect WhatsApp, then Continue to Facebook, finish the popup. The page says "Finishing the connection" and then Connected within a few seconds. Send the number a message and confirm the agent answers. Then press Connect again and close the Facebook window: the number must stay connected. Add a payment method for the business in WhatsApp Manager.
+
+Agent log lines: `WHATSAPP_CHECK_FAILED step=exchange|verify|subscribe|register reason=… provider=…` (codes only), and `WHATSAPP_SIGNUP_RESULT_DROPPED` when the owner disconnected or saved other values while Meta was being asked.
+
+Known limits: the two-step PIN JomCall sets when it registers a number is stored sealed with the token and is not shown to the owner; if a registration reached Meta but its result was lost, the business resets the PIN in WhatsApp Manager. One agent process is assumed: two would both try to exchange the same code.
+
 ## Moving web to Cloudflare Workers later — NOT DONE
 
 Web stays on Vercel. It is kept swappable: application code uses no Vercel-only API; mode and origin come from `JOMCALL_MODE` and `APP_ORIGIN`; the client address comes from `x-real-ip` / `x-forwarded-for`. The only Vercel-specific lines are build settings (`web/vercel.json`, and `distDir` in `web/next.config.ts` keyed on `VERCEL`). A move would need, and none of it is built or tested:

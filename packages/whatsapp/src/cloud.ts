@@ -33,6 +33,10 @@ export const templatePageSize = 100;
 export const templatePageCap = 10;
 export const templateCap = 1000;
 
+// A longer token would not fit the sealed credentials column (8192 bytes as
+// hex inside JSON).
+export const signupTokenMax = 3500;
+
 type Env = Record<string, string | undefined>;
 
 function valid(target: { phoneNumberId: string; accessToken: string }) {
@@ -117,7 +121,7 @@ export function createCloudProvider(
       const token = body?.access_token;
       return typeof token === "string" &&
         token.length > 0 &&
-        token.length <= 4096
+        token.length <= signupTokenMax
         ? { ok: true, accessToken: token }
         : { ok: false, reason: "SIGNUP_CODE_REJECTED" };
     },

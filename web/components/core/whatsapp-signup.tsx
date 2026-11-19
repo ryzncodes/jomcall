@@ -11,8 +11,9 @@ import {
 } from "../../../packages/contracts/src/whatsapp";
 import {
   readSignupMessage,
+  signupCollector,
   signupLoginOptions,
-  type SignupSession,
+  type SignupProblem,
 } from "@/lib/core/whatsapp-signup";
 import { useAction, useCore, useWords, Notice } from "./state";
 
@@ -56,7 +57,7 @@ function loadSdk(appId: string): Promise<Fb> {
   return sdk;
 }
 
-type Problem = "sdk" | "cancelled" | "meta" | null;
+type Problem = "sdk" | SignupProblem | null;
 
 export function WhatsAppSignup({
   data,
@@ -70,89 +71,83 @@ export function WhatsAppSignup({
     action = useAction();
   const settings = data.readiness.signup!;
   const channel = data.channel;
-  const [opening, setOpening] = useState(false),
+  // loading: Meta's script is on its way. ready: it is loaded, and the next
+  // press opens the window (a window opened after a wait is blocked by
+  // browsers, so loading and opening are two presses). waiting: the window
+  // is open.
+  const [stage, setStage] = useState<"idle" | "loading" | "ready" | "waiting">(
+      "idle",
+    ),
     [problem, setProblem] = useState<Problem>(null);
-  // The popup answers twice, in either order: a window message with the
-  // IDs and the login callback with the code. Both are needed.
-  const session = useRef<SignupSession>(null);
-  const code = useRef<string | null>(null);
-  const revision = useRef(channel?.revision);
-  revision.current = channel?.revision;
-  const sent = useRef(false);
-
-  const finish = async () => {
-    const s = session.current;
-    if (sent.current || !code.current || s?.kind !== "finish") return;
-    sent.current = true;
-    const done = await action.run(() =>
-      client.execute("connectWhatsAppSignup", {
-        phoneNumberId: s.phoneNumberId,
-        wabaId: s.wabaId,
-        code: code.current!,
-        ...(s.coexistence ? { coexistence: true } : {}),
-        agentEnabled: channel?.agent_enabled ?? true,
-        ...(revision.current ? { expectedRevision: revision.current } : {}),
-      }),
-    );
-    code.current = null;
-    session.current = null;
-    setOpening(false);
-    if (done) reload();
-  };
-  const finishRef = useRef(finish);
-  finishRef.current = finish;
+  const latest = useRef({ channel, action, client, reload });
+  latest.current = { channel, action, client, reload };
+  const collector = useRef<ReturnType<typeof signupCollector>>(null);
+  collector.current ??= signupCollector({
+    submit: (result) => {
+      const now = latest.current;
+      void now.action
+        .run(() =>
+          now.client.execute("connectWhatsAppSignup", {
+            phoneNumberId: result.phoneNumberId,
+            wabaId: result.wabaId,
+            code: result.code,
+            ...(result.coexistence ? { coexistence: true } : {}),
+            agentEnabled: now.channel?.agent_enabled ?? true,
+            ...(now.channel ? { expectedRevision: now.channel.revision } : {}),
+          }),
+        )
+        .then((done) => {
+          setStage("ready");
+          if (done) latest.current.reload();
+        });
+    },
+    problem: (kind) => {
+      setStage("ready");
+      setProblem(kind);
+    },
+  });
 
   useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      const read = readSignupMessage(e.origin, e.data);
-      if (!read) return;
-      session.current = read;
-      if (read.kind === "finish") void finishRef.current();
-    };
+    const onMessage = (e: MessageEvent) =>
+      collector.current!.message(readSignupMessage(e.origin, e.data));
     window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    return () => {
+      window.removeEventListener("message", onMessage);
+      collector.current!.stop();
+    };
   }, []);
 
   // While the agent process finishes the connection, look again every two
   // seconds; it usually takes a few.
-  const pending = channel?.state === "pending";
+  const finishing = !!channel?.signup_pending || channel?.state === "pending";
   useEffect(() => {
-    if (!pending) return;
-    const timer = setInterval(reload, 2000);
+    if (!finishing) return;
+    const timer = setInterval(() => latest.current.reload(), 2000);
     return () => clearInterval(timer);
-  }, [pending, reload]);
+  }, [finishing]);
 
-  const open = async () => {
+  const press = async () => {
     setProblem(null);
-    setOpening(true);
-    sent.current = false;
-    session.current = null;
-    code.current = null;
-    let fb: Fb;
-    try {
-      fb = await loadSdk(settings.appId);
-    } catch {
-      setOpening(false);
-      setProblem("sdk");
+    if (stage === "idle") {
+      setStage("loading");
+      try {
+        await loadSdk(settings.appId);
+        setStage("ready");
+      } catch {
+        setStage("idle");
+        setProblem("sdk");
+      }
       return;
     }
-    fb.login((response) => {
-      const value = response.authResponse?.code;
-      if (typeof value === "string" && value) {
-        code.current = value;
-        // The window message may still be on its way.
-        void finishRef.current();
-        setTimeout(() => {
-          if (!sent.current) {
-            setOpening(false);
-            setProblem("meta");
-          }
-        }, 4000);
-      } else {
-        setOpening(false);
-        setProblem(session.current?.kind === "error" ? "meta" : "cancelled");
-      }
-    }, signupLoginOptions(settings));
+    // Opened straight from the press, with nothing awaited before it. A
+    // second press while waiting starts over, for a window that was blocked
+    // or lost.
+    collector.current!.start();
+    setStage("waiting");
+    window.FB!.login(
+      (response) => collector.current!.callback(response.authResponse?.code),
+      signupLoginOptions(settings),
+    );
   };
 
   const connected = channel?.state === "connected";
@@ -166,7 +161,7 @@ export function WhatsAppSignup({
               "Sambungkan nombor WhatsApp anda",
             )}
       </h2>
-      {pending ? (
+      {finishing && stage !== "waiting" ? (
         <p className="editor-note" role="status">
           {w(
             "Finishing the connection. This takes a few seconds…",
@@ -221,8 +216,8 @@ export function WhatsAppSignup({
                   )
                 : problem === "cancelled"
                   ? w(
-                      "The Facebook window was closed before finishing. Nothing was changed.",
-                      "Tetingkap Facebook ditutup sebelum selesai. Tiada apa-apa diubah.",
+                      "The Facebook window was closed before finishing, or your browser blocked it. Nothing was changed.",
+                      "Tetingkap Facebook ditutup sebelum selesai, atau disekat oleh pelayar anda. Tiada apa-apa diubah.",
                     )
                   : w(
                       "Facebook did not return your number. Try again.",
@@ -230,24 +225,51 @@ export function WhatsAppSignup({
                     )}
             </p>
           )}
+          {stage === "ready" && !problem && (
+            <p className="editor-note" role="status">
+              {w(
+                "Facebook is ready. Press Continue to open its window.",
+                "Facebook sudah sedia. Tekan Teruskan untuk membuka tetingkapnya.",
+              )}
+            </p>
+          )}
+          {stage === "waiting" && (
+            <p className="editor-note" role="status">
+              {w(
+                "Finish the steps in the Facebook window. If no window opened, allow pop-ups for this site and press the button again.",
+                "Lengkapkan langkah dalam tetingkap Facebook. Jika tiada tetingkap dibuka, benarkan pop timbul untuk laman ini dan tekan butang sekali lagi.",
+              )}
+            </p>
+          )}
           <button
             type="button"
             className={
-              connected ? "button secondary-button" : "button button-dark"
+              connected && stage === "idle"
+                ? "button secondary-button"
+                : "button button-dark"
             }
-            disabled={opening || action.busy}
-            onClick={() => void open()}
+            disabled={stage === "loading" || action.busy}
+            onClick={() => void press()}
           >
-            {opening || action.busy
-              ? w("Waiting for Facebook…", "Menunggu Facebook…")
-              : connected
-                ? w("Connect again", "Sambung semula")
-                : w("Connect WhatsApp", "Sambungkan WhatsApp")}
+            {stage === "loading"
+              ? w("Loading Facebook…", "Memuatkan Facebook…")
+              : action.busy
+                ? w("Connecting…", "Menyambung…")
+                : stage === "ready"
+                  ? w("Continue to Facebook", "Teruskan ke Facebook")
+                  : stage === "waiting"
+                    ? w(
+                        "Open the Facebook window again",
+                        "Buka tetingkap Facebook sekali lagi",
+                      )
+                    : connected
+                      ? w("Connect again", "Sambung semula")
+                      : w("Connect WhatsApp", "Sambungkan WhatsApp")}
           </button>
           <p className="core-hint">
             {w(
-              "Pressing the button loads Facebook's sign-in on this page and opens a Facebook window.",
-              "Menekan butang ini memuatkan log masuk Facebook pada halaman ini dan membuka tetingkap Facebook.",
+              "The first press loads Facebook's sign-in on this page; the second opens a Facebook window.",
+              "Tekanan pertama memuatkan log masuk Facebook pada halaman ini; tekanan kedua membuka tetingkap Facebook.",
             )}
           </p>
         </>

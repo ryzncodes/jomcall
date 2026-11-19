@@ -184,16 +184,18 @@ export class WhatsAppWorker {
     let result: { ok: boolean; reason?: string; displayPhone?: string | null };
     let accessToken = "";
     const cloud = whatsappMode(this.env) === "cloud";
-    // Embedded Signup: the stored envelope holds Meta's one-time code, not a
-    // token yet. A code that cannot be exchanged is spent: the channel ends
-    // failed and the owner connects again.
+    // Embedded Signup: Meta's one-time code waits in its own sealed envelope
+    // and the stored token (if any) is left alone until the new one has
+    // passed every step. A code that cannot be exchanged is spent: a channel
+    // that was not connected ends failed, a connected one keeps working on
+    // its old token with a warning, and the owner connects again.
     let exchangeFailed: string | null = null;
     if (v.signupPending) {
       try {
         const exchange = await this.options.provider.exchangeSignupCode({
           code: cloud
             ? openSignupCode(
-                v.credentials,
+                v.signupCode,
                 this.env.WHATSAPP_CREDENTIALS_KEY,
                 v.orgId,
               )
@@ -286,7 +288,10 @@ export class WhatsAppWorker {
             pin,
           });
           if (!reg.ok) {
-            pin = undefined;
+            // An unreachable provider may still have applied the PIN: keep
+            // it, so the number can be registered again later. A refusal
+            // means the PIN was not set.
+            if (reg.reason !== "PROVIDER_UNREACHABLE") pin = undefined;
             signup.warning =
               reg.reason === "PROVIDER_UNREACHABLE"
                 ? reg.reason
@@ -299,7 +304,7 @@ export class WhatsAppWorker {
             );
           }
         } catch (e) {
-          pin = undefined;
+          // Unknown outcome: keep the PIN, as above.
           signup.warning = "REGISTER_FAILED";
           this.logCheckFailed(
             "register",
@@ -320,13 +325,18 @@ export class WhatsAppWorker {
         signup = {};
       }
     }
-    await this.op("verify_result", v.id, null, {
+    const applied = await this.op("verify_result", v.id, null, {
       revision: v.revision,
       ok: result.ok,
       reason: result.reason,
       displayPhone: result.displayPhone,
       ...signup,
     });
+    // The owner disconnected or saved other values while Meta was being
+    // asked: the new token is dropped. Worth one line, because a number
+    // registered a moment ago now holds a PIN that was not stored.
+    if (v.signupPending && result.ok && applied?.applied === false)
+      console.error("WHATSAPP_SIGNUP_RESULT_DROPPED");
     return true;
   }
 

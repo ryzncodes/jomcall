@@ -5,8 +5,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   readSignupMessage,
+  signupCollector,
   signupLoginOptions,
   signupOrigin,
+  type SignupResult,
 } from "../../web/lib/core/whatsapp-signup.ts";
 import {
   openCredentials,
@@ -356,4 +358,115 @@ test("cloud number registration sends the PIN and succeeds only on success:true"
     reason: "INVALID_TARGET",
   });
   assert.equal(seen.length, calls);
+});
+
+// A hand-driven timer: `fire()` runs the pending timeout, if any.
+function harness() {
+  const submitted: SignupResult[] = [];
+  const problems: string[] = [];
+  let pending: (() => void) | undefined;
+  const collector = signupCollector({
+    submit: (r) => submitted.push(r),
+    problem: (k) => problems.push(k),
+    timer: {
+      set: (fire) => {
+        pending = fire;
+        return 1;
+      },
+      clear: () => {
+        pending = undefined;
+      },
+    },
+  });
+  return {
+    collector,
+    submitted,
+    problems,
+    fire: () => {
+      const f = pending;
+      pending = undefined;
+      f?.();
+    },
+    armed: () => pending !== undefined,
+  };
+}
+const done = {
+  kind: "finish" as const,
+  phoneNumberId: "100000001",
+  wabaId: "200000001",
+  coexistence: false,
+};
+const pair = {
+  phoneNumberId: "100000001",
+  wabaId: "200000001",
+  coexistence: false,
+  code: "c1",
+};
+
+test("the popup's two answers are submitted once, in either order", () => {
+  let h = harness();
+  h.collector.start();
+  h.collector.message(done);
+  assert.equal(h.submitted.length, 0);
+  h.collector.callback("c1");
+  assert.deepEqual(h.submitted, [pair]);
+  assert.equal(h.armed(), false);
+  // A repeat of either answer does nothing.
+  h.collector.message(done);
+  h.collector.callback("c1");
+  assert.equal(h.submitted.length, 1);
+
+  h = harness();
+  h.collector.start();
+  h.collector.callback("c1");
+  assert.equal(h.submitted.length, 0);
+  assert.equal(h.armed(), true);
+  h.collector.message(done);
+  assert.deepEqual(h.submitted, [pair]);
+  assert.equal(h.armed(), false);
+  assert.deepEqual(h.problems, []);
+});
+
+test("a code with no number is given up, and a late message never submits behind the error", () => {
+  const h = harness();
+  h.collector.start();
+  h.collector.callback("c1");
+  h.fire();
+  assert.deepEqual(h.problems, ["meta"]);
+  h.collector.message(done);
+  assert.equal(h.submitted.length, 0);
+  assert.equal(h.collector.waiting, false);
+});
+
+test("a closed window is a cancel; an error event is reported as Meta's", () => {
+  let h = harness();
+  h.collector.start();
+  h.collector.message({ kind: "cancel" });
+  h.collector.callback(undefined);
+  assert.deepEqual(h.problems, ["cancelled"]);
+  h = harness();
+  h.collector.start();
+  h.collector.message({ kind: "error" });
+  h.collector.callback(null);
+  assert.deepEqual(h.problems, ["meta"]);
+  assert.equal(h.submitted.length, 0);
+});
+
+test("a new attempt forgets the one before, and nothing counts before the first", () => {
+  const h = harness();
+  // Before any attempt: ignored.
+  h.collector.message(done);
+  h.collector.callback("c0");
+  assert.equal(h.submitted.length, 0);
+  h.collector.start();
+  h.collector.callback("old");
+  assert.equal(h.armed(), true);
+  // The owner presses again: the old code and its timer are gone.
+  h.collector.start();
+  assert.equal(h.armed(), false);
+  h.collector.message(done);
+  assert.equal(h.submitted.length, 0);
+  h.collector.callback("c1");
+  assert.deepEqual(h.submitted, [pair]);
+  assert.deepEqual(h.problems, []);
 });

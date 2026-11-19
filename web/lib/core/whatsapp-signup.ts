@@ -89,3 +89,89 @@ export function signupLoginOptions(settings: {
     },
   };
 }
+
+export type SignupResult = {
+  phoneNumberId: string;
+  wabaId: string;
+  coexistence: boolean;
+  code: string;
+};
+export type SignupProblem = "cancelled" | "meta";
+
+// One popup attempt. The popup answers twice, in either order: a window
+// message with the IDs and the login callback with the code. Both are needed
+// and the pair is submitted once. A code with no IDs after `waitMs` is given
+// up; anything that arrives after an attempt ended is ignored, so a late
+// message can never submit behind an error the owner has already seen.
+export function signupCollector(options: {
+  submit(result: SignupResult): void;
+  problem(kind: SignupProblem): void;
+  timer?: {
+    set(fire: () => void, ms: number): unknown;
+    clear(handle: unknown): void;
+  };
+  waitMs?: number;
+}) {
+  const timer = options.timer ?? {
+    set: (fire: () => void, ms: number) => setTimeout(fire, ms),
+    clear: (handle: unknown) =>
+      clearTimeout(handle as ReturnType<typeof setTimeout>),
+  };
+  let active = false;
+  let session: SignupSession = null;
+  let code: string | null = null;
+  let handle: unknown;
+  const end = () => {
+    active = false;
+    if (handle !== undefined) timer.clear(handle);
+    handle = undefined;
+  };
+  const attempt = () => {
+    if (!active || !code || session?.kind !== "finish") return;
+    const result = {
+      phoneNumberId: session.phoneNumberId,
+      wabaId: session.wabaId,
+      coexistence: session.coexistence,
+      code,
+    };
+    end();
+    options.submit(result);
+  };
+  return {
+    // A new attempt forgets everything from the one before.
+    start() {
+      end();
+      active = true;
+      session = null;
+      code = null;
+    },
+    message(read: SignupSession) {
+      if (!active || !read) return;
+      session = read;
+      attempt();
+    },
+    // The login callback: a code, or nothing when the window was closed.
+    callback(value: string | null | undefined) {
+      if (!active) return;
+      if (!value) {
+        const kind = session?.kind === "error" ? "meta" : "cancelled";
+        end();
+        options.problem(kind);
+        return;
+      }
+      code = value;
+      attempt();
+      if (!active) return;
+      handle = timer.set(() => {
+        handle = undefined;
+        if (!active) return;
+        end();
+        options.problem("meta");
+      }, options.waitMs ?? 4000);
+    },
+    stop: end,
+    get waiting() {
+      return active;
+    },
+  };
+}
