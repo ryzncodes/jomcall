@@ -289,9 +289,12 @@ export function Notice({
   return error ? (
     <div className="storage-warning" role="alert">
       {errorText(error, locale === "ms", context)}
-      {error instanceof CoreError && error.status === 401 && (
-        <a href={href("/login")}>{w(" Sign in", " Log masuk")}</a>
-      )}
+      {/* The invitation page has its own sign-in link, which keeps the invitation. */}
+      {error instanceof CoreError &&
+        error.status === 401 &&
+        context !== "invite" && (
+          <a href={href("/login")}>{w(" Sign in", " Log masuk")}</a>
+        )}
     </div>
   ) : saved ? (
     <p className="core-success" role="status">

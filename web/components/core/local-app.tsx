@@ -5,6 +5,8 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { HttpCoreClient, CoreError } from "@/lib/core/client";
 import type { Session, Bootstrap } from "../../../packages/contracts/src/core";
+import type { Channels } from "../../../packages/contracts/src/phone";
+import { channelLine } from "./channel-line";
 import { useExperience } from "../experience";
 import { WorkspaceChrome, type ActiveScreen } from "./chrome";
 import { LocalAuth } from "./auth";
@@ -52,6 +54,32 @@ function LocalWorkspace({ screen }: { screen: string }) {
     [creationError, setCreationError] = useState<unknown>(),
     [typeId, setTypeId] = useState("");
   const client = useMemo(() => new HttpCoreClient({ orgId }), [orgId]);
+  // Which channels are connected, for the Home summary. Unknown while
+  // loading or after a failed read.
+  const [channels, setChannels] =
+    useState<Pick<Channels, "phone" | "whatsapp">>();
+  useEffect(() => {
+    setChannels(undefined);
+    if (!orgId || screen !== "home") return;
+    let alive = true;
+    // `channels` says whether WhatsApp is switched on for the service; the
+    // overview says whether this workspace's own number is connected.
+    client
+      .execute("channels", {})
+      .then(async (v) => ({
+        phone: v.phone,
+        whatsapp:
+          v.whatsapp &&
+          (await client.execute("whatsappOverview", {})).channel?.state ===
+            "connected",
+      }))
+      .then((v) => alive && setChannels(v))
+      .catch(() => alive && setChannels(undefined));
+    return () => {
+      alive = false;
+    };
+  }, [client, orgId, screen, epoch]);
+  const channelText = channelLine(channels);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -319,10 +347,7 @@ function LocalWorkspace({ screen }: { screen: string }) {
                           : w("Draft", "Draf")}
                       </strong>
                       <small>
-                        {w(
-                          "Channels not connected yet",
-                          "Saluran belum disambungkan",
-                        )}
+                        {channelText ? w(...channelText) : "\u00a0"}
                       </small>
                     </a>
                     <a href={href("/app/agent") + "#hours"}>
@@ -347,10 +372,10 @@ function LocalWorkspace({ screen }: { screen: string }) {
                     <p>
                       {w(
                         HOSTED
-                          ? "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage bookings now. Phone calls, WhatsApp, external calendars and payments come later."
+                          ? "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage bookings here."
                           : "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage local bookings now. Voice, WhatsApp, external calendars and payments come later.",
                         HOSTED
-                          ? "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan sekarang. Panggilan telefon, WhatsApp, kalendar luar dan pembayaran hadir kemudian."
+                          ? "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan di sini."
                           : "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan setempat sekarang. Suara, WhatsApp, kalendar luar dan pembayaran hadir kemudian.",
                       )}
                     </p>

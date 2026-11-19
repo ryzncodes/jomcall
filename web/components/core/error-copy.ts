@@ -3,9 +3,17 @@ import { CoreError, ProxyError } from "../../lib/core/client";
 
 // Wording for an error code that means something different on one screen.
 // The shared table in state.tsx stays the default for every other case.
-export type ErrorContext = "voice" | "hours";
+export type ErrorContext = "voice" | "hours" | "invite";
 
 const overrides: Record<ErrorContext, Record<string, [string, string]>> = {
+  invite: {
+    // Someone who opened an invitation link without being signed in never
+    // had a session, so "Session ended" would be wrong.
+    UNAUTHORIZED: [
+      "Sign in or create an account with the invited email first, then accept the invitation.",
+      "Log masuk atau cipta akaun dengan e-mel jemputan dahulu, kemudian terima jemputan.",
+    ],
+  },
   hours: {
     // The server does not say how many appointments are in the way.
     BOOKINGS_AFFECTED: [
