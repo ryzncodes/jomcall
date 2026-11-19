@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   appOrigin,
   cookieNames,
@@ -529,4 +530,26 @@ test("hosted LiveKit address must be wss and not loopback", () => {
     /HOSTED_LOOPBACK_REFUSED/,
   );
   assert.match(liveKitUrlProblem(HOSTED)!, /INVALID_URL/);
+});
+
+// The phone line's call repository once checked for the local database by
+// hand, so the agent process could not start in hosted mode with the phone
+// line switched on. Every pool in the worker processes must go through
+// databaseConnection, which knows both modes.
+test("every worker database pool is built with databaseConnection", () => {
+  for (const file of [
+    "engine/src/engine.ts",
+    "engine/src/agent/call-repository.ts",
+    "engine/src/agent/repository.ts",
+    "engine/src/agent/setup-reader.ts",
+    "engine/src/whatsapp/worker.ts",
+  ]) {
+    const source = readFileSync(
+      new URL(`../../${file}`, import.meta.url),
+      "utf8",
+    );
+    assert.match(source, /new pg\.Pool\(/, file);
+    assert.match(source, /databaseConnection\(/, file);
+    assert.doesNotMatch(source, /LOCAL_DATABASE_REQUIRED/, file);
+  }
 });

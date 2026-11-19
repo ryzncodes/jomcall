@@ -1,4 +1,5 @@
 import pg from "pg";
+import { databaseConnection } from "../../../packages/contracts/src/hosting.ts";
 import type {
   ToolAccess,
   ToolEffect,
@@ -32,10 +33,15 @@ function orCancelled<T>(value: T | null): T {
 export class CallRepository {
   private pool: pg.Pool;
   constructor(readonly namespace: string) {
-    const url = new URL(process.env.AGENT_DATABASE_URL ?? "");
-    if (url.hostname !== "127.0.0.1" || url.port !== "54622")
-      throw Error("LOCAL_DATABASE_REQUIRED");
-    this.pool = new pg.Pool({ connectionString: url.toString(), max: 3 });
+    // The same rules as AgentRepository: loopback only in local mode, and in
+    // hosted mode TLS to a listed database host.
+    this.pool = new pg.Pool({
+      ...databaseConnection(
+        process.env.AGENT_DATABASE_URL,
+        "AGENT_DATABASE_URL",
+      ),
+      max: 3,
+    });
     this.pool.on("error", () => console.error("CALL_DATABASE_POOL_ERROR"));
   }
   private async run(
@@ -49,7 +55,15 @@ export class CallRepository {
     return (
       await this.pool.query(
         "select app_private.agent_call($1,$2,$3,$4,$5,$6,$7)as value",
-        [action, this.namespace, call, tokenHash, turn, lease, JSON.stringify(data)],
+        [
+          action,
+          this.namespace,
+          call,
+          tokenHash,
+          turn,
+          lease,
+          JSON.stringify(data),
+        ],
       )
     ).rows[0].value;
   }
@@ -62,7 +76,11 @@ export class CallRepository {
   answered(call: string, tokenHash: string) {
     return this.run("call_answered", call, tokenHash);
   }
-  end(call: string, tokenHash: string, data: { reason: string; language?: string }) {
+  end(
+    call: string,
+    tokenHash: string,
+    data: { reason: string; language?: string },
+  ) {
     return this.run("call_end", call, tokenHash, null, null, data);
   }
   async voiceBegin(
@@ -70,7 +88,14 @@ export class CallRepository {
     tokenHash: string,
     data: { input: string; clientTurnId: string },
   ) {
-    const envelope = await this.run("turn_begin", call, tokenHash, null, null, data);
+    const envelope = await this.run(
+      "turn_begin",
+      call,
+      tokenHash,
+      null,
+      null,
+      data,
+    );
     // Kept on the envelope (in memory only) so tool access can authenticate.
     Object.defineProperty(envelope, "auth", {
       value: { call, tokenHash },
@@ -83,11 +108,22 @@ export class CallRepository {
     tokenHash: string,
     turn: string,
     lease: string,
-    data: { answer: string; timings: unknown; evidence: unknown; usage: unknown },
+    data: {
+      answer: string;
+      timings: unknown;
+      evidence: unknown;
+      usage: unknown;
+    },
   ) {
     return this.run("turn_complete", call, tokenHash, turn, lease, data);
   }
-  voiceFail(call: string, tokenHash: string, turn: string, lease: string, code: string) {
+  voiceFail(
+    call: string,
+    tokenHash: string,
+    turn: string,
+    lease: string,
+    code: string,
+  ) {
     return this.run("turn_fail", call, tokenHash, turn, lease, { code });
   }
   voiceCancel(call: string, tokenHash: string, turn: string, lease: string) {
@@ -101,7 +137,10 @@ export class CallRepository {
     return {};
   }
   access(envelope: any): ToolAccess {
-    const { call, tokenHash } = envelope.auth as { call: string; tokenHash: string };
+    const { call, tokenHash } = envelope.auth as {
+      call: string;
+      tokenHash: string;
+    };
     const { turn } = envelope;
     const op = (action: string, data?: unknown) =>
       this.run(action, call, tokenHash, turn.id, turn.lease_token, data);
@@ -142,7 +181,10 @@ export class CallRepository {
   // Catalogue, units and gap log for one running turn of this call, through
   // the same agent_call function and the call's own token and lease.
   knowledge(envelope: any): KnowledgeAccess {
-    const { call, tokenHash } = envelope.auth as { call: string; tokenHash: string };
+    const { call, tokenHash } = envelope.auth as {
+      call: string;
+      tokenHash: string;
+    };
     const { turn } = envelope;
     const run = (action: string, data: unknown) =>
       this.run(action, call, tokenHash, turn.id, turn.lease_token, data);
@@ -160,12 +202,22 @@ export class CallRepository {
     args: unknown,
     outcome: { ok: boolean; reason: string | null },
   ) {
-    const { call, tokenHash } = envelope.auth as { call: string; tokenHash: string };
-    const value = await this.run("record", call, tokenHash, envelope.turn.id, envelope.turn.lease_token, {
-      step,
-      call: { name: "handoff_to_human", args },
-      effect: { kind: "transfer", ok: outcome.ok, reason: outcome.reason },
-    });
+    const { call, tokenHash } = envelope.auth as {
+      call: string;
+      tokenHash: string;
+    };
+    const value = await this.run(
+      "record",
+      call,
+      tokenHash,
+      envelope.turn.id,
+      envelope.turn.lease_token,
+      {
+        step,
+        call: { name: "handoff_to_human", args },
+        effect: { kind: "transfer", ok: outcome.ok, reason: outcome.reason },
+      },
+    );
     if (!value) throw Error("TURN_CANCELLED");
     return value;
   }
