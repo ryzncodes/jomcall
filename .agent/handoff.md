@@ -828,18 +828,20 @@ Staging has the signup settings and the button works up to Meta's gate: "can't o
 
 ## 2026-11-19: Twilio number on staging, plan only
 
-Branch `docs/twilio-staging-plan`. Document only; nothing bought, changed or deployed.
+Branch `docs/twilio-staging-plan`, pull request #55. Document only; this session bought, changed and deployed nothing. Corrected the same day after the main session's read-only checks on the server.
 
 **Changed**
 - `docs/research/twilio-staging-plan.md`: owner checklist for one Twilio +60 number on hosted staging, with verified and unverified facts, costs, test script and risks.
 
 **Found**
-- Staging Compose has no `livekit/sip` and no Redis, so there is no SIP address to point Twilio at. Needs a build and an owner-approved deploy.
+- The SIP service and Valkey are already in the Compose file (pull request #46) and were running on staging. The first version of the document said otherwise; it read an older checkout.
+- Carried out on 2026-11-19 by the owner and the main session: number bought, Twilio trunk with origination, agent settings (fixed by pull request #56), LiveKit trunk and dispatch rule. No call answered yet.
+- Valkey keeps nothing on disk, so the LiveKit trunk and dispatch rule are lost on restart and must be created again.
 - `npm run telephony:sip-config` refuses any database but the local one; for staging the two files are written by hand.
 - The Phone numbers menu entry is hidden until a number exists; the first number is added at `/app/phone-numbers` directly (not checked in the hosted app).
 
 **Not verified**
-- Whether a Twilio trial can buy the number or carry trunk calls; TLS and SRTP in self-hosted LiveKit SIP; number formats Twilio sends; enforcement of `allowed_addresses` on a self-hosted server.
+- TLS and SRTP in self-hosted LiveKit SIP; number formats Twilio sends; enforcement of `allowed_addresses` on a self-hosted server.
 
 **Next**
-- Owner picks self-hosted SIP or LiveKit Cloud and records the approvals in `AGENTS.md`; then the Compose, Redis and SIP change is built on its own branch.
+- Cloud firewall rules for 5060 and 10000-10200/udp (urgent, the port was open and probed); Twilio account upgrade (the trial fails calls with `21264`); then the test script in the document's section 10.
