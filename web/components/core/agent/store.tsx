@@ -205,6 +205,21 @@ function Store({
     location.hash = view === "home" ? "" : view;
   }
 
+  // An announcement belongs to Home. Leaving Home by a link or the address
+  // bar does not pass through go(), so the hash is watched as well; without
+  // this, "Published" stayed on the next publish sheet. Home itself (an empty
+  // hash) is left alone: publishing goes Home first and announces after.
+  useEffect(() => {
+    const left = () => {
+      if (announced.current && location.hash.replace(/^#/, "")) {
+        announced.current = false;
+        setNotice(null);
+      }
+    };
+    window.addEventListener("hashchange", left);
+    return () => window.removeEventListener("hashchange", left);
+  }, []);
+
   useEffect(() => {
     refreshChanges();
     // Home shows a hint while hours are unsaved, so it follows the store.
