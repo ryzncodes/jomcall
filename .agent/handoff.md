@@ -805,3 +805,7 @@ Found in the walk and not fixed yet:
 - No terms or privacy link at sign-up; the footer links "Hosted admin" and "Self-host setup" for every visitor.
 
 Left on staging: a test workspace "Salon Ujian Contoh" (made-up data, published agent, RM 20.00 trial credit) and its throwaway owner address on the allow-list.
+
+## 2026-11-19: engine email fixed on staging
+
+`SMTP_PORT=2587` in `/etc/jomcall/engine.env` (was 465, blocked by DigitalOcean); engine recreated. An invitation was delivered and accepted with throwaway addresses. Other engine emails not triggered. Hosted email templates are pasted in Supabase and both links work. Left on staging: two throwaway accounts, the second now staff in "Salon Ujian Contoh".
