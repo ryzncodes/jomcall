@@ -1,8 +1,9 @@
 "use client";
 import { HOSTED } from "@/lib/hosted";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { HttpCoreClient } from "@/lib/core/client";
+import { forgetInvite, rememberInvite, validInvite } from "@/lib/core/invite";
 import { PublicFrame } from "../public-pages";
 import { useExperience } from "../experience";
 import { Field } from "./field";
@@ -23,6 +24,11 @@ export function LocalAuth({
     [done, setDone] = useState(false);
   const reset = mode === "forgot" && params.get("reset") === "1";
   const token = params.get("token") ?? "";
+  // An invitation that sent the person here to sign in or sign up first.
+  const invite = validInvite(params.get("invite")) ? params.get("invite")! : "";
+  useEffect(() => {
+    if (mode === "invite") rememberInvite(token);
+  }, [mode, token]);
   // Hosted mode with Turnstile configured, on sign-up and sign-in only.
   const guarded =
     !!turnstileSiteKey && !reset && (mode === "login" || mode === "signup");
@@ -126,7 +132,17 @@ export function LocalAuth({
                   </a>
                 </>
               )}
-              <a href={href("/login")}>{w("Sign in", "Log masuk")}</a>
+              {invite && mode === "signup" && (
+                <p>
+                  {w(
+                    "After you confirm your email, your invitation will be waiting in the app.",
+                    "Selepas anda mengesahkan e-mel, jemputan anda menunggu dalam aplikasi.",
+                  )}
+                </p>
+              )}
+              <a href={href(invite ? "/login?invite=" + invite : "/login")}>
+                {w("Sign in", "Log masuk")}
+              </a>
             </div>
           ) : (
             <form
@@ -141,6 +157,7 @@ export function LocalAuth({
                     const member = await client.execute("acceptInvite", {
                       token,
                     });
+                    forgetInvite();
                     location.assign(href("/app?workspace=" + member.org_id));
                     return;
                   }
@@ -158,7 +175,10 @@ export function LocalAuth({
                       ...(guarded ? { turnstileToken } : {}),
                     },
                   );
-                  if (mode === "login") location.assign(href("/app"));
+                  if (mode === "login")
+                    location.assign(
+                      href(invite ? "/invite?token=" + invite : "/app"),
+                    );
                   else setDone(true);
                 } catch (err) {
                   setError(err);
@@ -173,12 +193,26 @@ export function LocalAuth({
                   <>
                     <p>
                       {w(
-                        "Sign in with the invited email first, then return to this invitation.",
-                        "Log masuk dengan e-mel jemputan dahulu, kemudian kembali ke jemputan ini.",
+                        "Signed in with the invited email? Press Accept. If not, sign in or create an account first. Signing in brings you back here.",
+                        "Sudah log masuk dengan e-mel jemputan? Tekan Terima. Jika belum, log masuk atau cipta akaun dahulu. Selepas log masuk, anda dibawa kembali ke sini.",
                       )}
                     </p>
-                    <a href={href("/login")}>{w("Sign in", "Log masuk")}</a>
-                    <a href={href("/signup")}>
+                    <a
+                      href={href(
+                        validInvite(token)
+                          ? "/login?invite=" + token
+                          : "/login",
+                      )}
+                    >
+                      {w("Sign in", "Log masuk")}
+                    </a>
+                    <a
+                      href={href(
+                        validInvite(token)
+                          ? "/signup?invite=" + token
+                          : "/signup",
+                      )}
+                    >
                       {w("Create account", "Cipta akaun")}
                     </a>
                   </>

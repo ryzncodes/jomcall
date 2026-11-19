@@ -9,6 +9,7 @@ import {
 import { createMailSender, type MailSender } from "./mail.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
 import { billingNoticeMail, parseBillingNotice } from "./billing-notice.ts";
+import { failureCode, invitationText } from "./work-text.ts";
 import {
   bytesCeilingMail,
   readCeilingMail,
@@ -426,7 +427,9 @@ export class Engine {
               await this.mail.send({
                 to: p.email,
                 subject: this.mail.subject,
-                text: `Join your workspace: ${this.mail.inviteBase}/invite?token=${token}`,
+                text: invitationText(
+                  `${this.mail.inviteBase}/invite?token=${token}`,
+                ),
                 operationId: p.operationId,
               });
               await this.pool.query(
@@ -460,7 +463,13 @@ export class Engine {
           await this.boss.fail(this.queue, job.id, {
             code: "PROCESSING_FAILED",
           });
-          console.error("WORK_FAILED", job.id);
+          // The kind and a code only: an error message can carry an address.
+          console.error(
+            "WORK_FAILED",
+            job.id,
+            `kind=${parsed?.kind ?? "unknown"}`,
+            `reason=${failureCode(e)}`,
+          );
         }
       }),
     );

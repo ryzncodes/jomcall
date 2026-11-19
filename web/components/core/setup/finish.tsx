@@ -127,12 +127,12 @@ export function FinishStage({
         <p>
           {tested
             ? w(
-                "Your draft answered a test question. Publishing freezes this version; channels stay disconnected.",
-                "Draf anda telah menjawab soalan ujian. Menerbitkan akan membekukan versi ini; saluran kekal tidak disambungkan.",
+                "Your agent answered a test question. Publishing makes this the version customers get.",
+                "Ejen anda telah menjawab soalan ujian. Menerbitkan menjadikan ini versi yang pelanggan terima.",
               )
             : w(
-                "Start a test on the current draft and ask one question. Publish opens after the agent answers.",
-                "Mulakan ujian pada draf semasa dan tanya satu soalan. Butang Terbitkan boleh ditekan selepas ejen menjawab.",
+                "Press Start new test above and ask one question. Publish opens after the agent answers.",
+                "Tekan Mulakan ujian baharu di atas dan tanya satu soalan. Butang Terbitkan boleh ditekan selepas ejen menjawab.",
               )}
         </p>
         <Notice error={error ?? baselineError} />
