@@ -121,6 +121,17 @@ export function PlanCard({
           : p.phoneNumbers
             ? w(`${p.phoneNumbers} phone numbers`, `${p.phoneNumbers} nombor telefon`)
             : w("No phone number", "Tiada nombor telefon")}
+        {p.phoneNumbers > 0 && (
+          <>
+            {" "}
+            <small className="core-plan-note">
+              {w(
+                "(not open yet: we email you when yours is ready)",
+                "(belum dibuka: kami e-mel anda apabila nombor anda sedia)",
+              )}
+            </small>
+          </>
+        )}
       </li>
       {p.includedVoiceSeconds > 0 &&
         (used === undefined ? (

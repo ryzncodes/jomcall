@@ -23,7 +23,9 @@ import { Brand, Controls, useExperience } from "./experience";
 import { CallDemo, Wave } from "./call-demo";
 import { MiniWorkspace } from "./workspace";
 export function Marketing() {
-  const { t, href } = useExperience();
+  const { t, href, mode } = useExperience();
+  // The mock preview has no accounts: it opens the sample app instead.
+  const real = mode !== "mock";
   const [menu, setMenu] = useState(false);
   const [business, setBusiness] = useState<"salon" | "clinic" | "workshop">(
     "salon",
@@ -49,11 +51,21 @@ export function Marketing() {
             <a href="#control" onClick={() => setMenu(false)}>
               {t.navControl}
             </a>
+            <a href={href("/pricing")}>{t.remaining.pricing}</a>
+            {real && <a href={href("/login")}>{t.remaining.login}</a>}
+            {real && (
+              <a className="navigation-start" href={href("/signup")}>
+                {t.startFree}
+              </a>
+            )}
           </nav>
           <div className="header-actions">
             <Controls />
-            <a className="button button-small button-dark" href={href("/app")}>
-              {t.openApp}
+            <a
+              className="button button-small button-dark"
+              href={href(real ? "/signup" : "/app")}
+            >
+              {real ? t.startFree : t.openApp}
               <ArrowUpRight size={16} />
             </a>
             <button
@@ -83,10 +95,22 @@ export function Marketing() {
             </div>
             <div className="hero-intro">
               <p>{t.intro}</p>
-              <a className="button button-dark" href="#demo">
-                {t.try}
-                <ArrowUpRight size={20} />
-              </a>
+              {real ? (
+                <>
+                  <a className="button button-dark" href={href("/signup")}>
+                    {t.startFree}
+                    <ArrowUpRight size={20} />
+                  </a>
+                  <a className="text-link hero-second" href="#demo">
+                    {t.try}
+                  </a>
+                </>
+              ) : (
+                <a className="button button-dark" href="#demo">
+                  {t.try}
+                  <ArrowUpRight size={20} />
+                </a>
+              )}
               <small>{t.heroNote}</small>
             </div>
           </div>

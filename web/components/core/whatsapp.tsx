@@ -24,6 +24,7 @@ import {
   Loading,
 } from "./state";
 import { Field } from "./field";
+import { PRIVACY_CONTACT_EMAIL } from "@/lib/operator";
 
 // Why a number check failed, in words. Codes with no entry are shown as the
 // code itself, so nothing is hidden.
@@ -310,6 +311,42 @@ function ChannelForm({
   return (
     <form className="core-panel core-form" onSubmit={save}>
       <h2>{w("Business number", "Nombor perniagaan")}</h2>
+      {!channel && (
+        <details className="core-help">
+          <summary>
+            {w(
+              "Where do I find these three values?",
+              "Di mana saya dapatkan tiga nilai ini?",
+            )}
+          </summary>
+          <ol className="core-steps">
+            <li>
+              {w(
+                "You need a WhatsApp Business Platform number in your own Meta Business account. A number used in the WhatsApp Business phone app must be moved there first.",
+                "Anda perlukan nombor WhatsApp Business Platform dalam akaun Meta Business anda sendiri. Nombor yang digunakan dalam aplikasi telefon WhatsApp Business perlu dipindahkan ke sana dahulu.",
+              )}
+            </li>
+            <li>
+              {w(
+                "In Meta Business Suite, open WhatsApp Manager, then Phone numbers. The Phone number ID and the WhatsApp Business Account ID are shown there.",
+                "Dalam Meta Business Suite, buka WhatsApp Manager, kemudian Phone numbers. Phone number ID dan WhatsApp Business Account ID dipaparkan di situ.",
+              )}
+            </li>
+            <li>
+              {w(
+                "In Business settings, create a System user, give it your WhatsApp account, and generate a token with the two WhatsApp permissions. Paste that token here.",
+                "Dalam Business settings, cipta System user, berikan akaun WhatsApp anda kepadanya, dan jana token dengan dua kebenaran WhatsApp. Tampal token itu di sini.",
+              )}
+            </li>
+          </ol>
+          <p className="core-hint">
+            {w(
+              `Stuck? Email ${PRIVACY_CONTACT_EMAIL} and we will connect it with you.`,
+              `Tersekat? E-mel ${PRIVACY_CONTACT_EMAIL} dan kami akan sambungkannya bersama anda.`,
+            )}
+          </p>
+        </details>
+      )}
       <div className="core-two-columns">
         <Field
           label={w("Phone number ID", "ID nombor telefon")}
