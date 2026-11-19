@@ -817,3 +817,7 @@ Branch `fix/invitation-and-test-panel`, pull request open. The invitation token 
 ## 2026-11-19: WhatsApp Embedded Signup built (not merged, never run against Meta)
 
 Branch `feat/whatsapp-embedded-signup`. "Connect WhatsApp" on the settings page; code sealed by web, exchanged by the agent; a working number stays connected during a reconnect. Checks pass (core 1065 of 1065). Owner steps to try it: `infra/hosted/RUNBOOK.md` step 15 (configuration ID in Meta, migration, agent settings, web settings). Owner steps on Meta still open: Tech Provider onboarding, two screen recordings, App Review. Engine on staging was rebuilt on `9e0af3f` the same day (agent and voice still on `66a5b3e`).
+
+## 2026-11-19: Embedded Signup merged; staging migrated
+
+Pull request #50 merged as `b52a6e9`. Migration `20261119100000_whatsapp_embedded_signup.sql` is on the staging database (applied before the merge). Web deployed; WhatsApp settings page checked, number still connected. Still to do before the button appears: Embedded Signup configuration in the Meta app, `WHATSAPP_APP_ID` and `WHATSAPP_APP_SECRET` in the agent's settings with an agent rebuild, `WHATSAPP_APP_ID` and `WHATSAPP_SIGNUP_CONFIG_ID` in Vercel (RUNBOOK step 15).
