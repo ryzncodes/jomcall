@@ -825,3 +825,21 @@ Pull request #50 merged as `b52a6e9`. Migration `20261119100000_whatsapp_embedde
 ## 2026-11-19: Embedded Signup tried against Meta; template submit built
 
 Staging has the signup settings and the button works up to Meta's gate: "can't onboard customers" until App Review passes. Tech Provider onboarding started by the owner (terms accepted). Staff reply through Meta works. Pull request #53 adds "Submit to WhatsApp" for templates (not merged; RUNBOOK step 16). Next: apply its migration, merge, rebuild the agent, try it on staging; then record the two App Review videos and submit (drafts in `drafts/meta-app-review.md`). Owed code: token refresh for the 60-day tokens; a better hint when Meta's "Continue as" shortcut returns no number.
+
+## 2026-11-19: Twilio number on staging, plan only
+
+Branch `docs/twilio-staging-plan`. Document only; nothing bought, changed or deployed.
+
+**Changed**
+- `docs/research/twilio-staging-plan.md`: owner checklist for one Twilio +60 number on hosted staging, with verified and unverified facts, costs, test script and risks.
+
+**Found**
+- Staging Compose has no `livekit/sip` and no Redis, so there is no SIP address to point Twilio at. Needs a build and an owner-approved deploy.
+- `npm run telephony:sip-config` refuses any database but the local one; for staging the two files are written by hand.
+- The Phone numbers menu entry is hidden until a number exists; the first number is added at `/app/phone-numbers` directly (not checked in the hosted app).
+
+**Not verified**
+- Whether a Twilio trial can buy the number or carry trunk calls; TLS and SRTP in self-hosted LiveKit SIP; number formats Twilio sends; enforcement of `allowed_addresses` on a self-hosted server.
+
+**Next**
+- Owner picks self-hosted SIP or LiveKit Cloud and records the approvals in `AGENTS.md`; then the Compose, Redis and SIP change is built on its own branch.
