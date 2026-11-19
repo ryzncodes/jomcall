@@ -3,7 +3,9 @@
 // that must stop a send has to be enforced before the provider is reached.
 import { randomUUID } from "node:crypto";
 import type {
+  CodeExchange,
   NumberCheck,
+  RegisterResult,
   ProviderTemplate,
   SendOutcome,
   SendTarget,
@@ -32,6 +34,14 @@ export type FakeProvider = WhatsAppProvider & {
   subscribed: { wabaId: string }[];
   // subscribeApp fails with this reason until it is called with undefined.
   failSubscribe(reason: string | undefined, detail?: string): void;
+  // Every code handed to exchangeSignupCode, in order.
+  exchanged: string[];
+  // exchangeSignupCode fails with this reason until called with undefined.
+  failExchange(reason: string | undefined): void;
+  // Every registerNumber call, in order. The token is never recorded.
+  registered: { phoneNumberId: string; pin: string }[];
+  // registerNumber fails with this reason until called with undefined.
+  failRegister(reason: string | undefined, detail?: string): void;
   // What listTemplates answers from now on (default: an empty list).
   setTemplates(list: ProviderTemplate[]): void;
   // listTemplates fails with this reason until setTemplates is called.
@@ -48,6 +58,11 @@ export function createFakeProvider(): FakeProvider {
   let subscribeReason: string | undefined;
   const subscribed: { wabaId: string }[] = [];
   const sent: FakeSend[] = [];
+  const exchanged: string[] = [];
+  const registered: { phoneNumberId: string; pin: string }[] = [];
+  let exchangeReason: string | undefined;
+  let registerReason: string | undefined;
+  let registerDetail: string | undefined;
   function settle(
     entry:
       | { kind: "text"; body: string; to: string; phoneNumberId: string }
@@ -75,6 +90,31 @@ export function createFakeProvider(): FakeProvider {
     name: "fake",
     sent,
     subscribed,
+    exchanged,
+    registered,
+    failExchange(reason) {
+      exchangeReason = reason;
+    },
+    failRegister(reason, detail) {
+      registerReason = reason;
+      registerDetail = detail;
+    },
+    async exchangeSignupCode(input): Promise<CodeExchange> {
+      exchanged.push(input.code);
+      return exchangeReason
+        ? { ok: false, reason: exchangeReason }
+        : { ok: true, accessToken: "fake-signup-token" };
+    },
+    async registerNumber(input): Promise<RegisterResult> {
+      registered.push({ phoneNumberId: input.phoneNumberId, pin: input.pin });
+      return registerReason
+        ? {
+            ok: false,
+            reason: registerReason,
+            ...(registerDetail ? { detail: registerDetail } : {}),
+          }
+        : { ok: true };
+    },
     failNext(outcome) {
       next = outcome;
     },

@@ -15,7 +15,8 @@ export const READER_ONE_READ_ROW =
   "Only one of two readings found this row. Please check.";
 export const READER_RENAMED_ROW =
   "The two readings named this row differently. Please check the name.";
-export const READER_FACT_DISAGREE_PREFIX = "Two readings gave different answers";
+export const READER_FACT_DISAGREE_PREFIX =
+  "Two readings gave different answers";
 export const READER_ONE_READ_FACT =
   "Only one of two readings found this answer. Please check.";
 export const READER_READ_ONCE =
@@ -27,7 +28,8 @@ export const READER_NO_PRICE_AMOUNT = "no price";
 export const READER_NO_PRICE = "No price was found for this item.";
 export const READER_BAD_FIELD = "Part of this row could not be read.";
 export const READER_PRICE_UNREAD = "The price could not be read.";
-export const READER_PRICE_NOT_WHOLE = "The price was not a whole number of sen.";
+export const READER_PRICE_NOT_WHOLE =
+  "The price was not a whole number of sen.";
 export const READER_PRICE_RANGE = "The price is outside the allowed range.";
 export const READER_ROW_UNSURE = "JomCall was not sure about this row.";
 export const READER_FACT_BAD_FIELD = "Part of this value could not be read.";

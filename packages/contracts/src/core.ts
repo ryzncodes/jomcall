@@ -53,6 +53,7 @@ import {
 import {
   channelRevision,
   channelSave,
+  channelSignup,
   conversationList,
   staffReply,
   templateCreate,
@@ -474,7 +475,10 @@ export const commands = {
     "/agents/:id/publish",
     id.extend({
       ...revision,
-      changeToken: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+      changeToken: z
+        .string()
+        .regex(/^[a-f0-9]{64}$/)
+        .optional(),
     }),
     out<Version>(),
   ),
@@ -743,6 +747,12 @@ export const commands = {
     "PUT",
     "/channels/whatsapp",
     channelSave,
+    out<WhatsAppChannel>(),
+  ),
+  connectWhatsAppSignup: route(
+    "POST",
+    "/channels/whatsapp/signup",
+    channelSignup,
     out<WhatsAppChannel>(),
   ),
   disconnectWhatsApp: route(

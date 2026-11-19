@@ -10,6 +10,7 @@ import {
 import {
   channelRevision,
   channelSave,
+  channelSignup,
   conversationList,
   providerStatusMap,
   providerStatusNotFound,
@@ -22,6 +23,7 @@ import { command, audit } from "../../../db/src/receipts.ts";
 import { manager, namespace } from "../authorization.ts";
 import {
   sealCredentials,
+  signupCoexistence,
   whatsappReadiness,
 } from "../../../whatsapp/src/index.ts";
 import { decideSend, windowOpen } from "./policy.ts";
@@ -34,7 +36,7 @@ import { cleanMediaFacts, mediaFactsSql } from "./media-sql.ts";
 
 type Env = Record<string, string | undefined>;
 const channelColumns =
-  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason,recheck_wanted,last_check_failed_reason,last_check_failed_at";
+  "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason,recheck_wanted,last_check_failed_reason,last_check_failed_at,signup_pending";
 const templateColumns =
   "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff";
 
@@ -225,7 +227,10 @@ export async function whatsappRoute(
     const parsed = channelSave.parse(body);
     // A pasted token often carries a stray space or newline. A token of only
     // whitespace counts as blank: the saved one is kept.
-    const v = { ...parsed, accessToken: parsed.accessToken?.trim() || undefined };
+    const v = {
+      ...parsed,
+      accessToken: parsed.accessToken?.trim() || undefined,
+    };
     const ready = whatsappReadiness(env);
     if (!ready.configured) throw new AppError("WHATSAPP_NOT_CONFIGURED", 503);
     if (
@@ -291,7 +296,7 @@ export async function whatsappRoute(
               `update app.whatsapp_channel set
              state=case when state='connected' and phone_number_id is not distinct from $2 then 'connected' else 'pending' end,
              recheck_wanted=(state='connected' and phone_number_id is not distinct from $2),
-             state_reason=null,last_check_failed_reason=null,last_check_failed_at=null,phone_number_id=$2,waba_id=$3,
+             signup_pending=false,state_reason=null,last_check_failed_reason=null,last_check_failed_at=null,phone_number_id=$2,waba_id=$3,
              agent_enabled=$4,revision=revision+1,updated_at=now()${sealed ? ",credentials=$5,credentials_set_at=now()" : ""} where org_id=$1 returning ${channelColumns}`,
               [
                 ctx.orgId,
@@ -316,6 +321,93 @@ export async function whatsappRoute(
     );
   }
 
+  // Embedded Signup: the owner finished Meta's popup. The one-time code is
+  // sealed like a token and the agent process exchanges it within seconds.
+  // Always a full check: the token is new even when the number is the same.
+  if (path === "/channels/whatsapp/signup" && method === "POST") {
+    manager(ctx);
+    const v = channelSignup.parse(body);
+    const ready = whatsappReadiness(env);
+    if (!ready.configured) throw new AppError("WHATSAPP_NOT_CONFIGURED", 503);
+    // The popup offers coexistence only when the switch is on; a request
+    // that claims it otherwise is refused, because a number wrongly treated
+    // as staying on the app would never be registered.
+    const coexistence = v.coexistence === true;
+    if (coexistence && !signupCoexistence(env))
+      throw new AppError("COEXISTENCE_OFF", 422);
+    const { code, ...logged } = v;
+    // The receipt hash never covers the code.
+    return command(
+      tx,
+      ctx,
+      key,
+      "connectWhatsAppSignup",
+      logged,
+      async () => {
+        const existing = await loadChannel(tx, ctx.orgId, true);
+        if (existing && existing.revision !== v.expectedRevision)
+          throw new AppError("CONFLICT", 409);
+        // The fake provider runs without the key and never reads the code.
+        const sealed =
+          ready.provider === "cloud"
+            ? sealCredentials(
+                { signupCode: code },
+                env.WHATSAPP_CREDENTIALS_KEY,
+                ctx.orgId,
+              )
+            : null;
+        const agent = (
+          await tx.query(
+            "select id,location_id from app.agent where org_id=$1 order by created_at,id limit 1",
+            [ctx.orgId],
+          )
+        ).rows[0];
+        if (!agent) throw new AppError("NOT_FOUND", 404);
+        const row = (
+          existing
+            ? await tx.query(
+                `update app.whatsapp_channel set state='pending',recheck_wanted=false,signup_pending=true,signup_coexistence=$5,
+             state_reason=null,last_check_failed_reason=null,last_check_failed_at=null,phone_number_id=$2,waba_id=$3,
+             agent_enabled=$4,credentials=$6,credentials_set_at=null,revision=revision+1,updated_at=now() where org_id=$1 returning ${channelColumns}`,
+                [
+                  ctx.orgId,
+                  v.phoneNumberId,
+                  v.wabaId,
+                  v.agentEnabled,
+                  coexistence,
+                  sealed,
+                ],
+              )
+            : await tx.query(
+                `insert into app.whatsapp_channel(org_id,namespace,location_id,agent_id,state,phone_number_id,waba_id,credentials,agent_enabled,signup_pending,signup_coexistence)
+             values($1,$2,$3,$4,'pending',$5,$6,$7,$8,true,$9) returning ${channelColumns}`,
+                [
+                  ctx.orgId,
+                  namespace(),
+                  agent.location_id,
+                  agent.id,
+                  v.phoneNumberId,
+                  v.wabaId,
+                  sealed,
+                  v.agentEnabled,
+                  coexistence,
+                ],
+              )
+        ).rows[0];
+        await audit(
+          tx,
+          ctx,
+          "whatsapp.channel_signup",
+          "whatsapp_channel",
+          row.id,
+          { coexistence },
+        );
+        return { ref: { id: row.id }, data: row };
+      },
+      async () => loadChannel(tx, ctx.orgId),
+    );
+  }
+
   if (path === "/channels/whatsapp/disconnect" && method === "POST") {
     manager(ctx);
     const v = channelRevision.parse(body);
@@ -332,7 +424,7 @@ export async function whatsappRoute(
           throw new AppError("CONFLICT", 409);
         const row = (
           await tx.query(
-            `update app.whatsapp_channel set state='not_connected',state_reason=null,recheck_wanted=false,last_check_failed_reason=null,last_check_failed_at=null,credentials=null,credentials_set_at=null,revision=revision+1,updated_at=now() where org_id=$1 returning ${channelColumns}`,
+            `update app.whatsapp_channel set state='not_connected',state_reason=null,recheck_wanted=false,signup_pending=false,last_check_failed_reason=null,last_check_failed_at=null,credentials=null,credentials_set_at=null,revision=revision+1,updated_at=now() where org_id=$1 returning ${channelColumns}`,
             [ctx.orgId],
           )
         ).rows[0];

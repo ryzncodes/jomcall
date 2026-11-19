@@ -31,8 +31,11 @@ import {
   whatsappChannelNote,
   type NoticeKind,
 } from "../../../packages/domain/src/whatsapp/texts.ts";
+import { randomInt } from "node:crypto";
 import {
   openCredentials,
+  openSignupCode,
+  sealCredentials,
   whatsappMode,
   type SealedCredentials,
   type SendOutcome,
@@ -42,6 +45,9 @@ import {
 import { runTextBrain } from "../agent/brain.ts";
 
 type Env = Record<string, string | undefined>;
+// Seals the fake provider's made-up token so a fake-mode channel has the
+// same shape as a real one. Not a secret: nothing real is ever sealed with it.
+const fakeSealKey = "0".repeat(64);
 export type WhatsAppWorkerOptions = {
   provider: WhatsAppProvider;
   // Tests inject a model; otherwise the configured provider is used.
@@ -177,20 +183,58 @@ export class WhatsAppWorker {
     if (!v) return false;
     let result: { ok: boolean; reason?: string; displayPhone?: string | null };
     let accessToken = "";
-    try {
-      accessToken = this.token(v.credentials, v.orgId);
-      const check = await this.options.provider.verifyNumber({
-        phoneNumberId: v.phoneNumberId,
-        accessToken,
-      });
-      result = check;
-      if (!check.ok)
-        this.logCheckFailed("verify", check.reason, check.reason, check.detail);
-    } catch (e) {
-      const reason = code(e, "VERIFICATION_FAILED");
-      result = { ok: false, reason };
-      this.logCheckFailed("verify", reason, reason);
+    const cloud = whatsappMode(this.env) === "cloud";
+    // Embedded Signup: the stored envelope holds Meta's one-time code, not a
+    // token yet. A code that cannot be exchanged is spent: the channel ends
+    // failed and the owner connects again.
+    let exchangeFailed: string | null = null;
+    if (v.signupPending) {
+      try {
+        const exchange = await this.options.provider.exchangeSignupCode({
+          code: cloud
+            ? openSignupCode(
+                v.credentials,
+                this.env.WHATSAPP_CREDENTIALS_KEY,
+                v.orgId,
+              )
+            : "fake-code",
+        });
+        if (exchange.ok) accessToken = exchange.accessToken;
+        else {
+          exchangeFailed = exchange.reason;
+          this.logCheckFailed(
+            "exchange",
+            exchange.reason,
+            exchange.reason,
+            exchange.detail,
+          );
+        }
+      } catch (e) {
+        exchangeFailed = code(e, "SIGNUP_CODE_REJECTED");
+        this.logCheckFailed("exchange", exchangeFailed, exchangeFailed);
+      }
     }
+    if (exchangeFailed) result = { ok: false, reason: exchangeFailed };
+    else
+      try {
+        if (!v.signupPending) accessToken = this.token(v.credentials, v.orgId);
+        const check = await this.options.provider.verifyNumber({
+          phoneNumberId: v.phoneNumberId,
+          accessToken,
+        });
+        result = check;
+        if (!check.ok)
+          this.logCheckFailed(
+            "verify",
+            check.reason,
+            check.reason,
+            check.detail,
+          );
+      } catch (e) {
+        const reason = code(e, "VERIFICATION_FAILED");
+        result = { ok: false, reason };
+        this.logCheckFailed("verify", reason, reason);
+      }
     // Meta sends no event for the account until the app is subscribed to it.
     // Only a verified number is subscribed, and the channel is connected
     // only when both steps succeed. Repeating the call is harmless. An
@@ -224,11 +268,64 @@ export class WhatsAppWorker {
         this.logCheckFailed("subscribe", raw, raw);
       }
     }
+    // Embedded Signup, last step: register the number for the Cloud API and
+    // hand the sealed token back with the result. A number that stays on the
+    // WhatsApp Business app is already registered and must not be registered
+    // again. A failed registration does not undo the connection (a number
+    // connected before is already registered, with a PIN JomCall may not
+    // know): the channel connects and the settings page shows a warning.
+    let signup: { credentials?: unknown; warning?: string } = {};
+    if (v.signupPending && result.ok) {
+      let pin: string | undefined;
+      if (!v.coexistence) {
+        pin = String(randomInt(0, 1_000_000)).padStart(6, "0");
+        try {
+          const reg = await this.options.provider.registerNumber({
+            phoneNumberId: v.phoneNumberId,
+            accessToken,
+            pin,
+          });
+          if (!reg.ok) {
+            pin = undefined;
+            signup.warning =
+              reg.reason === "PROVIDER_UNREACHABLE"
+                ? reg.reason
+                : "REGISTER_FAILED";
+            this.logCheckFailed(
+              "register",
+              signup.warning,
+              reg.reason,
+              reg.detail,
+            );
+          }
+        } catch (e) {
+          pin = undefined;
+          signup.warning = "REGISTER_FAILED";
+          this.logCheckFailed(
+            "register",
+            "REGISTER_FAILED",
+            code(e, "REGISTER_FAILED"),
+          );
+        }
+      }
+      try {
+        // The fake provider runs without the key; its token is not a secret.
+        signup.credentials = sealCredentials(
+          { accessToken, ...(pin ? { pin } : {}) },
+          cloud ? this.env.WHATSAPP_CREDENTIALS_KEY : fakeSealKey,
+          v.orgId,
+        );
+      } catch (e) {
+        result = { ok: false, reason: code(e, "VERIFICATION_FAILED") };
+        signup = {};
+      }
+    }
     await this.op("verify_result", v.id, null, {
       revision: v.revision,
       ok: result.ok,
       reason: result.reason,
       displayPhone: result.displayPhone,
+      ...signup,
     });
     return true;
   }
@@ -238,7 +335,7 @@ export class WhatsAppWorker {
   // are checked here, so nothing else (token, number, text, names) can get
   // into the line, and no ids are logged.
   private logCheckFailed(
-    step: "verify" | "subscribe",
+    step: "exchange" | "verify" | "subscribe" | "register",
     stored: string,
     raw: string,
     detail?: string,
@@ -428,7 +525,11 @@ export class WhatsAppWorker {
     return { ...answer, model: config?.identity ?? "test" };
   }
 
-  private async turnOp(action: string, turn: { id: string; lease_token: string }, data: unknown) {
+  private async turnOp(
+    action: string,
+    turn: { id: string; lease_token: string },
+    data: unknown,
+  ) {
     const v = await this.op(action, turn.id, turn.lease_token, data);
     // A wrong or expired lease answers null: the turn was taken over. (The gap
     // write answers {id} on success, so null means a lost lease there too.)

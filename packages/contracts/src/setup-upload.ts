@@ -21,7 +21,8 @@ const codePoints = (s: string) => [...s].length;
 // isolate characters, which could make a file name display as another.
 // Shared with WhatsApp media file names, which are cleaned rather than
 // refused (cleanFileName).
-const unsafeNameChars = "\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069";
+const unsafeNameChars =
+  "\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069";
 const plain = new RegExp(`^[^${unsafeNameChars}]*$`);
 const unsafeName = new RegExp(`[${unsafeNameChars}]`, "g");
 // The name without those characters, or undefined when nothing but

@@ -8,9 +8,12 @@
 // This is a hosted service. The client refuses to exist unless
 // JOMCALL_WHATSAPP_PROVIDER=cloud, and only the agent process may create it.
 // It never logs a token, a phone number or a message body.
+import { metaGraphVersion } from "../../contracts/src/whatsapp.ts";
 import {
   whatsappMode,
+  type CodeExchange,
   type NumberCheck,
+  type RegisterResult,
   type ProviderTemplate,
   type SendOutcome,
   type SendTarget,
@@ -20,9 +23,8 @@ import {
   type WhatsAppProvider,
 } from "./provider.ts";
 
-// Latest Graph API version on the changelog page on 2026-11-14 (released
-// 2026-11-04). The only place the version is named.
-export const graphVersion = "v27.0";
+// Named once, in the contracts, because the browser's signup popup needs it.
+export const graphVersion = metaGraphVersion;
 const graphOrigin = "https://graph.facebook.com";
 
 // Template listing limits. A longer list is refused as a whole, because the
@@ -74,8 +76,91 @@ export function createCloudProvider(
     return readSendResponse(response);
   }
 
+  const env = options.env ?? process.env;
+
   return {
     name: "cloud",
+    // UNCONFIRMED AGAINST META: written from Meta's Embedded Signup pages as
+    // read on 2026-11-19 (onboarding customers as a Tech Provider). GET
+    // /oauth/access_token with client_id, client_secret and code answers
+    // {"access_token": "...", "token_type": "bearer"}. The app secret
+    // travels in the query string because that is the documented shape; this
+    // client never logs a URL. The token's expiry is not documented.
+    async exchangeSignupCode(input): Promise<CodeExchange> {
+      const appId = env.WHATSAPP_APP_ID?.trim() ?? "",
+        secret = env.WHATSAPP_APP_SECRET ?? "";
+      if (!/^[0-9]{5,30}$/.test(appId) || secret.length < 16)
+        return { ok: false, reason: "SIGNUP_NOT_CONFIGURED" };
+      if (!input.code || input.code.length > 2048)
+        return { ok: false, reason: "SIGNUP_CODE_REJECTED" };
+      const query = new URLSearchParams({
+        client_id: appId,
+        client_secret: secret,
+        code: input.code,
+      });
+      let response: Response;
+      try {
+        response = await send(
+          `${graphOrigin}/${graphVersion}/oauth/access_token?${query}`,
+          { signal: AbortSignal.timeout(timeoutMs) },
+        );
+      } catch {
+        return { ok: false, reason: "PROVIDER_UNREACHABLE" };
+      }
+      const body = await readJson(response);
+      if (!response.ok) {
+        if (response.status >= 500 && !errorCode(body))
+          return { ok: false, reason: "PROVIDER_UNREACHABLE" };
+        // Any refusal means the code cannot be used: the owner starts again.
+        return { ok: false, reason: "SIGNUP_CODE_REJECTED", ...detailOf(body) };
+      }
+      const token = body?.access_token;
+      return typeof token === "string" &&
+        token.length > 0 &&
+        token.length <= 4096
+        ? { ok: true, accessToken: token }
+        : { ok: false, reason: "SIGNUP_CODE_REJECTED" };
+    },
+    // UNCONFIRMED AGAINST META: POST /<PHONE_NUMBER_ID>/register with
+    // {"messaging_product":"whatsapp","pin":"<6 digits>"} answers
+    // {"success":true} (same source and date as the exchange above).
+    async registerNumber(input): Promise<RegisterResult> {
+      if (!valid(input) || !/^[0-9]{6}$/.test(input.pin))
+        return { ok: false, reason: "INVALID_TARGET" };
+      let response: Response;
+      try {
+        response = await send(
+          `${graphOrigin}/${graphVersion}/${input.phoneNumberId}/register`,
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer " + input.accessToken,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              pin: input.pin,
+            }),
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+      } catch {
+        return { ok: false, reason: "PROVIDER_UNREACHABLE" };
+      }
+      const body = await readJson(response);
+      if (!response.ok)
+        return {
+          ok: false,
+          reason:
+            response.status >= 500 && !errorCode(body)
+              ? "PROVIDER_UNREACHABLE"
+              : "REGISTER_FAILED",
+          ...detailOf(body),
+        };
+      return body?.success === true
+        ? { ok: true }
+        : { ok: false, reason: "REGISTER_FAILED" };
+    },
     sendText(target, body) {
       return post(target, {
         type: "text",
@@ -164,7 +249,9 @@ export function createCloudProvider(
         return {
           ok: false,
           reason:
-            response.status >= 500 ? "PROVIDER_UNREACHABLE" : "SUBSCRIBE_FAILED",
+            response.status >= 500
+              ? "PROVIDER_UNREACHABLE"
+              : "SUBSCRIBE_FAILED",
         };
       }
       return body?.success === true
@@ -230,7 +317,10 @@ export function createCloudProvider(
           return { ok: false, reason: "TEMPLATE_LIST_TOO_LONG" };
         const cursor = body?.paging?.cursors?.after;
         if (!body?.paging?.next) return { ok: true, templates };
-        if (typeof cursor !== "string" || !/^[A-Za-z0-9_=-]{1,512}$/.test(cursor))
+        if (
+          typeof cursor !== "string" ||
+          !/^[A-Za-z0-9_=-]{1,512}$/.test(cursor)
+        )
           return { ok: false, reason: "TEMPLATE_LIST_INVALID" };
         after = cursor;
       }

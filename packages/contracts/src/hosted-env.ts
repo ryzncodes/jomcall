@@ -39,7 +39,9 @@ export type Setting = {
   services: Service[];
   secret: boolean;
   // Absent: always required. A function: required only when it returns true.
-  required?: false | ((env: Env) => boolean);
+  // The service is passed for a setting two services need for different
+  // reasons.
+  required?: false | ((env: Env, service: Service) => boolean);
   description: string;
 };
 
@@ -142,11 +144,37 @@ export const SETTINGS: Setting[] = [
   },
   {
     name: "WHATSAPP_APP_SECRET",
-    services: ["web"],
+    services: ["web", "agent"],
     secret: true,
-    required: whatsappOn,
+    // The agent needs it only when it exchanges signup codes.
+    required: (env, service) =>
+      whatsappOn(env) && (service === "web" || !!env.WHATSAPP_APP_ID?.trim()),
     description:
-      "Meta app secret; checks webhook signatures (when WhatsApp is on)",
+      "Meta app secret; web checks webhook signatures (when WhatsApp is on); the agent needs it only with WHATSAPP_APP_ID, to exchange an Embedded Signup code",
+  },
+  {
+    name: "WHATSAPP_APP_ID",
+    services: ["web", "agent"],
+    secret: false,
+    required: false,
+    description:
+      "Optional Meta app ID, digits; with WHATSAPP_SIGNUP_CONFIG_ID it offers the Connect WhatsApp button (cloud provider only); the agent uses it to exchange the signup code",
+  },
+  {
+    name: "WHATSAPP_SIGNUP_CONFIG_ID",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional Facebook Login for Business configuration ID for Embedded Signup, digits",
+  },
+  {
+    name: "WHATSAPP_SIGNUP_COEXISTENCE",
+    services: ["web"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: 1 lets a business keep its number on the WhatsApp Business app when it connects (off by default)",
   },
   {
     name: "WHATSAPP_VERIFY_TOKEN",
@@ -672,7 +700,7 @@ export function readiness(service: Service, env: Env): Finding[] {
         ? true
         : s.required === false
           ? false
-          : s.required(hostedEnv);
+          : s.required(hostedEnv, service);
     if (needed && !env[s.name]?.trim())
       findings.push({ name: s.name, code: "MISSING" });
   }

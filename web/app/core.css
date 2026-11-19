@@ -2661,3 +2661,16 @@
 .core-test-conversation {
   scroll-margin-top: 90px;
 }
+
+/* WhatsApp settings: the pasted-values form behind the signup button. */
+.core-advanced {
+  margin: 18px 0;
+}
+.core-advanced > summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--secondary);
+  font-size: 14px;
+}

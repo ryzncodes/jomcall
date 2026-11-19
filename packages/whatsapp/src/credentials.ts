@@ -10,7 +10,14 @@ export type SealedCredentials = {
   tag: string;
   data: string;
 };
-export type ChannelCredentials = { accessToken: string };
+// `pin` is the six-digit two-step verification PIN JomCall chose when it
+// registered a number connected through Embedded Signup. Meta asks for it
+// when the number is registered again.
+export type ChannelCredentials = { accessToken: string; pin?: string };
+// What the web process seals when an owner finishes Embedded Signup: Meta's
+// one-time code. The agent process exchanges it for a token within minutes
+// and replaces this envelope with ChannelCredentials.
+export type SignupCredentials = { signupCode: string };
 
 function key(hex: string | undefined) {
   if (!/^[a-f0-9]{64}$/.test(hex ?? ""))
@@ -19,7 +26,7 @@ function key(hex: string | undefined) {
 }
 
 export function sealCredentials(
-  value: ChannelCredentials,
+  value: ChannelCredentials | SignupCredentials,
   keyHex: string | undefined,
   orgId: string,
 ): SealedCredentials {
@@ -38,11 +45,11 @@ export function sealCredentials(
   };
 }
 
-export function openCredentials(
+function open(
   sealed: SealedCredentials,
   keyHex: string | undefined,
   orgId: string,
-): ChannelCredentials {
+): Record<string, unknown> {
   if (sealed?.version !== 1) throw Error("WHATSAPP_CREDENTIALS_INVALID");
   try {
     const decipher = createDecipheriv(
@@ -58,12 +65,39 @@ export function openCredentials(
         decipher.final(),
       ]).toString("utf8"),
     );
-    if (typeof value?.accessToken !== "string" || !value.accessToken)
-      throw Error();
-    return { accessToken: value.accessToken };
+    if (!value || typeof value !== "object") throw Error();
+    return value;
   } catch (e) {
     if (e instanceof Error && e.message === "WHATSAPP_CREDENTIALS_KEY_REQUIRED")
       throw e;
     throw Error("WHATSAPP_CREDENTIALS_INVALID");
   }
+}
+
+export function openCredentials(
+  sealed: SealedCredentials,
+  keyHex: string | undefined,
+  orgId: string,
+): ChannelCredentials {
+  const value = open(sealed, keyHex, orgId);
+  if (typeof value.accessToken !== "string" || !value.accessToken)
+    throw Error("WHATSAPP_CREDENTIALS_INVALID");
+  return {
+    accessToken: value.accessToken,
+    ...(typeof value.pin === "string" && /^[0-9]{6}$/.test(value.pin)
+      ? { pin: value.pin }
+      : {}),
+  };
+}
+
+// The one-time code of an Embedded Signup that has not been exchanged yet.
+export function openSignupCode(
+  sealed: SealedCredentials,
+  keyHex: string | undefined,
+  orgId: string,
+): string {
+  const value = open(sealed, keyHex, orgId);
+  if (typeof value.signupCode !== "string" || !value.signupCode)
+    throw Error("WHATSAPP_CREDENTIALS_INVALID");
+  return value.signupCode;
 }

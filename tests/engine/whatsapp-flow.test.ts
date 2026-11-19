@@ -10,6 +10,7 @@ import { webhookPost } from "../../web/lib/server/whatsapp-webhook.ts";
 import {
   buildInboundText,
   buildStatus,
+  openCredentials,
   signBody,
 } from "../../packages/whatsapp/src/index.ts";
 import { createFakeProvider } from "../../packages/whatsapp/src/fake.ts";
@@ -1844,6 +1845,157 @@ test("only the agent login role can run the number check function", async () => 
       await web.end();
     }
   } finally {
+    await f.close();
+  }
+});
+
+test("Embedded Signup connects a number through the agent process", async (t) => {
+  const f = await setup({ token: true });
+  const coexistenceBefore = process.env.WHATSAPP_SIGNUP_COEXISTENCE;
+  try {
+    const db = f.h.cleanup;
+    const row = async () =>
+      (
+        await db.query(
+          "select state,state_reason,revision,signup_pending,signup_coexistence,credentials,credentials_set_at,last_check_failed_reason from app.whatsapp_channel where org_id=$1",
+          [f.h.orgA.id],
+        )
+      ).rows[0];
+    const signup = async (extra: Record<string, unknown> = {}) =>
+      f.req("POST", "/channels/whatsapp/signup", {
+        expectedRevision: (await row()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        code: "one-time-code",
+        agentEnabled: true,
+        ...extra,
+      });
+    // The worker seals the fake provider's token with its fixed stand-in key.
+    const opened = async () =>
+      openCredentials((await row()).credentials, "0".repeat(64), f.h.orgA.id);
+
+    await t.test("the code is exchanged, the number registered and the token sealed", async () => {
+      const r = await signup();
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(r.body.data.state, "pending");
+      assert.equal(r.body.data.signup_pending, true);
+      // Nothing about the code or a token is returned.
+      assert.equal(JSON.stringify(r.body).includes("one-time-code"), false);
+      assert.equal("credentials" in r.body.data, false);
+      const subscribed = f.provider.subscribed.length;
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.state_reason, null);
+      assert.equal(after.signup_pending, false);
+      assert.equal(after.last_check_failed_reason, null);
+      assert.ok(after.credentials_set_at);
+      assert.deepEqual(f.provider.exchanged, ["fake-code"]);
+      assert.equal(f.provider.subscribed.length, subscribed + 1);
+      assert.equal(f.provider.registered.length, 1);
+      assert.equal(f.provider.registered[0].phoneNumberId, phone);
+      assert.match(f.provider.registered[0].pin, /^[0-9]{6}$/);
+      assert.deepEqual(await opened(), {
+        accessToken: "fake-signup-token",
+        pin: f.provider.registered[0].pin,
+      });
+    });
+
+    await t.test("a stale revision is refused and nothing is exchanged", async () => {
+      const r = await signup({ expectedRevision: (await row()).revision + 5 });
+      assert.equal(r.status, 409, JSON.stringify(r.body));
+      await f.worker.tick();
+      assert.equal(f.provider.exchanged.length, 1);
+      assert.equal((await row()).state, "connected");
+    });
+
+    await t.test("a code Meta refuses leaves the channel failed with no credentials", async () => {
+      f.provider.failExchange("SIGNUP_CODE_REJECTED");
+      assert.equal((await signup()).status, 200);
+      const registered = f.provider.registered.length,
+        subscribed = f.provider.subscribed.length;
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "failed");
+      assert.equal(after.state_reason, "SIGNUP_CODE_REJECTED");
+      assert.equal(after.signup_pending, false);
+      assert.equal(after.credentials, null);
+      assert.equal(after.credentials_set_at, null);
+      // No number check, no subscription, no registration without a token.
+      assert.equal(f.provider.registered.length, registered);
+      assert.equal(f.provider.subscribed.length, subscribed);
+      f.provider.failExchange(undefined);
+      // The spent code is not tried again on the next pass.
+      const tries = f.provider.exchanged.length;
+      await f.worker.tick();
+      assert.equal(f.provider.exchanged.length, tries);
+    });
+
+    await t.test("a number that cannot be registered still connects, with a warning", async () => {
+      f.provider.failRegister("REGISTER_FAILED", "META_133005");
+      assert.equal((await signup()).status, 200);
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.last_check_failed_reason, "REGISTER_FAILED");
+      // No PIN is kept for a registration that did not happen.
+      assert.deepEqual(await opened(), { accessToken: "fake-signup-token" });
+      f.provider.failRegister(undefined);
+    });
+
+    await t.test("a failed number check after the exchange discards the token", async () => {
+      f.provider.rejectNumber("META_100");
+      assert.equal((await signup()).status, 200);
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "failed");
+      assert.equal(after.state_reason, "META_100");
+      assert.equal(after.credentials, null);
+      f.provider.rejectNumber(undefined);
+    });
+
+    await t.test("coexistence is refused unless switched on, and is never registered", async () => {
+      delete process.env.WHATSAPP_SIGNUP_COEXISTENCE;
+      const refused = await signup({ coexistence: true });
+      assert.equal(refused.status, 422, JSON.stringify(refused.body));
+      assert.equal(refused.body.error.code, "COEXISTENCE_OFF");
+      process.env.WHATSAPP_SIGNUP_COEXISTENCE = "1";
+      const r = await signup({ coexistence: true });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const registered = f.provider.registered.length;
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.signup_coexistence, true);
+      assert.equal(f.provider.registered.length, registered);
+      assert.deepEqual(await opened(), { accessToken: "fake-signup-token" });
+    });
+
+    await t.test("a pasted token afterwards replaces the signup and clears its flag", async () => {
+      const d = await f.req("POST", "/channels/whatsapp/disconnect", {
+        expectedRevision: (await row()).revision,
+      });
+      assert.equal(d.status, 200, JSON.stringify(d.body));
+      assert.equal((await row()).credentials, null);
+      assert.equal((await signup()).status, 200);
+      // The owner changes their mind before the agent process gets to it.
+      const r = await f.req("PUT", "/channels/whatsapp", {
+        expectedRevision: (await row()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        agentEnabled: true,
+        accessToken: "stand-in-token",
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal((await row()).signup_pending, false);
+      const tries = f.provider.exchanged.length;
+      await f.worker.tick();
+      assert.equal(f.provider.exchanged.length, tries);
+      assert.equal((await row()).state, "connected");
+    });
+  } finally {
+    if (coexistenceBefore === undefined) delete process.env.WHATSAPP_SIGNUP_COEXISTENCE;
+    else process.env.WHATSAPP_SIGNUP_COEXISTENCE = coexistenceBefore;
     await f.close();
   }
 });
