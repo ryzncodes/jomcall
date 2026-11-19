@@ -80,12 +80,20 @@ export const catalogueRowInput = z
   .object({
     item: boundedText(200),
     aliases: z.array(boundedText(120)).max(20).default([]),
-    priceSen: z.number().int().min(0).max(100000000000).nullable().default(null),
+    priceSen: z
+      .number()
+      .int()
+      .min(0)
+      .max(100000000000)
+      .nullable()
+      .default(null),
     stockNote: z.string().max(200).default(""),
     attributes: z
       .record(z.string().regex(/^[a-z][a-z0-9_]{0,60}$/), z.unknown())
       .default({})
-      .refine((v) => new TextEncoder().encode(JSON.stringify(v)).length <= 4000),
+      .refine(
+        (v) => new TextEncoder().encode(JSON.stringify(v)).length <= 4000,
+      ),
     language: docLanguage.default("mixed"),
   })
   .strict();
@@ -175,13 +183,15 @@ export const coreDecisionSchema = z.discriminatedUnion("kind", [
 // the brain answers it with a result marked invalid. Every other invalid
 // decision still throws.
 export type BadLookupDecision = { kind: "bad_lookup" };
-export function parseCoreDecision(raw: unknown): CoreDecision | BadLookupDecision {
+export function parseCoreDecision(
+  raw: unknown,
+): CoreDecision | BadLookupDecision {
   // Idempotent: the model client parses first and the brain parses again.
   if ((raw as { kind?: unknown } | null)?.kind === "bad_lookup")
     return { kind: "bad_lookup" };
   const parsed = coreDecisionSchema.safeParse(raw);
   if (parsed.success) return parsed.data;
-  const call = (raw as { kind?: unknown; call?: { name?: unknown } } | null);
+  const call = raw as { kind?: unknown; call?: { name?: unknown } } | null;
   if (call?.kind === "tool" && call.call?.name === "lookup_catalogue")
     return { kind: "bad_lookup" };
   throw parsed.error;

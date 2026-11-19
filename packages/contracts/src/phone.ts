@@ -76,5 +76,7 @@ export type CallDetail = CallSummary & {
   recording_enabled: boolean;
   // Managers only; staff see the summary without the words.
   turns: CallTurn[] | null;
-  proposals: { id: string; kind: string; state: string; details: unknown }[] | null;
+  proposals:
+    | { id: string; kind: string; state: string; details: unknown }[]
+    | null;
 };

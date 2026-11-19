@@ -19,14 +19,13 @@ export const DEFAULT_VOICE: VoicePreset = VOICE_PRESETS[0];
 // Google's own one-word description of each voice (Gemini API speech
 // generation, "Voice options") and the gender Google lists for it (Cloud
 // Text-to-Speech, Gemini-TTS "Voice options"). Checked 2026-11-15.
-export const VOICE_DETAILS: Record<VoicePreset, { en: string; ms: string }> =
-  {
-    Kore: { en: "Firm, female", ms: "Tegas, perempuan" },
-    Sulafat: { en: "Warm, female", ms: "Mesra, perempuan" },
-    Leda: { en: "Youthful, female", ms: "Muda, perempuan" },
-    Achird: { en: "Friendly, male", ms: "Ramah, lelaki" },
-    Charon: { en: "Informative, male", ms: "Informatif, lelaki" },
-  };
+export const VOICE_DETAILS: Record<VoicePreset, { en: string; ms: string }> = {
+  Kore: { en: "Firm, female", ms: "Tegas, perempuan" },
+  Sulafat: { en: "Warm, female", ms: "Mesra, perempuan" },
+  Leda: { en: "Youthful, female", ms: "Muda, perempuan" },
+  Achird: { en: "Friendly, male", ms: "Ramah, lelaki" },
+  Charon: { en: "Informative, male", ms: "Informatif, lelaki" },
+};
 
 // The saved preference when it names a preset exactly, else null (old free
 // text, empty, or a removed voice).

@@ -2,6 +2,11 @@ import { z } from "zod";
 import { uuid } from "./index.ts";
 import { boundedText } from "./agent-test.ts";
 
+// Latest Graph API version on Meta's changelog page on 2026-11-14 (released
+// 2026-11-04). The only place the version is named: the Cloud API client and
+// the Embedded Signup popup both use it.
+export const metaGraphVersion = "v27.0";
+
 const digits = z.string().regex(/^[0-9]{5,30}$/);
 export const channelSave = z
   .object({
@@ -9,6 +14,19 @@ export const channelSave = z
     wabaId: digits,
     // Write-only. Never returned by any command.
     accessToken: z.string().min(1).max(4096).optional(),
+    agentEnabled: z.boolean(),
+    expectedRevision: z.number().int().positive().optional(),
+  })
+  .strict();
+// What the browser hands over when an owner finishes Meta's Embedded Signup
+// popup. The code is write-only, works once and expires within minutes.
+export const channelSignup = z
+  .object({
+    phoneNumberId: digits,
+    wabaId: digits,
+    code: z.string().min(1).max(2048),
+    // True when the number stays on the WhatsApp Business app (coexistence).
+    coexistence: z.boolean().optional(),
     agentEnabled: z.boolean(),
     expectedRevision: z.number().int().positive().optional(),
   })
@@ -83,6 +101,9 @@ export type WhatsAppChannel = {
   recheck_wanted: boolean;
   last_check_failed_reason: string | null;
   last_check_failed_at: string | null;
+  // True while a connection made through Meta's popup is being finished by
+  // the agent process (code exchange, number check, registration).
+  signup_pending: boolean;
 };
 // Provider status names and the local status the database maps each to (see
 // migration 20261116150000_whatsapp_template_sync.sql; a test keeps the two
@@ -130,6 +151,9 @@ export type WhatsAppOverview = {
     provider: "disabled" | "fake" | "cloud";
     configured: boolean;
     missing: string[];
+    // Public identifiers for Meta's Embedded Signup popup, or null when the
+    // "Connect WhatsApp" button is not offered.
+    signup: { appId: string; configId: string; coexistence: boolean } | null;
   };
   channel: WhatsAppChannel | null;
   templates: WhatsAppTemplate[];

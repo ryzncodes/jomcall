@@ -813,3 +813,7 @@ Left on staging: a test workspace "Salon Ujian Contoh" (made-up data, published 
 ## 2026-11-19: invitation path and test panel wording
 
 Branch `fix/invitation-and-test-panel`, pull request open. The invitation token survives sign-in and sign-up in the same browser; invitation email in English and BM; `WORK_FAILED` logs a kind and a reason; test panel in plain words with the conversation first on a phone. Checks pass (core 1038 of 1038). After merge the engine on the server needs a rebuild for the email text and the log line. Not checked in a browser: sign-in round trip from an invitation, the waiting-invitation box, BM.
+
+## 2026-11-19: WhatsApp Embedded Signup built (not merged, never run against Meta)
+
+Branch `feat/whatsapp-embedded-signup`. "Connect WhatsApp" on the settings page; code sealed by web, exchanged by the agent; a working number stays connected during a reconnect. Checks pass (core 1065 of 1065). Owner steps to try it: `infra/hosted/RUNBOOK.md` step 15 (configuration ID in Meta, migration, agent settings, web settings). Owner steps on Meta still open: Tech Provider onboarding, two screen recordings, App Review. Engine on staging was rebuilt on `9e0af3f` the same day (agent and voice still on `66a5b3e`).

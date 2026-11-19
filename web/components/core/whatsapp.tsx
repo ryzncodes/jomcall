@@ -14,6 +14,7 @@ import {
 } from "../../../packages/contracts/src/whatsapp";
 import { syncLine, templateNote } from "@/lib/core/whatsapp-template-rules";
 import { useExperience } from "../experience";
+import { WhatsAppSignup } from "./whatsapp-signup";
 import {
   useCore,
   useWords,
@@ -42,6 +43,22 @@ function reasonText(
       return w(
         "JomCall could not register to receive this WhatsApp account's messages. In Meta Business settings, check that the system user has both the WhatsApp account and the messaging account (business account) assigned, and that the Business account ID here is right. Then save again.",
         "JomCall tidak dapat mendaftar untuk menerima mesej daripada akaun WhatsApp ini. Dalam tetapan Meta Business, pastikan pengguna sistem diberi akses kepada akaun WhatsApp dan juga akaun pemesejan (akaun perniagaan), dan ID akaun perniagaan di sini betul. Kemudian simpan semula.",
+      );
+    case "SIGNUP_CODE_REJECTED":
+    case "SIGNUP_TOKEN_MISSING":
+      return w(
+        "Facebook's sign-in ran out of time or was refused. Press Connect WhatsApp and finish it again.",
+        "Log masuk Facebook tamat masa atau ditolak. Tekan Sambungkan WhatsApp dan lengkapkan sekali lagi.",
+      );
+    case "SIGNUP_NOT_CONFIGURED":
+      return w(
+        "JomCall is not set up to finish Facebook's sign-in yet. Tell the JomCall team.",
+        "JomCall belum disediakan untuk melengkapkan log masuk Facebook. Maklumkan pasukan JomCall.",
+      );
+    case "REGISTER_FAILED":
+      return w(
+        "the number could not be registered for JomCall. If it was connected to another service before, set a new two-step PIN in WhatsApp Manager, then press Connect again.",
+        "nombor ini tidak dapat didaftarkan untuk JomCall. Jika ia pernah disambungkan ke perkhidmatan lain, tetapkan PIN dua langkah baharu dalam WhatsApp Manager, kemudian tekan Sambung semula.",
       );
     case "INVALID_TARGET":
       return w(
@@ -222,7 +239,23 @@ function WhatsAppBody({
           </>
         )}
       </section>
-      {readiness.configured && <ChannelForm data={data} reload={reload} />}
+      {readiness.configured && readiness.signup && (
+        <WhatsAppSignup data={data} reload={reload} />
+      )}
+      {readiness.configured &&
+        (readiness.signup ? (
+          <details className="core-advanced">
+            <summary>
+              {w(
+                "Advanced: enter the IDs and token yourself",
+                "Lanjutan: masukkan ID dan token sendiri",
+              )}
+            </summary>
+            <ChannelForm data={data} reload={reload} />
+          </details>
+        ) : (
+          <ChannelForm data={data} reload={reload} />
+        ))}
       {channel && (
         <Templates
           templates={data.templates}
@@ -539,10 +572,7 @@ function Templates({
       </p>
       {line === "checking" && (
         <p className="editor-note" role="status">
-          {w(
-            "Checking with WhatsApp…",
-            "Sedang menyemak dengan WhatsApp…",
-          )}
+          {w("Checking with WhatsApp…", "Sedang menyemak dengan WhatsApp…")}
         </p>
       )}
       {line === "failed" && (

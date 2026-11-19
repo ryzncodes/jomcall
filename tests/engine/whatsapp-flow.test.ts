@@ -10,6 +10,8 @@ import { webhookPost } from "../../web/lib/server/whatsapp-webhook.ts";
 import {
   buildInboundText,
   buildStatus,
+  openCredentials,
+  openSignupCode,
   signBody,
 } from "../../packages/whatsapp/src/index.ts";
 import { createFakeProvider } from "../../packages/whatsapp/src/fake.ts";
@@ -1844,6 +1846,327 @@ test("only the agent login role can run the number check function", async () => 
       await web.end();
     }
   } finally {
+    await f.close();
+  }
+});
+
+test("Embedded Signup connects a number through the agent process", async (t) => {
+  const f = await setup({ token: true });
+  const saved = {
+    WHATSAPP_SIGNUP_COEXISTENCE: process.env.WHATSAPP_SIGNUP_COEXISTENCE,
+    WHATSAPP_APP_ID: process.env.WHATSAPP_APP_ID,
+    WHATSAPP_SIGNUP_CONFIG_ID: process.env.WHATSAPP_SIGNUP_CONFIG_ID,
+  };
+  try {
+    const db = f.h.cleanup;
+    const row = async () =>
+      (
+        await db.query(
+          "select id,state,state_reason,revision,signup_pending,signup_coexistence,signup_code,credentials,credentials::text as sealed,credentials_set_at,last_check_failed_reason from app.whatsapp_channel where org_id=$1",
+          [f.h.orgA.id],
+        )
+      ).rows[0];
+    const signup = async (extra: Record<string, unknown> = {}) =>
+      f.req("POST", "/channels/whatsapp/signup", {
+        expectedRevision: (await row()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        code: "one-time-code",
+        agentEnabled: true,
+        ...extra,
+      });
+    const disconnect = async () => {
+      const d = await f.req("POST", "/channels/whatsapp/disconnect", {
+        expectedRevision: (await row()).revision,
+      });
+      assert.equal(d.status, 200, JSON.stringify(d.body));
+    };
+    // In practice mode the worker seals the fake provider's token with its
+    // fixed stand-in key.
+    const opened = async (key = "0".repeat(64)) =>
+      openCredentials((await row()).credentials, key, f.h.orgA.id);
+
+    await t.test("a first connect: the code is exchanged, the number registered, the token sealed", async () => {
+      await disconnect();
+      const r = await signup();
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(r.body.data.state, "pending");
+      assert.equal(r.body.data.signup_pending, true);
+      // Nothing about the code or a token is returned.
+      assert.equal(JSON.stringify(r.body).includes("one-time-code"), false);
+      assert.equal("credentials" in r.body.data, false);
+      assert.equal("signup_code" in r.body.data, false);
+      const subscribed = f.provider.subscribed.length;
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.state_reason, null);
+      assert.equal(after.signup_pending, false);
+      assert.equal(after.signup_code, null);
+      assert.equal(after.last_check_failed_reason, null);
+      assert.ok(after.credentials_set_at);
+      assert.deepEqual(f.provider.exchanged, ["fake-code"]);
+      assert.equal(f.provider.subscribed.length, subscribed + 1);
+      assert.equal(f.provider.registered.length, 1);
+      assert.equal(f.provider.registered[0].phoneNumberId, phone);
+      assert.match(f.provider.registered[0].pin, /^[0-9]{6}$/);
+      assert.deepEqual(await opened(), {
+        accessToken: "fake-signup-token",
+        pin: f.provider.registered[0].pin,
+      });
+    });
+
+    await t.test("a stale revision is refused and nothing is exchanged", async () => {
+      const r = await signup({ expectedRevision: (await row()).revision + 5 });
+      assert.equal(r.status, 409, JSON.stringify(r.body));
+      await f.worker.tick();
+      assert.equal(f.provider.exchanged.length, 1);
+      assert.equal((await row()).state, "connected");
+    });
+
+    await t.test("connecting again keeps a working number connected on its old token until the new one passes", async () => {
+      const before = await row();
+      const r = await signup();
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      // Still connected, still the old token, while the agent process works.
+      assert.equal(r.body.data.state, "connected");
+      assert.equal(r.body.data.signup_pending, true);
+      assert.equal((await row()).sealed, before.sealed);
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.signup_pending, false);
+      assert.notEqual(after.sealed, before.sealed);
+      assert.equal(f.provider.exchanged.length, 2);
+    });
+
+    await t.test("a refused code on a working number changes nothing but a warning", async () => {
+      const before = await row();
+      f.provider.failExchange("SIGNUP_CODE_REJECTED");
+      assert.equal((await signup()).status, 200);
+      const registered = f.provider.registered.length,
+        subscribed = f.provider.subscribed.length;
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.state_reason, null);
+      assert.equal(after.last_check_failed_reason, "SIGNUP_CODE_REJECTED");
+      assert.equal(after.signup_pending, false);
+      assert.equal(after.signup_code, null);
+      assert.equal(after.sealed, before.sealed);
+      // No number check, no subscription, no registration without a token.
+      assert.equal(f.provider.registered.length, registered);
+      assert.equal(f.provider.subscribed.length, subscribed);
+      // The spent code is not tried again on the next pass.
+      const tries = f.provider.exchanged.length;
+      await f.worker.tick();
+      assert.equal(f.provider.exchanged.length, tries);
+    });
+
+    await t.test("a failed number check after the exchange keeps the old token", async () => {
+      const before = await row();
+      f.provider.failExchange(undefined);
+      f.provider.rejectNumber("META_100");
+      assert.equal((await signup()).status, 200);
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.last_check_failed_reason, "META_100");
+      assert.equal(after.sealed, before.sealed);
+      f.provider.rejectNumber(undefined);
+    });
+
+    await t.test("a refused code on a first connect ends failed with no credentials", async () => {
+      await disconnect();
+      f.provider.failExchange("SIGNUP_CODE_REJECTED");
+      assert.equal((await signup()).status, 200);
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "failed");
+      assert.equal(after.state_reason, "SIGNUP_CODE_REJECTED");
+      assert.equal(after.signup_pending, false);
+      assert.equal(after.credentials, null);
+      f.provider.failExchange(undefined);
+    });
+
+    await t.test("a number that cannot be registered still connects, with a warning", async () => {
+      f.provider.failRegister("REGISTER_FAILED", "META_133005");
+      assert.equal((await signup()).status, 200);
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.last_check_failed_reason, "REGISTER_FAILED");
+      // No PIN is kept for a registration Meta refused.
+      assert.deepEqual(await opened(), { accessToken: "fake-signup-token" });
+    });
+
+    await t.test("an unreachable provider at registration keeps the PIN, which may have been set", async () => {
+      f.provider.failRegister("PROVIDER_UNREACHABLE");
+      assert.equal((await signup()).status, 200);
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.last_check_failed_reason, "PROVIDER_UNREACHABLE");
+      assert.deepEqual(await opened(), {
+        accessToken: "fake-signup-token",
+        pin: f.provider.registered.at(-1)!.pin,
+      });
+      f.provider.failRegister(undefined);
+    });
+
+    await t.test("coexistence is refused unless switched on, and is never registered", async () => {
+      delete process.env.WHATSAPP_SIGNUP_COEXISTENCE;
+      const refused = await signup({ coexistence: true });
+      assert.equal(refused.status, 422, JSON.stringify(refused.body));
+      assert.equal(refused.body.error.code, "COEXISTENCE_OFF");
+      process.env.WHATSAPP_SIGNUP_COEXISTENCE = "1";
+      const r = await signup({ coexistence: true });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const registered = f.provider.registered.length;
+      await f.worker.tick();
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.signup_coexistence, true);
+      assert.equal(f.provider.registered.length, registered);
+      assert.deepEqual(await opened(), { accessToken: "fake-signup-token" });
+      delete process.env.WHATSAPP_SIGNUP_COEXISTENCE;
+    });
+
+    await t.test("a pasted token before the agent process gets to it replaces the signup", async () => {
+      await disconnect();
+      assert.equal((await signup()).status, 200);
+      const r = await f.req("PUT", "/channels/whatsapp", {
+        expectedRevision: (await row()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        agentEnabled: true,
+        accessToken: "stand-in-token",
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal((await row()).signup_pending, false);
+      const tries = f.provider.exchanged.length;
+      await f.worker.tick();
+      assert.equal(f.provider.exchanged.length, tries);
+      assert.equal((await row()).state, "connected");
+    });
+
+    await t.test("a disconnect while Meta is being asked drops the new token", async () => {
+      assert.equal((await signup()).status, 200);
+      const exchange = f.provider.exchangeSignupCode;
+      f.provider.exchangeSignupCode = async (input) => {
+        await disconnect();
+        return exchange(input);
+      };
+      await f.worker.tick();
+      f.provider.exchangeSignupCode = exchange;
+      const after = await row();
+      assert.equal(after.state, "not_connected");
+      assert.equal(after.credentials, null);
+      assert.equal(after.signup_pending, false);
+      assert.equal(after.signup_code, null);
+    });
+
+    await t.test("a result's credentials are ignored for a channel that is not a signup", async () => {
+      const r = await f.req("PUT", "/channels/whatsapp", {
+        expectedRevision: (await row()).revision,
+        phoneNumberId: phone,
+        wabaId: "200000001",
+        agentEnabled: true,
+        accessToken: "stand-in-token",
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const before = await row();
+      assert.equal(before.state, "pending");
+      const applied = await f.worker.op("verify_result", before.id, null, {
+        revision: before.revision,
+        ok: true,
+        credentials: { version: 1, iv: "a".repeat(24), tag: "b".repeat(32), data: "cc" },
+      });
+      assert.deepEqual(applied, { applied: true });
+      const after = await row();
+      assert.equal(after.state, "connected");
+      assert.equal(after.sealed, before.sealed);
+    });
+
+    await t.test("a passing signup result without a sealed token is refused", async () => {
+      await disconnect();
+      assert.equal((await signup()).status, 200);
+      const before = await row();
+      for (const credentials of [
+        undefined,
+        "text",
+        { version: 2, iv: "a".repeat(24), tag: "b".repeat(32), data: "cc" },
+        { version: 1, iv: "zz", tag: "b".repeat(32), data: "cc" },
+        { version: 1, iv: "a".repeat(24), tag: "b".repeat(32), data: "c".repeat(7902) },
+      ]) {
+        await db.query(
+          "update app.whatsapp_channel set state='pending',signup_pending=true where id=$1",
+          [before.id],
+        );
+        const now = await row();
+        await f.worker.op("verify_result", now.id, null, {
+          revision: now.revision,
+          ok: true,
+          credentials,
+        });
+        const after = await row();
+        assert.equal(after.state, "failed", JSON.stringify(credentials)?.slice(0, 40));
+        assert.equal(after.state_reason, "SIGNUP_TOKEN_MISSING");
+        assert.equal(after.credentials, null);
+      }
+    });
+
+    await t.test("with the real provider setting, the code is sealed by web and opened by the agent process", async () => {
+      const key = process.env.WHATSAPP_CREDENTIALS_KEY!;
+      process.env.JOMCALL_WHATSAPP_PROVIDER = "cloud";
+      try {
+        delete process.env.WHATSAPP_APP_ID;
+        delete process.env.WHATSAPP_SIGNUP_CONFIG_ID;
+        // Without the signup settings the code would be spent for nothing.
+        const refused = await signup();
+        assert.equal(refused.status, 503, JSON.stringify(refused.body));
+        assert.equal(refused.body.error.code, "SIGNUP_NOT_AVAILABLE");
+        process.env.WHATSAPP_APP_ID = "500000001";
+        process.env.WHATSAPP_SIGNUP_CONFIG_ID = "400000001";
+        const r = await signup({ code: "real-shaped-code" });
+        assert.equal(r.status, 200, JSON.stringify(r.body));
+        const pending = await row();
+        assert.equal(pending.credentials, null);
+        assert.equal(
+          openSignupCode(pending.signup_code, key, f.h.orgA.id),
+          "real-shaped-code",
+        );
+        assert.equal(JSON.stringify(pending.signup_code).includes("real-shaped-code"), false);
+        await f.worker.tick();
+        const after = await row();
+        assert.equal(after.state, "connected");
+        assert.equal(after.signup_code, null);
+        assert.equal(f.provider.exchanged.at(-1), "real-shaped-code");
+        assert.deepEqual(await opened(key), {
+          accessToken: "fake-signup-token",
+          pin: f.provider.registered.at(-1)!.pin,
+        });
+      } finally {
+        process.env.JOMCALL_WHATSAPP_PROVIDER = "fake";
+      }
+    });
+
+    // The web role can write the sealed code and never read it back.
+    const web = new pg.Client({ connectionString: process.env.APP_DATABASE_URL });
+    await web.connect();
+    try {
+      await assert.rejects(
+        web.query("select signup_code from app.whatsapp_channel limit 1"),
+        /permission denied/,
+      );
+    } finally {
+      await web.end();
+    }
+  } finally {
+    for (const [name, value] of Object.entries(saved))
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    process.env.JOMCALL_WHATSAPP_PROVIDER = "fake";
     await f.close();
   }
 });

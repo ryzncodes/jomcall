@@ -28,11 +28,22 @@ export type Wallet = {
     sandbox: boolean;
     reason: string | null;
   };
-  prices: { kind: string; unit_sen: number; per_quantity: number; version: number }[];
+  prices: {
+    kind: string;
+    unit_sen: number;
+    per_quantity: number;
+    version: number;
+  }[];
 };
 export type LedgerEntry = {
   id: string;
-  kind: "topup" | "trial_credit" | "usage" | "refund" | "adjustment" | "plan_fee";
+  kind:
+    | "topup"
+    | "trial_credit"
+    | "usage"
+    | "refund"
+    | "adjustment"
+    | "plan_fee";
   amount_sen: number;
   currency: "MYR";
   reason: string | null;
@@ -126,7 +137,13 @@ export type PlanSummary = z.output<typeof planSummary>;
 // app_private.choose_plan. wallet_short is an answer, not an error: a first
 // paid plan needs the whole fee in the wallet and nothing started.
 export const planChoiceResult = z.object({
-  outcome: z.enum(["started", "wallet_short", "scheduled", "cancelled", "unchanged"]),
+  outcome: z.enum([
+    "started",
+    "wallet_short",
+    "scheduled",
+    "cancelled",
+    "unchanged",
+  ]),
   plan: planCode,
   pendingPlan: planCode.nullable(),
   anchorDate: z.string().nullable(),
