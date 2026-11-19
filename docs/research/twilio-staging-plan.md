@@ -1,6 +1,17 @@
 # Twilio number on hosted staging: plan and owner checklist
 
-Date: 2026-11-19. Status: plan only. Nothing in this document has been done. No number was bought, no Twilio, LiveKit, server or database setting was changed, and nothing was deployed.
+Date: 2026-11-19. Status: partly carried out on 2026-11-19. No call has been answered yet.
+
+Done that day, by the owner and the main session (reported to the author of this document, who did not see the server or the Twilio console):
+
+- The SIP service and Valkey run on the staging server (they were already in the Compose file, pull request #46, `66a5b3e`). Sections 4 and 6.
+- The owner bought the number `+60422530XX` (last two digits left out here because this repository is public) and created the Twilio trunk `jomcall-staging` with the origination URI `sip:livekit.staging.jomcall.com:5060;transport=tcp`. Steps T2 and T3.
+- The agent runs with `JOMCALL_TELEPHONY_PROVIDER=livekit_sip` since pull request #56 (`2fef3c1`). Section 6.
+- The LiveKit trunk `ST_LhsjeYrVVz9K` and dispatch rule `SDR_Muu3nfdD7CR4` exist. Section 7.
+
+Not done: the Twilio account upgrade (T1, now known to be required), the cloud firewall rules (section 5, urgent), and a successful test call (section 10). Not reported either way: whether the number is attached to the trunk (T4), the number added to a workspace (section 8), the plan and wallet (section 9), the Vercel setting and the prewarm (section 6).
+
+Correction: the first version of this document said staging had no SIP service and no Redis. That was wrong. The author read an older checkout of the Compose file.
 
 Goal: one real Malaysian number from Twilio, on `staging.jomcall.com`, answered by the published AI agent of one test workspace.
 
@@ -10,22 +21,22 @@ Related documents: `docs/superpowers/specs/2026-11-14-phone-line-design.md` (des
 
 ## 1. Summary
 
-The path of a call will be:
+The path of a call:
 
 ```
 caller, Malaysian network
   -> Twilio number (+60, bought with bundle "Digitalize Plus - MY Local")
   -> Twilio Elastic SIP trunk, origination URI
-  -> LiveKit SIP service (NOT RUNNING ANYWHERE YET)
+  -> LiveKit SIP service on the staging server (livekit/sip, host network, port 5060)
   -> LiveKit room "call-<dialled number>_<random>" on livekit.staging.jomcall.com
   -> jomcall-voice worker -> agent process (phone listener, port 54635, private)
 ```
 
-Three things stand between today and a first call. The first two are code and deploy work, not console work:
+The SIP service exists: `infra/hosted/docker-compose.yml` on `main` has a `sip` service (`livekit/sip` v1.25.0) and a `redis` service (Valkey 8.1), and both were running on the server on 2026-11-19. Three things stand between that day's state and a first answered call:
 
-1. **Staging has no SIP service.** `infra/hosted/docker-compose.yml` runs Caddy, LiveKit, agent, engine and voice. It has no `livekit/sip` container and no Redis, and `infra/hosted/livekit/livekit.yaml` has no Redis block. LiveKit's SIP service needs Redis shared with the LiveKit server. So "the staging LiveKit SIP address" does not exist yet. See section 4.
-2. **The trunk and dispatch generator cannot read staging.** `scripts/telephony/sip-config.ts` stops with `LOCAL_DATABASE_REQUIRED` unless the database is `127.0.0.1:54622`. RUNBOOK step 11.4 says to run it "against this environment's database", which the script refuses. For one number the two files can be written by hand (section 7).
-3. **The Twilio account is a trial.** A trial very likely cannot serve this purpose (section 3, step T1).
+1. **The Twilio account is a trial, and a trial cannot receive these calls.** Two inbound test calls failed at Twilio with `21264 From number not verified`, even with the caller's number verified. The upgrade is required (section 3, step T1).
+2. **Port 5060 is open to the internet.** Scanners were already probing it. The cloud firewall rules of section 5 come before any further testing.
+3. **The trunk and dispatch generator cannot read staging, and the server has no `lk` CLI.** `scripts/telephony/sip-config.ts` stops with `LOCAL_DATABASE_REQUIRED` unless the database is `127.0.0.1:54622`. RUNBOOK step 11.4 says to run it "against this environment's database", which the script refuses. The trunk and rule were created another way (section 7), and they are lost whenever Valkey restarts.
 
 The code has never touched a live SIP service. The LiveKit telephony implementation (`packages/domain/src/phone/telephony.ts`) has run only against an in-memory fake, and the fake SIP caller (`npm run phone:simulate`) has never been run. Expect the first real call to find defects.
 
@@ -33,7 +44,23 @@ Staging must not hold customer data (free database, no backups; `AGENTS.md`). Th
 
 ## 2. What was verified, and how
 
-Documentation was read on 2026-11-19 through a page-summarising fetcher, so the wording below is paraphrase unless quoted. Repository facts were read from `origin/main` at `e9bd321`.
+Documentation was read on 2026-11-19 through a page-summarising fetcher, so the wording below is paraphrase unless quoted. Repository facts were read from `origin/main` at `2fef3c1`.
+
+### Seen on staging on 2026-11-19
+
+Read-only checks by the main session, and the owner's own console work. The author of this document did not see them.
+
+| Fact | Where |
+|---|---|
+| The `sip` and `redis` containers were running, up 23 hours | server |
+| `livekit.staging.jomcall.com` resolves straight to the server (not proxied) | DNS |
+| Port 5060 was being probed by scanners | SIP service log |
+| The server has no `lk` CLI | server |
+| `npm run telephony:sip-config` refuses a hosted database | server |
+| With `JOMCALL_TELEPHONY_PROVIDER=livekit_sip` the agent restarted in a loop with `LOCAL_DATABASE_REQUIRED` until pull request #56 (`2fef3c1`) | agent log |
+| `LIVEKIT_URL=ws://livekit:7880` works in `agent.env` | server |
+| A Twilio trial account failed two inbound test calls at Twilio with `21264 From number not verified`, with the caller's number verified | Twilio call log |
+| No call has been answered | |
 
 ### Verified from official pages
 
@@ -56,7 +83,7 @@ Documentation was read on 2026-11-19 through a page-summarising fetcher, so the 
 
 ### Not verified
 
-- Whether a Twilio **trial** account can buy a +60 local number, use Elastic SIP Trunking at all, or receive calls from unverified callers on a trunk. The trial pages do not say. The verified trial limits make an upgrade the safe assumption.
+- Why exactly the trial refuses a verified caller on the trunk. The trial pages do not say. The observed result is enough: upgrade.
 - Whether Twilio's origination signalling comes only from the address ranges above. The page lists them as trunking signalling addresses and does not use the word origination.
 - The exact form in which Twilio sends the dialled number (`+60...` with the plus is assumed) and the caller's number.
 - Whether self-hosted LiveKit SIP enforces `allowed_addresses`. LiveKit's page says it "must be enabled by LiveKit support", which is Cloud wording. Treat the firewall as the real guard.
@@ -70,7 +97,7 @@ Documentation was read on 2026-11-19 through a page-summarising fetcher, so the 
 
 ### T1. Upgrade the account **[OWNER, costs money]**
 
-Recommended before anything else. A trial is limited to verified numbers and to 30 days, and whether it can hold a Malaysian number on a SIP trunk is not verified. Upgrading means adding a payment method and a first top-up. The minimum top-up amount was not checked.
+Not done yet, and required. On 2026-11-19 the trial account could buy the number and create the trunk, but two inbound test calls failed at Twilio with `21264 From number not verified`, even though the caller's number was verified. No call reaches the server until the account is upgraded. Upgrading means adding a payment method and a first top-up. The minimum top-up amount was not checked.
 
 Before upgrading, check in the console:
 
@@ -80,6 +107,8 @@ Before upgrading, check in the console:
 
 ### T2. Buy the number **[OWNER, costs money, monthly]**
 
+Done on 2026-11-19: the owner bought `+60422530XX`. The steps are kept for the record.
+
 1. Phone Numbers > Buy a number. Country Malaysia, type Local, capability Voice.
 2. Pick one number. Write it down in E.164, for example `+60XXXXXXXXX`.
 3. At checkout, assign the approved bundle and its address. The address must be inside the locality of the number's prefix, so pick a prefix that matches the bundle's address.
@@ -87,77 +116,77 @@ Before upgrading, check in the console:
 
 ### T3. Create the trunk **[OWNER]**
 
+Done on 2026-11-19: trunk `jomcall-staging`, origination `sip:livekit.staging.jomcall.com:5060;transport=tcp`. The settings in items 2 and 3 below were not reported; check them in the console.
+
 1. Elastic SIP Trunking > Trunks > Create new SIP trunk. Name it `jomcall-staging`.
 2. General settings: Secure Trunking **off** (TLS and SRTP at LiveKit SIP are not verified). Call recording **off** (JomCall records nothing in this milestone and the recording disclosure is tied to JomCall's own setting).
 3. Call Transfer (SIP REFER): **Enabled**, and **Enable PSTN Transfer**, only if the transfer test in section 10 is wanted. Transfers place an outbound call that Twilio bills. Leave it off for the first call.
 4. Termination: leave empty. JomCall places no outbound calls.
-5. Origination: add one URI, only after the SIP service of section 4 is running and firewalled:
+5. Origination: one URI.
 
    ```
-   sip:<SIP host>:5060;transport=tcp
+   sip:livekit.staging.jomcall.com:5060;transport=tcp
    ```
 
-   `<SIP host>` is the staging server's public address or a DNS name that points straight at it. `livekit.staging.jomcall.com` works only if that DNS record is not proxied (a proxied Cloudflare record does not carry SIP). Priority 10, weight 10.
+   `livekit.staging.jomcall.com` resolves straight to the server, which SIP needs (a proxied Cloudflare record does not carry SIP). Priority 10, weight 10.
 
-Do not add the origination URI early. Until it exists, calls to the number simply fail at Twilio.
+The plan was to add the origination URI only after the firewall rules. It was added first, so the firewall step is now the urgent one.
 
 ### T4. Attach the number to the trunk **[OWNER]**
 
-Trunk > Numbers > Add an existing number > pick the +60 number. From this moment a call to the number is sent to the origination URI.
+Whether this was done on 2026-11-19 was not reported; the failed test calls suggest it was. Trunk > Numbers > Add an existing number > pick the +60 number. From this moment a call to the number is sent to the origination URI.
 
 Rollback for T3 and T4: remove the number from the trunk, or delete the origination URI. Releasing the number stops the monthly fee; a released number may not be recoverable.
 
-## 4. The missing SIP service: decision and work
+## 4. The SIP service on staging: what exists
 
-The owner must choose where LiveKit's SIP service runs. Either choice needs written approval in `AGENTS.md` before it is deployed (RUNBOOK step 11.1), together with approval of Twilio as a new outbound service.
+The owner decided on 2026-11-18 that LiveKit's SIP service runs on the staging server (`AGENTS.md`; `infra/hosted/RUNBOOK.md` step 11.1). Pull request #46 (`66a5b3e`) added it, and it was running on 2026-11-19. LiveKit Cloud is not used.
 
-| | A. Self-host `livekit/sip` on the staging server | B. A LiveKit Cloud project |
-|---|---|---|
-| What changes | Add Redis and `livekit/sip` (Apache-2.0) to the Compose stack; add a Redis block to `livekit.yaml`; open SIP and RTP ports | Web, agent and voice all move to the Cloud project's URL and keys. Compose hard-codes `LIVEKIT_URL: ws://livekit:7880` for the voice worker, so Compose still needs a change |
-| New vendor | None beyond Twilio | LiveKit Cloud: call audio passes through it. A PDPA cross-border point |
-| Internet-facing ports | 5060 and an RTP range, limited to Twilio's addresses | None on the server |
-| `allowed_addresses` | Enforcement unverified; the cloud firewall does the limiting | Needs LiveKit support to enable it; Twilio cannot use the password alternative |
-| Cost | No new fee | Cloud plan and per-minute fees, not checked |
+| Part | What it is |
+|---|---|
+| `sip` | `livekit/sip` v1.25.0 (Apache-2.0), pinned by digest, on the host's network. Listens on 5060 (UDP and TCP) and on 10000-10200/udp for phone audio, on the server's public address. Connects to LiveKit at `ws://127.0.0.1:7880` and to Valkey at `127.0.0.1:6379`. `use_external_ip: true`. Keys from `/etc/jomcall/sip.env` (the same pair as the LiveKit server) |
+| `redis` | Valkey 8.1 (BSD-3-Clause), the message bus between LiveKit and the SIP service. Started with `--save "" --appendonly no` on a tmpfs: nothing is kept on disk. Published on `127.0.0.1:6379` only |
+| `livekit` | Gained a `redis` block in `infra/hosted/livekit/livekit.yaml`, and publishes 7880 on `127.0.0.1` for the SIP service |
 
-Recommendation: **A**. It matches the task as given (origination at the staging LiveKit address), adds no second vendor, and keeps one LiveKit for browser tests and phone calls. Its cost is engineering work and a wider attack surface.
+What still matters:
 
-Work for option A. None of it is built. It needs its own branch and pull request, then an owner-approved deploy:
+1. **RTP range.** Phone audio uses 10000-10200/udp, not the 10000 to 20000 of LiveKit's page. The firewall rule in section 5 uses that range.
+2. **Nothing on disk.** The inbound trunk and the dispatch rule live in Valkey. A restart of the `redis` container, a `docker compose down`, or a server reboot loses both, and calls then stop being answered until they are created again (section 7). The new trunk gets a new id, so the dispatch rule must be created again with it.
+3. **Memory.** The staging droplet has 2 GB and now runs two more containers. Check `docker stats` under a call.
+4. **LiveKit now depends on Valkey.** Browser voice tests go through it too. If Valkey is down, no call of either kind starts.
+5. **Open port.** The SIP service is on the host's network, so 5060 and the RTP range face the internet until the cloud firewall limits them (section 5).
 
-1. Compose: a `redis` service on the private network only (no published port), and a `sip` service from a pinned `livekit/sip` image digest.
-2. `infra/hosted/livekit/livekit.yaml`: a `redis:` block pointing at that Redis. This moves the LiveKit server from single-node memory to Redis-backed state. The browser voice test must be checked again after it.
-3. A SIP config file: `ws_url: ws://livekit:7880`, `redis.address`, `sip_port: 5060`, `rtp_port: 10000-20000` (or a narrower range, see below), `use_external_ip: true`, and the same API key and secret as the LiveKit server, read from a 0600 env file under `/etc/jomcall`, never from git.
-4. Networking. Publishing ten thousand UDP ports through Docker is slow and memory hungry. The `livekit/sip` project's own Compose example was not read for this plan; the two candidates are host networking for the `sip` container or a narrow RTP range (for example 10000 to 10100, enough for the one call at a time that `JOMCALL_MAX_CONCURRENT_CALLS=1` allows). Decide in the pull request and test it.
-5. `scripts/hosted/readiness.ts` and `packages/contracts/src/hosted-env.ts`: a `sip` service entry so its env file is checked like the others.
-6. Memory. The staging droplet has 2 GB. Redis and the SIP service add to it. Check `docker stats` after the deploy.
-7. Optional, small: let `telephony:sip-config` take a list of numbers on the command line so it no longer needs a database. Not required for one number.
+Optional, small, not built: let `telephony:sip-config` take a list of numbers on the command line so it no longer needs a database.
 
 ## 5. Firewall **[OWNER]**
 
-Docker publishes ports past `ufw`, so the rules go in the DigitalOcean Cloud Firewall, as in RUNBOOK step 3b. Add exactly these inbound rules and nothing wider:
+Not done yet, and urgent: on 2026-11-19 port 5060 was reachable from anywhere and scanners were probing it. Do this before the next test call.
+
+The SIP service is on the host's network and Docker publishes ports past `ufw`, so the rules go in the DigitalOcean Cloud Firewall, as in RUNBOOK step 3b. Add exactly these inbound rules and nothing wider:
 
 | Port | Protocol | Sources |
 |---|---|---|
 | 5060 | TCP | The eight Twilio signalling ranges in section 2 |
-| The RTP range chosen in section 4 (default 10000 to 20000) | UDP | `168.86.128.0/18` |
+| 10000 to 10200 | UDP | `168.86.128.0/18` |
 
-UDP 5060 is not needed, because the origination URI forces TCP. Do not open 5060 to the world: an open SIP port is scanned within minutes, and the trunk's own address limit is unverified on a self-hosted server.
+UDP 5060 is not needed, because the origination URI forces TCP; the SIP service listens on it, so the firewall must not allow it. Do not leave 5060 open to the world: the trunk's own address limit is unverified on a self-hosted server, so the firewall is the guard.
 
 Check from another machine afterwards: `nmap -Pn -p 5060 <server>` must show the port filtered from a non-Twilio address.
 
 ## 6. Server and Vercel settings **[OWNER]**
 
-Staging already runs browser voice, so `JOMCALL_VOICE_PROVIDER=hosted` and the speech keys are in place. Add:
+Staging already runs browser voice, so `JOMCALL_VOICE_PROVIDER=hosted` and the speech keys are in place. The agent settings were in place on 2026-11-19. With them the agent restarted in a loop with `LOCAL_DATABASE_REQUIRED` (the phone call repository accepted only the local database) until pull request #56 (`2fef3c1`); the server must run a build that contains it. The Vercel setting and the prewarm were not reported. The settings:
 
 | Where | Setting | Value |
 |---|---|---|
 | `/etc/jomcall/agent.env` | `JOMCALL_TELEPHONY_PROVIDER` | `livekit_sip` |
-| `/etc/jomcall/agent.env` | `LIVEKIT_URL` | `wss://livekit.staging.jomcall.com`. The agent uses it for the SIP participant lookup and transfers. The internal `ws://livekit:7880` may also work but was not checked against the hosted guards, so use the public address |
+| `/etc/jomcall/agent.env` | `LIVEKIT_URL` | `ws://livekit:7880`, seen working on 2026-11-19. The agent uses it for the SIP participant lookup and transfers |
 | `/etc/jomcall/agent.env` | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | The same pair as `livekit.env`. The agent process now holds the secret |
 | `/etc/jomcall/agent.env` | `JOMCALL_MAX_CONCURRENT_CALLS` | Leave unset (default 1; Google speech allows about 11 requests a minute) |
 | `/etc/jomcall/agent.env` | `JOMCALL_CALL_CAP_SECONDS` | Leave unset (default 600) |
 | `/etc/jomcall/agent.env` | `JOMCALL_SIP_TRANSFER_URI` | Leave unset (default `tel:{e164}`, which is what Twilio accepts) |
 | Vercel, staging environment | `JOMCALL_TELEPHONY_PROVIDER` | `livekit_sip`, then redeploy. The web app only shows whether the line is connected |
-| SIP service env file (new, section 4) | LiveKit key and secret | Same pair |
+| `/etc/jomcall/sip.env` (root, mode 0600) | `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | Same pair. In place, since the SIP service runs |
 
 `JOMCALL_PHONE_URL` and `JOMCALL_VOICE_SERVICE_SECRET` are already handled: Compose sets the first, and the phone listener uses the same private bind and service secret as the browser voice endpoint. Port 54635 is never published.
 
@@ -177,13 +206,17 @@ Prewarm the `Kore` voice and the agent's own voice, so the busy line and fillers
 docker compose run --rm voice python -m jomcall_voice.prewarm --preset Kore
 ```
 
-Check before any call: `npm run hosted:readiness` passes for each service's env file; `docker compose ps` shows agent, engine and voice healthy and the new containers running; the browser voice test still works.
+Check before any call: `npm run hosted:readiness` passes for each service's env file; `docker compose ps` shows agent, engine and voice healthy and `sip` and `redis` running; `docker compose logs sip` shows "sip signaling listening on" for udp and tcp; the browser voice test still works.
 
 Database: the phone migration (`20261114190000_phone_calls.sql`) and the channel metering migration must be applied on staging. `AGENTS.md` records channel metering as applied there, which implies the phone migration is too. The plan picker and later migrations are recorded as not on staging. Confirm with the migration list before the test; `npm run hosted:migrate` is an owner step.
 
 ## 7. Trunk and dispatch rule: files and how they are applied
 
-The generator `npm run telephony:sip-config` reads active numbers from the **local** database only and refuses any other. For one staging number, write the two files by hand in the git-ignored folder `output/telephony/`. They must have exactly the shape the generator produces (`packages/domain/src/phone/sip-config.ts`), because the voice worker and the agent rely on the agent name, the room prefix and the metadata string.
+Done on 2026-11-19: inbound trunk `ST_LhsjeYrVVz9K` and dispatch rule `SDR_Muu3nfdD7CR4` exist on staging. The server has no `lk` CLI, so the main session created them with `livekit-server-sdk` from inside the agent container, which already holds the LiveKit values. The exact fields it sent were not reported to the author; they must match the two shapes below.
+
+Both are lost whenever Valkey restarts (section 4). Creating them again gives new ids, and the rule must name the new trunk id.
+
+The generator `npm run telephony:sip-config` reads active numbers from the **local** database only and refuses any other (confirmed on the server that day). For one staging number, the two definitions are written by hand, as files in the git-ignored folder `output/telephony/` or as the same fields passed to the SDK. They must have exactly the shape the generator produces (`packages/domain/src/phone/sip-config.ts`), because the voice worker and the agent rely on the agent name, the room prefix and the metadata string.
 
 `inbound-trunk.json`:
 
@@ -221,7 +254,7 @@ The generator `npm run telephony:sip-config` reads active numbers from the **loc
 }
 ```
 
-Apply **[OWNER]**, from that folder, with the LiveKit CLI pointed at staging. The CLI reads `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` from the shell; set them for that shell only and do not write them to a file in the repository. The SIP service and Redis must already be running, or the commands fail.
+Two ways to apply **[OWNER]**. The one used on 2026-11-19: `livekit-server-sdk` in a one-off Node command inside the agent container. That command is not in the repository; a small checked-in script would make the step repeatable after a restart. The other: the LiveKit CLI on a machine that can reach LiveKit, from that folder. The CLI reads `LIVEKIT_URL`, `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` from the shell; set them for that shell only and do not write them to a file in the repository. The SIP service and Valkey must be running, or the commands fail.
 
 ```bash
 lk sip inbound create inbound-trunk.json
@@ -233,7 +266,7 @@ lk sip dispatch create dispatch-rule.json
 
 Check with `lk sip inbound list` and `lk sip dispatch list`. Rollback: `lk sip dispatch delete <id>` and `lk sip inbound delete <id>`.
 
-The trunk and rule live in Redis. If the Redis container has no persistent volume, they are lost on restart and calls stop being answered. The Compose change in section 4 must give Redis a volume, or the files must be applied again after every restart.
+After any restart of Valkey, list the trunks and dispatch rules before a test call (`lk sip inbound list` and `lk sip dispatch list`, or the SDK), and create them again if they are gone. Open choice for the owner: keep this manual step, give Valkey a volume with persistence on, or have a script create them at start.
 
 ## 8. Add the number to a workspace in JomCall
 
@@ -307,16 +340,16 @@ Twilio, as shown on its pricing pages on 2026-11-19 (currency symbol "$" only, p
 | Transfer to a staff mobile | An outbound (termination) leg at Twilio's Malaysia rate, not checked |
 | Account upgrade | No fee found; a first top-up is needed, minimum not checked |
 
-JomCall's own per-minute costs (Deepgram, Google speech, Anthropic) are not recomputed here; see the margin check in `docs/research/payment-providers-malaysia.md`. JomCall charges the workspace RM 0.32 a minute beyond the plan allowance (price version 2, an owner placeholder). The server, Redis and the SIP service add no fee on the existing droplet unless it must grow beyond 2 GB.
+JomCall's own per-minute costs (Deepgram, Google speech, Anthropic) are not recomputed here; see the margin check in `docs/research/payment-providers-malaysia.md`. JomCall charges the workspace RM 0.32 a minute beyond the plan allowance (price version 2, an owner placeholder). The server, Valkey and the SIP service add no fee on the existing droplet unless it must grow beyond 2 GB.
 
 ## 12. Risks and open questions
 
 1. **Never run against a live SIP service.** Participant lookup, attributes (`sip.trunkPhoneNumber`, `sip.callID`, `sip.phoneNumber`), room deletion as hang-up and REFER transfer are checked against documentation and types only.
-2. **No SIP service or Redis on staging, and the Compose change is unbuilt** (section 4). This is the largest piece of work in the plan.
-3. **The generator is local only** (section 7). Hand-written files can drift from the code's constants.
-4. **Trial account.** Whether it can buy the number or carry trunk calls is unverified; the plan assumes an upgrade.
+2. **The trunk and dispatch rule do not survive a restart.** Valkey keeps nothing on disk (section 4). After a reboot or a `docker compose down`, calls go unanswered until both are created again, and nothing warns anyone.
+3. **The generator is local only and the server has no `lk` CLI** (section 7). The trunk and rule were made with a one-off SDK command that is not in the repository. Hand-written definitions can drift from the code's constants.
+4. **Trial account.** It fails inbound calls with `21264 From number not verified`. No call can be tested until the upgrade (T1).
 5. **Unencrypted SIP and RTP** between Twilio and the server. Callers' numbers and voices cross the internet in the clear on that leg. Fixing it needs verified TLS and SRTP support in self-hosted `livekit/sip`. A PDPA point for the lawyer before real callers.
-6. **Address limiting rests on the firewall.** Self-hosted enforcement of `allowed_addresses` is unverified, and Twilio cannot use the trunk password. Twilio's ranges are shared by all Twilio customers, so another Twilio account could send an INVITE to the server; the trunk's `numbers` list and JomCall's `UNKNOWN_NUMBER` refusal are the remaining guards.
+6. **Address limiting rests on the firewall, which is not set yet.** Port 5060 was open and being probed by scanners on 2026-11-19. Self-hosted enforcement of `allowed_addresses` is unverified, and Twilio cannot use the trunk password. Twilio's ranges are shared by all Twilio customers, so another Twilio account could send an INVITE to the server; the trunk's `numbers` list and JomCall's `UNKNOWN_NUMBER` refusal are the remaining guards.
 7. **Twilio's ranges can change.** The firewall list and the trunk list then need updating, or calls stop.
 8. **Dialled and caller number formats from Twilio are unverified.** JomCall normalises several forms (`toE164`), but LiveKit's trunk match happens first.
 9. **Reachability.** Whether all Malaysian mobile and fixed networks route to a Twilio local number, and which prefix it carries, is unverified. Test from at least two networks.
@@ -325,26 +358,26 @@ JomCall's own per-minute costs (Deepgram, Google speech, Anthropic) are not reco
 12. **Phone audio quality.** 8 kHz G.711 has never been measured against Deepgram `nova-3` multilingual for BM, English, Manglish or Mandarin.
 13. **The phone prompt rules were never run through the 48-case gate** (design section 12).
 14. **A deploy during a call.** The voice container's stop grace is 330 s but a phone call can last 600 s, so a redeploy can cut a long call.
-15. **Redis becomes a dependency of every call, browser tests included**, and the trunk and rule are lost if Redis has no volume.
-16. **Droplet memory** (2 GB) with two more containers.
+15. **Valkey is a dependency of every call, browser tests included.**
+16. **Droplet memory** (2 GB) with the SIP service and Valkey added. Not measured under a call.
 17. **Staging is public, payments are live, and it may hold no customer data.** A real caller's number and words are personal data. Use only the owner's own phones on this number. A paying customer needs production: a paid database with backups, the PDPA cross-border decision, a decision on encryption (item 5), and items 10 to 13 closed.
 18. **Refused callers hear nothing.** A plan, wallet, unpublished-agent or disclosure refusal drops the call silently. A fallback to the owner's own phone (design section 13, decision 4) is not built; Twilio's trunk has no simple "failover to a mobile" for origination, only extra origination URIs.
-19. **Approvals not yet recorded.** `AGENTS.md` must record the owner's approval of Twilio as an outbound service and of the internet-facing SIP port before deployment.
+19. **Approvals.** `AGENTS.md` records the owner's decision of 2026-11-18 to run the SIP service on the server. Check that it also names Twilio as an approved outbound service.
 20. **The first-number page** may be unreachable from the menu (section 8).
 21. **PDPA export of call records is not built** (design section 4).
 
 ## 13. Order of work, with the owner's yes at each bold step
 
-1. Owner decides option A or B (section 4) and records the approvals in `AGENTS.md`.
-2. Build the Compose, Redis, SIP and readiness change on a branch; review; merge.
-3. **Deploy it to staging.** Re-run the browser voice test.
-4. **Open the firewall rules** (section 5) and check them from outside.
-5. **Upgrade Twilio and buy the number** (T1, T2).
-6. **Create the trunk** without origination (T3).
-7. **Set the env values and redeploy** agent, voice and web (section 6); prewarm.
-8. **Apply the trunk and dispatch rule** (section 7).
-9. Publish the agent, add the number, **start a plan** on the test workspace (sections 8, 9).
-10. **Add the origination URI and attach the number** (T3.5, T4).
-11. Run the test script (section 10) and record the results under `docs/qa/`.
+Done by 2026-11-19: the SIP service and Valkey on the server; the number bought; the Twilio trunk with its origination URI; the agent settings and the fix in pull request #56; the LiveKit trunk and dispatch rule.
+
+Left, in this order:
+
+1. **Open only the firewall rules of section 5** and check them from outside. Urgent: the port is open now.
+2. **Upgrade the Twilio account** (T1). Set the usage alert and keep auto recharge off.
+3. Check the trunk settings in the Twilio console (T3 items 2 and 3) and that the number is attached (T4).
+4. Check the Vercel setting, then **prewarm** the voices (section 6).
+5. Check that the LiveKit trunk and dispatch rule still exist (section 7); create them again if Valkey restarted.
+6. Publish the agent, add the number, **start a plan** on the test workspace (sections 8, 9).
+7. Run the test script (section 10) and record the results under `docs/qa/`.
 
 Full rollback: remove the number from the Twilio trunk; set `JOMCALL_TELEPHONY_PROVIDER=disabled` in `agent.env` and Vercel and redeploy; delete the dispatch rule and trunk; close the firewall rules; release the number to stop the monthly fee.
