@@ -38,7 +38,7 @@ type Env = Record<string, string | undefined>;
 const channelColumns =
   "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason,recheck_wanted,last_check_failed_reason,last_check_failed_at,signup_pending";
 const templateColumns =
-  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff";
+  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff,submit_state,submit_reason,submitted_at";
 
 async function loadChannel(tx: PoolClient, orgId: string, lock = false) {
   return (
@@ -491,6 +491,69 @@ export async function whatsappRoute(
           await tx.query(
             `select ${templateColumns} from app.whatsapp_template where org_id=$1 and id=$2`,
             [ctx.orgId, ref.id],
+          )
+        ).rows[0],
+    );
+  }
+
+  // "Submit to WhatsApp": marks the template; the agent process creates it
+  // at the provider with the business's stored token. Only for a template
+  // the provider has never listed, on a connected number, and not while an
+  // earlier request is still on its way.
+  const submit = path.match(
+    /^\/channels\/whatsapp\/templates\/([^/]+)\/submit$/,
+  );
+  if (submit && method === "POST") {
+    manager(ctx);
+    const id = uuid.parse(submit[1]);
+    const v = channelRevision.parse(body);
+    if (!whatsappReadiness(env).configured)
+      throw new AppError("WHATSAPP_NOT_CONFIGURED", 503);
+    return command(
+      tx,
+      ctx,
+      key,
+      "submitWhatsAppTemplate",
+      { id, ...v },
+      async () => {
+        const channel = await loadChannel(tx, ctx.orgId);
+        if (!channel || channel.state !== "connected" || !channel.waba_id)
+          throw new AppError("WHATSAPP_NOT_CONNECTED", 409);
+        const cur = (
+          await tx.query(
+            "select provider_status,disabled_by_staff,submit_state,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
+            [ctx.orgId, id],
+          )
+        ).rows[0];
+        if (!cur) throw new AppError("NOT_FOUND", 404);
+        if (
+          cur.revision !== v.expectedRevision ||
+          cur.provider_status !== null ||
+          cur.disabled_by_staff ||
+          cur.submit_state === "wanted" ||
+          cur.submit_state === "sending"
+        )
+          throw new AppError("CONFLICT", 409);
+        const row = (
+          await tx.query(
+            `update app.whatsapp_template set submit_state='wanted',submit_reason=null,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
+            [ctx.orgId, id],
+          )
+        ).rows[0];
+        await audit(
+          tx,
+          ctx,
+          "whatsapp.template_submit",
+          "whatsapp_template",
+          id,
+        );
+        return { ref: { id }, data: row };
+      },
+      async () =>
+        (
+          await tx.query(
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 and id=$2`,
+            [ctx.orgId, id],
           )
         ).rows[0],
     );

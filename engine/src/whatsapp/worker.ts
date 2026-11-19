@@ -159,6 +159,8 @@ export class WhatsAppWorker {
     }
     for (let i = 0; i < 4; i++) if (!(await this.runOneTurn())) break;
     for (let i = 0; i < 20; i++) if (!(await this.sendOne())) break;
+    // One template a pass: staff asked for it and are watching the page.
+    await this.submitTemplateOne();
     // Last, so a slow provider list never delays a reply.
     const now = (this.options.now ?? Date.now)();
     if (
@@ -355,6 +357,68 @@ export class WhatsAppWorker {
     console.error(
       `WHATSAPP_CHECK_FAILED step=${step} reason=${safe(stored, "UNKNOWN")} provider=${safe(detail ?? raw, "UNKNOWN")}`,
     );
+  }
+
+  // "Submit to WhatsApp": creates one template staff asked for at the
+  // provider and records the outcome. Never throws. The log line carries
+  // fixed codes only, never the token, the template text or an id.
+  async submitTemplateOne() {
+    let claim: any;
+    try {
+      claim = (
+        await this.pool.query(
+          "select app_private.whatsapp_template_submit('claim',$1)as value",
+          [this.namespace],
+        )
+      ).rows[0].value;
+    } catch {
+      console.error("WHATSAPP_TEMPLATE_SUBMIT_CLAIM_FAILED");
+      return false;
+    }
+    if (!claim) return false;
+    let result: { ok: boolean; reason?: string; status?: string | null };
+    try {
+      const made = await this.options.provider.createTemplate({
+        wabaId: claim.wabaId,
+        accessToken: this.token(claim.credentials, claim.orgId),
+        name: claim.name,
+        language: claim.language,
+        category: claim.category,
+        body: claim.body,
+        variables: claim.variables,
+      });
+      result = made;
+      if (!made.ok) {
+        const safe = (value: string | undefined) =>
+          value && /^[A-Z0-9_]{1,60}$/.test(value) ? value : "UNKNOWN";
+        console.error(
+          `WHATSAPP_TEMPLATE_SUBMIT_FAILED reason=${safe(made.reason)} provider=${safe(made.detail ?? made.reason)}`,
+        );
+      }
+    } catch (e) {
+      result = { ok: false, reason: code(e, "TEMPLATE_SUBMIT_FAILED") };
+      console.error(
+        `WHATSAPP_TEMPLATE_SUBMIT_FAILED reason=${result.reason} provider=UNKNOWN`,
+      );
+    }
+    try {
+      await this.pool.query(
+        "select app_private.whatsapp_template_submit('result',$1,$2,$3)",
+        [
+          this.namespace,
+          claim.id,
+          JSON.stringify({
+            claimedAt: claim.claimedAt,
+            ok: result.ok,
+            reason: result.reason,
+            status: result.status,
+          }),
+        ],
+      );
+    } catch {
+      console.error("WHATSAPP_TEMPLATE_SUBMIT_RESULT_FAILED");
+    }
+    return true;
   }
 
   // Copies the provider's template statuses onto the local templates of one

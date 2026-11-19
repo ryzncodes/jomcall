@@ -18,6 +18,7 @@ import {
   type SendOutcome,
   type SendTarget,
   type SubscribeResult,
+  type TemplateCreate,
   type TemplateList,
   type TemplateMessage,
   type WhatsAppProvider,
@@ -84,6 +85,96 @@ export function createCloudProvider(
 
   return {
     name: "cloud",
+    // UNCONFIRMED AGAINST META: POST /<WABA_ID>/message_templates with
+    // name, language, category (upper case) and one BODY component answers
+    // {"id": "...", "status": "PENDING", "category": "UTILITY"}. A body with
+    // {{n}} placeholders must carry sample values, sent as
+    // example.body_text. Meta refuses a second template with the same name
+    // and language, so a refusal here is final until staff change something.
+    async createTemplate(draft): Promise<TemplateCreate> {
+      if (
+        !/^[0-9]{5,30}$/.test(draft.wabaId) ||
+        !draft.accessToken ||
+        !/^[a-z0-9_]{1,512}$/.test(draft.name) ||
+        !/^[a-z]{2,3}(_[A-Z]{2})?$/.test(draft.language) ||
+        !(draft.category === "utility" || draft.category === "marketing") ||
+        !draft.body ||
+        draft.body.length > 1024 ||
+        !Number.isInteger(draft.variables) ||
+        draft.variables < 0 ||
+        draft.variables > 10
+      )
+        return { ok: false, reason: "INVALID_TARGET" };
+      let response: Response;
+      try {
+        response = await send(
+          `${graphOrigin}/${graphVersion}/${draft.wabaId}/message_templates`,
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer " + draft.accessToken,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({
+              name: draft.name,
+              language: draft.language,
+              category: draft.category.toUpperCase(),
+              components: [
+                {
+                  type: "BODY",
+                  text: draft.body,
+                  ...(draft.variables
+                    ? {
+                        example: {
+                          body_text: [
+                            Array.from(
+                              { length: draft.variables },
+                              (_, i) => "Example " + (i + 1),
+                            ),
+                          ],
+                        },
+                      }
+                    : {}),
+                },
+              ],
+            }),
+            signal: AbortSignal.timeout(timeoutMs),
+          },
+        );
+      } catch {
+        // Timeout or broken connection: Meta may have created it. The next
+        // status check finds it by name and language if it did.
+        return { ok: false, reason: "PROVIDER_UNREACHABLE" };
+      }
+      const body = await readJson(response);
+      if (!response.ok) {
+        const meta = errorCode(body);
+        if (!meta)
+          return {
+            ok: false,
+            reason:
+              response.status >= 500
+                ? "PROVIDER_UNREACHABLE"
+                : "TEMPLATE_SUBMIT_FAILED",
+          };
+        return {
+          ok: false,
+          // An expired token keeps its own reason; the owner must reconnect.
+          reason: meta === "META_190" ? meta : "TEMPLATE_SUBMIT_FAILED",
+          detail: detailOf(body).detail ?? meta,
+        };
+      }
+      if (typeof body?.id !== "string" || !body.id)
+        return { ok: false, reason: "TEMPLATE_SUBMIT_FAILED" };
+      const status = body.status;
+      return {
+        ok: true,
+        status:
+          typeof status === "string" && /^[A-Z_]{1,60}$/.test(status)
+            ? status
+            : null,
+      };
+    },
     // UNCONFIRMED AGAINST META: written from Meta's Embedded Signup pages as
     // read on 2026-11-19 (onboarding customers as a Tech Provider). GET
     // /oauth/access_token with client_id, client_secret and code answers

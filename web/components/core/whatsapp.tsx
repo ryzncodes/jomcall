@@ -4,7 +4,7 @@ import { HOSTED } from "@/lib/hosted";
 // write-only: it is sent once and never shown again. Until the server's
 // switch and secrets are set, the screen says the channel is not connected
 // and offers nothing that could reach Meta.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   mappedProviderStatuses,
   providerStatusMap,
@@ -72,6 +72,30 @@ function reasonText(
       );
     default:
       return reason;
+  }
+}
+
+// Why WhatsApp did not take a template, in words staff can act on.
+function submitFailedText(
+  reason: string | null,
+  w: (en: string, ms: string) => string,
+): string {
+  switch (reason) {
+    case "META_190":
+      return w(
+        "WhatsApp rejected the saved access. Connect the number again, then submit the template once more.",
+        "WhatsApp menolak akses yang disimpan. Sambungkan nombor sekali lagi, kemudian hantar templat semula.",
+      );
+    case "PROVIDER_UNREACHABLE":
+      return w(
+        "JomCall could not reach WhatsApp. It may still have been created: wait for the next status check, or try again.",
+        "JomCall tidak dapat menghubungi WhatsApp. Templat mungkin sudah dicipta: tunggu semakan status seterusnya, atau cuba lagi.",
+      );
+    default:
+      return w(
+        "WhatsApp did not accept this template. A template with this name and language may already exist there, or the text breaks WhatsApp's template rules. Check it in WhatsApp Manager.",
+        "WhatsApp tidak menerima templat ini. Templat dengan nama dan bahasa ini mungkin sudah wujud di sana, atau teksnya melanggar peraturan templat WhatsApp. Semak dalam WhatsApp Manager.",
+      );
   }
 }
 
@@ -551,6 +575,29 @@ function Templates({
     )
       reload();
   };
+  const submit = async (t: WhatsAppTemplate) => {
+    if (
+      await action.run(() =>
+        client.execute("submitWhatsAppTemplate", {
+          id: t.id,
+          expectedRevision: t.revision,
+        }),
+      )
+    )
+      reload();
+  };
+  // While the agent process sends a template to WhatsApp, look again every
+  // two seconds; it usually takes a few.
+  const sending = templates.some(
+    (t) => t.submit_state === "wanted" || t.submit_state === "sending",
+  );
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useEffect(() => {
+    if (!sending || !connected) return;
+    const timer = setInterval(() => reloadRef.current(), 2000);
+    return () => clearInterval(timer);
+  }, [sending, connected]);
   // Disabled without staff having done it, with a WhatsApp status the map
   // does not know: switching on restores it by hand.
   const stuckOff = (t: WhatsAppTemplate) =>
@@ -566,8 +613,8 @@ function Templates({
       <h2>{w("Message templates", "Templat mesej")}</h2>
       <p>
         {w(
-          "After 24 hours without a customer message, WhatsApp only allows approved templates. Submit each template in WhatsApp Manager and add it here. While the number is connected, JomCall checks each template's status with WhatsApp about once an hour; record Meta's decision by hand only for a template WhatsApp has not listed.",
-          "Selepas 24 jam tanpa mesej daripada pelanggan, WhatsApp hanya membenarkan templat yang diluluskan. Hantar setiap templat dalam WhatsApp Manager dan tambahkannya di sini. Semasa nombor disambungkan, JomCall menyemak status setiap templat dengan WhatsApp lebih kurang sejam sekali; rekodkan keputusan Meta secara manual hanya untuk templat yang belum disenaraikan oleh WhatsApp.",
+          "After 24 hours without a customer message, WhatsApp only allows approved templates. Add a template here and press Submit to WhatsApp to send it for Meta's review. While the number is connected, JomCall checks each template's status with WhatsApp about once an hour; record Meta's decision by hand only for a template you created in WhatsApp Manager that WhatsApp has not listed.",
+          "Selepas 24 jam tanpa mesej daripada pelanggan, WhatsApp hanya membenarkan templat yang diluluskan. Tambah templat di sini dan tekan Hantar ke WhatsApp untuk semakan Meta. Semasa nombor disambungkan, JomCall menyemak status setiap templat dengan WhatsApp lebih kurang sejam sekali; rekodkan keputusan Meta secara manual hanya untuk templat yang anda cipta dalam WhatsApp Manager dan belum disenaraikan oleh WhatsApp.",
         )}
       </p>
       {line === "checking" && (
@@ -632,6 +679,26 @@ function Templates({
                     )}
                   </p>
                 )}
+                {!synced &&
+                  (t.submit_state === "wanted" ||
+                    t.submit_state === "sending") && (
+                    <p className="editor-note" role="status">
+                      {connected
+                        ? w(
+                            "Sending to WhatsApp for review…",
+                            "Sedang dihantar ke WhatsApp untuk semakan…",
+                          )
+                        : w(
+                            "Waiting to be sent: the number is not connected.",
+                            "Menunggu untuk dihantar: nombor belum disambungkan.",
+                          )}
+                    </p>
+                  )}
+                {!synced && t.submit_state === "failed" && (
+                  <p className="storage-warning" role="alert">
+                    {submitFailedText(t.submit_reason, w)}
+                  </p>
+                )}
                 {note === "from_provider" && (
                   <p className="editor-note">
                     {t.synced_at
@@ -692,6 +759,21 @@ function Templates({
                     {w("Switch off", "Matikan")}
                   </button>
                 )}
+                {connected &&
+                  !t.disabled_by_staff &&
+                  !synced &&
+                  t.submit_state !== "wanted" &&
+                  t.submit_state !== "sending" && (
+                    <button
+                      className="button button-dark"
+                      disabled={action.busy}
+                      onClick={() => submit(t)}
+                    >
+                      {t.submit_state === "failed"
+                        ? w("Try submitting again", "Cuba hantar lagi")
+                        : w("Submit to WhatsApp", "Hantar ke WhatsApp")}
+                    </button>
+                  )}
                 {!t.disabled_by_staff && !synced && t.status === "draft" && (
                   <button
                     className="button secondary-button"

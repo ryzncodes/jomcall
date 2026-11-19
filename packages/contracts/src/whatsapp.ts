@@ -145,6 +145,12 @@ export type WhatsAppTemplate = {
   // Switched off by staff; a check records the provider's status but keeps
   // the template disabled until staff switch it back on.
   disabled_by_staff: boolean;
+  // "Submit to WhatsApp": wanted and sending while the agent process sends
+  // the template for review, failed with a fixed reason when the provider
+  // refused it, null otherwise. submitted_at is set once it was accepted.
+  submit_state: "wanted" | "sending" | "failed" | null;
+  submit_reason: string | null;
+  submitted_at: string | null;
 };
 export type WhatsAppOverview = {
   readiness: {
