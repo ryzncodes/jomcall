@@ -159,8 +159,6 @@ export class WhatsAppWorker {
     }
     for (let i = 0; i < 4; i++) if (!(await this.runOneTurn())) break;
     for (let i = 0; i < 20; i++) if (!(await this.sendOne())) break;
-    // One template a pass: staff asked for it and are watching the page.
-    await this.submitTemplateOne();
     // Last, so a slow provider list never delays a reply.
     const now = (this.options.now ?? Date.now)();
     if (
@@ -170,6 +168,9 @@ export class WhatsAppWorker {
       this.lastTemplateSync = now;
       await this.syncTemplatesOne();
     }
+    // After everything a customer waits for. One template a pass: staff
+    // asked for it and are watching the page.
+    await this.submitTemplateOne();
   }
 
   private token(sealed: SealedCredentials | null, orgId: string) {
@@ -409,6 +410,7 @@ export class WhatsAppWorker {
           claim.id,
           JSON.stringify({
             claimedAt: claim.claimedAt,
+            wabaId: claim.wabaId,
             ok: result.ok,
             reason: result.reason,
             status: result.status,

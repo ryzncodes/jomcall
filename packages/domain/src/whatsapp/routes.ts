@@ -517,7 +517,14 @@ export async function whatsappRoute(
       { id, ...v },
       async () => {
         const channel = await loadChannel(tx, ctx.orgId);
-        if (!channel || channel.state !== "connected" || !channel.waba_id)
+        // The agent process needs stored access to create it; without any
+        // the request would wait for ever.
+        if (
+          !channel ||
+          channel.state !== "connected" ||
+          !channel.waba_id ||
+          !channel.credentials_set_at
+        )
           throw new AppError("WHATSAPP_NOT_CONNECTED", 409);
         const cur = (
           await tx.query(
@@ -528,7 +535,10 @@ export async function whatsappRoute(
         if (!cur) throw new AppError("NOT_FOUND", 404);
         if (
           cur.revision !== v.expectedRevision ||
-          cur.provider_status !== null ||
+          // Seen at the provider and still there: nothing to submit. One
+          // that was there and is gone can be sent again.
+          (cur.provider_status !== null &&
+            cur.provider_status !== providerStatusNotFound) ||
           cur.disabled_by_staff ||
           cur.submit_state === "wanted" ||
           cur.submit_state === "sending"
@@ -573,7 +583,7 @@ export async function whatsappRoute(
       async () => {
         const cur = (
           await tx.query(
-            "select status,provider_status,disabled_by_staff,status_before_off,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
+            "select status,provider_status,disabled_by_staff,status_before_off,submit_state,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
             [ctx.orgId, id],
           )
         ).rows[0];
@@ -588,6 +598,11 @@ export async function whatsappRoute(
         const mapped = seen
           ? (providerStatusMap as Record<string, string>)[cur.provider_status]
           : undefined;
+        // A template JomCall is sending, or one the provider just refused,
+        // takes its status from that outcome: staff do not record one by
+        // hand. Switching off stays possible at any time.
+        if (v.status !== "disabled" && cur.submit_state !== null)
+          throw new AppError("CONFLICT", 409);
         if (v.status === "disabled") {
           // Staff can always switch a template off; a check never switches
           // it back on. The status it had is kept to restore on switch-on.
@@ -624,7 +639,13 @@ export async function whatsappRoute(
         }
         const row = (
           await tx.query(
-            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,status_before_off=$5,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
+            // Switching off drops a request that has not been picked up yet
+            // (one already on its way is finished by the agent process, and
+            // the template stays off) and forgets an earlier refusal.
+            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,status_before_off=$5,
+             submit_state=case when $4 and submit_state in('wanted','failed') then null else submit_state end,
+             submit_reason=case when $4 and submit_state in('wanted','failed') then null else submit_reason end,
+             revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
             [ctx.orgId, id, status, byStaff, before],
           )
         ).rows[0];

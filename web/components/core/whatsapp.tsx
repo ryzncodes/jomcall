@@ -81,7 +81,15 @@ function submitFailedText(
   w: (en: string, ms: string) => string,
 ): string {
   switch (reason) {
+    case "TEMPLATE_SUBMIT_STALE":
+      return w(
+        "The WhatsApp connection changed while this was being sent. Submit it again.",
+        "Sambungan WhatsApp berubah semasa templat ini dihantar. Hantar sekali lagi.",
+      );
     case "META_190":
+    case "WHATSAPP_CREDENTIALS_MISSING":
+    case "WHATSAPP_CREDENTIALS_INVALID":
+    case "WHATSAPP_CREDENTIALS_KEY_REQUIRED":
       return w(
         "WhatsApp rejected the saved access. Connect the number again, then submit the template once more.",
         "WhatsApp menolak akses yang disimpan. Sambungkan nombor sekali lagi, kemudian hantar templat semula.",
@@ -586,16 +594,33 @@ function Templates({
     )
       reload();
   };
+  // Listed by WhatsApp at the last check. One that was listed and is gone
+  // (NOT_FOUND) is not, and can be submitted again.
+  const atProvider = (t: WhatsAppTemplate) =>
+    t.provider_status !== null && t.provider_status !== providerStatusNotFound;
+  // A request the agent process can still serve: not switched off and not
+  // already at WhatsApp.
+  const inFlight = (t: WhatsAppTemplate) =>
+    (t.submit_state === "wanted" || t.submit_state === "sending") &&
+    !t.disabled_by_staff &&
+    !atProvider(t);
   // While the agent process sends a template to WhatsApp, look again every
-  // two seconds; it usually takes a few.
-  const sending = templates.some(
-    (t) => t.submit_state === "wanted" || t.submit_state === "sending",
-  );
+  // two seconds; it usually takes a few. After a minute and a half the page
+  // stops asking and says so, so a stuck request never polls for ever.
+  const sending = templates.some(inFlight);
+  const [slow, setSlow] = useState(false);
   const reloadRef = useRef(reload);
   reloadRef.current = reload;
   useEffect(() => {
+    setSlow(false);
     if (!sending || !connected) return;
-    const timer = setInterval(() => reloadRef.current(), 2000);
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - started > 90_000) {
+        clearInterval(timer);
+        setSlow(true);
+      } else reloadRef.current();
+    }, 2000);
     return () => clearInterval(timer);
   }, [sending, connected]);
   // Disabled without staff having done it, with a WhatsApp status the map
@@ -679,22 +704,25 @@ function Templates({
                     )}
                   </p>
                 )}
-                {!synced &&
-                  (t.submit_state === "wanted" ||
-                    t.submit_state === "sending") && (
-                    <p className="editor-note" role="status">
-                      {connected
+                {inFlight(t) && (
+                  <p className="editor-note" role="status">
+                    {connected
+                      ? slow
                         ? w(
+                            "This is taking longer than usual. Reload the page in a few minutes to see the outcome.",
+                            "Ini mengambil masa lebih lama daripada biasa. Muat semula halaman dalam beberapa minit untuk melihat hasilnya.",
+                          )
+                        : w(
                             "Sending to WhatsApp for review…",
                             "Sedang dihantar ke WhatsApp untuk semakan…",
                           )
-                        : w(
-                            "Waiting to be sent: the number is not connected.",
-                            "Menunggu untuk dihantar: nombor belum disambungkan.",
-                          )}
-                    </p>
-                  )}
-                {!synced && t.submit_state === "failed" && (
+                      : w(
+                          "Waiting to be sent: the number is not connected.",
+                          "Menunggu untuk dihantar: nombor belum disambungkan.",
+                        )}
+                  </p>
+                )}
+                {!atProvider(t) && t.submit_state === "failed" && (
                   <p className="storage-warning" role="alert">
                     {submitFailedText(t.submit_reason, w)}
                   </p>
@@ -761,7 +789,7 @@ function Templates({
                 )}
                 {connected &&
                   !t.disabled_by_staff &&
-                  !synced &&
+                  !atProvider(t) &&
                   t.submit_state !== "wanted" &&
                   t.submit_state !== "sending" && (
                     <button
@@ -774,33 +802,39 @@ function Templates({
                         : w("Submit to WhatsApp", "Hantar ke WhatsApp")}
                     </button>
                   )}
-                {!t.disabled_by_staff && !synced && t.status === "draft" && (
-                  <button
-                    className="button secondary-button"
-                    disabled={action.busy}
-                    onClick={() => mark(t, "pending")}
-                  >
-                    {w("Submitted to Meta", "Dihantar kepada Meta")}
-                  </button>
-                )}
-                {!t.disabled_by_staff && !synced && t.status === "pending" && (
-                  <>
+                {!t.disabled_by_staff &&
+                  !synced &&
+                  t.submit_state === null &&
+                  t.status === "draft" && (
                     <button
                       className="button secondary-button"
                       disabled={action.busy}
-                      onClick={() => mark(t, "approved")}
+                      onClick={() => mark(t, "pending")}
                     >
-                      {w("Mark approved", "Tanda diluluskan")}
+                      {w("Submitted to Meta", "Dihantar kepada Meta")}
                     </button>
-                    <button
-                      className="button secondary-button"
-                      disabled={action.busy}
-                      onClick={() => mark(t, "rejected")}
-                    >
-                      {w("Mark rejected", "Tanda ditolak")}
-                    </button>
-                  </>
-                )}
+                  )}
+                {!t.disabled_by_staff &&
+                  !synced &&
+                  t.submit_state === null &&
+                  t.status === "pending" && (
+                    <>
+                      <button
+                        className="button secondary-button"
+                        disabled={action.busy}
+                        onClick={() => mark(t, "approved")}
+                      >
+                        {w("Mark approved", "Tanda diluluskan")}
+                      </button>
+                      <button
+                        className="button secondary-button"
+                        disabled={action.busy}
+                        onClick={() => mark(t, "rejected")}
+                      >
+                        {w("Mark rejected", "Tanda ditolak")}
+                      </button>
+                    </>
+                  )}
               </div>
             </div>
           );
