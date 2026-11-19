@@ -74,8 +74,30 @@ export type RegisterResult =
   | { ok: true }
   | { ok: false; reason: string; detail?: string };
 
+// What JomCall hands the provider to create a message template for review.
+export type TemplateDraft = {
+  wabaId: string;
+  accessToken: string;
+  name: string;
+  language: string;
+  category: "utility" | "marketing";
+  body: string;
+  // How many {{n}} placeholders the body has.
+  variables: number;
+};
+
+// `status` is the provider's own name for the new template's review state
+// (upper case), or null when the answer did not say.
+export type TemplateCreate =
+  | { ok: true; status: string | null }
+  | { ok: false; reason: string; detail?: string };
+
 export interface WhatsAppProvider {
   readonly name: "fake" | "cloud";
+  // Creates a message template in the business account and so submits it for
+  // the provider's review. Not safe to repeat: a second call for the same
+  // name and language is refused by the provider.
+  createTemplate(draft: TemplateDraft): Promise<TemplateCreate>;
   // Embedded Signup: swaps the one-time code from Meta's popup for the
   // business's token. A code works once and for a few minutes only.
   exchangeSignupCode(input: { code: string }): Promise<CodeExchange>;

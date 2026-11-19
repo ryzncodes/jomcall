@@ -773,6 +773,12 @@ export const commands = {
     templateStatus.extend({ id: uuid }),
     out<WhatsAppTemplate>(),
   ),
+  submitWhatsAppTemplate: route(
+    "POST",
+    "/channels/whatsapp/templates/:id/submit",
+    channelRevision.extend({ id: uuid }),
+    out<WhatsAppTemplate>(),
+  ),
   conversations: route(
     "GET",
     "/conversations",

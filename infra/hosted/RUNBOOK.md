@@ -469,6 +469,22 @@ Agent log lines: `WHATSAPP_CHECK_FAILED step=exchange|verify|subscribe|register 
 
 Known limits: the two-step PIN JomCall sets when it registers a number is stored sealed with the token and is not shown to the owner; if a registration reached Meta but its result was lost, the business resets the PIN in WhatsApp Manager. One agent process is assumed: two would both try to exchange the same code.
 
+## Step 16. Submit a message template to WhatsApp from JomCall, [OWNER], applies a migration
+
+Staff press "Submit to WhatsApp" on a template; the agent process creates it in the business account with the stored token. Built and tested against a stand-in only: the request to Meta has never run.
+
+Order matters: the migration, then the agent, then the web (which deploys when the change is merged).
+
+1. **[OWNER]** Apply `supabase/migrations/20261119110000_whatsapp_template_submit.sql` to the database (one transaction, then record it as the other migrations were).
+2. **[OWNER]** Rebuild the agent.
+3. Merge the change so the web deploys.
+
+[CHECK] On a connected number: add a template, press Submit to WhatsApp. Within a few seconds the page shows "Status from WhatsApp" with Meta's status, and the template is listed in WhatsApp Manager. Press it for a template that already exists at Meta with the same name and language: the page says WhatsApp did not accept it.
+
+Agent log lines: `WHATSAPP_TEMPLATE_SUBMIT_FAILED reason=… provider=…` (codes only), `WHATSAPP_TEMPLATE_SUBMIT_CLAIM_FAILED`, `WHATSAPP_TEMPLATE_SUBMIT_RESULT_FAILED`.
+
+Known limits: a body with placeholders is sent with made-up sample values ("Example 1"), which Meta may refuse; a request the provider did not answer is tried again once after five minutes, and if the first attempt did create the template the retry is refused and the next status check finds it by name and language.
+
 ## Moving web to Cloudflare Workers later — NOT DONE
 
 Web stays on Vercel. It is kept swappable: application code uses no Vercel-only API; mode and origin come from `JOMCALL_MODE` and `APP_ORIGIN`; the client address comes from `x-real-ip` / `x-forwarded-for`. The only Vercel-specific lines are build settings (`web/vercel.json`, and `distDir` in `web/next.config.ts` keyed on `VERCEL`). A move would need, and none of it is built or tested:

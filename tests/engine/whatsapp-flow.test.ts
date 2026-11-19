@@ -2170,3 +2170,339 @@ test("Embedded Signup connects a number through the agent process", async (t) =>
     await f.close();
   }
 });
+
+test("Submit to WhatsApp sends a template for review through the agent process", async (t) => {
+  const f = await setup({ token: true });
+  try {
+    const db = f.h.cleanup;
+    const channelRevision = async () =>
+      (await db.query("select revision from app.whatsapp_channel where org_id=$1", [f.h.orgA.id])).rows[0].revision;
+    const add = async (name: string, extra: Record<string, unknown> = {}) => {
+      const r = await f.req("POST", "/channels/whatsapp/templates", {
+        name,
+        language: "en",
+        category: "utility",
+        purpose: "other",
+        body: "We have a reply to your enquiry. Please reply to continue.",
+        variables: 0,
+        ...extra,
+      });
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      return r.body.data.id as string;
+    };
+    const row = async (id: string) =>
+      (
+        await db.query(
+          "select status,provider_status,submit_state,submit_reason,submitted_at,submit_claimed_at,synced_at,revision,disabled_by_staff from app.whatsapp_template where id=$1",
+          [id],
+        )
+      ).rows[0];
+    const submit = async (id: string, revision?: number) =>
+      f.req("POST", `/channels/whatsapp/templates/${id}/submit`, {
+        expectedRevision: revision ?? (await row(id)).revision,
+      });
+    const agentDb = (f.worker as unknown as { pool: pg.Pool }).pool;
+
+    await t.test("a template staff submit is created at the provider and recorded as seen there", async () => {
+      const id = await add("submit_one");
+      const r = await submit(id);
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(r.body.data.submit_state, "wanted");
+      await f.worker.tick();
+      assert.deepEqual(f.provider.created, [
+        {
+          wabaId: "200000001",
+          name: "submit_one",
+          language: "en",
+          category: "utility",
+          body: "We have a reply to your enquiry. Please reply to continue.",
+          variables: 0,
+        },
+      ]);
+      const after = await row(id);
+      assert.equal(after.status, "pending");
+      assert.equal(after.provider_status, "PENDING");
+      assert.equal(after.submit_state, null);
+      assert.equal(after.submit_reason, null);
+      assert.ok(after.submitted_at);
+      assert.ok(after.synced_at);
+      // Not sent twice.
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, 1);
+      // Seen at the provider: it cannot be submitted again.
+      assert.equal((await submit(id)).status, 409);
+    });
+
+    await t.test("the provider's own status is kept; an unsaid one reads as pending", async () => {
+      f.provider.createStatus("APPROVED");
+      const approved = await add("submit_approved");
+      assert.equal((await submit(approved)).status, 200);
+      await f.worker.tick();
+      assert.deepEqual(
+        [(await row(approved)).status, (await row(approved)).provider_status],
+        ["approved", "APPROVED"],
+      );
+      f.provider.createStatus(null);
+      const unsaid = await add("submit_unsaid");
+      assert.equal((await submit(unsaid)).status, 200);
+      await f.worker.tick();
+      assert.deepEqual(
+        [(await row(unsaid)).status, (await row(unsaid)).provider_status],
+        ["pending", "PENDING"],
+      );
+      f.provider.createStatus("PENDING");
+    });
+
+    await t.test("a refusal is kept with its reason, not retried, and staff can try again", async () => {
+      const id = await add("submit_refused");
+      f.provider.failCreate("TEMPLATE_SUBMIT_FAILED", "META_100_2388024");
+      assert.equal((await submit(id)).status, 200);
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      let after = await row(id);
+      assert.equal(after.submit_state, "failed");
+      assert.equal(after.submit_reason, "TEMPLATE_SUBMIT_FAILED");
+      assert.equal(after.provider_status, null);
+      assert.equal(after.status, "draft");
+      assert.equal(f.provider.created.length, before + 1);
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before + 1);
+      f.provider.failCreate(undefined);
+      assert.equal((await submit(id)).status, 200);
+      await f.worker.tick();
+      after = await row(id);
+      assert.equal(after.submit_state, null);
+      assert.equal(after.provider_status, "PENDING");
+    });
+
+    await t.test("a provider that throws ends as a failure, never a loop", async () => {
+      const id = await add("submit_throws");
+      const real = f.provider.createTemplate;
+      let calls = 0;
+      f.provider.createTemplate = async () => {
+        calls++;
+        throw Error("boom");
+      };
+      assert.equal((await submit(id)).status, 200);
+      await f.worker.tick();
+      await f.worker.tick();
+      f.provider.createTemplate = real;
+      assert.equal(calls, 1);
+      assert.deepEqual(
+        [(await row(id)).submit_state, (await row(id)).submit_reason],
+        ["failed", "TEMPLATE_SUBMIT_FAILED"],
+      );
+    });
+
+    await t.test("a stale revision and a second request while one is waiting are refused", async () => {
+      const id = await add("submit_twice");
+      assert.equal((await submit(id, 99)).status, 409);
+      assert.equal((await submit(id)).status, 200);
+      assert.equal((await submit(id)).status, 409);
+      assert.equal((await f.req("POST", `/channels/whatsapp/templates/${randomUUID()}/submit`, { expectedRevision: 1 })).status, 404);
+      await f.worker.tick();
+      assert.equal((await row(id)).provider_status, "PENDING");
+    });
+
+    await t.test("a template switched off before the agent process gets to it is not sent", async () => {
+      const id = await add("submit_then_off");
+      assert.equal((await submit(id)).status, 200);
+      const off = await f.req("PATCH", `/channels/whatsapp/templates/${id}`, {
+        status: "disabled",
+        expectedRevision: (await row(id)).revision,
+      });
+      assert.equal(off.status, 200, JSON.stringify(off.body));
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before);
+      assert.equal((await row(id)).provider_status, null);
+    });
+
+    await t.test("a claim left unanswered is taken again only after five minutes", async () => {
+      const id = await add("submit_stuck");
+      assert.equal((await submit(id)).status, 200);
+      const claim = (await agentDb.query("select app_private.whatsapp_template_submit('claim',$1)as value", [f.h.namespace])).rows[0].value;
+      assert.equal(claim.id, id);
+      assert.equal(claim.name, "submit_stuck");
+      assert.equal((await row(id)).submit_state, "sending");
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before);
+      // An answer for another claim of the same template is ignored.
+      const stale = (
+        await agentDb.query("select app_private.whatsapp_template_submit('result',$1,$2,$3)as value", [
+          f.h.namespace,
+          id,
+          JSON.stringify({ claimedAt: "2026-01-01T00:00:00.000Z", ok: true, status: "APPROVED" }),
+        ])
+      ).rows[0].value;
+      assert.deepEqual(stale, { applied: false });
+      assert.equal((await row(id)).submit_state, "sending");
+      await db.query("update app.whatsapp_template set submit_claimed_at=now()-interval '6 minutes' where id=$1", [id]);
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before + 1);
+      assert.equal((await row(id)).provider_status, "PENDING");
+      // The first claim's late answer no longer applies.
+      const late = (
+        await agentDb.query("select app_private.whatsapp_template_submit('result',$1,$2,$3)as value", [
+          f.h.namespace,
+          id,
+          JSON.stringify({ claimedAt: claim.claimedAt, ok: false, reason: "TEMPLATE_SUBMIT_FAILED" }),
+        ])
+      ).rows[0].value;
+      assert.deepEqual(late, { applied: false });
+      assert.equal((await row(id)).submit_state, null);
+    });
+
+    await t.test("a template switched off while it is on its way stays off, whatever the provider says", async () => {
+      const id = await add("submit_off_midway");
+      assert.equal((await submit(id)).status, 200);
+      f.provider.createStatus("APPROVED");
+      const real = f.provider.createTemplate;
+      f.provider.createTemplate = async (draft) => {
+        // Staff press Switch off while the provider is being asked.
+        const off = await f.req("PATCH", `/channels/whatsapp/templates/${id}`, {
+          status: "disabled",
+          expectedRevision: (await row(id)).revision,
+        });
+        assert.equal(off.status, 200, JSON.stringify(off.body));
+        return real(draft);
+      };
+      await f.worker.tick();
+      f.provider.createTemplate = real;
+      f.provider.createStatus("PENDING");
+      const after = await row(id);
+      assert.equal(after.disabled_by_staff, true);
+      assert.equal(after.status, "disabled");
+      assert.equal(after.provider_status, "APPROVED");
+      assert.equal(after.submit_state, null);
+    });
+
+    await t.test("staff cannot record a status by hand while a submit is waiting or was refused", async () => {
+      const id = await add("submit_no_manual");
+      f.provider.failCreate("TEMPLATE_SUBMIT_FAILED");
+      assert.equal((await submit(id)).status, 200);
+      const waiting = await f.req("PATCH", `/channels/whatsapp/templates/${id}`, {
+        status: "approved",
+        expectedRevision: (await row(id)).revision,
+      });
+      assert.equal(waiting.status, 409, JSON.stringify(waiting.body));
+      await f.worker.tick();
+      assert.equal((await row(id)).submit_state, "failed");
+      const refused = await f.req("PATCH", `/channels/whatsapp/templates/${id}`, {
+        status: "approved",
+        expectedRevision: (await row(id)).revision,
+      });
+      assert.equal(refused.status, 409, JSON.stringify(refused.body));
+      assert.equal((await row(id)).status, "draft");
+      f.provider.failCreate(undefined);
+      // Switching off forgets the refusal.
+      const off = await f.req("PATCH", `/channels/whatsapp/templates/${id}`, {
+        status: "disabled",
+        expectedRevision: (await row(id)).revision,
+      });
+      assert.equal(off.status, 200, JSON.stringify(off.body));
+      assert.equal((await row(id)).submit_state, null);
+    });
+
+    await t.test("a request for a template the status check has meanwhile seen is dropped, not sent", async () => {
+      const id = await add("submit_seen_meanwhile");
+      assert.equal((await submit(id)).status, 200);
+      await db.query("update app.whatsapp_template set provider_status='APPROVED',status='approved' where id=$1", [id]);
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before);
+      const after = await row(id);
+      assert.equal(after.submit_state, null);
+      assert.equal(after.status, "approved");
+    });
+
+    await t.test("a template that was at the provider and is gone can be submitted again", async () => {
+      const id = await add("submit_gone");
+      await db.query("update app.whatsapp_template set provider_status='NOT_FOUND',status='approved' where id=$1", [id]);
+      const r = await submit(id);
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before + 1);
+      const after = await row(id);
+      assert.equal(after.provider_status, "PENDING");
+      assert.equal(after.status, "pending");
+    });
+
+    await t.test("a business account changed while the provider was asked ends the request as stale", async () => {
+      const id = await add("submit_stale_account");
+      assert.equal((await submit(id)).status, 200);
+      const real = f.provider.createTemplate;
+      f.provider.createTemplate = async (draft) => {
+        await db.query("update app.whatsapp_channel set waba_id='200000009' where org_id=$1", [f.h.orgA.id]);
+        return real(draft);
+      };
+      await f.worker.tick();
+      f.provider.createTemplate = real;
+      await db.query("update app.whatsapp_channel set waba_id='200000001' where org_id=$1", [f.h.orgA.id]);
+      const after = await row(id);
+      assert.equal(after.submit_state, "failed");
+      assert.equal(after.submit_reason, "TEMPLATE_SUBMIT_STALE");
+      assert.equal(after.provider_status, null);
+    });
+
+    await t.test("without stored access the request is refused, and none is ever claimed", async () => {
+      const id = await add("submit_no_access");
+      const kept = (await db.query("select credentials,credentials_set_at from app.whatsapp_channel where org_id=$1", [f.h.orgA.id])).rows[0];
+      await db.query("update app.whatsapp_channel set credentials=null,credentials_set_at=null where org_id=$1", [f.h.orgA.id]);
+      const refused = await submit(id);
+      assert.equal(refused.status, 409, JSON.stringify(refused.body));
+      assert.equal(refused.body.error.code, "WHATSAPP_NOT_CONNECTED");
+      await db.query("update app.whatsapp_template set submit_state='wanted' where id=$1", [id]);
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before);
+      await db.query("update app.whatsapp_template set submit_state=null where id=$1", [id]);
+      await db.query("update app.whatsapp_channel set credentials=$2,credentials_set_at=$3 where org_id=$1", [f.h.orgA.id, kept.credentials, kept.credentials_set_at]);
+    });
+
+    await t.test("neither staff nor another workspace can submit this workspace's template", async () => {
+      const id = await add("submit_not_yours");
+      const body = { expectedRevision: (await row(id)).revision };
+      const path = `/api/v1/channels/whatsapp/templates/${id}/submit`;
+      const asStaff = await f.api.request(f.h.staff, f.h.orgA.id, "POST", path, body);
+      assert.equal(asStaff.status, 403, JSON.stringify(asStaff.body));
+      const asOther = await f.api.request(f.h.bob, f.h.orgB.id, "POST", path, body);
+      assert.ok([404, 409].includes(asOther.status), JSON.stringify(asOther.body));
+      assert.equal((await row(id)).submit_state, null);
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before);
+    });
+
+    await t.test("only the agent process may claim, and nothing is sent for a number that is not connected", async () => {
+      const web = new pg.Client({ connectionString: process.env.APP_DATABASE_URL });
+      await web.connect();
+      try {
+        await assert.rejects(
+          web.query("select app_private.whatsapp_template_submit('claim',$1)", [f.h.namespace]),
+          /permission denied/,
+        );
+      } finally {
+        await web.end();
+      }
+      const id = await add("submit_offline");
+      assert.equal((await submit(id)).status, 200);
+      const d = await f.req("POST", "/channels/whatsapp/disconnect", {
+        expectedRevision: await channelRevision(),
+      });
+      assert.equal(d.status, 200, JSON.stringify(d.body));
+      const before = f.provider.created.length;
+      await f.worker.tick();
+      assert.equal(f.provider.created.length, before);
+      assert.equal((await row(id)).submit_state, "wanted");
+      const other = await add("submit_offline_two");
+      const refused = await submit(other);
+      assert.equal(refused.status, 409, JSON.stringify(refused.body));
+      assert.equal(refused.body.error.code, "WHATSAPP_NOT_CONNECTED");
+    });
+  } finally {
+    await f.close();
+  }
+});

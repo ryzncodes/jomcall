@@ -38,7 +38,7 @@ type Env = Record<string, string | undefined>;
 const channelColumns =
   "id,state,state_reason,phone_number_id,waba_id,display_phone_e164,credentials_set_at,agent_enabled,revision,templates_synced_at,templates_sync_reason,recheck_wanted,last_check_failed_reason,last_check_failed_at,signup_pending";
 const templateColumns =
-  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff";
+  "id,name,language,category,purpose,status,body,variables,revision,provider_status,synced_at,disabled_by_staff,submit_state,submit_reason,submitted_at";
 
 async function loadChannel(tx: PoolClient, orgId: string, lock = false) {
   return (
@@ -496,6 +496,79 @@ export async function whatsappRoute(
     );
   }
 
+  // "Submit to WhatsApp": marks the template; the agent process creates it
+  // at the provider with the business's stored token. Only for a template
+  // the provider has never listed, on a connected number, and not while an
+  // earlier request is still on its way.
+  const submit = path.match(
+    /^\/channels\/whatsapp\/templates\/([^/]+)\/submit$/,
+  );
+  if (submit && method === "POST") {
+    manager(ctx);
+    const id = uuid.parse(submit[1]);
+    const v = channelRevision.parse(body);
+    if (!whatsappReadiness(env).configured)
+      throw new AppError("WHATSAPP_NOT_CONFIGURED", 503);
+    return command(
+      tx,
+      ctx,
+      key,
+      "submitWhatsAppTemplate",
+      { id, ...v },
+      async () => {
+        const channel = await loadChannel(tx, ctx.orgId);
+        // The agent process needs stored access to create it; without any
+        // the request would wait for ever.
+        if (
+          !channel ||
+          channel.state !== "connected" ||
+          !channel.waba_id ||
+          !channel.credentials_set_at
+        )
+          throw new AppError("WHATSAPP_NOT_CONNECTED", 409);
+        const cur = (
+          await tx.query(
+            "select provider_status,disabled_by_staff,submit_state,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
+            [ctx.orgId, id],
+          )
+        ).rows[0];
+        if (!cur) throw new AppError("NOT_FOUND", 404);
+        if (
+          cur.revision !== v.expectedRevision ||
+          // Seen at the provider and still there: nothing to submit. One
+          // that was there and is gone can be sent again.
+          (cur.provider_status !== null &&
+            cur.provider_status !== providerStatusNotFound) ||
+          cur.disabled_by_staff ||
+          cur.submit_state === "wanted" ||
+          cur.submit_state === "sending"
+        )
+          throw new AppError("CONFLICT", 409);
+        const row = (
+          await tx.query(
+            `update app.whatsapp_template set submit_state='wanted',submit_reason=null,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
+            [ctx.orgId, id],
+          )
+        ).rows[0];
+        await audit(
+          tx,
+          ctx,
+          "whatsapp.template_submit",
+          "whatsapp_template",
+          id,
+        );
+        return { ref: { id }, data: row };
+      },
+      async () =>
+        (
+          await tx.query(
+            `select ${templateColumns} from app.whatsapp_template where org_id=$1 and id=$2`,
+            [ctx.orgId, id],
+          )
+        ).rows[0],
+    );
+  }
+
   const tpl = path.match(/^\/channels\/whatsapp\/templates\/([^/]+)$/);
   if (tpl && method === "PATCH") {
     manager(ctx);
@@ -510,7 +583,7 @@ export async function whatsappRoute(
       async () => {
         const cur = (
           await tx.query(
-            "select status,provider_status,disabled_by_staff,status_before_off,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
+            "select status,provider_status,disabled_by_staff,status_before_off,submit_state,revision from app.whatsapp_template where org_id=$1 and id=$2 for update",
             [ctx.orgId, id],
           )
         ).rows[0];
@@ -525,6 +598,11 @@ export async function whatsappRoute(
         const mapped = seen
           ? (providerStatusMap as Record<string, string>)[cur.provider_status]
           : undefined;
+        // A template JomCall is sending, or one the provider just refused,
+        // takes its status from that outcome: staff do not record one by
+        // hand. Switching off stays possible at any time.
+        if (v.status !== "disabled" && cur.submit_state !== null)
+          throw new AppError("CONFLICT", 409);
         if (v.status === "disabled") {
           // Staff can always switch a template off; a check never switches
           // it back on. The status it had is kept to restore on switch-on.
@@ -561,7 +639,13 @@ export async function whatsappRoute(
         }
         const row = (
           await tx.query(
-            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,status_before_off=$5,revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
+            // Switching off drops a request that has not been picked up yet
+            // (one already on its way is finished by the agent process, and
+            // the template stays off) and forgets an earlier refusal.
+            `update app.whatsapp_template set status=$3,disabled_by_staff=$4,status_before_off=$5,
+             submit_state=case when $4 and submit_state in('wanted','failed') then null else submit_state end,
+             submit_reason=case when $4 and submit_state in('wanted','failed') then null else submit_reason end,
+             revision=revision+1,updated_at=now() where org_id=$1 and id=$2 returning ${templateColumns}`,
             [ctx.orgId, id, status, byStaff, before],
           )
         ).rows[0];

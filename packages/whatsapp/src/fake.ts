@@ -10,6 +10,7 @@ import type {
   SendOutcome,
   SendTarget,
   SubscribeResult,
+  TemplateCreate,
   TemplateMessage,
   WhatsAppProvider,
 } from "./provider.ts";
@@ -42,6 +43,19 @@ export type FakeProvider = WhatsAppProvider & {
   registered: { phoneNumberId: string; pin: string }[];
   // registerNumber fails with this reason until called with undefined.
   failRegister(reason: string | undefined, detail?: string): void;
+  // Every createTemplate call, in order. The token is never recorded.
+  created: {
+    wabaId: string;
+    name: string;
+    language: string;
+    category: string;
+    body: string;
+    variables: number;
+  }[];
+  // createTemplate fails with this reason until called with undefined.
+  failCreate(reason: string | undefined, detail?: string): void;
+  // The status a created template gets (default PENDING; null: unsaid).
+  createStatus(status: string | null): void;
   // What listTemplates answers from now on (default: an empty list).
   setTemplates(list: ProviderTemplate[]): void;
   // listTemplates fails with this reason until setTemplates is called.
@@ -58,6 +72,10 @@ export function createFakeProvider(): FakeProvider {
   let subscribeReason: string | undefined;
   const subscribed: { wabaId: string }[] = [];
   const sent: FakeSend[] = [];
+  const created: FakeProvider["created"] = [];
+  let createReason: string | undefined;
+  let createDetail: string | undefined;
+  let createdStatus: string | null = "PENDING";
   const exchanged: string[] = [];
   const registered: { phoneNumberId: string; pin: string }[] = [];
   let exchangeReason: string | undefined;
@@ -92,6 +110,43 @@ export function createFakeProvider(): FakeProvider {
     subscribed,
     exchanged,
     registered,
+    created,
+    failCreate(reason, detail) {
+      createReason = reason;
+      createDetail = detail;
+    },
+    createStatus(status) {
+      createdStatus = status;
+    },
+    async createTemplate(draft): Promise<TemplateCreate> {
+      created.push({
+        wabaId: draft.wabaId,
+        name: draft.name,
+        language: draft.language,
+        category: draft.category,
+        body: draft.body,
+        variables: draft.variables,
+      });
+      if (createReason)
+        return {
+          ok: false,
+          reason: createReason,
+          ...(createDetail ? { detail: createDetail } : {}),
+        };
+      // Like the real provider: once created, the template is in the list.
+      if (!templateReason)
+        templates = [
+          ...templates.filter(
+            (t) => !(t.name === draft.name && t.language === draft.language),
+          ),
+          {
+            name: draft.name,
+            language: draft.language,
+            status: createdStatus ?? "PENDING",
+          },
+        ];
+      return { ok: true, status: createdStatus };
+    },
     failExchange(reason) {
       exchangeReason = reason;
     },

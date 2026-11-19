@@ -821,3 +821,7 @@ Branch `feat/whatsapp-embedded-signup`. "Connect WhatsApp" on the settings page;
 ## 2026-11-19: Embedded Signup merged; staging migrated
 
 Pull request #50 merged as `b52a6e9`. Migration `20261119100000_whatsapp_embedded_signup.sql` is on the staging database (applied before the merge). Web deployed; WhatsApp settings page checked, number still connected. Still to do before the button appears: Embedded Signup configuration in the Meta app, `WHATSAPP_APP_ID` and `WHATSAPP_APP_SECRET` in the agent's settings with an agent rebuild, `WHATSAPP_APP_ID` and `WHATSAPP_SIGNUP_CONFIG_ID` in Vercel (RUNBOOK step 15).
+
+## 2026-11-19: Embedded Signup tried against Meta; template submit built
+
+Staging has the signup settings and the button works up to Meta's gate: "can't onboard customers" until App Review passes. Tech Provider onboarding started by the owner (terms accepted). Staff reply through Meta works. Pull request #53 adds "Submit to WhatsApp" for templates (not merged; RUNBOOK step 16). Next: apply its migration, merge, rebuild the agent, try it on staging; then record the two App Review videos and submit (drafts in `drafts/meta-app-review.md`). Owed code: token refresh for the 60-day tokens; a better hint when Meta's "Continue as" shortcut returns no number.
