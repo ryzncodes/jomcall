@@ -912,3 +912,23 @@ Pull request #50 merged as `b52a6e9`. Migration `20261119100000_whatsapp_embedde
 ## 2026-11-19: Embedded Signup tried against Meta; template submit built
 
 Staging has the signup settings and the button works up to Meta's gate: "can't onboard customers" until App Review passes. Tech Provider onboarding started by the owner (terms accepted). Staff reply through Meta works. Pull request #53 adds "Submit to WhatsApp" for templates (not merged; RUNBOOK step 16). Next: apply its migration, merge, rebuild the agent, try it on staging; then record the two App Review videos and submit (drafts in `drafts/meta-app-review.md`). Owed code: token refresh for the 60-day tokens; a better hint when Meta's "Continue as" shortcut returns no number.
+
+## 2026-11-19: Twilio number on staging, plan only
+
+Branch `docs/twilio-staging-plan`, pull request #55. Document only; this session bought, changed and deployed nothing. Corrected the same day after the main session's read-only checks on the server.
+
+**Changed**
+- `docs/research/twilio-staging-plan.md`: owner checklist for one Twilio +60 number on hosted staging, with verified and unverified facts, costs, test script and risks.
+
+**Found**
+- The SIP service and Valkey are already in the Compose file (pull request #46) and were running on staging. The first version of the document said otherwise; it read an older checkout.
+- Carried out on 2026-11-19 by the owner and the main session: number bought, Twilio trunk with origination, agent settings (fixed by pull request #56), LiveKit trunk and dispatch rule. No call answered yet.
+- Valkey keeps nothing on disk, so the LiveKit trunk and dispatch rule are lost on restart and must be created again.
+- `npm run telephony:sip-config` refuses any database but the local one; for staging the two files are written by hand.
+- The Phone numbers menu entry is hidden until a number exists; the first number is added at `/app/phone-numbers` directly (not checked in the hosted app).
+
+**Not verified**
+- TLS and SRTP in self-hosted LiveKit SIP; number formats Twilio sends; enforcement of `allowed_addresses` on a self-hosted server.
+
+**Next**
+- Cloud firewall rules for 5060 and 10000-10200/udp (urgent, the port was open and probed); Twilio account upgrade (the trial fails calls with `21264`); then the test script in the document's section 10.
