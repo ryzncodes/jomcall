@@ -53,6 +53,15 @@ const en = {
   } satisfies Record<PublicPageId, string>,
   tagline: "An AI receptionist for Malaysian businesses.",
   preview: "Preview build. This is not the live JomCall site.",
+  // Shared by the reading pages (how it works, guides, industries, FAQ).
+  article: {
+    contents: "On this page",
+    questions: "Questions",
+    related: "Read next",
+    sample: "Sample call, made up",
+    caller: "Caller",
+    agent: "JomCall",
+  },
 };
 
 const ms: typeof en = {
@@ -105,6 +114,14 @@ const ms: typeof en = {
   },
   tagline: "Penyambut tetamu AI untuk perniagaan Malaysia.",
   preview: "Binaan pratonton. Ini bukan laman JomCall yang sebenar.",
+  article: {
+    contents: "Dalam halaman ini",
+    questions: "Soalan",
+    related: "Baca seterusnya",
+    sample: "Contoh panggilan, rekaan",
+    caller: "Pemanggil",
+    agent: "JomCall",
+  },
 };
 
 export type CommonLabels = typeof en;

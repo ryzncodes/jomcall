@@ -27,7 +27,11 @@ const isPublic = (p: string) =>
 for (const page of pages("web/app")) {
   test(`${page} has its own title`, () => {
     const src = readFileSync(page, "utf8");
-    if (isPublic(page))
+    // A public page under a [param] folder has one title per param, so it
+    // exports generateMetadata, which must return pageMetadata(...).
+    if (isPublic(page) && /\/\[[^/]+\]\//.test(page))
+      assert.match(src, /export async function generateMetadata\([\s\S]*?return pageMetadata\(/);
+    else if (isPublic(page))
       assert.match(src, /export const metadata(?::\s*Metadata)?\s*=\s*pageMetadata\(/);
     else assert.match(src, /export const generateMetadata = pageTitle\("[^"]+", "[^"]+"/);
   });

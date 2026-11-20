@@ -2,6 +2,7 @@ import { legalCopy } from "../../messages/legal";
 import type { PublicLocale } from "../../lib/site";
 import { legalAnchors } from "./legal-anchors";
 import { fillOperator } from "./operator";
+import { Toc } from "./toc";
 
 // The privacy notice or the terms of use, exactly as written in
 // web/messages/legal.ts, with operator facts filled in. Each heading has an
@@ -19,16 +20,7 @@ export function LegalBody({ kind, locale }: { kind: "privacy" | "terms"; locale:
           <p className="t-lead t-muted">{fillOperator(doc.intro)}</p>
           <p className="t-label t-muted">{fillOperator(doc.effective)}</p>
         </header>
-        <nav className="legal-toc" aria-label={legalCopy[locale].footer.contents}>
-          <p className="t-label t-muted">{legalCopy[locale].footer.contents}</p>
-          <ol>
-            {anchors.map((a) => (
-              <li key={a.id}>
-                <a href={`#${a.id}`}>{a.heading}</a>
-              </li>
-            ))}
-          </ol>
-        </nav>
+        <Toc label={legalCopy[locale].footer.contents} items={anchors} />
         <div className="legal-body">
           {doc.sections.map((sec, i) => (
             <section key={anchors[i].id} className="legal-section" aria-labelledby={anchors[i].id}>

@@ -6,6 +6,7 @@ import type { PublicLocale } from "@/lib/site";
 import { AppLink, Cta } from "../cta";
 import { Estimator } from "../estimator";
 import { Arrow, Dash, Tick } from "../icons";
+import { FaqList } from "../faq-list";
 import { JsonLd } from "../json-ld";
 import { PlanButton } from "../plan-button";
 import { PublicShell } from "../shell";
@@ -130,17 +131,7 @@ export function PricingPage({ locale }: { locale: PublicLocale }) {
               {t.faq.heading}
             </h2>
           </div>
-          <div className="faq-list">
-            {pricingFaq(locale).map((item) => (
-              <details key={item.q} className="faq-item">
-                <summary>
-                  <h3 className="t-h3">{item.q}</h3>
-                  <span className="faq-sign" aria-hidden="true" />
-                </summary>
-                <p className="t-muted">{item.a}</p>
-              </details>
-            ))}
-          </div>
+          <FaqList items={pricingFaq(locale)} />
         </div>
       </section>
 

@@ -8,6 +8,7 @@ import { Bento } from "../bento";
 import { CallCard, HearSample } from "../call-card";
 import { Cta } from "../cta";
 import { INDUSTRIES, pageLink } from "../nav";
+import { FaqList } from "../faq-list";
 import { JsonLd } from "../json-ld";
 import { PublicShell } from "../shell";
 
@@ -294,17 +295,7 @@ export function HomePage({ locale }: { locale: PublicLocale }) {
               <Arrow />
             </a>
           </div>
-          <div className="faq-list">
-            {t.faq.items.map((item) => (
-              <details key={item.q} className="faq-item">
-                <summary>
-                  <h3 className="t-h3">{item.q}</h3>
-                  <span className="faq-sign" aria-hidden="true" />
-                </summary>
-                <p className="t-muted">{item.a}</p>
-              </details>
-            ))}
-          </div>
+          <FaqList items={t.faq.items} />
         </div>
       </section>
 

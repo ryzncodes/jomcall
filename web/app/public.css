@@ -2140,47 +2140,6 @@ body:has(.public) {
 .public .legal-head :where(h1, p) {
   margin: 0;
 }
-.public .legal-toc {
-  display: grid;
-  gap: var(--space-3);
-  align-content: start;
-  padding: var(--space-4) var(--space-5);
-  border-radius: var(--radius-16);
-  background: var(--surface);
-  box-shadow: var(--ring);
-}
-.public .legal-toc p {
-  margin: 0;
-}
-.public .legal-toc ol {
-  display: grid;
-  gap: var(--space-1);
-  counter-reset: toc;
-}
-.public .legal-toc li {
-  counter-increment: toc;
-}
-.public .legal-toc a {
-  display: flex;
-  gap: var(--space-3);
-  min-height: 44px;
-  align-items: center;
-  border-radius: var(--radius-8);
-  font-size: 15px;
-  line-height: 22px;
-  color: var(--muted);
-}
-.public .legal-toc a::before {
-  content: counter(toc, decimal-leading-zero);
-  font-family: var(--face-mono);
-  font-size: 13px;
-  color: var(--muted);
-}
-.public .legal-toc a:hover {
-  color: var(--ink);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
 .public .legal-body {
   max-width: var(--measure);
   display: grid;
@@ -2223,10 +2182,643 @@ body:has(.public) {
   .public .legal-head {
     grid-column: 1 / -1;
   }
-  .public .legal-toc {
+}
+
+/* ------------------------------------------------- the contents list */
+
+/* Phones: a disclosure at the top of the text. Wide screens: a sticky,
+   numbered list beside the text column. Both are in the HTML; one shows. */
+.public .toc {
+  align-self: start;
+  min-width: 0;
+}
+.public .toc p {
+  margin: 0;
+}
+.public .toc-wide {
+  display: none;
+}
+.public .toc-phone {
+  border-radius: var(--radius-16);
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+.public .toc-phone summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: 48px;
+  padding-inline: var(--space-5) var(--space-4);
+  border-radius: var(--radius-16);
+  font-weight: 500;
+  list-style: none;
+  cursor: pointer;
+}
+.public .toc-phone summary::-webkit-details-marker {
+  display: none;
+}
+.public .toc-phone summary svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  transition: transform var(--t-std) var(--ease);
+}
+.public .toc-phone[open] summary svg {
+  transform: rotate(180deg);
+}
+.public .toc-phone .toc-list {
+  padding: 0 var(--space-5) var(--space-3);
+  box-shadow: inset 0 1px 0 var(--line);
+  padding-top: var(--space-2);
+}
+.public .toc-list {
+  display: grid;
+  gap: var(--space-1);
+  counter-reset: toc;
+}
+.public .toc-list li {
+  counter-increment: toc;
+}
+.public .toc-list a {
+  display: flex;
+  gap: var(--space-3);
+  min-height: 44px;
+  align-items: center;
+  border-radius: var(--radius-8);
+  font-size: 15px;
+  line-height: 22px;
+  color: var(--muted);
+}
+.public .toc-list a::before {
+  content: counter(toc, decimal-leading-zero);
+  flex: none;
+  font-family: var(--face-mono);
+  font-size: 13px;
+  color: var(--muted);
+}
+.public .toc-list a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+@media (min-width: 1024px) {
+  .public .toc-phone {
+    display: none;
+  }
+  .public .toc-wide {
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-5);
+    border-radius: var(--radius-16);
+    background: var(--surface);
+    box-shadow: var(--ring);
+  }
+  .public .toc {
     position: sticky;
     top: calc(var(--header-h) + var(--space-5));
     max-height: calc(100dvh - var(--header-h) - var(--space-7));
     overflow-y: auto;
+  }
+}
+
+/* ------------------------------------------------------ reading pages */
+
+/* How it works, call forwarding, languages, the FAQ and the industry pages:
+   a hero, a 640 px text column with the contents list beside it, sections
+   that change shape down the page, then a surface band and the closing. */
+.public :where(.art-hero, .art, .index-section, .index-other, .related-band) :where(h1, h2, h3, p, ol, ul, dl, dd, figure) {
+  margin: 0;
+}
+.public .band :where(h2, p) {
+  margin: 0;
+}
+.public .art-hero {
+  padding-block: var(--space-7) var(--space-6);
+}
+.public .art-hero h1 {
+  max-width: 960px;
+}
+.public .art-lead {
+  max-width: var(--measure);
+  margin-top: var(--space-4);
+}
+.public .crumb {
+  margin-bottom: var(--space-2);
+}
+.public .crumb a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border-radius: var(--radius-8);
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.public .crumb a:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
+}
+.public .art {
+  display: grid;
+  gap: var(--space-7);
+  padding-bottom: var(--space-8);
+}
+.public .art-main {
+  display: grid;
+  gap: var(--space-8);
+  min-width: 0;
+  max-width: var(--measure);
+}
+.public .art-section {
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+  scroll-margin-top: calc(var(--header-h) + var(--space-5));
+}
+.public .art-head {
+  display: grid;
+  gap: var(--space-3);
+}
+.public .prose {
+  display: grid;
+  gap: var(--space-4);
+  max-width: var(--measure);
+}
+@media (min-width: 1024px) {
+  .public .art-hero {
+    padding-block: var(--space-8) var(--space-7);
+  }
+  .public .art {
+    grid-template-columns: minmax(0, 280px) minmax(0, var(--measure));
+    column-gap: var(--space-8);
+    align-items: start;
+    padding-bottom: var(--space-9);
+  }
+  .public .art-main {
+    gap: var(--space-9);
+  }
+}
+
+/* Numbered steps; "What you do" sits in a tinted box inside each. */
+.public .art-step {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: var(--space-4);
+  padding-block: var(--space-5);
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.public .art-step:last-child {
+  box-shadow: inset 0 1px 0 var(--line), inset 0 -1px 0 var(--line);
+}
+.public .art-step-body {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.public .art-you {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-12);
+  background: var(--wash);
+}
+.public .art-you .t-label {
+  color: var(--muted);
+}
+
+/* Named points in a grid. */
+.public .art-points {
+  display: grid;
+  gap: var(--space-5) var(--space-6);
+}
+.public .art-points li {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  padding-top: var(--space-4);
+  box-shadow: inset 0 1px 0 var(--line);
+}
+@media (min-width: 641px) {
+  .public .art-points {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* A tinted note. */
+.public .art-note {
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-12);
+  background: var(--lime);
+  color: var(--on-lime);
+  font-weight: 500;
+}
+
+/* A numbered list of short instructions. */
+.public .art-list {
+  display: grid;
+  gap: var(--space-4);
+}
+.public .art-list li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+.public .art-list .t-data {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--lime);
+  color: var(--on-lime);
+  font-size: 15px;
+  line-height: 22px;
+  word-spacing: 0;
+}
+.public .art-list li > span:last-child {
+  padding-top: var(--space-1);
+}
+
+/* What it does not do: a plain list with a dash. */
+.public .art-not {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.public .art-not li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  padding-block: var(--space-4);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.public .art-not svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: var(--space-1);
+  color: var(--muted);
+}
+
+/* What the caller asks and what JomCall does: a framed two-column table. */
+.public .calls-table {
+  border-radius: var(--radius-16);
+  background: var(--surface);
+  box-shadow: var(--ring);
+  overflow: hidden;
+}
+.public .calls-row {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.public .calls-table dl > .calls-row:last-child {
+  box-shadow: none;
+}
+.public .calls-head {
+  display: none;
+}
+.public .calls-row dt {
+  font-family: var(--face-display);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.public .calls-row dd {
+  color: var(--muted);
+}
+@media (min-width: 641px) {
+  .public .calls-row {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: var(--space-5);
+    padding-block: var(--space-5);
+  }
+  .public .calls-head.calls-row {
+    display: grid;
+    padding-block: var(--space-3);
+    background: var(--wash);
+  }
+}
+
+/* The sample call: a quiet transcript in the call card's language. */
+.public .sample {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-24);
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+.public .sample-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  line-height: 18px;
+}
+.public .sample-biz {
+  font-size: 13px;
+  line-height: 18px;
+}
+.public .sample-label {
+  color: var(--muted);
+}
+.public .sample-label::before {
+  content: "·";
+  margin-right: var(--space-2);
+}
+.public .sample-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.public .sample-turn {
+  max-width: 88%;
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-radius: var(--radius-16);
+  background: var(--paper);
+}
+.public .sample-turn p {
+  font-size: 15px;
+  line-height: 22px;
+}
+.public .sample-who {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.public .sample-caller {
+  align-self: flex-end;
+  background: var(--lime);
+  color: var(--on-lime);
+}
+.public .sample-caller .sample-who {
+  color: var(--on-lime);
+}
+.public .sample-event {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-1);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--muted);
+}
+.public .sample-tick {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--forest);
+}
+.public .sample-outcome {
+  padding-top: var(--space-4);
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.public .sample :lang(zh) {
+  letter-spacing: 0;
+  line-break: strict;
+}
+
+/* The setup business type on an industry page. */
+.public .setup-type {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-16);
+  background: var(--lime);
+  color: var(--on-lime);
+}
+.public .setup-type .t-label {
+  color: var(--on-lime);
+}
+.public .setup-type-name {
+  font-family: var(--face-display);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The forwarding codes: the one bold moment of the forwarding page, a dark
+   card of keys in the data face. It keeps its colours in the dark theme. */
+.public .codes-card {
+  --k-bg: #1f3a2e;
+  --k-ink: #eef3ea;
+  --k-muted: #b9cbbf;
+  --k-line: rgb(238 243 234 / 0.16);
+  --k-key: rgb(238 243 234 / 0.08);
+  --k-lime: #d6eba8;
+  display: grid;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-24);
+  background: var(--k-bg);
+  color: var(--k-ink);
+}
+[data-theme="dark"] .public .codes-card {
+  --k-bg: #1a3328;
+  box-shadow: 0 0 0 1px rgb(214 235 168 / 0.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .public .codes-card {
+    --k-bg: #1a3328;
+    box-shadow: 0 0 0 1px rgb(214 235 168 / 0.16);
+  }
+}
+.public .codes-card :focus-visible {
+  outline-color: var(--k-lime);
+}
+.public .code-item {
+  display: grid;
+  gap: var(--space-4);
+  padding-block: var(--space-5);
+  box-shadow: inset 0 -1px 0 var(--k-line);
+}
+.public .code-item:last-child {
+  box-shadow: none;
+}
+.public .code-text {
+  display: grid;
+  gap: var(--space-1);
+}
+.public .codes-card .t-muted {
+  color: var(--k-muted);
+}
+.public .code-keys {
+  display: grid;
+  gap: var(--space-3);
+}
+.public .code-keys > div {
+  display: grid;
+  gap: var(--space-1);
+  justify-items: start;
+}
+.public .code-keys dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.public .key {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-8);
+  background: var(--k-key);
+  box-shadow: inset 0 0 0 1px var(--k-line);
+  color: var(--k-lime);
+  font-size: 20px;
+  line-height: 28px;
+  word-spacing: 0;
+}
+.public .key-slot {
+  padding: var(--space-1) var(--space-3);
+  border: 1px dashed rgb(238 243 234 / 0.36);
+  border-radius: var(--radius-8);
+  color: var(--k-muted);
+  font-size: 15px;
+  font-style: normal;
+  line-height: 26px;
+}
+@media (min-width: 641px) {
+  .public .code-keys > div {
+    grid-template-columns: 48px auto;
+    align-items: center;
+    column-gap: var(--space-3);
+  }
+  .public .code-item {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-5);
+  }
+}
+
+/* The four languages as specimens. */
+.public .lang-list {
+  display: grid;
+  gap: var(--space-5) var(--space-6);
+}
+.public .lang-list li {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  padding-top: var(--space-4);
+  box-shadow: inset 0 1px 0 var(--ink);
+}
+.public .lang-line {
+  font-family: var(--face-display);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.public .lang-line:lang(zh) {
+  letter-spacing: 0;
+  word-break: keep-all;
+  line-break: strict;
+  overflow-wrap: break-word;
+}
+@media (min-width: 641px) {
+  .public .lang-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* The band of related pages. */
+.public .related-title {
+  margin-bottom: var(--space-6);
+}
+
+/* The industries index: six large rows. */
+.public .index-section {
+  padding-top: 0;
+}
+.public .index-list {
+  box-shadow: inset 0 1px 0 var(--line);
+}
+.public .index-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-areas: "n name arrow" ". note arrow";
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding-block: var(--space-5);
+  border-radius: var(--radius-8);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.public .index-n {
+  grid-area: n;
+  font-size: 15px;
+  line-height: 28px;
+  color: var(--muted);
+}
+.public .index-name {
+  grid-area: name;
+  font-family: var(--face-display);
+  font-size: 30px;
+  line-height: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.public .index-note {
+  grid-area: note;
+}
+.public .index-row svg {
+  grid-area: arrow;
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  transition: transform var(--t-micro) var(--ease);
+}
+.public .index-row:hover .index-name {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+.public .index-row:hover svg {
+  transform: translateX(2px);
+  color: var(--ink);
+}
+.public .index-other {
+  display: grid;
+  gap: var(--space-5);
+}
+@media (min-width: 1024px) {
+  .public .index-row {
+    grid-template-columns: 64px minmax(0, 5fr) minmax(0, 6fr) auto;
+    grid-template-areas: "n name note arrow";
+    gap: var(--space-6);
+    padding-block: var(--space-6);
+  }
+  .public .index-name {
+    font-size: 44px;
+    line-height: 48px;
+  }
+  .public .index-other {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: var(--space-8);
+  }
+}
+
+/* A question in the summary of a disclosure: the h3 type, without the role. */
+.public .faq-q {
+  font-family: var(--face-display);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+@media (max-width: 640px) {
+  .public .faq-q {
+    font-size: 20px;
+    line-height: 26px;
   }
 }

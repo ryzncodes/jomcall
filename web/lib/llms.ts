@@ -1,5 +1,10 @@
 import { common } from "../content/public/common.ts";
+import { forwarding } from "../content/public/call-forwarding.ts";
+import { faq } from "../content/public/faq.ts";
 import { home } from "../content/public/home.ts";
+import { howItWorks } from "../content/public/how-it-works.ts";
+import { INDUSTRY_SLUGS, industries, industriesIndex } from "../content/public/industries.ts";
+import { languages } from "../content/public/languages.ts";
 import { pricing } from "../content/public/pricing.ts";
 import { legalCopy } from "../messages/legal.ts";
 import { whatsappWaiting } from "./launch.ts";
@@ -10,9 +15,18 @@ import { PUBLIC_PAGES, localePath, siteOrigin, type PublicLocale, type PublicPag
 // The text served at /llms.txt. Every line is a fact from spec section 3;
 // prices come from web/lib/pricing.ts. Nothing here states a wait time, and
 // WhatsApp is described as waiting for Meta.
+// Each page is described by its own meta description, taken from its
+// content module; a page not built yet falls back to its nav label.
 function describe(id: PublicPageId, locale: PublicLocale): string {
   if (id === "home") return home[locale].meta.description;
   if (id === "pricing") return pricing[locale].meta.description;
+  if (id === "how-it-works") return howItWorks[locale].page.description;
+  if (id === "call-forwarding") return forwarding[locale].page.description;
+  if (id === "languages") return languages[locale].page.description;
+  if (id === "faq") return faq[locale].page.description;
+  if (id === "industries") return industriesIndex[locale].page.description;
+  const slug = INDUSTRY_SLUGS.find((s) => id === `industries-${s}`);
+  if (slug) return industries[locale][slug].description;
   if (id === "privacy" || id === "terms") return legalCopy[locale][id].title;
   return common[locale].pages[id];
 }

@@ -83,3 +83,18 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - Existing test "pageMetadata hosted" used a staging origin and expected indexing; it now expects noindex there (spec section 9).
 - `page-titles.test.ts` already had the `pageMetadata(` rule from Task 4; unchanged.
 - Offer prices are plain decimal strings built from sen; the Growth line in `llms.txt` omits WhatsApp (the banned-claims test reads "WhatsApp agent once ... ready" as availability).
+
+## Task 7: how it works, call forwarding, languages, FAQ, industries
+- How it works shows six steps, not the "four" in spec section 5: the brief says to use the section 7 checklist names, which are six (the same as home).
+- `page-titles.test.ts` widened: a public page under a `[param]` folder must return `pageMetadata(` from `generateMetadata`; the others keep `export const metadata = pageMetadata(`.
+- Extra page components beyond the brief (`pages/how-it-works.tsx`, `call-forwarding.tsx`, `languages.tsx`) on the shared `pages/article.tsx` layout, so the routes stay thin.
+- `SampleLine` gained `who: "event"` (a tick such as "Message saved for the mechanic") and an optional `lang`, used for `lang` attributes in the sample call.
+- Forwarding: only the three codes the app's phone screen shows (`**21*`, `**61*`, `**67*` and their stops). `**62*` (unreachable) and `##002#` (cancel all) are left out because `phone.tsx` does not show them; the test reads `phone.tsx` as text.
+- Restaurants: table requests are taken as messages for staff, not booked (bookings are capacity-one, party size is not handled). Car workshops: a message for the mechanic, no booking, no job lookup (`lookup_job_status` is not built). No page promises reschedule or cancel.
+- Home and pricing FAQs switched to the shared `FaqList` (question as plain summary text, no heading inside summary).
+- Legal pages: the old `.legal-toc` list (and its CSS) is replaced by the shared `Toc`, a `<details>` on phones and a sticky list from 1024 px.
+- The FAQ trial answer sits at `faq.groups.price.faq.trial`, so the claims guard's `.faq.trial.` path rule allows it.
+- `industries.ts` imports the setup business types from `packages/domain/src/setup/business-types.ts` so each page names the setup type word for word.
+- FAQ hub has 22 questions (spec asks at least 18).
+- The BM copy passed a pattern scan (no Indonesian words; two fixes) but still needs a native speaker's read.
+- Sample calls name car models (Myvi, Saga) as everyday examples; all businesses, people and plates are made up.
