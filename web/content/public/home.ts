@@ -126,7 +126,7 @@ const en = {
     stopped: "Sample stopped",
     stop: "Stop",
     pause: "Pause",
-    resume: "Play",
+    resume: "Resume",
   },
   bento: {
     heading: "What you see in JomCall",
