@@ -366,7 +366,7 @@ const ms: typeof en = {
       ],
     },
     booking: {
-      title: "Tempahan, diulang semula",
+      title: "Tempahan, masa diulang",
       day: "Esok",
       time: "3:00 petang",
       service: "Konsultasi · Studio Contoh",

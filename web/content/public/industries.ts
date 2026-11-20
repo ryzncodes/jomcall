@@ -613,7 +613,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     summary: "Permintaan kerja, kawasan liputan, harga dan lawatan servis.",
     calls: {
       heading: "Panggilan yang kontraktor terima",
-      body: ["Panggilan ke kontraktor ialah permintaan kerja. Setiap satu perlukan butiran yang sama, dan ejen akan bertanyakannya."],
+      body: ["Panggilan ke kontraktor ialah permintaan kerja. Setiap satu perlukan butiran yang sama, dan ejen akan bertanya."],
       rows: [
         { call: "Aircond saya bocor air. Boleh datang tengok?", does: "Mengambil kawasan alamat, bilangan unit dan masalahnya. Kalau anda tambah masa lawatan di halaman Tempahan JomCall, ia menempah lawatan dalam JomCall." },
         { call: "Berapa harga servis dua unit?", does: "Memberi harga daripada senarai harga anda." },

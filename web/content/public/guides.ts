@@ -263,7 +263,7 @@ const ms: GuidesCopy = {
     not: {
       heading: "Apa yang ia tidak buat",
       items: [
-        "Ia bukan manusia, dan ia tidak menyembunyikannya: ejen memperkenalkan dirinya sebagai AI.",
+        "Ia bukan manusia, dan ia memberitahu hal itu: ejen memperkenalkan dirinya sebagai AI.",
         "Ia hanya tahu apa yang anda beritahu. Apabila ia tidak tahu, ia ditetapkan untuk berkata begitu dan mengambil pesanan, bukan meneka.",
         "Ia menyambungkan pemanggil kepada staf hanya dalam waktu operasi. Di luar waktu itu, ia mengambil pesanan.",
         "Ia menerima bilangan panggilan yang terhad pada satu masa. Apabila taliannya penuh, pemanggil seterusnya diberitahu talian sibuk.",
