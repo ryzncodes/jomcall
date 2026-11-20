@@ -9,6 +9,24 @@
   background: var(--surface);
   min-width: 0;
 }
+/* Panels stacked on one page keep a gap between them. */
+.core-stack {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+.core-stack > .core-advanced {
+  margin: 0;
+}
+.core-bullets {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 20px;
+  list-style: disc;
+  line-height: 1.6;
+  font-size: 15px;
+}
 .core-panel > h2,
 .core-panel > h3 {
   margin-bottom: 18px;

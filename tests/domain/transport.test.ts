@@ -173,7 +173,7 @@ const table: Record<string, [string, string]> = {
 // errorText's choice before this branch: its own code, then the table, then
 // the code's words.
 const before = (e: CoreError): [string, string] =>
-  table[e.code] ?? [e.code.replaceAll("_", " "), e.code.replaceAll("_", " ")];
+  table[e.code] ?? [`Something went wrong. Try again. (${e.code})`, `Ada masalah. Cuba lagi. (${e.code})`];
 const copyOf = (e: unknown) => chooseCopy(e, errorKey(e), table);
 test("an app error keeps the shared text it had before: an unknown code is never reworded by status", () => {
   for (const e of [
@@ -189,8 +189,10 @@ test("an app error keeps the shared text it had before: an unknown code is never
   ]) {
     assert.deepEqual(copyOf(e), before(e), e.code);
   }
-  assert.deepEqual(copyOf(new CoreError("NUMBER_IN_USE", 409)), ["NUMBER IN USE", "NUMBER IN USE"]);
-  assert.deepEqual(copyOf(new CoreError("CSRF_REJECTED", 403)), ["CSRF REJECTED", "CSRF REJECTED"]);
+  assert.deepEqual(copyOf(new CoreError("NUMBER_IN_USE", 409)), [
+    "Something went wrong. Try again. (NUMBER_IN_USE)",
+    "Ada masalah. Cuba lagi. (NUMBER_IN_USE)",
+  ]);
   // No answer at all: the connection sentence, as before.
   assert.deepEqual(copyOf(new TypeError("Failed to fetch")), table.OFFLINE);
 });

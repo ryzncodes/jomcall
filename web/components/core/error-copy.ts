@@ -95,8 +95,150 @@ export function chooseCopy(
     contextCopy(code, context) ??
     table[code] ??
     (error instanceof ProxyError ? proxyCopy[code] : undefined) ?? [
-      code.replaceAll("_", " "),
-      code.replaceAll("_", " "),
+      `Something went wrong. Try again. (${code})`,
+      `Ada masalah. Cuba lagi. (${code})`,
     ]
   );
 }
+
+// Sentences for codes a person can meet that the shared table in state.tsx
+// does not word. A guard test lists every code the server throws and fails
+// when one a person can meet has no sentence here or there.
+export const moreCopy: Record<string, [string, string]> = {
+  INVALID_CREDENTIALS: [
+    "That email or password is not right. Check them and try again.",
+    "E-mel atau kata laluan itu tidak betul. Semak dan cuba lagi.",
+  ],
+  RATE_LIMITED: [
+    "Too many tries. Wait a minute and try again.",
+    "Terlalu banyak cubaan. Tunggu seminit dan cuba lagi.",
+  ],
+  SIGNUP_FAILED: [
+    "We could not create the account. Check the email and password, then try again.",
+    "Kami tidak dapat mencipta akaun. Semak e-mel dan kata laluan, kemudian cuba lagi.",
+  ],
+  PASSWORD_UPDATE_FAILED: [
+    "The new password was not saved. Choose a different one and try again.",
+    "Kata laluan baharu tidak disimpan. Pilih yang lain dan cuba lagi.",
+  ],
+  CSRF_REJECTED: [
+    "This page is out of date. Reload it and try again.",
+    "Halaman ini sudah lama. Muat semula dan cuba lagi.",
+  ],
+  INVALID_LINK: [
+    "This link has expired or was already used. Ask for a new one.",
+    "Pautan ini telah tamat tempoh atau sudah digunakan. Minta pautan baharu.",
+  ],
+  INVALID_CALLBACK: [
+    "This sign-in link did not work. Try signing in again.",
+    "Pautan log masuk ini tidak berfungsi. Cuba log masuk semula.",
+  ],
+  LOGOUT_FAILED: [
+    "Signing out did not finish. Try again.",
+    "Log keluar tidak selesai. Cuba lagi.",
+  ],
+  SIGNUP_NOT_AVAILABLE: [
+    "Connecting WhatsApp is not available yet.",
+    "Sambungan WhatsApp belum tersedia.",
+  ],
+  COEXISTENCE_OFF: [
+    "Keeping the WhatsApp Business app on this number is not available yet.",
+    "Mengekalkan aplikasi WhatsApp Business pada nombor ini belum tersedia.",
+  ],
+  WHATSAPP_NOT_CONFIGURED: [
+    "WhatsApp is not available yet.",
+    "WhatsApp belum tersedia.",
+  ],
+  WHATSAPP_NOT_CONNECTED: [
+    "Connect WhatsApp first.",
+    "Sambungkan WhatsApp dahulu.",
+  ],
+  TEST_TURN_LIMIT: [
+    "This test has reached 20 messages. Start a new test.",
+    "Ujian ini telah mencapai 20 mesej. Mulakan ujian baharu.",
+  ],
+  TEST_SESSION_LIMIT: [
+    "Too many tests are open. Wait for older ones to end, then try again.",
+    "Terlalu banyak ujian dibuka. Tunggu ujian lama tamat, kemudian cuba lagi.",
+  ],
+  VOICE_DISABLED: [
+    "Voice tests are not available right now. Use a typed test.",
+    "Ujian suara tidak tersedia buat masa ini. Gunakan ujian bertulis.",
+  ],
+  CONTACT_MISMATCH: [
+    "This test belongs to a different contact. Start a new test.",
+    "Ujian ini milik kenalan lain. Mulakan ujian baharu.",
+  ],
+  PROPOSAL_NOT_READY: [
+    "The agent's answer is not finished yet. Wait for it, then try again.",
+    "Jawapan ejen belum selesai. Tunggu, kemudian cuba lagi.",
+  ],
+  NUMBER_IN_USE: [
+    "This phone number is already in use.",
+    "Nombor telefon ini sudah digunakan.",
+  ],
+  CONTACT_DELETION_PENDING: [
+    "This contact is being deleted, so it cannot be booked.",
+    "Kenalan ini sedang dipadam, jadi tidak boleh ditempah.",
+  ],
+  RESOURCE_LIMIT: [
+    "This workspace has reached 100 bookable resources.",
+    "Ruang kerja ini telah mencapai 100 sumber tempahan.",
+  ],
+  RESOURCE_INACTIVE: [
+    "This resource is switched off. Choose another or switch it on.",
+    "Sumber ini dimatikan. Pilih yang lain atau hidupkannya.",
+  ],
+  BOOKING_CANCELLED: [
+    "This booking was cancelled, so it cannot be changed.",
+    "Tempahan ini telah dibatalkan, jadi tidak boleh diubah.",
+  ],
+  BOOKING_TIMEZONE_UNSUPPORTED: [
+    "Bookings need the schedule in Kuala Lumpur time.",
+    "Tempahan memerlukan jadual dalam waktu Kuala Lumpur.",
+  ],
+  KNOWLEDGE_LIMIT: [
+    "This is more than the agent can hold. Remove something first.",
+    "Ini melebihi apa yang boleh disimpan oleh ejen. Buang sesuatu dahulu.",
+  ],
+  UNKNOWN_PACK: [
+    "That business type is not recognised. Reload and choose again.",
+    "Jenis perniagaan itu tidak dikenali. Muat semula dan pilih lagi.",
+  ],
+  DUPLICATE_PACK: [
+    "That business type is already added.",
+    "Jenis perniagaan itu sudah ditambah.",
+  ],
+  UNKNOWN_RULE: [
+    "That rule no longer exists. Reload and try again.",
+    "Peraturan itu tidak lagi wujud. Muat semula dan cuba lagi.",
+  ],
+  ITEM_INCOMPLETE: [
+    "Fill in every part of this row before confirming.",
+    "Lengkapkan setiap bahagian baris ini sebelum mengesahkan.",
+  ],
+  VALIDATION_FAILED: [
+    "Check required fields and valid formats.",
+    "Semak medan wajib dan format yang sah.",
+  ],
+  INVALID_PAYLOAD: [
+    "Some details are missing or not in the right form. Check and try again.",
+    "Sesetengah butiran tiada atau tidak dalam bentuk yang betul. Semak dan cuba lagi.",
+  ],
+  VALUE_TOO_LARGE: [
+    "This answer is too long. Shorten it and try again.",
+    "Jawapan ini terlalu panjang. Pendekkan dan cuba lagi.",
+  ],
+  PAYLOAD_TOO_LARGE: [
+    "This is too large to send. Make it smaller and try again.",
+    "Ini terlalu besar untuk dihantar. Kurangkan saiznya dan cuba lagi.",
+  ],
+  READER_OFF: [
+    "Reading documents is not available right now. Answer the questions instead.",
+    "Membaca dokumen tidak tersedia buat masa ini. Jawab soalan sebagai ganti.",
+  ],
+  NOT_READY: [
+    "The export is not ready yet. Try again shortly.",
+    "Eksport belum sedia. Cuba lagi sebentar lagi.",
+  ],
+};

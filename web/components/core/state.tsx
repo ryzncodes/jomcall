@@ -8,7 +8,7 @@ import {
 } from "@/lib/core/client";
 import type { Bootstrap, Session } from "../../../packages/contracts/src/core";
 import { useExperience } from "../experience";
-import { chooseCopy, errorKey, type ErrorContext } from "./error-copy";
+import { chooseCopy, errorKey, moreCopy, type ErrorContext } from "./error-copy";
 export const CoreContext = createContext<{
   client: HttpCoreClient;
   workspace: Bootstrap;
@@ -128,8 +128,8 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Semak medan wajib dan format yang sah.",
     ],
     CAPABILITY_UNAVAILABLE: [
-      "Available in a later phase.",
-      "Tersedia dalam fasa akan datang.",
+      "This is not available yet.",
+      "Ini belum tersedia.",
     ],
     AUTH_UNAVAILABLE: [
       HOSTED
@@ -208,7 +208,7 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Cawangan utama atau yang digunakan tidak boleh diarkibkan.",
     ],
   };
-  return chooseCopy(error, code, messages, context)[ms ? 1 : 0];
+  return chooseCopy(error, code, { ...moreCopy, ...messages }, context)[ms ? 1 : 0];
 }
 export function useResource<T>(load: () => Promise<T>, key: string) {
   const { epoch } = useCore();
