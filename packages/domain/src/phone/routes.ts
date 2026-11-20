@@ -99,17 +99,9 @@ export async function phoneRoute(
     } catch {
       // An invalid value deliberately counts as not connected.
     }
-    // The page shows once there is something to do on it: a number, a
-    // request for one, or a plan that includes one (the owner can then ask).
-    const phone =
-      telephonyReadiness().configured &&
-      ((
-        await tx.query(
-          "select 1 from app.phone_number where org_id=$1 union all select 1 from app.phone_number_request where org_id=$1 and state='open' limit 1",
-          [ctx.orgId],
-        )
-      ).rowCount! > 0 ||
-        (await planIncludesNumber(tx, ctx)));
+    // The page shows whenever a phone line can exist. Without a plan that
+    // includes a number it says so and links to Billing.
+    const phone = telephonyReadiness().configured;
     return { phone, whatsapp, integrations: false };
   }
   // Ask for a phone number. An operator buys it and adds it; the engine
