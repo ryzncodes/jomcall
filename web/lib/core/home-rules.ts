@@ -32,6 +32,8 @@ export type Step = {
   id: StepId;
   state: "done" | "todo" | "waiting";
   href: string | null;
+  // Plan step only: a chosen plan whose fee is unpaid (the button says pay).
+  unpaid?: true;
 };
 
 // The phone line is offered when the service has telephony configured.
@@ -60,7 +62,12 @@ export function checklist(f: HomeFacts): Step[] {
   ];
   if (!f.manager) return steps;
   if (f.plan) {
-    steps.push({ id: "plan", state: done(planChosen(f.plan)), href: "/app/billing" });
+    steps.push({
+      id: "plan",
+      state: done(planChosen(f.plan)),
+      href: "/app/billing",
+      ...(f.plan.periodState === "unpaid" ? { unpaid: true as const } : {}),
+    });
   }
   if (f.phones && phoneOffered(f)) {
     const waiting = !activeNumber(f) && f.phones.request?.state === "open";
@@ -163,4 +170,16 @@ const FETCHED = [
 export function homeState(f: HomeFacts): "failed" | "checklist" | "today" {
   if (FETCHED.every((k) => f[k] === undefined)) return "failed";
   return isLive(f) ? "today" : "checklist";
+}
+
+// Home reloads every 15 seconds. A read that fails once keeps its last good
+// value, so one dropped request does not flip the checklist and Today or hide
+// billing rows. A change of viewer role starts again from the new reads.
+export function keepLastGood(prev: HomeFacts | undefined, next: HomeFacts): HomeFacts {
+  if (!prev || prev.manager !== next.manager) return next;
+  const out: HomeFacts = { ...next };
+  for (const k of FETCHED)
+    if (out[k] === undefined && prev[k] !== undefined)
+      (out as Record<string, unknown>)[k] = prev[k];
+  return out;
 }

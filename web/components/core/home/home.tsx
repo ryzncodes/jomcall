@@ -2,21 +2,20 @@
 // Home: a checklist until the agent is live, then today's numbers and what
 // needs the owner. Each read can fail alone; see load.ts.
 import { CaretRight, CheckCircle, Circle, Clock } from "@phosphor-icons/react";
-import { formatSen } from "../../../../packages/billing/src/money";
 import {
   checklist,
   homeState,
+  keepLastGood,
   needsYou,
   todayCounts,
-  type Need,
+  type HomeFacts,
   type StepId,
 } from "@/lib/core/home-rules";
-import { dayText } from "@/lib/core/plan-rules";
+import { useRef } from "react";
 import { useExperience } from "../../experience";
 import { Heading, Loading, useCore, useResource, useWords } from "../state";
 import { loadHomeFacts } from "./load";
-
-type W = (en: string, ms: string) => string;
+import { needText, todayParts, type W } from "./copy";
 
 const STEPS: Record<StepId, { label: [string, string]; button: [string, string] }> = {
   setup: { label: ["Set up your business", "Sediakan perniagaan anda"], button: ["Setup", "Persediaan"] },
@@ -26,45 +25,25 @@ const STEPS: Record<StepId, { label: [string, string]; button: [string, string] 
   phone: { label: ["Get a phone number", "Dapatkan nombor telefon"], button: ["Request number", "Minta nombor"] },
 };
 
-function needText(n: Need, w: W, ms: boolean, balanceSen: number | null) {
-  const rm = balanceSen === null ? "" : formatSen(balanceSen);
-  switch (n.id) {
-    case "wallet_exhausted":
-      return w("Wallet empty: calls are not answered", "Dompet kosong: panggilan tidak dijawab");
-    case "wallet_grace":
-      return w("Wallet below zero: top up soon", "Baki dompet di bawah sifar: tambah nilai segera");
-    case "plan_unpaid":
-      return n.date
-        ? w(`Plan fee unpaid: pay by ${dayText(n.date, false)}`, `Yuran pelan belum dibayar: bayar sebelum ${dayText(n.date, true)}`)
-        : w("Plan fee unpaid", "Yuran pelan belum dibayar");
-    case "wallet_low":
-      return w(`Wallet low: ${rm}`, `Baki dompet rendah: ${rm}`);
-    case "bookings":
-      return w(`${n.count} bookings to confirm`, `${n.count} tempahan perlu disahkan`);
-    case "chats":
-      return w(`${n.count} WhatsApp chats waiting for you`, `${n.count} sembang WhatsApp menunggu anda`);
-    case "gaps":
-      return w(`${n.count} questions the agent could not answer`, `${n.count} soalan yang ejen tidak dapat jawab`);
-  }
-}
-
 export function LocalHome() {
   const { client, workspace, refresh } = useCore(),
     w = useWords(),
-    { href, locale } = useExperience(),
-    ms = locale === "ms";
+    { href } = useExperience();
   const manager = workspace.role !== "staff";
   const published = !!workspace.agent?.published_version_id;
   const agentId = workspace.agent?.id ?? null;
-  const facts = useResource(
-    () =>
-      loadHomeFacts(
-        client as unknown as Parameters<typeof loadHomeFacts>[0],
-        { manager, published, agentId },
-        new Date(),
-      ),
-    `home|${workspace.workspace.id}|${manager}|${published}|${agentId}`,
-  ).data;
+  const last = useRef<{ key: string; facts: HomeFacts } | undefined>(undefined);
+  const key = `home|${workspace.workspace.id}|${manager}|${published}|${agentId}`;
+  const facts = useResource(async () => {
+    const next = await loadHomeFacts(
+      client as unknown as Parameters<typeof loadHomeFacts>[0],
+      { manager, published, agentId },
+      new Date(),
+    );
+    const merged = keepLastGood(last.current?.key === key ? last.current.facts : undefined, next);
+    last.current = { key, facts: merged };
+    return merged;
+  }, key).data;
   const state = facts && homeState(facts);
   const steps = facts ? checklist(facts) : [];
   const done = steps.filter((s) => s.state === "done").length;
@@ -107,13 +86,20 @@ export function LocalHome() {
                   {s.state === "waiting" && (
                     <small>{w("Waiting for your number", "Menunggu nombor anda")}</small>
                   )}
+                  {s.state === "todo" && !manager && (
+                    <small>{w("An owner or admin does this step.", "Pemilik atau pentadbir melakukan langkah ini.")}</small>
+                  )}
                   <span className="sr-only">
-                    {s.state === "done" ? w(" (done)", " (selesai)") : ""}
+                    {s.state === "done"
+                      ? w(" (done)", " (selesai)")
+                      : s.state === "waiting"
+                        ? ""
+                        : w(" (not done)", " (belum selesai)")}
                   </span>
                 </span>
                 {s.state === "todo" && s.href && (
                   <a className="button secondary-button" href={href(s.href)}>
-                    {w(...t.button)}
+                    {s.unpaid ? w("Pay fee", "Bayar yuran") : w(...t.button)}
                   </a>
                 )}
               </li>
@@ -121,7 +107,7 @@ export function LocalHome() {
           })}
         </ol>
       )}
-      {state === "today" && facts && <Today facts={facts} w={w} ms={ms} href={href} />}
+      {state === "today" && facts && <Today facts={facts} w={w} href={href} />}
     </>
   );
 }
@@ -129,28 +115,25 @@ export function LocalHome() {
 function Today({
   facts,
   w,
-  ms,
   href,
 }: {
-  facts: NonNullable<Parameters<typeof needsYou>[0]>;
+  facts: HomeFacts;
   w: W;
-  ms: boolean;
   href: (p: string) => string;
 }) {
   const c = todayCounts(facts, new Date());
   const needs = needsYou(facts);
-  const parts = [
-    c.calls !== null && w(`${c.calls} calls`, `${c.calls} panggilan`),
-    c.missed !== null && w(`${c.missed} not answered`, `${c.missed} tidak dijawab`),
-    c.bookings !== null && w(`${c.bookings} bookings`, `${c.bookings} tempahan`),
-    c.balanceSen !== null && formatSen(c.balanceSen),
-  ].filter(Boolean) as string[];
+  const parts = todayParts(c, w);
   return (
     <>
       {parts.length > 0 && (
         <p className="home-today">
           {parts.map((p, i) => (
-            <span key={i}>{p}</span>
+            <span key={i}>
+              {p.label && <span className="home-today-label">{p.label} </span>}
+              {p.text}
+              {i < parts.length - 1 && <span className="sr-only">, </span>}
+            </span>
           ))}
         </p>
       )}
@@ -161,7 +144,7 @@ function Today({
             {needs.map((n) => (
               <li key={n.id} data-kind={n.id.startsWith("wallet") || n.id === "plan_unpaid" ? "billing" : undefined}>
                 <a href={href(n.href)}>
-                  <span>{needText(n, w, ms, c.balanceSen)}</span>
+                  <span>{needText(n, w, c.balanceSen)}</span>
                   <CaretRight size={18} aria-hidden />
                 </a>
               </li>
