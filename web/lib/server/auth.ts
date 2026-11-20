@@ -61,8 +61,10 @@ export async function verifyIdentity(request: Request): Promise<Identity> {
   await database().withIdentity(identity, async () => true);
   return identity;
 }
-function sessionResponse(session: Session) {
-  const response = respond({ authenticated: true });
+function sessionResponse(session: Session, next?: string) {
+  const response = respond(
+    next ? { authenticated: true, next } : { authenticated: true },
+  );
   setCookie(response, names().access, session.access_token, session.expires_in);
   setCookie(response, names().refresh, session.refresh_token, 604800);
   return response;
@@ -70,6 +72,8 @@ function sessionResponse(session: Session) {
 const credentials = z
   .object({ email: z.email().max(254), password: z.string().min(8).max(128) })
   .strict();
+// The one-time token in a confirmation or recovery link.
+const linkHash = z.string().regex(/^[a-f0-9]{40,128}$/);
 const rates = new Map<string, { count: number; until: number }>();
 // The platform's proxy sets these headers; the first hop is the client.
 function clientAddress(request: Request) {
@@ -103,29 +107,29 @@ export async function handleAuth(request: Request) {
       const url = new URL(request.url);
       if ([...url.searchParams.keys()].some((k) => !["token_hash"].includes(k)))
         throw new AppError("INVALID_CALLBACK", 422);
-      const hash = z
-        .string()
-        .regex(/^[a-f0-9]{40,128}$/)
-        .parse(url.searchParams.get("token_hash"));
-      const result = await auth.auth.verifyOtp({
-        token_hash: hash,
-        type: action === "confirm" ? "signup" : "recovery",
+      const hash = linkHash.parse(url.searchParams.get("token_hash"));
+      // Opening the emailed link spends nothing. A mail scanner, a link
+      // preview or a browser's safety check may load it before the person
+      // does, and the token works once; so this only sends the browser to a
+      // page with a button, and the button's POST below does the work.
+      return new Response(null, {
+        status: 303,
+        headers: {
+          location: `${origin}/open-link?kind=${action}&token_hash=${hash}`,
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        },
       });
-      checkAuthService(result.error);
-      if (result.error || !result.data.session)
-        throw new AppError("INVALID_LINK", 401);
-      const response = sessionResponse(result.data.session);
-      response.headers.set(
-        "location",
-        origin + (action === "recovery" ? "/forgot-password?reset=1" : "/app"),
-      );
-      return new Response(null, { status: 303, headers: response.headers });
     }
     if (request.method !== "POST")
       throw new AppError("METHOD_NOT_ALLOWED", 405);
     requireMutation(request);
     let body = await readBody(request, 16384);
-    if (["login", "signup", "forgot-password"].includes(action)) {
+    if (
+      ["login", "signup", "forgot-password", "confirm", "recovery"].includes(
+        action,
+      )
+    ) {
       const now = Date.now();
       // Local mode keeps one bucket per action. On the internet that would let
       // one person lock everybody out, so hosted mode counts per client
@@ -140,6 +144,20 @@ export async function handleAuth(request: Request) {
         rates.set(bucket, rate);
       }
       if (++rate.count > 10) throw new AppError("RATE_LIMITED", 429);
+    }
+    if (action === "confirm" || action === "recovery") {
+      const value = z.object({ tokenHash: linkHash }).strict().parse(body);
+      const result = await auth.auth.verifyOtp({
+        token_hash: value.tokenHash,
+        type: action === "confirm" ? "signup" : "recovery",
+      });
+      checkAuthService(result.error);
+      if (result.error || !result.data.session)
+        throw new AppError("INVALID_LINK", 401);
+      return sessionResponse(
+        result.data.session,
+        action === "recovery" ? "/forgot-password?reset=1" : "/app",
+      );
     }
     const turnstile =
       action === "signup" || action === "login" ? turnstileSettings() : null;

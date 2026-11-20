@@ -303,3 +303,102 @@ export function LocalAuth({
     </PublicFrame>
   );
 }
+
+// Where a confirmation or recovery email link lands. The emailed link is
+// spent by the button here, never by loading a page: mail scanners and link
+// previews open links too, and the token works once.
+export function OpenLink() {
+  const w = useWords(),
+    { href } = useExperience(),
+    params = useSearchParams();
+  const kind = params.get("kind") === "recovery" ? "recovery" : "confirm";
+  const raw = params.get("token_hash") ?? "";
+  const token = /^[a-f0-9]{40,128}$/.test(raw) ? raw : "";
+  const [busy, setBusy] = useState(false),
+    [failed, setFailed] = useState(!token),
+    [error, setError] = useState<unknown>();
+  const press = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const done = (await new HttpCoreClient({}).auth(kind, {
+        tokenHash: token,
+      })) as { next?: string };
+      location.assign(href(done.next ?? "/app"));
+    } catch (e) {
+      // A used or expired link is the usual case for an account that is
+      // already confirmed, so it gets its own page, not a red error.
+      if ((e as { code?: string }).code === "INVALID_LINK") setFailed(true);
+      else setError(e);
+      setBusy(false);
+    }
+  };
+  return (
+    <PublicFrame>
+      <main id="content" tabIndex={-1} className="access-layout access-single">
+        <section className="access-form">
+          <span className="remaining-chip">
+            {w(
+              HOSTED ? "Workspace" : "Local workspace",
+              HOSTED ? "Ruang kerja" : "Ruang kerja setempat",
+            )}
+          </span>
+          {failed ? (
+            <div className="access-success" role="status">
+              <h2>
+                {w(
+                  "This link was already used, or it has expired.",
+                  "Pautan ini sudah digunakan, atau sudah tamat tempoh.",
+                )}
+              </h2>
+              <p>
+                {kind === "confirm"
+                  ? w(
+                      "If you have confirmed your email before, sign in. If not, create your account again to get a new link.",
+                      "Jika anda sudah mengesahkan e-mel sebelum ini, log masuk. Jika belum, cipta akaun sekali lagi untuk mendapat pautan baharu.",
+                    )
+                  : w(
+                      "Ask for a new reset link. Each link works once.",
+                      "Minta pautan tetapan semula yang baharu. Setiap pautan berfungsi sekali sahaja.",
+                    )}
+              </p>
+              <a
+                className="button button-dark"
+                href={href(kind === "confirm" ? "/login" : "/forgot-password")}
+              >
+                {kind === "confirm"
+                  ? w("Sign in", "Log masuk")
+                  : w("Get a new link", "Dapatkan pautan baharu")}
+              </a>
+            </div>
+          ) : (
+            <>
+              <h2>
+                {kind === "confirm"
+                  ? w("Confirm your email.", "Sahkan e-mel anda.")
+                  : w("Reset your password.", "Tetapkan semula kata laluan.")}
+              </h2>
+              <p>
+                {kind === "confirm"
+                  ? w(
+                      "One more step: press the button to confirm this email address and open your workspace.",
+                      "Satu langkah lagi: tekan butang untuk mengesahkan alamat e-mel ini dan membuka ruang kerja anda.",
+                    )
+                  : w(
+                      "Press the button to choose a new password.",
+                      "Tekan butang untuk memilih kata laluan baharu.",
+                    )}
+              </p>
+              <Notice error={error} />
+              <button className="button button-dark" disabled={busy} onClick={press}>
+                {kind === "confirm"
+                  ? w("Confirm my account", "Sahkan akaun saya")
+                  : w("Choose a new password", "Pilih kata laluan baharu")}
+              </button>
+            </>
+          )}
+        </section>
+      </main>
+    </PublicFrame>
+  );
+}

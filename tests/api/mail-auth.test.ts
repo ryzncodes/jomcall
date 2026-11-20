@@ -56,8 +56,27 @@ test("signup confirmation and recovery links stay local and single-use", async (
       401,
     );
     const confirm = await link(email, "confirm");
-    assert.equal((await api.request(null, null, "GET", confirm)).status, 303);
-    assert.equal((await api.request(null, null, "GET", confirm)).status, 401);
+    // Loading the link spends nothing, however often (a mail scanner or a
+    // link preview loads it before the person does): it only redirects to
+    // the page with the button. The button's POST confirms, once.
+    const hashOf = (url: string) => new URL(url, "http://x").searchParams.get("token_hash")!;
+    for (let i = 0; i < 2; i++) {
+      const opened = await api.request(null, null, "GET", confirm);
+      assert.equal(opened.status, 303);
+      assert.match(opened.headers.get("location") ?? "", /\/open-link\?kind=confirm&token_hash=[a-f0-9]+$/);
+      assert.equal(opened.headers.getSetCookie().length, 0);
+    }
+    assert.equal(
+      (await api.request(null, null, "POST", "/api/auth/login", { email, password })).status,
+      401,
+    );
+    const pressed = await api.request(null, null, "POST", "/api/auth/confirm", { tokenHash: hashOf(confirm) });
+    assert.equal(pressed.status, 200);
+    assert.equal(pressed.body.data.next, "/app");
+    assert.equal(
+      (await api.request(null, null, "POST", "/api/auth/confirm", { tokenHash: hashOf(confirm) })).status,
+      401,
+    );
     const signed = await api.request(null, null, "POST", "/api/auth/login", {
       email,
       password,
@@ -83,8 +102,10 @@ test("signup confirmation and recovery links stay local and single-use", async (
       ).status,
       422,
     );
-    const recovered = await api.request(null, null, "GET", recovery);
-    assert.equal(recovered.status, 303);
+    assert.equal((await api.request(null, null, "GET", recovery)).status, 303);
+    const recovered = await api.request(null, null, "POST", "/api/auth/recovery", { tokenHash: hashOf(recovery) });
+    assert.equal(recovered.status, 200);
+    assert.equal(recovered.body.data.next, "/forgot-password?reset=1");
     const cookies = recovered.headers.getSetCookie();
     const actor = {
       token: cookies
@@ -126,7 +147,10 @@ test("signup confirmation and recovery links stay local and single-use", async (
       ).status,
       200,
     );
-    assert.equal((await api.request(null, null, "GET", recovery)).status, 401);
+    assert.equal(
+      (await api.request(null, null, "POST", "/api/auth/recovery", { tokenHash: hashOf(recovery) })).status,
+      401,
+    );
   } finally {
     if (id) await h.admin.auth.admin.deleteUser(id);
     await api.close();

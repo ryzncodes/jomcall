@@ -9,7 +9,7 @@ import type { Channels } from "../../../packages/contracts/src/phone";
 import { channelLine } from "./channel-line";
 import { useExperience } from "../experience";
 import { WorkspaceChrome, type ActiveScreen } from "./chrome";
-import { LocalAuth } from "./auth";
+import { LocalAuth, OpenLink } from "./auth";
 import { CoreContext, Heading, Loading, Notice, useWords } from "./state";
 import { Field } from "./field";
 import { pendingInvite } from "@/lib/core/invite";
@@ -35,7 +35,9 @@ const SetupFlow =
     ? dynamic(() => import("./setup/flow").then((m) => m.SetupFlow))
     : null;
 export function LocalApp({ screen }: { screen: string }) {
-  return ["login", "signup", "forgot", "invite"].includes(screen) ? (
+  return screen === "link" ? (
+    <OpenLink />
+  ) : ["login", "signup", "forgot", "invite"].includes(screen) ? (
     <LocalAuth mode={screen as "login" | "signup" | "forgot" | "invite"} />
   ) : (
     <LocalWorkspace screen={screen} />

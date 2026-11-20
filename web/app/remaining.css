@@ -1623,3 +1623,14 @@
   color: var(--secondary);
   max-width: 62ch;
 }
+
+/* The email link page: one column, no story panel. */
+.access-layout.access-single {
+  grid-template-columns: 1fr;
+  max-width: 560px;
+  min-height: 0;
+  margin-block: 72px 96px;
+}
+.access-single .access-form p {
+  margin: 12px 0 24px;
+}

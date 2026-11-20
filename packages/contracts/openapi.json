@@ -35057,7 +35057,7 @@
       "get": {
         "operationId": "auth_confirm",
         "security": [],
-        "description": "Single-use local email callback. Only token_hash accepted. Never log this URL.",
+        "description": "Email link. GET spends nothing: it redirects to /open-link, whose button POSTs { tokenHash } here (same Origin and CSRF pair). Only token_hash accepted on GET. Never log this URL.",
         "parameters": [
           {
             "in": "query",
@@ -35220,7 +35220,7 @@
       "get": {
         "operationId": "auth_recovery",
         "security": [],
-        "description": "Single-use local email callback. Only token_hash accepted. Never log this URL.",
+        "description": "Email link. GET spends nothing: it redirects to /open-link, whose button POSTs { tokenHash } here (same Origin and CSRF pair). Only token_hash accepted on GET. Never log this URL.",
         "parameters": [
           {
             "in": "query",

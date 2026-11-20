@@ -187,19 +187,41 @@ test("local mutations still need the loopback origin exactly", async () => {
     );
 });
 
-test("the confirmation redirect goes to the configured origin, whatever the request host says", async () => {
+test("an emailed link spends nothing: it redirects to the button page on the configured origin, whatever the request host says", async () => {
   hosted();
-  // An unreachable Supabase URL: the handler must fail closed, not redirect.
-  const response = await handleAuth(
-    new Request(
-      "https://evil.example.test/api/auth/confirm?token_hash=" + "a".repeat(40),
-      {
+  const hash = "a".repeat(40);
+  // The Supabase URL here is unreachable: a redirect proves no token was
+  // sent anywhere. A mail scanner or link preview loading the link leaves
+  // the one-time token unused.
+  for (const action of ["confirm", "recovery"]) {
+    const response = await handleAuth(
+      new Request(`https://evil.example.test/api/auth/${action}?token_hash=${hash}`, {
         headers: { host: "evil.example.test" },
-      },
-    ),
+      }),
+    );
+    assert.equal(response.status, 303);
+    assert.equal(
+      response.headers.get("location"),
+      `${ORIGIN}/open-link?kind=${action}&token_hash=${hash}`,
+    );
+    assert.equal(response.headers.get("set-cookie"), null);
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+  }
+  // Anything but one well-formed token_hash is refused, with no redirect.
+  for (const query of ["token_hash=xyz", `token_hash=${hash}&next=https://evil.example.test`, ""]) {
+    const bad = await handleAuth(new Request(`${ORIGIN}/api/auth/confirm?${query}`));
+    assert.ok(bad.status >= 400);
+    assert.equal(bad.headers.get("location"), null);
+  }
+  // The button's POST needs the same-origin CSRF pair like every mutation.
+  const bare = await handleAuth(
+    new Request(ORIGIN + "/api/auth/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: ORIGIN },
+      body: JSON.stringify({ tokenHash: hash }),
+    }),
   );
-  assert.ok(response.status >= 400);
-  assert.equal(response.headers.get("location"), null);
+  assert.equal(bare.status, 403);
 });
 
 test("a broken hosted setting is an error, never mock data", async () => {
