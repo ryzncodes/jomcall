@@ -25,7 +25,7 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      source: "/((?!app|api|login|signup|docs|self-host|_next).*)",
+      source: "/((?!(?:app|api|login|signup|docs|self-host|_next)(?:/|$)).*)",
       has: [{ type: "query", key: "lang" }],
     },
   ],

@@ -1,4 +1,4 @@
-import { appOrigin } from "../../packages/contracts/src/hosting.ts";
+import { appOrigin, isHosted } from "../../packages/contracts/src/hosting.ts";
 
 export type PublicLocale = "en" | "ms";
 
@@ -49,10 +49,15 @@ export function localePath(id: PublicPageId, locale: PublicLocale): string {
   return page.path === "/" ? "/ms" : `/ms${page.path}`;
 }
 
+// True when this build serves the real, indexable site. Read at call time.
+export function isHostedSite(): boolean {
+  return isHosted(process.env);
+}
+
 // Absolute origin of the public site: APP_ORIGIN in hosted mode, otherwise
 // undefined (mock and local pages use relative paths and are noindex).
 export function siteOrigin(): string | undefined {
-  if (process.env.JOMCALL_MODE !== "hosted") return undefined;
+  if (!isHostedSite()) return undefined;
   if (!process.env.APP_ORIGIN?.trim()) throw Error("MISSING_SETTING: APP_ORIGIN");
   return appOrigin();
 }

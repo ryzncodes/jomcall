@@ -25,3 +25,16 @@ Deviations from `docs/superpowers/plans/2026-11-16-agent-page.md`, each with its
 - Staff see read-only hours under the published summary, because staff could read `/app/hours` before.
 - Next was upgraded from 16.4.1 to 16.4.6 on this branch (owner instruction, 2026-11-17). Next 16.4.1 ended its own build with a security notice.
 - One extra fix commit after the single planned fix wave (`6079064`): two small defects the fix wave itself introduced. It was checked by the controller and by tests, not by a separate reviewer.
+
+## 2026-11-21: public pages, Task 2 (branch `feat/public-pages-seo`)
+
+Deviations from the Task 2 brief and spec section 6, each with its reason.
+
+- Two more font files. `PublicSans.ttf` and `IBMPlexMono.ttf` are static 400 files, so the spec's weight 500 (labels, data) would render at 400. Added `PublicSans-Variable.ttf` (OFL, `ofl/publicsans` in google/fonts) and `IBMPlexMono-Medium.ttf` (OFL, `ofl/ibmplexmono`); the existing OFL texts cover them (same licence, whitespace-only differences). The old files stay because `globals.css` uses them.
+- Theme order follows the spec, not the brief: a valid `?theme` wins and is stored ("honoured once (and stored)"), then the stored choice, then the operating system. The brief listed the stored choice first.
+- The pre-paint script acts only on public paths (from `PUBLIC_PAGES`, both languages). On `/app`, `/login` and `/signup` the app still takes its theme from `?theme`; a stored public choice there would flash dark before the app's own effect reset it. Until Tasks 4 and 5 replace the old `/`, `/pricing`, `/privacy` and `/terms` Experience screens, those four can still flash when the stored choice differs from their `?theme`.
+- Only Familjen Grotesk is preloaded. The root layout loads the fonts on every route, including the app, so Public Sans and Plex Mono are found through `public.css` instead of preloaded everywhere; all three swap over a size-adjusted Arial fallback.
+- `THEME_KEY` lives in `web/lib/theme-key.ts` so client code can read it without pulling the page registry (and `hosting.ts`) into the browser bundle.
+- Nav data (header menus, footer groups, language link) lives in `web/components/public/nav.ts`, a plain module, so tests check it without loading client components.
+- `fillOperator` is written again in `web/components/public/operator.tsx`; the copy in `public-pages.tsx` is a client module and stays until that file is removed.
+- The mobile menu uses `@radix-ui/react-dialog` (already a dependency) for the focus trap, Escape and focus return; its portal mounts inside `#public-root` so the scoped tokens apply.

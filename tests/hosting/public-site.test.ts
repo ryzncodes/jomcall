@@ -2,19 +2,26 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   PUBLIC_PAGES,
+  isHostedSite,
   localePath,
   siteOrigin,
 } from "../../web/lib/site.ts";
 import { pageMetadata } from "../../web/lib/public-meta.ts";
-import { legacyRedirect } from "../../web/proxy.ts";
+import { appHref } from "../../web/components/public/links.ts";
+import { config, legacyRedirect } from "../../web/proxy.ts";
 
-const saved = { ...process.env };
-function set(values: Record<string, string | undefined>) {
-  for (const key of Object.keys(process.env)) delete process.env[key];
-  for (const [key, value] of Object.entries({ NODE_ENV: "test", ...values }))
-    if (value !== undefined) process.env[key] = value;
+// Only the settings these tests change are touched; the rest of the
+// environment is left as the runner set it.
+const KEYS = ["JOMCALL_MODE", "APP_ORIGIN", "LOCAL_ORIGIN"] as const;
+const saved = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
+function set(values: Partial<Record<(typeof KEYS)[number], string>>) {
+  for (const key of KEYS) {
+    const value = key in values ? values[key] : undefined;
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 }
-after(() => set(saved));
+after(() => set(saved as Record<string, string>));
 
 test("registry has 25 unique pages with valid parents", () => {
   assert.equal(PUBLIC_PAGES.length, 25);
@@ -41,6 +48,34 @@ test("legacyRedirect", () => {
   assert.equal(r("https://x.test/pricing"), null);
   for (const p of ["/login", "/signup", "/docs", "/self-host", "/api/x"])
     assert.equal(r(`https://x.test${p}?lang=ms`), null);
+});
+
+test("proxy matcher skips app routes but not public paths that share a prefix", () => {
+  const source = config.matcher[0].source;
+  const re = new RegExp(`^${source}$`);
+  for (const p of ["/", "/pricing", "/ms/pricing", "/apps-guide", "/application", "/login-help", "/docsify"])
+    assert.ok(re.test(p), `${p} should reach the proxy`);
+  for (const p of ["/app", "/app/calls", "/api/v1/session", "/login", "/signup", "/docs", "/docs/x", "/self-host", "/_next/static/x"])
+    assert.ok(!re.test(p), `${p} should not reach the proxy`);
+});
+
+test("isHostedSite reads the mode at call time", () => {
+  set({ JOMCALL_MODE: "hosted", APP_ORIGIN: "https://staging.jomcall.com" });
+  assert.equal(isHostedSite(), true);
+  set({ JOMCALL_MODE: "local" });
+  assert.equal(isHostedSite(), false);
+  set({});
+  assert.equal(isHostedSite(), false);
+});
+
+test("appHref adds language and theme for app links", () => {
+  assert.equal(appHref("/signup", "ms", "dark"), "/signup?lang=ms&theme=dark");
+  assert.equal(appHref("/login", "en", "light"), "/login?lang=en&theme=light");
+  assert.equal(appHref("/app", "en", "dark"), "/app?lang=en&theme=dark");
+  assert.equal(
+    appHref("/app/setup?workspace=w1", "ms", "light"),
+    "/app/setup?workspace=w1&lang=ms&theme=light",
+  );
 });
 
 test("pageMetadata hosted", () => {

@@ -8,7 +8,10 @@ import "./admin.css";
 import "./remaining.css";
 import "./navigation.css";
 import "./core.css";
+import "./public.css";
 import { HOSTED } from "@/lib/hosted";
+import { fontVariables } from "@/lib/fonts";
+import { PRE_PAINT_SCRIPT } from "@/lib/theme-script";
 // The hosted site is the real product and may be indexed; the mock preview
 // shows fictional calls and stays out of search results.
 export const metadata: Metadata = {
@@ -22,7 +25,12 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    // The pre-paint script sets the theme, and `lang="ms"` on /ms pages, on
+    // <html> before React hydrates; suppressHydrationWarning accepts that.
+    <html lang="en" className={fontVariables} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: PRE_PAINT_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );
