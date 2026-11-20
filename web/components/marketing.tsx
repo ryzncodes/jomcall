@@ -25,6 +25,7 @@ import { MiniWorkspace } from "./workspace";
 import { launchCopy } from "@/lib/launch";
 import { publicPlans } from "@/lib/pricing";
 import { money } from "@/lib/api/client";
+import { useSignedIn } from "./signed-in";
 export function Marketing() {
   const { t, href, mode, locale } = useExperience();
   // The hosted site sells the phone line: its answers are not the mock's.
@@ -39,6 +40,9 @@ export function Marketing() {
       : t.faqA[i];
   // The mock preview has no accounts: it opens the sample app instead.
   const real = mode !== "mock";
+  // A signed-in visitor gets one link back to the app, not sign-up again.
+  const signedIn = Boolean(useSignedIn(real));
+  const workspace = locale === "ms" ? "Buka ruang kerja" : "Open your workspace";
   const [menu, setMenu] = useState(false);
   const [business, setBusiness] = useState<"salon" | "clinic" | "workshop">(
     "salon",
@@ -65,8 +69,15 @@ export function Marketing() {
               {t.navControl}
             </a>
             <a href={href("/pricing")}>{t.remaining.pricing}</a>
-            {real && <a href={href("/login")}>{t.remaining.login}</a>}
-            {real && (
+            {real && !signedIn && (
+              <a href={href("/login")}>{t.remaining.login}</a>
+            )}
+            {real && signedIn && (
+              <a className="navigation-start" href={href("/app")}>
+                {workspace}
+              </a>
+            )}
+            {real && !signedIn && (
               <a className="navigation-start" href={href("/signup")}>
                 {hosted ? launchCopy.planButton[li] : t.startFree}
               </a>
@@ -76,9 +87,15 @@ export function Marketing() {
             <Controls />
             <a
               className="button button-small button-dark"
-              href={href(real ? "/signup" : "/app")}
+              href={href(real && !signedIn ? "/signup" : "/app")}
             >
-              {hosted ? launchCopy.planButton[li] : real ? t.startFree : t.openApp}
+              {signedIn
+                ? workspace
+                : hosted
+                  ? launchCopy.planButton[li]
+                  : real
+                    ? t.startFree
+                    : t.openApp}
               <ArrowUpRight size={16} />
             </a>
             <button
@@ -110,8 +127,15 @@ export function Marketing() {
               <p>{t.intro}</p>
               {real ? (
                 <>
-                  <a className="button button-dark" href={href("/signup")}>
-                    {hosted ? launchCopy.planButton[li] : t.startFree}
+                  <a
+                    className="button button-dark"
+                    href={href(signedIn ? "/app" : "/signup")}
+                  >
+                    {signedIn
+                      ? workspace
+                      : hosted
+                        ? launchCopy.planButton[li]
+                        : t.startFree}
                     <ArrowUpRight size={20} />
                   </a>
                   <a className="text-link hero-second" href="#demo">
@@ -344,7 +368,11 @@ export function Marketing() {
         <div className="site-footer-links">
           <a href={href("/pricing")}>{t.remaining.pricing}</a>
           {!hosted && <a href={href("/docs")}>{t.remaining.docs}</a>}
-          <a href={href("/login")}>{t.remaining.login}</a>
+          {signedIn ? (
+            <a href={href("/app")}>{workspace}</a>
+          ) : (
+            <a href={href("/login")}>{t.remaining.login}</a>
+          )}
         </div>
         <OperatorDetails />
       </footer>
