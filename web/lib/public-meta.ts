@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { isHostedSite, localePath, siteOrigin, type PublicLocale, type PublicPageId } from "./site.ts";
+import { isIndexable, localePath, siteOrigin, type PublicLocale, type PublicPageId } from "./site.ts";
 
 export function pageMetadata(
   id: PublicPageId,
@@ -25,7 +25,7 @@ export function pageMetadata(
       siteName: "JomCall",
       locale: locale === "en" ? "en_MY" : "ms_MY",
     },
-    ...(isHostedSite()
+    ...(isIndexable()
       ? {}
       : { robots: { index: false, follow: false } }),
   };

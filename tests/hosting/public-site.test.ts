@@ -88,7 +88,7 @@ test("pageMetadata hosted", () => {
   assert.equal(langs.en, "https://staging.jomcall.com/pricing");
   assert.equal(langs.ms, "https://staging.jomcall.com/ms/pricing");
   assert.equal((m.openGraph as { locale?: string }).locale, "ms_MY");
-  assert.equal(m.robots, undefined);
+  assert.deepEqual(m.robots, { index: false, follow: false });
 });
 
 test("pageMetadata local is noindex with relative paths", () => {
@@ -409,4 +409,141 @@ test("legal body renders every heading and paragraph of the legal text, operator
       assert.doesNotMatch(html, /\{(?:name|reg|address|email|date)\}/, "operator placeholder left unfilled");
       for (const a of legalAnchors(doc)) assert.ok(html.includes(`id="${a.id}"`));
     }
+});
+
+// ---- Task 6: structured data, robots, sitemap, llms.txt -------------------
+import { isIndexable } from "../../web/lib/site.ts";
+import { breadcrumbLd, faqLd, ldScriptText, organizationLd, softwareAppLd, websiteLd } from "../../web/lib/json-ld.ts";
+import { llmsText } from "../../web/lib/llms.ts";
+import * as robotsModule from "../../web/app/robots.ts";
+import * as sitemapModule from "../../web/app/sitemap.ts";
+import { GET as llmsGet } from "../../web/app/llms.txt/route.ts";
+import { findBannedClaims } from "../../web/content/public/claims.ts";
+
+// web/ has no "type": "module", so tsx may hand back the default export one level down.
+const unwrap = <T,>(m: unknown): T => {
+  const d = (m as { default: unknown }).default;
+  return ((d as { default?: unknown }).default ?? d) as T;
+};
+const robots = unwrap<() => ReturnType<typeof import("../../web/app/robots.ts").default>>(robotsModule);
+const sitemap = unwrap<() => ReturnType<typeof import("../../web/app/sitemap.ts").default>>(sitemapModule);
+
+const PROD = { JOMCALL_MODE: "hosted", APP_ORIGIN: "https://jomcall.com" } as const;
+const STAGING = { JOMCALL_MODE: "hosted", APP_ORIGIN: "https://staging.jomcall.com" } as const;
+
+test("isIndexable is true only for hosted jomcall.com", () => {
+  set(PROD);
+  assert.equal(isIndexable(), true);
+  set(STAGING);
+  assert.equal(isIndexable(), false);
+  set({ JOMCALL_MODE: "hosted", APP_ORIGIN: "https://www.jomcall.com" });
+  assert.equal(isIndexable(), false);
+  set({ JOMCALL_MODE: "hosted", APP_ORIGIN: "https://jomcall.com.evil.test" });
+  assert.equal(isIndexable(), false);
+  set({ JOMCALL_MODE: "mock" });
+  assert.equal(isIndexable(), false);
+  set({});
+  assert.equal(isIndexable(), false);
+});
+
+test("page metadata robots follow isIndexable", () => {
+  const meta = { title: "t", description: "d" };
+  set(STAGING);
+  assert.deepEqual(pageMetadata("pricing", "en", meta).robots, { index: false, follow: false });
+  set(PROD);
+  assert.equal(pageMetadata("pricing", "en", meta).robots, undefined);
+  set({ JOMCALL_MODE: "mock" });
+  assert.deepEqual(pageMetadata("pricing", "en", meta).robots, { index: false, follow: false });
+});
+
+test("robots: closed everywhere but jomcall.com", () => {
+  const rules = () => robots().rules as { allow?: string; disallow?: string | string[] };
+  set({ JOMCALL_MODE: "mock" });
+  assert.equal(rules().disallow, "/");
+  set(STAGING);
+  assert.equal(rules().disallow, "/");
+  assert.equal(robots().sitemap, undefined);
+  set(PROD);
+  assert.equal(rules().allow, "/");
+  for (const p of ["/app", "/api", "/invite", "/login", "/signup", "/forgot-password", "/open-link", "/admin"])
+    assert.ok((rules().disallow as string[]).includes(p), p);
+  assert.equal(robots().sitemap, "https://jomcall.com/sitemap.xml");
+});
+
+test("sitemap: 50 urls with en and ms alternates on jomcall.com, empty elsewhere", () => {
+  set(PROD);
+  const map = sitemap();
+  assert.equal(map.length, 50);
+  for (const entry of map) {
+    const langs = (entry.alternates as { languages: Record<string, string> }).languages;
+    assert.ok(langs.en?.startsWith("https://jomcall.com") && langs.ms?.startsWith("https://jomcall.com"));
+  }
+  assert.ok(map.some((e) => e.url === "https://jomcall.com/ms/pricing"));
+  set(STAGING);
+  assert.deepEqual(sitemap(), []);
+  set({ JOMCALL_MODE: "mock" });
+  assert.deepEqual(sitemap(), []);
+  set({ JOMCALL_MODE: "local", LOCAL_ORIGIN: "http://localhost:4182" });
+  assert.deepEqual(sitemap(), []);
+});
+
+test("llms.txt: 404 off jomcall.com, every url and no banned claim on it", async () => {
+  set(STAGING);
+  assert.equal(llmsGet().status, 404);
+  set({ JOMCALL_MODE: "mock" });
+  assert.equal(llmsGet().status, 404);
+  set(PROD);
+  const res = llmsGet();
+  assert.equal(res.status, 200);
+  const body = await res.text();
+  assert.equal(body, llmsText());
+  for (const { id } of PUBLIC_PAGES)
+    for (const l of ["en", "ms"] as const) assert.ok(body.includes(`https://jomcall.com${localePath(id, l)})`), id + l);
+  assert.deepEqual(findBannedClaims(body, "llms"), []);
+  assert.ok(body.includes("RM 49.00") && body.includes("RM 129.00"));
+  assert.ok(body.includes("waiting for Meta's approval"));
+  assert.doesNotMatch(body, /tamil|free trial|calendar|recorded for|instant/i);
+});
+
+// <JsonLd> is rendered in a child process (react-dom/server is refused under
+// the react-server condition), once with data and once with null.
+function renderLd(): { html: string; none: string } {
+  const script = `
+    import { createElement } from "react";
+    import { renderToStaticMarkup } from "react-dom/server";
+    import { JsonLd } from "./web/components/public/json-ld.tsx";
+    import { faqLd } from "./web/lib/json-ld.ts";
+    process.stdout.write(JSON.stringify({
+      html: renderToStaticMarkup(createElement(JsonLd, { data: faqLd([{ q: "a</script><b>", a: "x" }]) })),
+      none: renderToStaticMarkup(createElement(JsonLd, { data: null })),
+    }));
+  `;
+  return JSON.parse(
+    execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+      encoding: "utf8",
+      env: { ...process.env, NODE_OPTIONS: "", TSX_TSCONFIG_PATH: "web/tsconfig.json" },
+    }),
+  );
+}
+
+test("JSON-LD: offers, no ratings, escaped, absolute urls", () => {
+  set(PROD);
+  const app = softwareAppLd("en") as { offers: { price: string; priceCurrency: string }[] };
+  assert.deepEqual(app.offers.map((o) => o.price), ["49.00", "129.00", "0.00"]);
+  assert.ok(app.offers.every((o) => o.priceCurrency === "MYR"));
+  const all = JSON.stringify([organizationLd(), websiteLd(), app, breadcrumbLd("privacy", "ms"), faqLd(pricingFaq("en"))]);
+  assert.doesNotMatch(all, /aggregateRating|review|ratingValue/i);
+  const crumbs = (breadcrumbLd("compare-voicemail", "en") as { itemListElement: { item: string }[] }).itemListElement;
+  assert.deepEqual(crumbs.map((c) => c.item), [
+    "https://jomcall.com/",
+    "https://jomcall.com/compare",
+    "https://jomcall.com/compare/voicemail",
+  ]);
+  const { html, none } = renderLd();
+  assert.equal(html.match(/<\/script/g)?.length, 1);
+  assert.ok(html.includes("a\\u003c/script>"));
+  assert.equal(none, "");
+  set({ JOMCALL_MODE: "mock" });
+  assert.equal(organizationLd(), null);
+  assert.equal(softwareAppLd("en"), null);
 });

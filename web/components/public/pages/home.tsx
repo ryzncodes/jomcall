@@ -1,12 +1,14 @@
 import { common } from "@/content/public/common";
 import { rm } from "@/content/public/format";
 import { home, sampleCall } from "@/content/public/home";
+import { faqLd, softwareAppLd } from "@/lib/json-ld";
 import { publicPlans } from "@/lib/pricing";
 import { localePath, type PublicLocale } from "@/lib/site";
 import { Bento } from "../bento";
 import { CallCard, HearSample } from "../call-card";
 import { Cta } from "../cta";
 import { INDUSTRIES, pageLink } from "../nav";
+import { JsonLd } from "../json-ld";
 import { PublicShell } from "../shell";
 
 // The home page, in the order of spec section 7: hero, bento, the problem,
@@ -94,6 +96,8 @@ export function HomePage({ locale }: { locale: PublicLocale }) {
   const voiceIds = sampleCall.map((v) => v.id);
   return (
     <PublicShell locale={locale} page="home">
+      <JsonLd data={softwareAppLd(locale)} />
+      <JsonLd data={faqLd(t.faq.items)} />
       <section className="home-hero" data-section="hero" aria-labelledby="home-title">
         <div className="frame hero-grid">
           <div className="hero-copy">

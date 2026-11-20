@@ -74,3 +74,12 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - Added "Prices are in MYR, before SST" (matches the terms text; the old page said "No SST is charged", which the terms contradict). Owner should confirm SST.
 - The estimator's slider and box are two views of one value; typing follows the exact number and snaps to the 10-minute step on blur.
 - Legal text is rendered verbatim from `legalCopy`. It still says calls "may be recorded", which conflicts with the owner rule "calls are not recorded"; not changed here (legal text is not ours to edit).
+
+## Task 6 (structured data, robots, sitemap, llms.txt)
+- Sitemap and `llms.txt` follow `isIndexable()` (ruling), not "hosted": staging gets `[]` and a 404 `llms.txt`. Both still build as static routes.
+- The sitemap lists all 25 pages in both languages, including pages Tasks 7-8 have not built yet (they 404 until then); `llms.txt` describes those with their nav label.
+- `app/robots.ts`, `sitemap.ts` and `llms.txt/route.ts` import with relative paths (`../lib/site`), not `@/`, because the test runner does not resolve the `@/` alias.
+- JSON-LD builders return null with no origin (mock/local); `<JsonLd>` renders nothing for null. `faqLd` needs no origin. Organization and WebSite are in the shell (every public page).
+- Existing test "pageMetadata hosted" used a staging origin and expected indexing; it now expects noindex there (spec section 9).
+- `page-titles.test.ts` already had the `pageMetadata(` rule from Task 4; unchanged.
+- Offer prices are plain decimal strings built from sen; the Growth line in `llms.txt` omits WhatsApp (the banned-claims test reads "WhatsApp agent once ... ready" as availability).

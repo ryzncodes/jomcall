@@ -1,10 +1,12 @@
 import { common } from "@/content/public/common";
 import { pricing, pricingFaq } from "@/content/public/pricing";
+import { breadcrumbLd, faqLd, softwareAppLd } from "@/lib/json-ld";
 import { publicPlans, sourceUrl } from "@/lib/pricing";
 import type { PublicLocale } from "@/lib/site";
 import { AppLink, Cta } from "../cta";
 import { Estimator } from "../estimator";
 import { Arrow, Dash, Tick } from "../icons";
+import { JsonLd } from "../json-ld";
 import { PlanButton } from "../plan-button";
 import { PublicShell } from "../shell";
 
@@ -16,6 +18,9 @@ export function PricingPage({ locale }: { locale: PublicLocale }) {
   const c = common[locale];
   return (
     <PublicShell locale={locale} page="pricing">
+      <JsonLd data={softwareAppLd(locale)} />
+      <JsonLd data={faqLd(pricingFaq(locale))} />
+      <JsonLd data={breadcrumbLd("pricing", locale)} />
       <section className="home-section pricing-hero" data-section="hero" aria-labelledby="pricing-title">
         <div className="frame">
           <h1 id="pricing-title" className="t-display">

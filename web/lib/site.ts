@@ -61,3 +61,16 @@ export function siteOrigin(): string | undefined {
   if (!process.env.APP_ORIGIN?.trim()) throw Error("MISSING_SETTING: APP_ORIGIN");
   return appOrigin();
 }
+
+// True only on the real site: hosted mode and an origin whose host is exactly
+// jomcall.com. Staging, mock and local stay out of search engines. Robots,
+// page metadata, the sitemap and llms.txt all read this one helper.
+export function isIndexable(): boolean {
+  const origin = siteOrigin();
+  if (!origin) return false;
+  try {
+    return new URL(origin).hostname === "jomcall.com";
+  } catch {
+    return false;
+  }
+}
