@@ -39,6 +39,18 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "New workspaces are by invitation only for now. Ask the JomCall team for access, or open your invitation link.",
       "Ruang kerja baharu kini hanya melalui jemputan. Minta akses daripada pasukan JomCall, atau buka pautan jemputan anda.",
     ],
+    PLAN_REQUIRED: [
+      "Choose a plan with a phone number first, in Billing.",
+      "Pilih pelan dengan nombor telefon dahulu, di Bil & penggunaan.",
+    ],
+    REQUEST_OPEN: [
+      "You have already asked for a number. We are setting it up.",
+      "Anda sudah meminta nombor. Kami sedang menyediakannya.",
+    ],
+    NUMBER_EXISTS: [
+      "This workspace already has a phone number.",
+      "Ruang kerja ini sudah mempunyai nombor telefon.",
+    ],
     SLOT_UNAVAILABLE: [
       "Someone booked this time. Choose another slot.",
       "Waktu ini telah ditempah. Pilih waktu lain.",

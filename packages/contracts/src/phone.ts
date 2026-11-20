@@ -45,10 +45,44 @@ export type Channels = {
   whatsapp: boolean;
   integrations: boolean;
 };
+// A request for a phone number. Numbers are bought by an operator, so the
+// owner asks and waits; the areas are the ones a local number can be had in.
+export const phoneAreas = [
+  "any",
+  "klang_valley",
+  "penang",
+  "johor",
+  "perak",
+  "melaka",
+  "negeri_sembilan",
+  "pahang",
+  "kedah",
+  "sabah",
+  "sarawak",
+] as const;
+export const phoneNumberRequestCreate = z
+  .object({
+    area: z.enum(phoneAreas),
+    // The business's own existing number, the one it will forward from.
+    forwardFrom: e164.nullable().default(null),
+  })
+  .strict();
+export type PhoneNumberRequest = {
+  id: string;
+  area: (typeof phoneAreas)[number];
+  forward_from: string | null;
+  state: "open" | "ready" | "cancelled";
+  created_at: string;
+  ready_at: string | null;
+};
 export type PhoneNumbers = {
   items: PhoneNumber[];
   // Whether a telephony provider is configured on the agent side; never a value.
   provider: { configured: boolean; reason: string | null };
+  // The latest request for a number, if any, and whether the current plan
+  // includes a phone number (a request is refused without one).
+  request: PhoneNumberRequest | null;
+  planIncludesNumber: boolean;
 };
 export type CallSummary = {
   id: string;

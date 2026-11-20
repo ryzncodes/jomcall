@@ -3,8 +3,10 @@ import { AppError, uuid, type TenantContext } from "../../../contracts/src/index
 import {
   phoneNumberCreate,
   phoneNumberUpdate,
+  phoneNumberRequestCreate,
   callList,
   type PhoneNumber,
+  type PhoneNumberRequest,
 } from "../../../contracts/src/phone.ts";
 import { manager } from "../authorization.ts";
 import { command, audit } from "../../../db/src/receipts.ts";
@@ -59,6 +61,25 @@ function parseCursor(raw: string | undefined) {
   return { at, id };
 }
 
+const REQUEST = "id,area,forward_from,state,created_at,ready_at";
+async function latestRequest(tx: PoolClient, ctx: TenantContext): Promise<PhoneNumberRequest | null> {
+  return (
+    (
+      await tx.query(
+        `select ${REQUEST} from app.phone_number_request where org_id=$1 order by created_at desc,id limit 1`,
+        [ctx.orgId],
+      )
+    ).rows[0] ?? null
+  );
+}
+// Whether the plan in force includes a phone number. Staff read this screen
+// too, so it is its own read and not the managers' plan summary.
+async function planIncludesNumber(tx: PoolClient, ctx: TenantContext) {
+  return (
+    await tx.query("select app_private.plan_has_phone_number($1) as value", [ctx.orgId])
+  ).rows[0].value === true;
+}
+
 export async function phoneRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -77,15 +98,59 @@ export async function phoneRoute(
     } catch {
       // An invalid value deliberately counts as not connected.
     }
+    // The page shows once there is something to do on it: a number, a
+    // request for one, or a plan that includes one (the owner can then ask).
     const phone =
       telephonyReadiness().configured &&
-      (
+      ((
         await tx.query(
-          "select 1 from app.phone_number where org_id=$1 limit 1",
+          "select 1 from app.phone_number where org_id=$1 union all select 1 from app.phone_number_request where org_id=$1 and state='open' limit 1",
           [ctx.orgId],
         )
-      ).rowCount! > 0;
+      ).rowCount! > 0 ||
+        (await planIncludesNumber(tx, ctx)));
     return { phone, whatsapp, integrations: false };
+  }
+  // Ask for a phone number. An operator buys it and adds it; the engine
+  // emails the operator. Refused without a plan that includes a number,
+  // when the workspace already has a number, and while a request is open.
+  if (path === "/phone-number-requests" && method === "POST") {
+    manager(ctx);
+    const v = phoneNumberRequestCreate.parse(body);
+    return command(
+      tx, ctx, key, "requestPhoneNumber", v,
+      async () => {
+        if (!(await planIncludesNumber(tx, ctx))) throw new AppError("PLAN_REQUIRED", 409);
+        const has = (
+          await tx.query("select 1 from app.phone_number where org_id=$1 and active limit 1", [ctx.orgId])
+        ).rowCount;
+        if (has) throw new AppError("NUMBER_EXISTS", 409);
+        await tx.query("savepoint phone_request");
+        let row;
+        try {
+          row = (
+            await tx.query(
+              `insert into app.phone_number_request(org_id,area,forward_from,requested_by)values($1,$2,$3,$4)returning ${REQUEST}`,
+              [ctx.orgId, v.area, v.forwardFrom, ctx.identity.userId],
+            )
+          ).rows[0];
+          await tx.query("release savepoint phone_request");
+        } catch (error: any) {
+          await tx.query("rollback to savepoint phone_request");
+          if (error?.code === "23505") throw new AppError("REQUEST_OPEN", 409);
+          throw error;
+        }
+        await audit(tx, ctx, "phone_number.requested", "phone_number_request", row.id);
+        return { ref: { id: row.id }, data: row };
+      },
+      async (ref) =>
+        (
+          await tx.query(
+            `select ${REQUEST} from app.phone_number_request where org_id=$1 and id=$2`,
+            [ctx.orgId, ref.id],
+          )
+        ).rows[0],
+    );
   }
   const numbers = path.match(/^\/phone-numbers(?:\/([^/]+))?$/);
   if (numbers) {
@@ -99,6 +164,8 @@ export async function phoneRoute(
           )
         ).rows,
         provider: telephonyReadiness(),
+        request: await latestRequest(tx, ctx),
+        planIncludesNumber: await planIncludesNumber(tx, ctx),
       };
     if (method === "POST" && !id) {
       manager(ctx);

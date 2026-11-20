@@ -939,3 +939,21 @@ Branch `docs/twilio-staging-plan`, pull request #55. Document only; this session
 
 **Next**
 - Cloud firewall rules for 5060 and 10000-10200/udp (urgent, the port was open and probed); Twilio account upgrade (the trial fails calls with `21264`); then the test script in the document's section 10.
+
+## 2026-11-20: prompt rules live; number requests and forwarding steps built
+
+**Live**
+- Pull request #63 merged as `12cc37e`, agent rebuilt on it: one offer per conversation, short typed replies, no transfer promise before the tool. Both paid gates 48 of 48, once each.
+
+**Built, not merged** (branch `feat/number-request`)
+- Customers ask for a phone number on the Phone numbers screen; the engine emails the operator; the operator buys and adds the number; the owners get a "ready" email; the screen shows forwarding steps.
+- Migration `20261120100000_phone_number_request.sql`. Deploy order: migration, then web and an engine rebuild. `JOMCALL_OPERATOR_EMAIL` must be set in `engine.env`.
+
+**Not verified**
+- The hosted request panel in a browser; the emails in an inbox; the forwarding codes on a carrier; a forwarded call on the line (does the original caller's number arrive?).
+- The three prompt rules on a real call or chat.
+
+**Next**
+- Owner: forward a mobile to `+6042253068` and call it from a second phone; read the call row.
+- Decide the public address: `jomcall.com` serves the mock preview today; the product is `staging.jomcall.com`.
+

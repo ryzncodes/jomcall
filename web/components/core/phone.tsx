@@ -2,7 +2,12 @@
 import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import { ArrowLeft, Phone } from "@phosphor-icons/react";
-import type { PhoneNumber, CallSummary } from "../../../packages/contracts/src/phone";
+import {
+  phoneAreas,
+  type PhoneNumber,
+  type PhoneNumbers,
+  type CallSummary,
+} from "../../../packages/contracts/src/phone";
 import { useCore, useWords, useResource, useAction, Heading, Notice, Loading } from "./state";
 import { Field } from "./field";
 import { useExperience } from "../experience";
@@ -44,12 +49,19 @@ export function LocalPhoneNumbers() {
     <>
       <Heading
         title={w("Phone numbers", "Nombor telefon")}
-        description={w(
-          "Each number reaches one location and its published agent. Calls are answered only after a telephony provider is connected.",
-          "Setiap nombor sampai ke satu lokasi dan ejen yang diterbitkan. Panggilan hanya dijawab selepas penyedia telefoni disambungkan.",
-        )}
+        description={
+          HOSTED
+            ? w(
+                "Your JomCall number is answered by your published agent. Keep your existing business number and forward its calls here.",
+                "Nombor JomCall anda dijawab oleh ejen anda yang diterbitkan. Kekalkan nombor perniagaan sedia ada dan majukan panggilannya ke sini.",
+              )
+            : w(
+                "Each number reaches one location and its published agent. Calls are answered only after a telephony provider is connected.",
+                "Setiap nombor sampai ke satu lokasi dan ejen yang diterbitkan. Panggilan hanya dijawab selepas penyedia telefoni disambungkan.",
+              )
+        }
       >
-        {manager && (
+        {manager && !HOSTED && (
           <button className="button button-dark" onClick={() => setEditing("new")}>
             {w("Add number", "Tambah nombor")}
           </button>
@@ -88,6 +100,9 @@ export function LocalPhoneNumbers() {
               }}
             />
           )}
+          {HOSTED && !list.data.items.some((n) => n.active) && (
+            <NumberRequest data={list.data} manager={manager} onDone={() => void list.reload()} />
+          )}
           <section className="core-panel">
             {!list.data.items.length ? (
               <p className="core-empty">{w("No numbers yet.", "Belum ada nombor.")}</p>
@@ -118,9 +133,192 @@ export function LocalPhoneNumbers() {
               ))
             )}
           </section>
+          {list.data.items
+            .filter((n) => n.active)
+            .slice(0, 1)
+            .map((n) => (
+              <Forwarding key={n.id} e164={n.e164} />
+            ))}
         </>
       )}
     </>
+  );
+}
+
+const AREAS: Record<(typeof phoneAreas)[number], [string, string]> = {
+  any: ["No preference", "Tiada pilihan"],
+  klang_valley: ["Kuala Lumpur and Selangor (03)", "Kuala Lumpur dan Selangor (03)"],
+  penang: ["Penang (04)", "Pulau Pinang (04)"],
+  kedah: ["Kedah and Perlis (04)", "Kedah dan Perlis (04)"],
+  perak: ["Perak (05)", "Perak (05)"],
+  melaka: ["Melaka (06)", "Melaka (06)"],
+  negeri_sembilan: ["Negeri Sembilan (06)", "Negeri Sembilan (06)"],
+  johor: ["Johor (07)", "Johor (07)"],
+  pahang: ["Pahang, Terengganu and Kelantan (09)", "Pahang, Terengganu dan Kelantan (09)"],
+  sabah: ["Sabah (088)", "Sabah (088)"],
+  sarawak: ["Sarawak (082)", "Sarawak (082)"],
+};
+
+// Numbers are set up by a person, so the owner asks and waits. Shown in the
+// hosted app while the workspace has no active number.
+function NumberRequest({
+  data,
+  manager,
+  onDone,
+}: {
+  data: PhoneNumbers;
+  manager: boolean;
+  onDone: () => void;
+}) {
+  const w = useWords(),
+    ms = useMs(),
+    { href } = useExperience(),
+    { client } = useCore();
+  const action = useAction();
+  const [area, setArea] = useState<(typeof phoneAreas)[number]>("any");
+  const [own, setOwn] = useState("");
+  const open = data.request?.state === "open" ? data.request : null;
+  const wait = w(
+    "We set each number up by hand. It is usually ready within 2 working hours (Monday to Friday, 9am to 6pm), and we email you when it is.",
+    "Kami menyediakan setiap nombor secara manual. Biasanya sedia dalam 2 jam bekerja (Isnin hingga Jumaat, 9 pagi hingga 6 petang), dan kami e-mel anda apabila sedia.",
+  );
+  if (open)
+    return (
+      <section className="core-panel" role="status">
+        <h2>{w("Your number is being set up", "Nombor anda sedang disediakan")}</h2>
+        <p>
+          {w("Asked on ", "Diminta pada ") + when(open.created_at, ms)}
+          {" · "}
+          {w(AREAS[open.area][0], AREAS[open.area][1])}
+        </p>
+        <p>{wait}</p>
+      </section>
+    );
+  if (!manager) return null;
+  if (!data.planIncludesNumber)
+    return (
+      <section className="core-panel">
+        <h2>{w("Get your phone number", "Dapatkan nombor telefon anda")}</h2>
+        <p>
+          {w(
+            "A phone number comes with the Starter and Growth plans. Choose a plan first, then ask for your number here.",
+            "Nombor telefon disertakan dengan pelan Starter dan Growth. Pilih pelan dahulu, kemudian minta nombor anda di sini.",
+          )}
+        </p>
+        <a className="button button-dark" href={href("/app/billing")}>
+          {w("Choose a plan", "Pilih pelan")}
+        </a>
+      </section>
+    );
+  const cleaned = own.replace(/[\s-]/g, "");
+  const ownE164 = cleaned.startsWith("0") ? "+6" + cleaned : cleaned;
+  const ownBad = cleaned !== "" && !/^\+[1-9][0-9]{6,14}$/.test(ownE164);
+  const send = async () => {
+    const saved = await action.run(() =>
+      client.execute("requestPhoneNumber", {
+        area,
+        forwardFrom: cleaned ? ownE164 : null,
+      }),
+    );
+    if (saved) onDone();
+  };
+  return (
+    <section className="core-panel">
+      <h2>{w("Get your phone number", "Dapatkan nombor telefon anda")}</h2>
+      <p>{wait}</p>
+      <Field
+        label={w("Area you would like", "Kawasan pilihan anda")}
+        hint={w(
+          "We match it when a number is available there. Your customers keep calling your existing number, so the new number's area rarely matters.",
+          "Kami padankan jika ada nombor di kawasan itu. Pelanggan anda terus menelefon nombor sedia ada, jadi kawasan nombor baharu jarang penting.",
+        )}
+      >
+        <select value={area} onChange={(e) => setArea(e.target.value as typeof area)}>
+          {phoneAreas.map((a) => (
+            <option key={a} value={a}>
+              {w(AREAS[a][0], AREAS[a][1])}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field
+        label={w("Your existing business number (optional)", "Nombor perniagaan sedia ada anda (pilihan)")}
+        hint={
+          ownBad
+            ? w("Enter a full number, for example 0312345678.", "Masukkan nombor penuh, contohnya 0312345678.")
+            : w(
+                "The number your customers call today. You will forward it to the new one.",
+                "Nombor yang pelanggan anda telefon hari ini. Anda akan memajukannya ke nombor baharu.",
+              )
+        }
+      >
+        <input value={own} inputMode="tel" maxLength={20} onChange={(e) => setOwn(e.target.value)} />
+      </Field>
+      <Notice error={action.error} />
+      <div className="core-actions">
+        <button className="button button-dark" disabled={action.busy || ownBad} onClick={send}>
+          {w("Request my number", "Minta nombor saya")}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// How to send an existing line's calls to the JomCall number. The codes are
+// the standard mobile network ones; a carrier may name or charge for the
+// service differently, so the text says to ask it when a code is refused.
+function Forwarding({ e164 }: { e164: string }) {
+  const w = useWords();
+  const local = e164.startsWith("+60") ? "0" + e164.slice(3) : e164;
+  const rows: [string, string, string][] = [
+    [w("Every call", "Semua panggilan"), `**21*${local}#`, "##21#"],
+    [w("Only when you do not answer", "Hanya apabila anda tidak menjawab"), `**61*${local}#`, "##61#"],
+    [w("Only when your line is busy", "Hanya apabila talian anda sibuk"), `**67*${local}#`, "##67#"],
+    [w("Only when your phone is off or out of coverage", "Hanya apabila telefon anda dimatikan atau di luar liputan"), `**62*${local}#`, "##62#"],
+  ];
+  return (
+    <section className="core-panel">
+      <h2>{w("Forward your existing number", "Majukan nombor sedia ada anda")}</h2>
+      <p>
+        {w(
+          `Your customers keep calling the number they know. Forward that line to ${local} and your agent answers.`,
+          `Pelanggan anda terus menelefon nombor yang mereka kenal. Majukan talian itu ke ${local} dan ejen anda menjawab.`,
+        )}
+      </p>
+      <h3>{w("Mobile line (Maxis, CelcomDigi, U Mobile, Unifi Mobile and others)", "Talian mudah alih (Maxis, CelcomDigi, U Mobile, Unifi Mobile dan lain-lain)")}</h3>
+      <p>
+        {w(
+          "On the phone that holds the line, open the keypad, type one code and press call. Type the second code the same way to stop.",
+          "Pada telefon yang memegang talian itu, buka pad kekunci, taip satu kod dan tekan panggil. Taip kod kedua dengan cara yang sama untuk berhenti.",
+        )}
+      </p>
+      <ul className="forward-codes">
+        {rows.map(([what, start, stop]) => (
+          <li key={start}>
+            <strong>{what}</strong>
+            <span>
+              {w("Start", "Mula")} <code>{start}</code>
+            </span>
+            <span>
+              {w("Stop", "Henti")} <code>{stop}</code>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <h3>{w("Office or fixed line (TM, Unifi, TIME, Maxis Business)", "Talian pejabat atau tetap (TM, Unifi, TIME, Maxis Business)")}</h3>
+      <p>
+        {w(
+          `Ask your provider to switch on call forwarding to ${local}. Office phone systems (PBX) are forwarded by whoever looks after the system.`,
+          `Minta pembekal anda menghidupkan pemajuan panggilan ke ${local}. Sistem telefon pejabat (PBX) dimajukan oleh pihak yang menyelenggara sistem itu.`,
+        )}
+      </p>
+      <p>
+        {w(
+          "Then call your own number from another phone to check. If a code is refused, your provider has to switch the service on first. Your provider may charge you for forwarded calls.",
+          "Kemudian telefon nombor anda sendiri dari telefon lain untuk menyemak. Jika kod ditolak, pembekal anda perlu menghidupkan perkhidmatan itu dahulu. Pembekal anda mungkin mengenakan caj bagi panggilan yang dimajukan.",
+        )}
+      </p>
+    </section>
   );
 }
 

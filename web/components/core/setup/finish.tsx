@@ -220,10 +220,13 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
             <strong>{w("Phone line", "Talian telefon")}</strong>
             <p>
               {w(
-                "Phone numbers are not open yet. We will email you when you can get yours.",
-                "Nombor telefon belum dibuka. Kami akan e-mel anda apabila nombor anda boleh didapatkan.",
+                "After you choose a plan, ask for your phone number. We set it up by hand, usually within 2 working hours, and email you when it is ready.",
+                "Selepas memilih pelan, minta nombor telefon anda. Kami menyediakannya secara manual, biasanya dalam 2 jam bekerja, dan e-mel anda apabila sedia.",
               )}
             </p>
+            <a className="button secondary-button" href={href("/app/phone-numbers")}>
+              {w("Open Phone numbers", "Buka Nombor telefon")}
+            </a>
           </li>
         </ol>
         <div className="setup-next-more">
