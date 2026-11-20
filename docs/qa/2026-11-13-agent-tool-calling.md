@@ -156,3 +156,15 @@ Both 48-case gates were run once each on `main` at `7888aaf`, with paid model ca
 - **What these runs do not show.** The gate fixtures carry no opening hours, so no case had the new hours block in its prompt. The runs show that prompts without hours still pass; they say nothing about how the agent answers with the hours block present. That is covered only by unit and API tests (the block's text, its cap, draft and published sessions carrying it). No test turn, typed or spoken, has been asked the opening hours with a model.
 - Each run was done once. Hosted runs are not deterministic.
 - Result files (ignored by git): `output/phase2/model-evaluation-anthropic_claude-haiku-5.5.json`, `output/phase2/voice-evaluation.json`.
+
+## 2026-11-20: rules from the first real calls
+
+Branch `fix/prompt-call-findings`, commit `dff0aa9`. Three rules were added for knowledge-core snapshots: an offer (booking, trial, tour, session) is made at most once in a conversation (spoken and typed); typed answers stay under about 60 words with listed items on separate lines (hosted model only, the small local model has no room); and before `handoff_to_human` the spoken sentence only says the agent is checking with the team, never that it will transfer.
+
+Each paid gate was run once after the change:
+
+- Typed (`npm run check:hosted-model`): 48 of 48, no safety flag.
+- Spoken (`npm run check:voice-model`): 48 of 48, no safety flag, no failing case, read-back first on 8 of 8 booking cases.
+
+What this does not show: the gates check safety and task quality, not the three behaviours themselves. No gate case counts repeated offers, measures reply length or reads the sentence before a handoff. Those are unverified until a real call and a real WhatsApp chat on the deployed agent.
+
