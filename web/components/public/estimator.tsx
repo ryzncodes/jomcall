@@ -46,6 +46,7 @@ export function Estimator({ locale }: { locale: PublicLocale }) {
             max={MAX_MINUTES}
             step={STEP_MINUTES}
             value={minutes}
+            aria-valuetext={`${minutes} ${t.unit}`}
             style={{ "--fill": fill } as React.CSSProperties}
             onChange={(e) => {
               const n = clampMinutes(e.target.value);

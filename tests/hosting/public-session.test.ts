@@ -53,3 +53,17 @@ test("session check times out as signed out, with or without a fetch that listen
   `);
   assert.deepEqual(out, { a: null, b: null, ok: "a@example.test", fast: true });
 });
+
+test("the estimator slider reads its value with the unit", () => {
+  const out = run(`
+    import { createElement } from "react";
+    import { renderToStaticMarkup } from "react-dom/server";
+    import { Estimator } from "./web/components/public/estimator.tsx";
+    process.stdout.write(JSON.stringify({
+      en: renderToStaticMarkup(createElement(Estimator, { locale: "en" })),
+      ms: renderToStaticMarkup(createElement(Estimator, { locale: "ms" })),
+    }));
+  `) as { en: string; ms: string };
+  assert.match(out.en, /aria-valuetext="300 minutes"/);
+  assert.match(out.ms, /aria-valuetext="300 minit"/);
+});
