@@ -6,8 +6,6 @@ import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { HttpCoreClient, CoreError } from "@/lib/core/client";
 import type { Session, Bootstrap } from "../../../packages/contracts/src/core";
-import type { Channels } from "../../../packages/contracts/src/phone";
-import { channelLine } from "./channel-line";
 import { useExperience } from "../experience";
 import { WorkspaceChrome, type ActiveScreen } from "./chrome";
 import { LocalAuth, OpenLink } from "./auth";
@@ -15,8 +13,8 @@ import { CoreContext, Heading, Loading, Notice, useWords } from "./state";
 import { Field } from "./field";
 import { pendingInvite } from "@/lib/core/invite";
 import { LocalBookings } from "./bookings";
+import { LocalHome } from "./home/home";
 import { LocalAgentTest } from "./agent-test";
-import { BookingSummary } from "./booking-summary";
 import { LocalContacts } from "./contacts";
 import { LocalAgent } from "./agent/index";
 import { LocalSettings } from "./settings";
@@ -57,32 +55,6 @@ function LocalWorkspace({ screen }: { screen: string }) {
     [creationError, setCreationError] = useState<unknown>(),
     [typeId, setTypeId] = useState("");
   const client = useMemo(() => new HttpCoreClient({ orgId }), [orgId]);
-  // Which channels are connected, for the Home summary. Unknown while
-  // loading or after a failed read.
-  const [channels, setChannels] =
-    useState<Pick<Channels, "phone" | "whatsapp">>();
-  useEffect(() => {
-    setChannels(undefined);
-    if (!orgId || screen !== "home") return;
-    let alive = true;
-    // `channels` says whether WhatsApp is switched on for the service; the
-    // overview says whether this workspace's own number is connected.
-    client
-      .execute("channels", {})
-      .then(async (v) => ({
-        phone: v.phone,
-        whatsapp:
-          v.whatsapp &&
-          (await client.execute("whatsappOverview", {})).channel?.state ===
-            "connected",
-      }))
-      .then((v) => alive && setChannels(v))
-      .catch(() => alive && setChannels(undefined));
-    return () => {
-      alive = false;
-    };
-  }, [client, orgId, screen, epoch]);
-  const channelText = channelLine(channels);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -309,80 +281,7 @@ function LocalWorkspace({ screen }: { screen: string }) {
           >
             <div key={orgId}>
               {screen === "home" ? (
-                <>
-                  <Heading
-                    eyebrow={workspace.workspace.name}
-                    title={w(
-                      "A clear view of your front desk.",
-                      "Gambaran jelas kaunter hadapan anda.",
-                    )}
-                    description={w(
-                      HOSTED
-                        ? "Configure your agent and build your customer records."
-                        : "Your workspace is connected to local data. Configure your agent and build your customer records.",
-                      HOSTED
-                        ? "Sediakan ejen dan rekod pelanggan anda."
-                        : "Ruang kerja anda disambungkan ke data setempat. Sediakan ejen dan rekod pelanggan anda.",
-                    )}
-                  />
-                  <div className="core-overview">
-                    <a href={href("/app/contacts")}>
-                      <span>{w("Contacts", "Kenalan")}</span>
-                      <strong>{workspace.contactCount}</strong>
-                      <small>
-                        {w(
-                          "Customers saved in this workspace",
-                          "Pelanggan disimpan dalam ruang kerja ini",
-                        )}
-                      </small>
-                    </a>
-                    <a href={href("/app/agent")}>
-                      <span>
-                        {w("Agent configuration", "Konfigurasi ejen")}
-                      </span>
-                      <strong>
-                        {workspace.agent?.published_version_id
-                          ? w("Published", "Diterbitkan")
-                          : w("Draft", "Draf")}
-                      </strong>
-                      <small>
-                        {channelText ? w(...channelText) : "\u00a0"}
-                      </small>
-                    </a>
-                    <a href={href("/app/agent") + "#hours"}>
-                      <span>{w("Branches", "Cawangan")}</span>
-                      <strong>{workspace.locations.length}</strong>
-                      <small>
-                        {w(
-                          "Hours in your local time zone",
-                          "Waktu mengikut zon masa anda",
-                        )}
-                      </small>
-                    </a>
-                  </div>
-                  <BookingSummary />
-                  <section className="core-panel">
-                    <h2>
-                      {w(
-                        "Start with what your team knows.",
-                        "Mulakan dengan pengetahuan pasukan anda.",
-                      )}
-                    </h2>
-                    <p>
-                      {w(
-                        HOSTED
-                          ? "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage bookings here."
-                          : "Add business knowledge, set opening hours and publish an agent configuration. Test answers and manage local bookings now. Voice, WhatsApp, external calendars and payments come later.",
-                        HOSTED
-                          ? "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan di sini."
-                          : "Tambah pengetahuan perniagaan, tetapkan waktu operasi dan terbitkan konfigurasi ejen. Uji jawapan dan urus tempahan setempat sekarang. Suara, WhatsApp, kalendar luar dan pembayaran hadir kemudian.",
-                      )}
-                    </p>
-                    <a className="button button-dark" href={href("/app/setup")}>
-                      {w("Continue setup", "Teruskan persediaan")}
-                    </a>
-                  </section>
-                </>
+                <LocalHome />
               ) : screen === "bookings" ? (
                 <LocalBookings />
               ) : screen === "test" ? (
