@@ -1,5 +1,6 @@
 import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
+export const metadata = { title: "Follow-up" };
 export default async function Page({
   searchParams,
 }: {

@@ -1,6 +1,7 @@
 import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
 import { notFound } from "next/navigation";
+export const metadata = { title: "Guides" };
 export default async function Page({
   searchParams,
 }: {

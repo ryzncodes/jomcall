@@ -32,8 +32,8 @@ export const launchCopy = {
       "Tidak. Kekalkan nombor yang pelanggan anda kenal dan majukan panggilannya ke nombor JomCall anda. Langkah untuk talian mudah alih dan pejabat ada dalam aplikasi.",
     ],
     2: [
-      "The sample on this page is a text simulation. Your JomCall number takes real phone calls: the AI introduces itself, answers in your customer's language and passes the caller to your team when needed.",
-      "Contoh di halaman ini ialah simulasi teks. Nombor JomCall anda menerima panggilan telefon sebenar: AI memperkenalkan diri, menjawab dalam bahasa pelanggan anda dan menyerahkan pemanggil kepada pasukan anda apabila perlu.",
+      "The sample on this page uses recorded AI voices and a made-up business. Your JomCall number takes real phone calls: the AI introduces itself, answers in your customer's language and passes the caller to your team when needed.",
+      "Contoh di halaman ini menggunakan suara AI yang dirakam dan perniagaan rekaan. Nombor JomCall anda menerima panggilan telefon sebenar: AI memperkenalkan diri, menjawab dalam bahasa pelanggan anda dan menyerahkan pemanggil kepada pasukan anda apabila perlu.",
     ],
     3: [
       "Plans start at {fee} a month with a phone number and {minutes} minutes. You pay in MYR from a prepaid wallet, and no card is charged automatically. See Pricing for every rate.",

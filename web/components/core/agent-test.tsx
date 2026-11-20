@@ -228,10 +228,10 @@ function AgentTestManager({
             ? hosted
               ? w(
                   HOSTED
-                    ? "Hosted model · text is sent outside Malaysia"
+                    ? "Test messages are answered by our AI provider outside Malaysia"
                     : "Hosted model selected · text leaves this computer",
                   HOSTED
-                    ? "Model dihos · teks dihantar ke luar Malaysia"
+                    ? "Mesej ujian dijawab oleh penyedia AI kami di luar Malaysia"
                     : "Model dihos dipilih · teks keluar dari komputer ini",
                 )
               : w(
