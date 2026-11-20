@@ -50,7 +50,7 @@ Non-goals:
 
 Anti-goals (a failure even if everything builds):
 
-- Any claim JomCall cannot back today. Specifically, the site must never say
+- Any claim JomCall cannot back today (section 3). Specifically, the site must never say
   or imply: calls are recorded; WhatsApp is live (it is waiting for Meta's
   approval, `WHATSAPP_WAITING_FOR_META`); there is a free trial; Tamil is
   supported; calendar sync exists; transfer is anything but a blind transfer
@@ -65,50 +65,44 @@ Anti-goals (a failure even if everything builds):
 
 ## 3. Facts the copy may use
 
-Owner decision, 2026-11-21: the public site claims only what has worked on
-a real call or is plainly true of the product today. Built but unproven
-features are described with hedged wording or left out.
-
-Plain claims (proven or true today):
+Owner decision, 2026-11-21 (final, replacing an earlier answer): the site
+may claim **everything that is built**, even before a real customer has
+used it. Every claim still traces to a source in this table, and the
+anti-goals in section 2 stand in full.
 
 | Claim | Source |
 |---|---|
-| Answers phone calls on a JomCall number, day and night, with an AI that says it is an AI | Phone line live since the phone-first launch (2026-11-20); first answered call recorded; disclosure required to publish |
-| Speaks BM, English, Manglish and Mandarin, following the caller | Spoken path; `public/demo-call/{ms,en,manglish,zh}-*.m4a`; a hosted call answered in BM |
+| Answers phone calls on a JomCall number, day and night, with an AI that says it is an AI | Phone line live since the phone-first launch (2026-11-20); disclosure required to publish |
+| Speaks BM, English, Manglish and Mandarin, following the caller | Spoken path; `public/demo-call/{ms,en,manglish,zh}-*.m4a` |
 | Answers questions from the business's own facts and price list | Knowledge core |
+| Books appointments into JomCall's bookings, with the time read back to the caller | Bookings; read-back enforced before a booking is recorded |
 | Takes messages for the team | take_message |
-| You get a JomCall number by requesting it in the app; a person sets it up | Phone number request flow (#64) |
+| Passes the caller to your staff during opening hours (a blind transfer) | Phone line, transfer tool |
+| Keep your number: forward its calls to your JomCall number (`**21*`, `**61*`, `**67*`, `##21#`) | `web/components/core/phone.tsx:286-288` (the single source) |
+| You request a JomCall number in the app; a person sets it up. No wait time is ever stated; reuse `launchCopy` | Phone number request flow (#64), `web/lib/launch.ts` |
 | From RM49 a month, prepaid MYR wallet, no card charged automatically | `web/lib/pricing.ts`, `launchCopy` |
 | Calls are not recorded | Owner rule for this work |
 | Export and delete a contact's data | Contacts PDPA actions |
-| Setup: pick a business type, answer up to 8 questions, review, test in the browser, publish | Guided setup (#24) |
+| Setup: pick a business type, answer up to 8 questions, or bring a price list as a photo, PDF, CSV file or pasted text (no Excel files); review, test in the browser, publish | Guided setup (#24); import door, `JOMCALL_SETUP_READER=anthropic` in production (owner, 2026-11-21) |
 | Source code is public under FSL-1.1-ALv2 | `LICENSE.md` |
 | Sign-up is self-serve | `AGENTS.md`, 2026-11-20 |
 | Where data is stored and which providers receive it | The privacy notice (`@/messages/legal`), quoted, not restated |
 | WhatsApp: waiting for Meta's approval | `whatsappWaiting` copy |
 
-Hedged only (built, not yet proven on a real call):
-
-| Feature | Allowed wording |
-|---|---|
-| Bookings from calls | "Takes booking requests and notes the time the caller wants, for your team to confirm in JomCall." Never "books automatically" or "fills your calendar". |
-| Forwarding your own number (`**21*`, `**61*`, `**67*`) | "You can forward your existing number to your JomCall number. The usual codes are below; check with your carrier, and we help you set it up." Never "keep your number" as a headline promise. |
-| Transfer to staff | Not claimed until a real transfer has worked. |
-| Several calls at once | Not claimed (the service takes 2 at a time today). |
-| Bring a price list (photo, PDF, CSV, pasted text) | Not claimed until the owner confirms `JOMCALL_SETUP_READER` is on in production. |
-| Business links (website, Facebook, Instagram, TikTok, LinkedIn, Google Maps) | Only after the first-run "Your links" card has merged, and only as "Add your website and social links; customers who ask get them." |
-| When the phone number is ready | No time is ever stated. Reuse the wording in `web/lib/launch.ts` (`launchCopy`). |
+Not claimed until it has merged: reading the owner's website (approved,
+first-run's later PR) and the "Your links" card (then only as "Add your
+website and social links; customers who ask get them.").
 
 Banned outright (the test fails on them): "never miss a call", "unlimited
-calls", "answers every call", "books automatically", any stated wait for
-the phone number ("within 2 hours", "in minutes"), any claim that JomCall
-imports or reads your website, Facebook, Instagram or Google Maps, "calls are
-recorded", "free trial" (outside the one FAQ answer saying there is none),
-"PDPA compliant", Tamil listed as supported, "calendar sync", WhatsApp as
+calls", "answers every call", "answers many calls at once" (the service
+takes 2 at a time today), any stated wait for the phone number ("within 2
+hours", "in minutes"), any claim that JomCall imports or reads your
+website, Facebook, Instagram or Google Maps, "calls are recorded", "free
+trial" (outside the FAQ answers saying there is none), "PDPA compliant",
+Tamil listed as supported, "calendar sync" or syncing with Google
+Calendar, a transfer described as anything but passing the call to staff
+during opening hours, instant booking alerts to the owner, WhatsApp as
 available.
-
-When one of the hedged features is proven on a real call, the owner can
-move it to the plain table and the copy can be strengthened.
 
 ## 4. Approaches considered
 
@@ -183,7 +177,7 @@ Tier 1:
 | `/languages` | BM, English, Manglish, Mandarin; how it follows the caller; a made-up mixed-language sample; what it does not do (no Tamil yet) |
 | `/faq` | About 20 questions in groups: price and billing, number and forwarding, languages, what the AI does and does not do, privacy, WhatsApp status. `FAQPage`. |
 | `/industries` | Index of the six industry pages |
-| `/industries/clinics`, `/salons`, `/car-workshops`, `/aircond-home-repair`, `/restaurants`, `/tuition-centres` | Each: the calls this business gets, what JomCall does with each, a made-up sample call, how setup fits (the matching setup business type), FAQ. Booking-led pages use the hedged booking wording from section 3 and lead with answering questions and taking requests after hours. |
+| `/industries/clinics`, `/salons`, `/car-workshops`, `/aircond-home-repair`, `/restaurants`, `/tuition-centres` | Each: the calls this business gets, what JomCall does with each, a made-up sample call, how setup fits (the matching setup business type), FAQ. Booking-led pages may claim bookings (section 3). |
 
 Tier 2:
 
@@ -310,10 +304,10 @@ Spend boldness here, keep the rest quiet):
    `public/demo-call/` so "Hear a sample call" plays the selected language.
 2. **Bento of live product views** under the hero: mixed tile sizes, each a
    small view of the product (today's calls with outcomes, a booking
-   request waiting for the team to confirm, the RM49 tile, a message taken
-   for the team, the four languages, "the AI says it is an AI; calls are
-   not recorded"). No icon-plus-sentence tiles; nothing from section 3's
-   hedged table shown as a plain promise.
+   with the time read back, the RM49 tile, a forwarding-code tile,
+   passing a caller to staff during opening hours, the four languages, "the
+   AI says it is an AI; calls are not recorded"). No icon-plus-sentence
+   tiles.
 
 Everything else (industry pages, guides, FAQ) uses a calm reading layout:
 left-aligned text column under 75 characters, a sticky in-page contents list
@@ -355,7 +349,7 @@ client island so the app keeps today's behaviour.
   4. Choose a plan / Pilih pelan
   5. Get a phone number / Dapatkan nombor telefon
   6. Take your first real call / Terima panggilan sebenar pertama (forward
-     your business number, using the hedged forwarding wording)
+     your business number to your JomCall number)
   After creating a workspace the app opens `/app/setup` (first-run §5.2).
 - **Sign-up and log-in panels**: new copy that describes the receptionist
   and the six steps above; titles "Create your JomCall account" / "Log in to
@@ -365,7 +359,7 @@ client island so the app keeps today's behaviour.
 
 ## 8. Modes
 
-- **Hosted**: everything above, indexable.
+- **Hosted**: everything above; indexable only when `isIndexable()` (section 9).
 - **Mock (4181) and local (4182)**: the same public pages render (so they
   can be checked) with `noindex`, no robots, sitemap or `llms.txt`, and a
   one-line footer notice that this is a preview build. The hosted copy in
@@ -373,13 +367,16 @@ client island so the app keeps today's behaviour.
   ("fictional calls", "not a price offer") stays only inside the mock app
   screens.
 
-## 9. Origin
+## 9. Origin and indexing
 
-Owner decision, 2026-11-21: index the live site now on
-`https://staging.jomcall.com` (it is production since 2026-11-20, and
-`jomcall.com` redirects to it). When `jomcall.com` serves the site
-directly, one setting changes and a 301 moves the old URLs.
-
+Owner decision, 2026-11-21 (final): wait for jomcall.com. The live site at
+`staging.jomcall.com` stays `noindex`, robots disallows everything there,
+and nothing invites search engines to index it. The sitemap, canonical,
+hreflang and `llms.txt` are built now. Indexing turns on by itself only
+when the origin's host is `jomcall.com` (owner step later: point
+`APP_ORIGIN` at it). One helper, `isIndexable()` in `web/lib/site.ts`, is
+true only in hosted mode with that host; robots, page metadata and the
+sitemap read it.
 
 Canonical, hreflang, Open Graph URLs and the sitemap need an absolute
 origin, fixed into static HTML at build time. Source: `APP_ORIGIN` read at

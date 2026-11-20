@@ -13,7 +13,8 @@
 ## Global Constraints
 
 - Read `web/AGENTS.md` and the relevant guide in `node_modules/next/dist/docs/` before writing Next code; this Next differs from training data.
-- Claims: only spec section 3's plain table as plain claims; hedged features only in its allowed wording; nothing from "Banned outright".
+- Claims: only what spec section 3's table sources; nothing from its "Banned outright" list; website reading and the links card not claimed.
+- Indexing: `isIndexable()` in `web/lib/site.ts` (hosted and origin host `jomcall.com`) gates `robots: index`, robots.txt `allow` and the sitemap; everything else is noindex (spec §9).
 - Every sample business, caller and call is made up and labelled "Sample call, made up" / "Contoh panggilan, rekaan".
 - Never change legal text in `web/messages/legal.ts`; operator facts only from `web/lib/operator.ts`.
 - Prices only from `web/lib/pricing.ts` (`publicPlans`, `publicPrices`, `monthlyEstimateSen`); amounts shown as `RM 49` style via one formatter.
@@ -102,7 +103,7 @@
   - `type PageCopy = { title: string; description: string; h1: string; lead: string }`
   - `BANNED: { pattern: RegExp; allowIn?: string }[]` in `claims.ts` — from spec section 3 "Banned outright" plus `/\bwe record\b/i`, phone-number waits (`/within \d+ (minutes?|hours?)/i`, `/dalam \d+ (minit|jam)/i`) and import claims (`/(import|read)s? (from )?your (website|facebook|instagram|google maps)/i`); `free trial` allowed only in the FAQ item keyed `faq.trial`.
   - `findBannedClaims(text: string, where: string): string[]`
-- [ ] **Step 1: Write failing tests:** `findBannedClaims("Calls are not recorded.","x")` → `[]`; `"Calls are recorded."` → one hit; `"Never miss a call again"` → hit; `"JomCall does not speak Tamil yet."` → `[]`; `"Speaks BM, English and Tamil"` → hit; `"There is no free trial."` with `where="faq.trial"` → `[]`, with `where="home.hero"` → hit; `"PDPA compliant"` → hit; `"books automatically"` → hit. A second test walks every module under `web/content/public/`, flattens all strings with their key path, and asserts no hits; a third asserts `en` and `ms` of every exported `Bilingual` have identical key paths.
+- [ ] **Step 1: Write failing tests:** `findBannedClaims("Calls are not recorded.","x")` → `[]`; `"Calls are recorded."` → one hit; `"Never miss a call again"` → hit; `"JomCall does not speak Tamil yet."` → `[]`; `"Speaks BM, English and Tamil"` → hit; `"There is no free trial."` with `where="faq.trial"` → `[]`, with `where="home.hero"` → hit; `"PDPA compliant"` → hit; `"Answers many calls at once"` → hit; `"books appointments"` → `[]`. A second test walks every module under `web/content/public/`, flattens all strings with their key path, and asserts no hits; a third asserts `en` and `ms` of every exported `Bilingual` have identical key paths.
 - [ ] **Step 2:** run → FAIL.
 - [ ] **Step 3: Implement** types, `claims.ts`, `common.ts` (EN and BM).
 - [ ] **Step 4:** run → PASS.
@@ -152,11 +153,12 @@
 
 **Interfaces:**
 - Produces: `organizationLd()`, `websiteLd()`, `softwareAppLd(locale)` (one `Offer` per `publicPlans` entry, `priceCurrency: "MYR"`, price in RM as a decimal string), `faqLd(items: FaqItem[])`, `breadcrumbLd(id, locale)`; `<JsonLd data />` renders `<script type="application/ld+json">` with `<` escaped.
-- `robots()`: hosted → allow `/`, disallow `/app`, `/api`, `/invite`, `/login`, `/signup`, `/forgot-password`, `/open-link`, `/admin`, sitemap URL; mock/local → disallow `/`.
-- `sitemap()`: hosted → every `PUBLIC_PAGES` entry in both locales with `alternates.languages`; mock/local → `[]`.
+- `robots()`: `isIndexable()` → allow `/`, disallow `/app`, `/api`, `/invite`, `/login`, `/signup`, `/forgot-password`, `/open-link`, `/admin`, sitemap URL; otherwise (mock, local, hosted on staging) → disallow `/`.
+- Add `isIndexable(): boolean` to `web/lib/site.ts`; `pageMetadata` uses it for `robots` instead of the hosted check.
+- `sitemap()`: hosted (any origin) → every `PUBLIC_PAGES` entry in both locales with `alternates.languages`; mock/local → `[]`.
 - `llms.txt`: hosted → text with a title line, one-line summary, the plain facts from spec section 3, and each page's absolute URL with its description; mock/local → 404. `export const dynamic = "force-static"`.
 - `page-titles.test.ts`: pages under `web/app/(public)/` and `web/app/ms/` must export `metadata`/`generateMetadata` built with `pageMetadata(`; all other pages keep the `pageTitle(` rule.
-- [ ] **Step 1: Write failing tests:** sitemap in hosted mode has 50 URLs and each has `en` and `ms` alternates; robots in mock mode disallows `/`; `softwareAppLd("en").offers` prices are `"49.00"`, `"129.00"`, `"0.00"`; `JSON.stringify` of `<JsonLd>` output contains no raw `</script`; `llms.txt` body contains every page URL and passes `findBannedClaims`.
+- [ ] **Step 1: Write failing tests:** sitemap in hosted mode has 50 URLs and each has `en` and `ms` alternates; robots in mock mode and in hosted mode with `APP_ORIGIN=https://staging.jomcall.com` disallows `/`, and allows `/` with `APP_ORIGIN=https://jomcall.com`; `pageMetadata` robots is noindex on staging and index on jomcall.com; `softwareAppLd("en").offers` prices are `"49.00"`, `"129.00"`, `"0.00"`; `JSON.stringify` of `<JsonLd>` output contains no raw `</script`; `llms.txt` body contains every page URL and passes `findBannedClaims`.
 - [ ] **Step 2:** run → FAIL.
 - [ ] **Step 3: Implement**; add `JsonLd` to the shell (Organization, WebSite), home and pricing (SoftwareApplication), pages with FAQs (FAQPage), inner pages (BreadcrumbList).
 - [ ] **Step 4:** PASS, including the updated page-titles test.
@@ -170,7 +172,7 @@
 **Interfaces:**
 - Consumes: Tasks 1-6.
 - Produces: `<ArticlePage locale copy sections faqs? />` (reading layout: 640 px column, sticky contents list on desktop, varied bands); `<IndustryPage locale slug />`; `industries: Bilingual<Record<IndustrySlug, IndustryCopy>>` with `IndustryCopy = PageCopy & { calls: Section; sample: SampleLine[]; setupType: string; faqs: FaqItem[] }`.
-- Copy rules: spec sections 3 and 10. Forwarding page uses the hedged wording and the codes `**21*`, `**61*`, `**67*`, `##21#` exactly as `web/components/core/phone.tsx:286-288`. Car workshops page is about taking a message for the mechanic. Booking-led industries use the hedged booking wording. FAQ hub: about 20 items in the six groups from spec section 5, including `faq.trial` ("Is there a free trial? No…").
+- Copy rules: spec sections 3 and 10. Forwarding page uses the codes `**21*`, `**61*`, `**67*`, `##21#` exactly as `web/components/core/phone.tsx:286-288`. Car workshops page is about taking a message for the mechanic. Booking-led industries may claim bookings plainly (spec §3). FAQ hub: about 20 items in the six groups from spec section 5, including `faq.trial` ("Is there a free trial? No…").
 - [ ] **Step 1:** extend `public-claims.test.ts` coverage is automatic (it walks the folder); add a test that each industry has ≥ 4 FAQs and a sample of ≥ 4 lines, and that `faq.ts` has ≥ 18 items.
 - [ ] **Step 2:** run → FAIL.
 - [ ] **Step 3: Implement** pages and EN copy, then BM copy.
