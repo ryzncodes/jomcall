@@ -538,6 +538,21 @@ Agent log lines: `WHATSAPP_TEMPLATE_SUBMIT_FAILED reason=… provider=…` (code
 
 Known limits: a body with placeholders is sent with made-up sample values ("Example 1"), which Meta may refuse; a request the provider did not answer is tried again once after five minutes, and if the first attempt did create the template the retry is refused and the next status check finds it by name and language.
 
+## Step 17. Server check, load log and outside uptime check, [OWNER] once
+
+What it is: `infra/hosted/monitor.sh`, run by cron every five minutes on the server. Each run appends one line to `/var/log/jomcall/monitor.log` with the 1- and 5-minute load, CPU, available memory, swap, disk and each container's CPU and memory, so the effect of simultaneous calls can be read later (`grep -v PROBLEM /var/log/jomcall/monitor.log | tail`). It emails `JOMCALL_OPERATOR_EMAIL` through the engine's SMTP settings (both read from `/etc/jomcall/engine.env`, never printed) when a Compose service stops or turns unhealthy, when the agent reports `PHONE_SIP_CONFIG_MISSING` (a Valkey restart wiped the trunk: run the `sip-apply.ts` command in step 11), when available memory drops under 150 MB, when the 5-minute load passes 1.5 (the server has one CPU) or when the disk passes 85 percent; again every 6 hours while a problem lasts, and once when it clears. It restarts nothing. Limits can be changed with `MEM_MIN_MB`, `LOAD_MAX`, `DISK_MAX` and `REPEAT_SECONDS` on the cron line.
+
+Install, once, after the change is on `main`:
+
+1. `cd /opt/jomcall && git pull --ff-only`
+2. `infra/hosted/monitor.sh --test-mail` prints `sent` and the email arrives.
+3. `printf '*/5 * * * * root /opt/jomcall/infra/hosted/monitor.sh\n' > /etc/cron.d/jomcall-monitor`
+4. `printf '/var/log/jomcall/monitor.log {\n  weekly\n  rotate 8\n  compress\n  missingok\n  notifempty\n}\n' > /etc/logrotate.d/jomcall-monitor`
+
+Outside check: `.github/workflows/uptime.yml` fetches `https://staging.jomcall.com/` (the web app on Vercel) and `https://livekit.staging.jomcall.com/` (LiveKit behind Caddy, which answers only while the server is up) every 10 minutes. A failed run is emailed by GitHub to whoever last changed the schedule. It covers what the server check cannot: the whole server down. It does not reach the SIP port, which the firewall limits to the carrier.
+
+Simultaneous calls: `JOMCALL_MAX_CONCURRENT_CALLS` in `agent.env` (default 1, at most 20) caps live phone calls and browser voice tests together, for the whole service; a caller over the cap hears the busy message. It was set to 2 on 2026-11-20 with the server at 1 vCPU and 2 GB. Before raising it, read the load log during busy hours; refused calls are counted with `select count(*) from app.call where refusal='LINES_BUSY'`. Changing it needs the agent recreated: `JOMCALL_IMAGE_TAG=<agent tag> docker compose up -d --no-deps --no-build agent`.
+
 ## Moving web to Cloudflare Workers later — NOT DONE
 
 Web stays on Vercel. It is kept swappable: application code uses no Vercel-only API; mode and origin come from `JOMCALL_MODE` and `APP_ORIGIN`; the client address comes from `x-real-ip` / `x-forwarded-for`. The only Vercel-specific lines are build settings (`web/vercel.json`, and `distDir` in `web/next.config.ts` keyed on `VERCEL`). A move would need, and none of it is built or tested:
