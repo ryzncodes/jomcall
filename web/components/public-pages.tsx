@@ -24,6 +24,8 @@ import {
   PRIVACY_CONTACT_EMAIL,
   LEGAL_EFFECTIVE_DATE,
 } from "@/lib/operator";
+import { HOSTED } from "@/lib/hosted";
+import { WHATSAPP_WAITING_FOR_META, whatsappWaiting } from "@/lib/launch";
 import { legalCopy } from "@/messages/legal";
 
 // Fills operator facts into legal text. Facts live only in lib/operator.ts.
@@ -92,8 +94,8 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
         <small>
           {mode === "hosted"
             ? locale === "ms"
-              ? "Beta tertutup · panggilan dan WhatsApp belum disambungkan"
-              : "Closed beta · calls and WhatsApp not connected yet"
+              ? "Beta tertutup · talian telefon sedia · WhatsApp menunggu kelulusan Meta"
+              : "Closed beta · phone line ready · WhatsApp waiting for Meta's approval"
             : mode === "local"
               ? locale === "ms"
                 ? "Pembangunan setempat · tiada saluran disambungkan"
@@ -191,6 +193,10 @@ export function PublicPages({
                             rate(publicPrices.whatsappAgentSenPerConversation),
                           )
                         : p.planNoWhatsapp}
+                      {plan.whatsappAgent &&
+                        HOSTED &&
+                        WHATSAPP_WAITING_FOR_META &&
+                        ` (${whatsappWaiting.short[locale === "ms" ? 1 : 0]})`}
                     </li>
                   </ul>
                   <a className="button button-dark" href={href("/signup")}>

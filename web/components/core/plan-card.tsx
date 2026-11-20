@@ -22,9 +22,17 @@ import {
   type PlanCode,
   type PlanOffer,
 } from "@/lib/core/plan-rules";
+import { HOSTED } from "@/lib/hosted";
+import { WHATSAPP_WAITING_FOR_META, whatsappWaiting } from "@/lib/launch";
 import { useCore, useWords, useResource, useAction, Notice } from "./state";
 
-type Done = { choice: PlanChoice; code: PlanCode; feeSen: number; from: PlanCode; date: string | null };
+type Done = {
+  choice: PlanChoice;
+  code: PlanCode;
+  feeSen: number;
+  from: PlanCode;
+  date: string | null;
+};
 
 export function PlanCard({
   walletBalanceSen,
@@ -60,12 +68,16 @@ export function PlanCard({
   }, [confirm]);
 
   // Staff cannot see plans: no card and no error.
-  if (plan.error instanceof CoreError && plan.error.code === "FORBIDDEN") return null;
+  if (plan.error instanceof CoreError && plan.error.code === "FORBIDDEN")
+    return null;
   if (!plan.data)
     return plan.error ? (
       <section className="core-panel core-plan-card">
         <Notice error={plan.error} />
-        <button className="button secondary-button" onClick={() => void plan.reload()}>
+        <button
+          className="button secondary-button"
+          onClick={() => void plan.reload()}
+        >
           {w("Retry", "Cuba lagi")}
         </button>
       </section>
@@ -77,7 +89,12 @@ export function PlanCard({
   const state = cardState(s);
   const offers = orderedPlans(s.plans);
   const offer = (code: PlanCode) => offers.find((p) => p.code === code);
-  const name = (code: PlanCode) => (code === "payg" ? w("Pay as you go", "Bayar ikut guna") : code === "starter" ? "Starter" : "Growth");
+  const name = (code: PlanCode) =>
+    code === "payg"
+      ? w("Pay as you go", "Bayar ikut guna")
+      : code === "starter"
+        ? "Starter"
+        : "Growth";
   const day = (date: string) => dayText(date, ms);
   const currentFee = s.feeSen || (offer(s.plan)?.feeSen ?? 0);
 
@@ -107,19 +124,35 @@ export function PlanCard({
       }
     });
     if (!choice) return;
-    setDone({ choice, code, feeSen: offer(code)?.feeSen ?? 0, from: s.plan, date });
+    setDone({
+      choice,
+      code,
+      feeSen: offer(code)?.feeSen ?? 0,
+      from: s.plan,
+      date,
+    });
     setConfirm(null);
     setChanging(false);
     heading.current?.focus();
   };
 
-  const lines = (p: Pick<PlanOffer, "phoneNumbers" | "includedVoiceSeconds" | "whatsappAgent">, payg: boolean, used?: number) => (
+  const lines = (
+    p: Pick<
+      PlanOffer,
+      "phoneNumbers" | "includedVoiceSeconds" | "whatsappAgent"
+    >,
+    payg: boolean,
+    used?: number,
+  ) => (
     <ul className="core-plan-lines">
       <li>
         {p.phoneNumbers === 1
           ? w("1 phone number", "1 nombor telefon")
           : p.phoneNumbers
-            ? w(`${p.phoneNumbers} phone numbers`, `${p.phoneNumbers} nombor telefon`)
+            ? w(
+                `${p.phoneNumbers} phone numbers`,
+                `${p.phoneNumbers} nombor telefon`,
+              )
             : w("No phone number", "Tiada nombor telefon")}
         {p.phoneNumbers > 0 && (
           <>
@@ -150,9 +183,21 @@ export function PlanCard({
           </li>
         ))}
       <li>
-        {p.whatsappAgent ? w("WhatsApp agent included", "Ejen WhatsApp termasuk") : w("No WhatsApp agent", "Tiada ejen WhatsApp")}
+        {p.whatsappAgent
+          ? w("WhatsApp agent included", "Ejen WhatsApp termasuk") +
+            (HOSTED && WHATSAPP_WAITING_FOR_META
+              ? ` (${w(...whatsappWaiting.short)})`
+              : "")
+          : w("No WhatsApp agent", "Tiada ejen WhatsApp")}
       </li>
-      {p.whatsappAgent && <li>{w("Meta bills its own fees to your business", "Meta mengenakan caj sendiri terus kepada perniagaan anda")}</li>}
+      {p.whatsappAgent && (
+        <li>
+          {w(
+            "Meta bills its own fees to your business",
+            "Meta mengenakan caj sendiri terus kepada perniagaan anda",
+          )}
+        </li>
+      )}
       {payg && (
         <li>
           {w(
@@ -165,62 +210,93 @@ export function PlanCard({
   );
 
   const confirmPanel = (text: string, action: string, onYes: () => void) => (
-    <div className="core-plan-confirm" ref={confirmBox} tabIndex={-1} role="group" aria-label={text}>
+    <div
+      className="core-plan-confirm"
+      ref={confirmBox}
+      tabIndex={-1}
+      role="group"
+      aria-label={text}
+    >
       <p>{text}</p>
       <Notice error={choose.error} />
       <div className="core-actions">
-        <button className="button button-dark" disabled={choose.busy} onClick={onYes}>
+        <button
+          className="button button-dark"
+          disabled={choose.busy}
+          onClick={onYes}
+        >
           {action}
         </button>
-        <button className="button secondary-button" disabled={choose.busy} onClick={closeConfirm}>
+        <button
+          className="button secondary-button"
+          disabled={choose.busy}
+          onClick={closeConfirm}
+        >
           {w("Cancel", "Batal")}
         </button>
       </div>
     </div>
   );
 
-  const result = done && (() => {
-    const { choice, code, feeSen, from, date } = done;
-    if (choice.outcome === "started")
-      return (
-        <p className="core-success" role="status">
-          {w(`${name(code)} started. ${formatSen(feeSen)} was taken from your wallet.`, `${name(code)} telah bermula. ${formatSen(feeSen)} telah ditolak daripada dompet anda.`)}
-        </p>
-      );
-    if (choice.outcome === "wallet_short") {
-      const balance = choice.balanceSen ?? 0,
-        needed = choice.neededSen ?? feeSen;
-      const x = formatSen(topUpNeeded(needed, balance));
-      return (
-        <p className="storage-warning" role="status">
-          {w(
-            `Your wallet has ${formatSen(balance)}. ${name(code)} needs ${formatSen(needed)}. Top up ${x}, then start the plan.`,
-            `Dompet anda ada ${formatSen(balance)}. ${name(code)} memerlukan ${formatSen(needed)}. Tambah nilai ${x}, kemudian mulakan pelan.`,
-          )}
-        </p>
-      );
-    }
-    if (choice.outcome === "scheduled")
-      return (
-        <p className="core-success" role="status">
-          {date
-            ? w(`${name(code)} starts on ${day(date)}. Nothing is charged today.`, `${name(code)} bermula pada ${day(date)}. Tiada caj hari ini.`)
-            : w(`${name(code)} starts at your next monthly date. Nothing is charged today.`, `${name(code)} bermula pada tarikh bulanan anda yang seterusnya. Tiada caj hari ini.`)}
-        </p>
-      );
-    if (choice.outcome === "cancelled")
-      return (
-        <p className="core-success" role="status">
-          {w(`Change cancelled. You stay on ${name(from)}.`, `Pertukaran dibatalkan. Anda kekal dengan ${name(from)}.`)}
-        </p>
-      );
-    return null;
-  })();
+  const result =
+    done &&
+    (() => {
+      const { choice, code, feeSen, from, date } = done;
+      if (choice.outcome === "started")
+        return (
+          <p className="core-success" role="status">
+            {w(
+              `${name(code)} started. ${formatSen(feeSen)} was taken from your wallet.`,
+              `${name(code)} telah bermula. ${formatSen(feeSen)} telah ditolak daripada dompet anda.`,
+            )}
+          </p>
+        );
+      if (choice.outcome === "wallet_short") {
+        const balance = choice.balanceSen ?? 0,
+          needed = choice.neededSen ?? feeSen;
+        const x = formatSen(topUpNeeded(needed, balance));
+        return (
+          <p className="storage-warning" role="status">
+            {w(
+              `Your wallet has ${formatSen(balance)}. ${name(code)} needs ${formatSen(needed)}. Top up ${x}, then start the plan.`,
+              `Dompet anda ada ${formatSen(balance)}. ${name(code)} memerlukan ${formatSen(needed)}. Tambah nilai ${x}, kemudian mulakan pelan.`,
+            )}
+          </p>
+        );
+      }
+      if (choice.outcome === "scheduled")
+        return (
+          <p className="core-success" role="status">
+            {date
+              ? w(
+                  `${name(code)} starts on ${day(date)}. Nothing is charged today.`,
+                  `${name(code)} bermula pada ${day(date)}. Tiada caj hari ini.`,
+                )
+              : w(
+                  `${name(code)} starts at your next monthly date. Nothing is charged today.`,
+                  `${name(code)} bermula pada tarikh bulanan anda yang seterusnya. Tiada caj hari ini.`,
+                )}
+          </p>
+        );
+      if (choice.outcome === "cancelled")
+        return (
+          <p className="core-success" role="status">
+            {w(
+              `Change cancelled. You stay on ${name(from)}.`,
+              `Pertukaran dibatalkan. Anda kekal dengan ${name(from)}.`,
+            )}
+          </p>
+        );
+      return null;
+    })();
 
   if (state === "choose") {
     const nextDate = day(addMonth(klDate(new Date())));
     return (
-      <section className="core-panel core-plan-card" aria-labelledby="plan-card-title">
+      <section
+        className="core-panel core-plan-card"
+        aria-labelledby="plan-card-title"
+      >
         <h2 id="plan-card-title" ref={heading} tabIndex={-1}>
           {w("Choose a plan", "Pilih pelan")}
         </h2>
@@ -240,12 +316,22 @@ export function PlanCard({
             return (
               <li key={p.code}>
                 <h3>{name(p.code)}</h3>
-                <strong>{p.feeSen ? w(`${fee} a month`, `${fee} sebulan`) : w("No monthly fee", "Tiada yuran bulanan")}</strong>
+                <strong>
+                  {p.feeSen
+                    ? w(`${fee} a month`, `${fee} sebulan`)
+                    : w("No monthly fee", "Tiada yuran bulanan")}
+                </strong>
                 {lines(p, p.code === "payg")}
                 {p.feeSen > 0 &&
                   (short > 0 ? (
-                    <button className="button secondary-button" onClick={() => onTopUp(short)}>
-                      {w(`Top up ${formatSen(short)} to start`, `Tambah nilai ${formatSen(short)} untuk bermula`)}
+                    <button
+                      className="button secondary-button"
+                      onClick={() => onTopUp(short)}
+                    >
+                      {w(
+                        `Top up ${formatSen(short)} to start`,
+                        `Tambah nilai ${formatSen(short)} untuk bermula`,
+                      )}
                     </button>
                   ) : (
                     <button
@@ -254,7 +340,10 @@ export function PlanCard({
                       disabled={choose.busy}
                       onClick={(e) => openConfirm(p.code, e.currentTarget)}
                     >
-                      {w(`Start ${name(p.code)} — ${fee} now`, `Mulakan ${name(p.code)} — ${fee} sekarang`)}
+                      {w(
+                        `Start ${name(p.code)} — ${fee} now`,
+                        `Mulakan ${name(p.code)} — ${fee} sekarang`,
+                      )}
                     </button>
                   ))}
                 {confirm === p.code &&
@@ -282,12 +371,18 @@ export function PlanCard({
 
   const next = nextFee(s);
   const firstFee = firstFeePending(s);
-  const title = w(`Your plan: ${name(s.plan)} · ${formatSen(currentFee)} a month`, `Pelan anda: ${name(s.plan)} · ${formatSen(currentFee)} sebulan`);
+  const title = w(
+    `Your plan: ${name(s.plan)} · ${formatSen(currentFee)} a month`,
+    `Pelan anda: ${name(s.plan)} · ${formatSen(currentFee)} sebulan`,
+  );
   if (state === "unpaid") {
     const x = topUpNeeded(currentFee, s.balanceSen);
     const by = s.graceUntil ? day(lastGraceDay(s.graceUntil)) : null;
     return (
-      <section className="core-panel core-plan-card" aria-labelledby="plan-card-title">
+      <section
+        className="core-panel core-plan-card"
+        aria-labelledby="plan-card-title"
+      >
         <h2 id="plan-card-title" ref={heading} tabIndex={-1}>
           {title}
         </h2>
@@ -297,7 +392,10 @@ export function PlanCard({
                 `Plan fee unpaid. Top up ${formatSen(x)}${by ? ` by ${by}` : ""} or the plan stops and the agent no longer answers.`,
                 `Yuran pelan belum dibayar. Tambah nilai ${formatSen(x)}${by ? ` selewat-lewatnya ${by}` : ""}, atau pelan berhenti dan ejen tidak lagi menjawab.`,
               )
-            : w("Plan fee unpaid. It is taken from your wallet within the hour.", "Yuran pelan belum dibayar. Ia akan ditolak daripada dompet anda dalam masa sejam.")}
+            : w(
+                "Plan fee unpaid. It is taken from your wallet within the hour.",
+                "Yuran pelan belum dibayar. Ia akan ditolak daripada dompet anda dalam masa sejam.",
+              )}
         </p>
         {x > 0 && (
           <button className="button button-dark" onClick={() => onTopUp(x)}>
@@ -310,7 +408,10 @@ export function PlanCard({
   }
 
   return (
-    <section className="core-panel core-plan-card" aria-labelledby="plan-card-title">
+    <section
+      className="core-panel core-plan-card"
+      aria-labelledby="plan-card-title"
+    >
       <h2 id="plan-card-title" ref={heading} tabIndex={-1}>
         {title}
       </h2>
@@ -324,7 +425,11 @@ export function PlanCard({
       )}
       {result}
       {/* Before the first period the entitlements read zero: show the plan's own. */}
-      {lines((firstFee && offer(s.plan)) || s, false, s.periodState === "charged" ? s.usedIncludedSeconds : undefined)}
+      {lines(
+        (firstFee && offer(s.plan)) || s,
+        false,
+        s.periodState === "charged" ? s.usedIncludedSeconds : undefined,
+      )}
       {next?.kind === "stop" ? (
         <p>
           {w(
@@ -335,12 +440,18 @@ export function PlanCard({
       ) : next ? (
         <p>
           <strong>
-            {w(`Next fee: ${day(next.date)} · ${formatSen(next.feeSen)}`, `Yuran seterusnya: ${day(next.date)} · ${formatSen(next.feeSen)}`)}
+            {w(
+              `Next fee: ${day(next.date)} · ${formatSen(next.feeSen)}`,
+              `Yuran seterusnya: ${day(next.date)} · ${formatSen(next.feeSen)}`,
+            )}
           </strong>
           {s.pendingPlan && (
             <>
               <br />
-              {w(`${name(s.pendingPlan)} starts on ${day(next.date)}.`, `${name(s.pendingPlan)} bermula pada ${day(next.date)}.`)}
+              {w(
+                `${name(s.pendingPlan)} starts on ${day(next.date)}.`,
+                `${name(s.pendingPlan)} bermula pada ${day(next.date)}.`,
+              )}
             </>
           )}
         </p>
@@ -348,11 +459,19 @@ export function PlanCard({
       <Notice error={confirm ? undefined : choose.error} />
       <div className="core-actions">
         {s.pendingPlan ? (
-          <button className="button secondary-button" disabled={choose.busy} onClick={() => void pick(s.plan, null)}>
+          <button
+            className="button secondary-button"
+            disabled={choose.busy}
+            onClick={() => void pick(s.plan, null)}
+          >
             {w("Cancel change", "Batalkan pertukaran")}
           </button>
         ) : (
-          <button className="button secondary-button" aria-expanded={changing} onClick={() => setChanging((v) => !v)}>
+          <button
+            className="button secondary-button"
+            aria-expanded={changing}
+            onClick={() => setChanging((v) => !v)}
+          >
             {w("Change plan", "Tukar pelan")}
           </button>
         )}
@@ -366,7 +485,11 @@ export function PlanCard({
               return (
                 <li key={p.code}>
                   <h3>{name(p.code)}</h3>
-                  <strong>{p.feeSen ? w(`${fee} a month`, `${fee} sebulan`) : w("No monthly fee", "Tiada yuran bulanan")}</strong>
+                  <strong>
+                    {p.feeSen
+                      ? w(`${fee} a month`, `${fee} sebulan`)
+                      : w("No monthly fee", "Tiada yuran bulanan")}
+                  </strong>
                   {lines(p, p.code === "payg")}
                   <button
                     className="button button-dark"
@@ -379,8 +502,14 @@ export function PlanCard({
                   {confirm === p.code &&
                     confirmPanel(
                       s.periodEnd
-                        ? w(`${name(p.code)} starts on ${day(s.periodEnd)}. Nothing is charged today.`, `${name(p.code)} bermula pada ${day(s.periodEnd)}. Tiada caj hari ini.`)
-                        : w(`${name(p.code)} starts at your next monthly date. Nothing is charged today.`, `${name(p.code)} bermula pada tarikh bulanan anda yang seterusnya. Tiada caj hari ini.`),
+                        ? w(
+                            `${name(p.code)} starts on ${day(s.periodEnd)}. Nothing is charged today.`,
+                            `${name(p.code)} bermula pada ${day(s.periodEnd)}. Tiada caj hari ini.`,
+                          )
+                        : w(
+                            `${name(p.code)} starts at your next monthly date. Nothing is charged today.`,
+                            `${name(p.code)} bermula pada tarikh bulanan anda yang seterusnya. Tiada caj hari ini.`,
+                          ),
                       w("Confirm change", "Sahkan pertukaran"),
                       () => void pick(p.code, s.periodEnd),
                     )}

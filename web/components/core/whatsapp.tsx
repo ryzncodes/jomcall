@@ -26,6 +26,7 @@ import {
 } from "./state";
 import { Field } from "./field";
 import { PRIVACY_CONTACT_EMAIL } from "@/lib/operator";
+import { WHATSAPP_WAITING_FOR_META, whatsappWaiting } from "@/lib/launch";
 
 // Why a number check failed, in words. Codes with no entry are shown as the
 // code itself, so nothing is hidden.
@@ -183,6 +184,10 @@ function WhatsAppBody({
   const { readiness, channel } = data;
   const state = channel?.state ?? "not_connected";
   const label = stateWords[state] ?? stateWords.not_connected;
+  // Hosted, before Meta's approval: a workspace that is not connected yet
+  // is told to wait instead of being offered a button Meta would refuse.
+  const waiting =
+    HOSTED && WHATSAPP_WAITING_FOR_META && channel?.state !== "connected";
   return (
     <>
       <section className="core-panel">
@@ -271,10 +276,17 @@ function WhatsAppBody({
           </>
         )}
       </section>
-      {readiness.configured && readiness.signup && (
+      {waiting && (
+        <section className="core-panel" aria-labelledby="wa-waiting">
+          <h2 id="wa-waiting">{w(...whatsappWaiting.title)}</h2>
+          <p>{w(...whatsappWaiting.body)}</p>
+        </section>
+      )}
+      {!waiting && readiness.configured && readiness.signup && (
         <WhatsAppSignup data={data} reload={reload} />
       )}
-      {readiness.configured &&
+      {!waiting &&
+        readiness.configured &&
         (readiness.signup ? (
           <details className="core-advanced">
             <summary>
