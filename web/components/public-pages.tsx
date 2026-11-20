@@ -4,29 +4,13 @@ import {
   ArrowUpRight,
   ArrowLeft,
   ArrowRight,
-  PhoneIncoming,
-  ShieldCheck,
   BookOpen,
-  Wallet,
   CheckCircle,
-  GithubLogo,
 } from "@phosphor-icons/react";
 import { Brand, Controls, useExperience } from "./experience";
-import { money } from "@/lib/api/client";
-import {
-  monthlyEstimateSen,
-  publicPlans,
-  publicPrices,
-  sourceUrl,
-} from "@/lib/pricing";
 import { OPERATOR } from "@/lib/operator";
-import { HOSTED } from "@/lib/hosted";
 import { useSignedIn } from "./signed-in";
-import {
-  WHATSAPP_WAITING_FOR_META,
-  whatsappWaiting,
-  launchCopy,
-} from "@/lib/launch";
+import { launchCopy } from "@/lib/launch";
 import { legalCopy } from "@/messages/legal";
 import { fillOperator } from "./public/operator";
 
@@ -55,10 +39,6 @@ export function OperatorDetails() {
     </div>
   );
 }
-// "{n}" and "{rate}" placeholders in the price copy.
-const fill = (text: string, value: string | number) =>
-  text.replace(/\{(n|rate)\}/g, String(value));
-const rate = (sen: number) => (sen / 100).toFixed(2);
 export function PublicFrame({ children }: { children: React.ReactNode }) {
   const { t, href, mode, locale } = useExperience(),
     p = t.remaining;
@@ -114,18 +94,10 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
     </>
   );
 }
-export function PublicPages({
-  page,
-}: {
-  page: "pricing" | "docs" | "privacy" | "terms";
-}) {
-  const { t, href, locale, mode } = useExperience(),
+export function PublicPages({ page }: { page: "docs" }) {
+  const { t, href } = useExperience(),
     p = t.remaining,
-    [minutes, setMinutes] = useState(300),
     [guide, setGuide] = useState<number | null>(null);
-  const li = locale === "ms" ? 1 : 0;
-  // Signed in, a plan is chosen in Billing, not by signing up again.
-  const signedIn = Boolean(useSignedIn(mode !== "mock"));
   const routes = [
     "/app/setup",
     "/app/phone-numbers",
@@ -134,8 +106,7 @@ export function PublicPages({
     "/app/settings",
     "/self-host",
   ];
-  const legal = page === "privacy" || page === "terms";
-  const doc = legal ? legalCopy[locale][page] : null;
+  void page;
   return (
     <PublicFrame>
       <main tabIndex={-1} id="content" className="public-content">
@@ -145,165 +116,11 @@ export function PublicPages({
         </a>
         <div className="public-title">
           <span className="public-symbol">
-            {page === "pricing" ? (
-              <Wallet size={38} />
-            ) : legal ? (
-              <ShieldCheck size={38} />
-            ) : (
-              <BookOpen size={38} />
-            )}
+            <BookOpen size={38} />
           </span>
-          <h1>{doc ? doc.title : p[`${page}Title`]}</h1>
-          <p>
-            {doc
-              ? doc.intro
-              : page === "docs"
-                ? p.docsIntro
-                : HOSTED
-                  ? launchCopy.pricingIntro[li]
-                  : p.pricingIntro}
-          </p>
+          <h1>{p.docsTitle}</h1>
+          <p>{p.docsIntro}</p>
         </div>
-        {page === "pricing" ? (
-          <>
-            <div className="plan-grid">
-              {publicPlans.map((plan) => (
-                <section
-                  key={plan.code}
-                  className={`plan-card${plan.code === "growth" ? " plan-card-featured" : ""}`}
-                >
-                  <h2>{p.planNames[plan.code]}</h2>
-                  <p>{p.planBodies[plan.code]}</p>
-                  <div className="pricing-rate">
-                    {plan.monthlyFeeSen ? (
-                      <>
-                        <strong>{money(plan.monthlyFeeSen)}</strong>
-                        <span>{p.planMonth}</span>
-                      </>
-                    ) : (
-                      <strong className="plan-free">{p.planNoFee}</strong>
-                    )}
-                  </div>
-                  <ul>
-                    <li>
-                      {plan.phoneNumbers
-                        ? fill(p.planNumber, plan.phoneNumbers)
-                        : p.planNoNumber}
-                    </li>
-                    {plan.includedVoiceSeconds > 0 && (
-                      <li>
-                        {fill(p.planMinutes, plan.includedVoiceSeconds / 60)}
-                      </li>
-                    )}
-                    <li>
-                      {fill(
-                        plan.includedVoiceSeconds
-                          ? p.planOverage
-                          : p.planPaygRate,
-                        rate(publicPrices.voiceSenPerMinute),
-                      )}
-                    </li>
-                    <li>
-                      {plan.whatsappAgent
-                        ? fill(
-                            p.planWhatsapp,
-                            rate(publicPrices.whatsappAgentSenPerConversation),
-                          )
-                        : p.planNoWhatsapp}
-                      {plan.whatsappAgent &&
-                        HOSTED &&
-                        WHATSAPP_WAITING_FOR_META &&
-                        ` (${whatsappWaiting.short[locale === "ms" ? 1 : 0]})`}
-                    </li>
-                  </ul>
-                  <a
-                    className="button button-dark"
-                    href={href(signedIn ? "/app/billing" : "/signup")}
-                  >
-                    {signedIn
-                      ? li
-                        ? "Pilih dalam Bil"
-                        : "Choose in Billing"
-                      : HOSTED
-                        ? launchCopy.planButton[li]
-                        : p.signup}
-                    <ArrowUpRight size={18} />
-                  </a>
-                </section>
-              ))}
-              <section className="plan-card plan-card-self">
-                <h2>{p.selfTitle}</h2>
-                <p>{p.selfBody}</p>
-                <div className="pricing-rate">
-                  <strong className="plan-free">{p.selfPrice}</strong>
-                </div>
-                <p className="plan-costs-title">{p.selfCostsTitle}</p>
-                <ul>
-                  {p.selfCosts.map((c) => (
-                    <li key={c}>{c}</li>
-                  ))}
-                </ul>
-                <p>{p.selfSupport}</p>
-                <a
-                  className="button"
-                  href={sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <GithubLogo size={18} />
-                  {p.selfLink}
-                  <ArrowUpRight size={18} />
-                </a>
-              </section>
-            </div>
-            <p className="plan-note">{p.rateHint}</p>
-            <div className="pricing-layout">
-              <section className="pricing-story">
-                <p className="eyebrow">{p.pricing}</p>
-                <h2>{p.paygo}</h2>
-                <p>{HOSTED ? launchCopy.paygoBody[li] : p.paygoBody}</p>
-                <div className="pricing-rate">
-                  <PhoneIncoming size={25} />
-                  <strong>{money(publicPrices.voiceSenPerMinute)}</strong>
-                  <span>/ {li ? "minit" : "minute"}</span>
-                </div>
-              </section>
-              <section className="pricing-calculator">
-                <h2>{p.estimate}</h2>
-                <label>
-                  {p.voiceMinutes}
-                  <output>{minutes.toLocaleString()}</output>
-                  <input
-                    type="range"
-                    aria-label={p.voiceMinutes}
-                    min={0}
-                    max={2000}
-                    step={25}
-                    value={minutes}
-                    onChange={(e) => setMinutes(Number(e.target.value))}
-                  />
-                </label>
-                <p className="plan-note">{p.planEstimateHint}</p>
-                <dl className="estimate-plans">
-                  {publicPlans
-                    // Pay as you go has no phone number, so on the hosted
-                    // site it cannot take the calls this estimate counts.
-                    .filter((plan) => !HOSTED || plan.phoneNumbers > 0)
-                    .map((plan) => (
-                    <div key={plan.code}>
-                      <dt>{p.planNames[plan.code]}</dt>
-                      <dd>{money(monthlyEstimateSen(plan, minutes))}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <a className="text-link" href={href("/app/billing")}>
-                  {HOSTED ? launchCopy.walletLink[li] : p.walletLink}
-                  <ArrowRight size={18} />
-                </a>
-              </section>
-            </div>
-          </>
-        ) : page === "docs" ? (
           <div className="guides-grid">
             {p.guideTitles.map((title, i) => (
               <article
@@ -336,42 +153,6 @@ export function PublicPages({
               </article>
             ))}
           </div>
-        ) : doc ? (
-          <div className="legal-layout">
-            <aside>
-              <span className="remaining-chip">
-                {fillOperator(doc.effective)}
-              </span>
-              <nav aria-label={legalCopy[locale].footer.contents}>
-                {doc.sections.map((sec, i) => (
-                  <a href={`#section-${i}`} key={sec.heading}>
-                    {sec.heading}
-                  </a>
-                ))}
-              </nav>
-            </aside>
-            <div>
-              {doc.sections.map((sec, i) => (
-                <section key={sec.heading} id={`section-${i}`}>
-                  <h2>{sec.heading}</h2>
-                  {sec.paragraphs.map((x) => (
-                    <p key={x}>{fillOperator(x)}</p>
-                  ))}
-                  {sec.list && (
-                    <ul>
-                      {sec.list.map((x) => (
-                        <li key={x}>{fillOperator(x)}</li>
-                      ))}
-                    </ul>
-                  )}
-                  {sec.after?.map((x) => (
-                    <p key={x}>{fillOperator(x)}</p>
-                  ))}
-                </section>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </main>
     </PublicFrame>
   );

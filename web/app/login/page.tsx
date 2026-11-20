@@ -1,7 +1,7 @@
 import { mode, turnstileSiteKey } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
 import { pageTitle } from "@/lib/page-title";
-export const generateMetadata = pageTitle("Sign in", "Log masuk");
+export const generateMetadata = pageTitle("Log in to JomCall", "Log masuk ke JomCall");
 export default async function Page({
   searchParams,
 }: {

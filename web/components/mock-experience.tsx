@@ -5,7 +5,6 @@ import { Settings } from "./product/settings";
 import { PhoneNumbers } from "./product/phone-numbers";
 import { WhatsappSettings } from "./product/whatsapp-settings";
 import { Billing } from "./product/billing";
-import { Marketing } from "./marketing";
 import { Workspace } from "./workspace";
 import { ProductProvider } from "./product/provider";
 import { GuidedSetup } from "./product/setup";
@@ -32,10 +31,8 @@ export default function MockExperience({
   return (
     <ProductProvider locale={locale}>
       <CrmProvider locale={locale}>
-        {["pricing", "docs", "privacy", "terms"].includes(screen) ? (
-          <PublicPages
-            page={screen as "pricing" | "docs" | "privacy" | "terms"}
-          />
+        {screen === "docs" ? (
+          <PublicPages page="docs" />
         ) : ["login", "signup", "forgot", "invite"].includes(screen) ? (
           <Access mode={screen as "login" | "signup" | "forgot" | "invite"} />
         ) : screen === "outbound" ? (

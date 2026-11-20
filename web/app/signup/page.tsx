@@ -1,7 +1,7 @@
 import { mode, turnstileSiteKey } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
 import { pageTitle } from "@/lib/page-title";
-export const generateMetadata = pageTitle("Create account", "Cipta akaun");
+export const generateMetadata = pageTitle("Create your JomCall account", "Cipta akaun JomCall anda");
 export default async function Page({
   searchParams,
 }: {
