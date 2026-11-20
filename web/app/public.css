@@ -354,12 +354,6 @@ body:has(.public) {
     display: inline;
   }
 }
-/* The call to action while the session check runs: the same box, no text. */
-.public .btn-wait {
-  background: var(--wash);
-  color: transparent;
-  pointer-events: none;
-}
 
 .public .icon-btn {
   display: inline-grid;
@@ -1878,10 +1872,6 @@ body:has(.public) {
 }
 .public .band-forest .btn-primary:hover {
   background: color-mix(in srgb, var(--band-btn) 86%, var(--band-bg));
-}
-.public .band-forest .btn-wait {
-  background: color-mix(in srgb, var(--band-ink) 16%, transparent);
-  color: transparent;
 }
 .public .band-forest :focus-visible {
   outline-color: var(--band-btn);

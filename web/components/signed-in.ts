@@ -5,17 +5,37 @@ import { useEffect, useState } from "react";
 // ask together, and a part that mounts again reads the answer at once.
 let known: string | null | undefined;
 let asking: Promise<string | null> | undefined;
-function ask(): Promise<string | null> {
-  asking ??= fetch("/api/v1/session", {
+
+// A check that does not answer within this time counts as signed out, so the
+// page never waits on a slow or hung request.
+export const SESSION_TIMEOUT_MS = 2000;
+
+// `fetcher` and the cache are only separated so a test can drive the check.
+export function checkSession(
+  fetcher: typeof fetch = fetch,
+  timeoutMs = SESSION_TIMEOUT_MS,
+): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // fetch rejects on abort; a fetch that ignores the signal still loses the race.
+  const timedOut = new Promise<null>((resolve) =>
+    controller.signal.addEventListener("abort", () => resolve(null)),
+  );
+  const answer = fetcher("/api/v1/session", {
     credentials: "same-origin",
     cache: "no-store",
+    signal: controller.signal,
   })
     .then((r) => (r.ok ? r.json() : null))
     .then((v) =>
       v?.ok && typeof v.data?.email === "string" ? (v.data.email as string) : null,
     )
-    .catch(() => null)
-    .then((email) => (known = email));
+    .catch(() => null);
+  return Promise.race([answer, timedOut]).finally(() => clearTimeout(timer));
+}
+
+function ask(): Promise<string | null> {
+  asking ??= checkSession().then((email) => (known = email));
   return asking;
 }
 

@@ -43,8 +43,10 @@ function Label({ text, reserve }: { text: string; reserve: string }) {
 }
 
 // The primary call to action: sign-up for visitors, the workspace for a
-// signed-in owner (hosted only). While the session check runs it keeps the
-// button's place with an empty box of the same size. In the header, phones
+// signed-in owner (hosted only). Until the session check answers it shows the
+// visitor's sign-up link, which is also what the static HTML and a visitor
+// without script get; both labels share one grid cell, so the button keeps
+// its width when it switches to the workspace label. In the header, phones
 // get the short workspace label so the row fits at 360 px.
 export function Cta({
   locale,
@@ -75,12 +77,6 @@ export function Cta({
       </>
     );
   const short = openWorkspaceShort;
-  if (email === undefined)
-    return (
-      <span className={`${className} btn-wait`} aria-hidden="true">
-        {labels(getStarted, openWorkspace, short && getStarted, short)}
-      </span>
-    );
   return email ? (
     <AppLink path="/app" locale={locale} className={className}>
       {labels(openWorkspace, getStarted, short, short && getStarted)}
