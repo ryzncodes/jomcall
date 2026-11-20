@@ -31,6 +31,7 @@ import {
   type PackInfo,
 } from "./flow";
 import { RemoveFileConfirm, UploadProblems, failDetail } from "./bring";
+import { LinksCard } from "./links-card";
 import {
   amountText,
   applyButtonText,
@@ -196,9 +197,12 @@ export function Review({
   >(() => new Map());
   const removeItem = useRemove();
   const setItemState = useItemState();
+  // The links have their own card below the hours and first words.
+  const links = view.items.find((i) => i.kind === "fact" && i.key === "social_links");
   const facts = view.items.filter(
     (i) =>
       i.kind === "fact" &&
+      i.key !== "social_links" &&
       (i.state !== "removed" || i.id === editing || factFolds.has(i.id)),
   );
   const unfoldFact = (id: string) =>
@@ -480,6 +484,7 @@ export function Review({
             }}
           />
         )}
+        <LinksCard item={links} />
         {facts.length > 0 && (
           <section className="setup-section" aria-labelledby="setup-facts">
             <h2 id="setup-facts">{w("Your answers", "Jawapan anda")}</h2>

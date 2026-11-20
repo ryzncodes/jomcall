@@ -45,6 +45,14 @@ export function BusinessTypeStage({
   const heading = useLanding<HTMLHeadingElement>("type");
   const [error, setError] = useState<unknown>();
   const type = businessTypes.find((t) => t.id === typeId);
+  // A first run with the type chosen at workspace creation reads as a
+  // confirmation; later runs ask as before.
+  const [confirming] = useState(
+    () =>
+      !session &&
+      !workspace.agent?.published_version_id &&
+      !!typeIdForSaved(workspace.workspace.business_type),
+  );
   const main = packs.find((p) => p.id === type?.pack);
   const pairs = (main?.pairsWith ?? [])
     .map((id) => packs.find((p) => p.id === id))
@@ -62,7 +70,12 @@ export function BusinessTypeStage({
           )}
         </p>
         <h1 className="setup-title" ref={heading} tabIndex={-1}>
-          {w("What kind of business is this?", "Apakah jenis perniagaan ini?")}
+          {confirming && type
+            ? w(
+                `You picked ${type.id === "other" ? workspace.workspace.business_type.trim() : type.en}. Add anything else you do, or continue.`,
+                `Anda memilih ${type.id === "other" ? workspace.workspace.business_type.trim() : type.ms}. Tambah apa-apa lagi yang anda buat, atau teruskan.`,
+              )
+            : w("What kind of business is this?", "Apakah jenis perniagaan ini?")}
         </h1>
         <p className="setup-lead">
           {w(
