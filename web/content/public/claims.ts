@@ -53,7 +53,7 @@ export const BANNED: BannedClaim[] = [
   // Tamil.
   { pattern: /\b(?:speaks?|supports?|understands?|answers? in|languages?:?)\b[^.]{0,80}\btamil\b/i, reason: "Tamil listed as supported" },
   { pattern: /\b(?:bercakap|menyokong|memahami|menjawab dalam)\b[^.]{0,80}\btamil\b/i, reason: "Tamil listed as supported (BM)" },
-  { pattern: /\btamil\s+(?:supported|available|tersedia|disokong)\b/i, reason: "Tamil listed as supported" },
+  { pattern: /\btamil\s+(?:(?:is|are)\s+)?(?:supported|available|tersedia|disokong)\b/i, reason: "Tamil listed as supported" },
   { pattern: /\bbahasa tamil\s+(?:disokong|tersedia)\b/i, reason: "Tamil listed as supported (BM)" },
   { pattern: /(?:,|\b(?:and|dan|or|atau))\s*(?:bahasa\s+)?tamil\b/i, reason: "Tamil listed as supported" },
   // Calendar sync.

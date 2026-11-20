@@ -53,6 +53,7 @@ const MUST_HIT = [
   "You get notified instantly", "Pulls info from your Google Maps listing", "We scan your website and Instagram",
   "Try it free for 14 days", "Start free", "Cuba percuma", "ready in 2 working days", "Ready in 24 hours",
   "Siap dalam 2 hari", "Siap dalam sehari",
+  "Tamil is supported", "Tamil is available", "Tamil are supported",
 ];
 const MUST_PASS = [
   "Calls are not recorded.", "We do not record calls.", "We record nothing.",
@@ -61,6 +62,7 @@ const MUST_PASS = [
   "Bring your price list as a photo, PDF, CSV file or pasted text.",
   "Keep your number: forward its calls to your JomCall number.",
   "Passes the caller to your staff during opening hours.",
+  "Tamil is not supported yet.", "Tamil is not available yet.",
 ];
 test("every reviewed affirmative claim hits and every required denial passes", () => {
   for (const t of MUST_HIT) assert.ok(findBannedClaims(t, "x").length > 0, `should hit: ${t}`);
