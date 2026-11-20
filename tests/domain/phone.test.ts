@@ -7,6 +7,8 @@ import { ensureSipConfig, type SipApi } from "../../packages/domain/src/phone/si
 import {
   telephonyConfig,
   telephonyReadiness,
+  checkSipConfig,
+  sipConfigProblem,
 } from "../../packages/domain/src/phone/telephony.ts";
 
 test("provider number shapes normalise to E.164; withheld IDs give null", () => {
@@ -116,4 +118,31 @@ test("a trunk of ours with other numbers is never changed, and an open trunk is 
     ensureSipConfig(fakeSip().api, { numbers: ["+60312345678"], allowedAddresses: [] }, room),
     /TRUNK_NEEDS_ADDRESSES_OR_USERNAME/,
   );
+});
+
+test("a missing SIP trunk or dispatch rule is named, and the check never throws", async () => {
+  assert.equal(sipConfigProblem({ trunks: 0, rules: 0 }), "NO_SIP_TRUNK");
+  assert.equal(sipConfigProblem({ trunks: 1, rules: 0 }), "NO_DISPATCH_RULE");
+  assert.equal(sipConfigProblem({ trunks: 1, rules: 1 }), null);
+  const lines: string[] = [];
+  const state = { problem: null as string | null };
+  let count = { trunks: 1, rules: 1 };
+  const read = async () => count;
+  await checkSipConfig(read, (l) => lines.push(l), state);
+  assert.equal(lines.length, 0); // present from the start: nothing to say
+  count = { trunks: 0, rules: 0 };
+  await checkSipConfig(read, (l) => lines.push(l), state);
+  await checkSipConfig(read, (l) => lines.push(l), state);
+  assert.deepEqual(lines, [
+    "PHONE_SIP_CONFIG_MISSING reason=NO_SIP_TRUNK",
+    "PHONE_SIP_CONFIG_MISSING reason=NO_SIP_TRUNK",
+  ]);
+  count = { trunks: 1, rules: 1 };
+  await checkSipConfig(read, (l) => lines.push(l), state);
+  await checkSipConfig(read, (l) => lines.push(l), state);
+  assert.equal(lines.at(-1), "PHONE_SIP_CONFIG_OK");
+  assert.equal(lines.length, 3); // said once on recovery
+  await checkSipConfig(async () => { throw Error("secret-in-message"); }, (l) => lines.push(l), state);
+  assert.equal(lines.at(-1), "PHONE_SIP_CONFIG_CHECK_FAILED");
+  assert.ok(!lines.join(" ").includes("secret"));
 });

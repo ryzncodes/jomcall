@@ -22,7 +22,9 @@ import { CallRepository } from "./call-repository.ts";
 import { startPhoneServer, PHONE_PORT } from "./phone-server.ts";
 import {
   liveKitTelephony,
+  readSipConfig,
   telephonyConfig,
+  watchSipConfig,
 } from "../../../packages/domain/src/phone/telephony.ts";
 import { WhatsAppWorker } from "../whatsapp/worker.ts";
 import { whatsappMode } from "../../../packages/whatsapp/src/provider.ts";
@@ -72,6 +74,7 @@ let voice: Awaited<ReturnType<typeof startVoiceServer>> | undefined;
 const phoneSettings = telephonyConfig().config;
 let callRepository: CallRepository | undefined;
 let phone: Awaited<ReturnType<typeof startPhoneServer>> | undefined;
+let stopSipWatch: (() => void) | undefined;
 if (provider === "hosted") {
   try {
     const repository = (voiceRepository = new AgentRepository(ns));
@@ -96,6 +99,9 @@ if (provider === "hosted") {
         // Same bind, mode and service secret as the browser voice endpoint.
         { ...listen!, port: PHONE_PORT },
       );
+      // Warns in the log while LiveKit has no SIP trunk or dispatch rule
+      // (every call is then rejected before it reaches this process).
+      stopSipWatch = watchSipConfig(() => readSipConfig(phoneSettings));
     }
   } catch (error) {
     await phone?.close();
@@ -119,6 +125,7 @@ let stopping = false;
 async function stop() {
   stopping = true;
   await health?.close();
+  stopSipWatch?.();
   await phone?.close();
   await callRepository?.close();
   await voice?.close();

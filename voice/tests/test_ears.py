@@ -157,3 +157,25 @@ async def test_a_failing_speech_engine_raises_from_assemble_and_logs_nothing(cap
         gc.collect()
         await settle()
     assert got == [] and not caplog.records
+
+
+def test_place_names_are_sent_as_key_terms_within_deepgrams_limits(monkeypatch):
+    from jomcall_voice import ears
+
+    terms = config.STT_KEYTERMS
+    assert "Penang" in terms and "Pulau Pinang" in terms and "Selangor" in terms
+    assert len(terms) == len(set(terms))
+    # Deepgram: 500 tokens per request; it advises 20 to 50 terms. Words are a
+    # safe lower bound on tokens, so stay far under.
+    assert 20 <= len(terms) <= 50
+    assert sum(len(t.split()) for t in terms) <= 120
+    # No separators Deepgram silently ignores, and no weights.
+    assert not any(ch in t for t in terms for ch in ",;:\n")
+    assert config.STT_MODEL.startswith("nova-3")  # key terms are nova-3 only
+
+    seen = {}
+    monkeypatch.setattr(config, "env", lambda name: "test-key")
+    monkeypatch.setattr(ears.deepgram, "STT", lambda **kwargs: seen.update(kwargs) or object())
+    ears.build_stt()
+    assert seen["keyterm"] == list(terms)
+    assert seen["language"] == "multi"
