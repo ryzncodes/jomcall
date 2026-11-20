@@ -47,3 +47,21 @@ test("login and sign-up titles are absolute and name JomCall once", async () => 
     }
   }
 });
+
+test("the panel copy makes no banned claim and states no wait time", () => {
+  const wait = /\d+\s*(minit|minutes?|hours?|jam|days?|hari)\b|\bwithin\b|\bdalam masa\b/i;
+  assert.ok(wait.test("within 2 hours") && wait.test("24 jam") && wait.test("3 days"));
+  assert.ok(!wait.test("during opening hours") && !wait.test("dalam waktu operasi"));
+  for (const li of [0, 1] as const) {
+    const texts = [
+      authPanel.heading[li],
+      authPanel.intro[li],
+      authPanel.stepsLabel[li],
+      ...authPanel.steps.map((s) => s[li]),
+    ];
+    for (const t of texts) {
+      assert.deepEqual(findBannedClaims(t, "auth"), [], t);
+      assert.doesNotMatch(t, wait, t);
+    }
+  }
+});
