@@ -1,6 +1,5 @@
-// Every page except the home page names itself in the browser tab, in
-// English and Bahasa Melayu, so an owner with several tabs open can tell
-// them apart.
+// Every page names itself in the browser tab, in English and Bahasa Melayu,
+// so an owner with several tabs open can tell them apart.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -19,11 +18,17 @@ test("the layout adds JomCall to every page title", () => {
   assert.match(src, /template: "%s · JomCall"/);
 });
 
-for (const page of pages("web/app").filter((p) => p !== join("web/app", "page.tsx"))) {
+// Static public pages (English under app/(public), Bahasa Melayu under
+// app/ms) take a fixed title per language from pageMetadata, because reading
+// the query string would make them dynamic. Every other page keeps pageTitle.
+const isPublic = (p: string) =>
+  p.startsWith(join("web/app", "(public)") + "/") || p.startsWith(join("web/app", "ms") + "/");
+
+for (const page of pages("web/app")) {
   test(`${page} has its own title`, () => {
-    assert.match(
-      readFileSync(page, "utf8"),
-      /export const generateMetadata = pageTitle\("[^"]+", "[^"]+"/,
-    );
+    const src = readFileSync(page, "utf8");
+    if (isPublic(page))
+      assert.match(src, /export const metadata(?::\s*Metadata)?\s*=\s*pageMetadata\(/);
+    else assert.match(src, /export const generateMetadata = pageTitle\("[^"]+", "[^"]+"/);
   });
 }

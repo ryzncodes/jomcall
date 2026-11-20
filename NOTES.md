@@ -42,3 +42,15 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - The mobile menu uses `@radix-ui/react-dialog` (already a dependency) for the focus trap, Escape and focus return; its portal mounts inside `#public-root` so the scoped tokens apply.
 
 - Task 3: claims patterns skip a match when a negation word (not, no, never, tidak, belum ...) sits in the 20 characters before it in the same sentence; `free trial` is `strict` (no negation exemption, allowed only by key `faq.trial` or `pricing.trial`). Spec lists no BM patterns; BM equivalents were added where natural.
+
+- Task 4 (home page), deviations and builder calls:
+  - The recorded greeting (`public/demo-call/*-0.m4a`, all four languages) also says "this call may be recorded", which contradicts "Calls are not recorded". The call card never plays line 0 and never quotes it; it shows a UI event "Greets the caller and says it is an AI" instead and plays lines 1, 2, 4 and 5 only. Owner step: re-record the four greetings without the recording sentence, then the card can play them.
+  - The card's transcript lines are copied into `web/content/public/home.ts` (so the claims test scans them) and a test asserts they equal `web/lib/demo-call.json` clip by clip. The booking-check line reads "Checked bookings: 3 pm is free" instead of the old "Sample calendar checked", to stay clear of calendar-sync wording.
+  - The mockup's headline "Every call answered" and the tile "Every call summarised" were not used (the first is the banned "answers every call" reworded; the second has no source). The mockup's "**61* Forward when busy" was wrong: `**61*` is "when you do not answer", `**67*` is "busy" (`phone.tsx`).
+  - Forwarding codes are typed in `home.ts` because public code may not import `web/components/core`; a test reads `phone.tsx` as text and checks each code and its meaning are there.
+  - Home FAQ question on recording reads "Is there a recording of each call?": the claims regex hits "Are calls recorded?" even as a question. "Does it work on WhatsApp?" became "What about WhatsApp?" for the same reason.
+  - `.t-data` gained `word-spacing: -0.25em` (Plex Mono's space is a full cell, so "RM 49" read as two words).
+  - Home classes `hero`, `closing` and `text-link` collided with old marketing CSS in `globals.css`; the home uses `home-hero`, `home-closing` and `link-arrow`.
+  - `tests/hosting/page-titles.test.ts` (controller ruling): pages under `app/(public)/` and `app/ms/` must export `metadata = pageMetadata(...)`; every other page keeps the `pageTitle(` rule.
+  - Industry links point at pages Tasks 6-7 build; until then they 404.
+  - Deleting `web/app/page.tsx` leaves stale `.next-*/types/validator.ts` files that fail `tsc`; delete `web/.next-*/types` (build output) once, then builds regenerate them.

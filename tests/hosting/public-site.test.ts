@@ -108,3 +108,91 @@ test("siteOrigin hosted without APP_ORIGIN", () => {
     return true;
   });
 });
+
+// ---------------------------------------------------------------- home page
+import { existsSync, readFileSync } from "node:fs";
+import { home, sampleCall, CALL_LANGS, VOICED_LINES } from "../../web/content/public/home.ts";
+import { rm } from "../../web/content/public/format.ts";
+import { publicPlans } from "../../web/lib/pricing.ts";
+
+const HOME_PAGES = { en: "web/app/(public)/page.tsx", ms: "web/app/ms/page.tsx" } as const;
+
+test("home price line comes from the Starter plan", () => {
+  assert.equal(rm(publicPlans[0].monthlyFeeSen), "RM 49");
+  assert.equal(home.en.hero.from, `From ${rm(publicPlans[0].monthlyFeeSen)} a month`);
+  assert.equal(home.ms.hero.from, `Bermula ${rm(publicPlans[0].monthlyFeeSen)} sebulan`);
+  // No amount is typed into the copy by hand.
+  assert.doesNotMatch(readFileSync("web/content/public/home.ts", "utf8"), /RM\s?\d/);
+  assert.equal(rm(32), "RM 0.32");
+  assert.equal(rm(12900), "RM 129");
+});
+
+test("home pages are static: metadata from pageMetadata, no query string", () => {
+  assert.ok(!existsSync("web/app/page.tsx"), "old home route still exists");
+  for (const [locale, file] of Object.entries(HOME_PAGES)) {
+    const src = readFileSync(file, "utf8");
+    assert.match(src, new RegExp(`export const metadata(?::\\s*Metadata)?\\s*=\\s*pageMetadata\\(\\s*"home",\\s*"${locale}"`));
+    assert.doesNotMatch(src, /searchParams|generateMetadata|headers\(|cookies\(/);
+    assert.match(src, new RegExp(`<HomePage locale="${locale}"`));
+  }
+});
+
+test("home sections follow spec section 7 order", () => {
+  const src = readFileSync("web/components/public/pages/home.tsx", "utf8");
+  const order = ["hero", "bento", "problem", "how", "languages", "industries", "pricing", "faq", "closing"];
+  const at = order.map((id) => src.indexOf(`data-section="${id}"`));
+  for (const [i, n] of at.entries()) assert.ok(n >= 0, `missing section ${order[i]}`);
+  assert.deepEqual([...at].sort((a, b) => a - b), at);
+});
+
+test("how it works uses the app checklist's six step names", () => {
+  assert.deepEqual(home.en.how.steps.map((s) => s.name), [
+    "Set up your business", "Test the agent", "Publish the agent",
+    "Choose a plan", "Get a phone number", "Take your first real call",
+  ]);
+  assert.deepEqual(home.ms.how.steps.map((s) => s.name), [
+    "Sediakan perniagaan anda", "Uji ejen", "Terbitkan ejen",
+    "Pilih pelan", "Dapatkan nombor telefon", "Terima panggilan sebenar pertama",
+  ]);
+});
+
+test("the sample call shows exactly what the recordings say", () => {
+  const clips = JSON.parse(readFileSync("web/lib/demo-call.json", "utf8")) as Record<string, Record<string, { file: string; text: string }>>;
+  assert.deepEqual([...CALL_LANGS], ["ms", "manglish", "zh", "en"]);
+  assert.deepEqual(sampleCall.map((v) => v.id), [...CALL_LANGS]);
+  // The greeting clip (0) also says the call may be recorded, so it is never played.
+  assert.deepEqual([...VOICED_LINES], [1, 2, 4, 5]);
+  for (const { id: lang, lines } of sampleCall) {
+    assert.deepEqual(Object.keys(lines).sort(), ["1", "2", "4", "5"]);
+    for (const n of VOICED_LINES) {
+      assert.equal(lines[n], clips[lang][String(n)].text, `${lang} line ${n}`);
+      assert.ok(existsSync(`web/public/demo-call/${lang}-${n}.m4a`), `${lang}-${n}.m4a`);
+    }
+  }
+  const card = readFileSync("web/components/public/call-card.tsx", "utf8");
+  assert.doesNotMatch(card, /-0\.m4a/);
+});
+
+test("forwarding codes on the home page match the app's phone screen", () => {
+  const phone = readFileSync("web/components/core/phone.tsx", "utf8");
+  for (const locale of ["en", "ms"] as const)
+    for (const { code, meaning } of home[locale].bento.forward.rows) {
+      assert.ok(phone.includes(`\`${code}`) || phone.includes(`"${code}`), `${code} not in phone.tsx`);
+      assert.ok(phone.includes(`"${meaning}"`), `${meaning} not in phone.tsx`);
+    }
+});
+
+test("home FAQ has six questions and WhatsApp appears only as waiting for Meta", () => {
+  assert.equal(home.en.faq.items.length, 6);
+  assert.equal(home.ms.faq.items.length, 6);
+  // A question and its answer are read together.
+  const strings: string[] = [];
+  const walk = (v: unknown) => {
+    if (typeof v === "string") strings.push(v);
+    else if (v && typeof v === "object" && "q" in v && "a" in v) strings.push(`${v.q} ${v.a}`);
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  };
+  walk(home);
+  for (const s of strings.filter((s) => /whatsapp/i.test(s)))
+    assert.match(s, /Meta/, `WhatsApp without Meta's approval: ${s}`);
+});
