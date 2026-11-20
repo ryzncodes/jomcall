@@ -1,5 +1,26 @@
 # Handoff
 
+## 2026-11-20: first answered phone call
+
+**What happened**
+- The owner upgraded the Twilio account. The trial had been the only block (`21264` on 19 Nov with a verified caller).
+- 09:54:12 (Asia/Kuala_Lumpur): a call to `+6042253068` was answered on staging. `app.call`: `ended`, `answered`, `hangup`, 63 s, 5 turns, `ms`, disclosure played, `billed_seconds` 63, `usage_state` `billed`. No errors in the voice or agent logs.
+- Pull request #58 merged as `7d01e6a`; agent rebuilt on it and healthy; Vercel staging deployed.
+
+**After a restart of the `redis` (Valkey) container**, run on the server, in `/opt/jomcall/infra/hosted`:
+`docker compose exec -T -w /app agent node --import tsx scripts/hosted/sip-apply.ts --numbers +6042253068 --allowed 54.169.127.128/30,54.65.63.192/30,54.252.254.64/30,54.172.60.0/30,54.244.51.0/30,54.171.127.192/30,35.156.191.128/30,177.71.206.192/30`
+It printed "already there" for both on 20 Nov.
+
+**Next**
+1. Owner: cloud firewall for 5060 and 10000-10200/udp. The port is open and was probed on 19 Nov.
+2. Owner: Twilio auto-recharge off, usage alert on.
+3. Test on real calls: booking with read-back, transfer (needs "Call Transfer (SIP REFER)" and PSTN transfer on the Twilio trunk, and a staff number on the JomCall number), the busy line with two callers, an after-hours call.
+4. Listen for delay and cut-offs; the only speed numbers are from the browser path.
+5. Something should notice a missing trunk or dispatch rule (today a lost Valkey silently rejects every call).
+
+**Not verified**
+- The two screen changes in #58 in a browser. The create path of the SIP command against LiveKit.
+
 ## 2026-11-19 (evening): template submit live, phone line switched on, no call answered yet
 
 **Merged that day**: #53 `c8d66cb` (submit a template to WhatsApp), #54 `e9bd321` (Home channel line, invitation message), #56 `2fef3c1` (call repository connects in hosted mode). Open: #55 (Twilio plan, see the correction below).
