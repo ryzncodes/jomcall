@@ -10,6 +10,7 @@ import {
   CalendarBlank,
 } from "@phosphor-icons/react";
 import { useExperience } from "./experience";
+import { Picker } from "./picker";
 import demoClips from "@/lib/demo-call.json";
 
 // Recorded lines of the sample call (npm run voice:demo). A clip plays only
@@ -138,23 +139,16 @@ export function CallDemo() {
           <span className="status-dot" />
           {t.sample}
         </span>
-        <label className="demo-language">
-          <span className="sr-only">{t.demoLanguage}</span>
-          <select
-            aria-label={t.demoLanguage}
-            value={language}
-            onChange={(e) => {
-              setLanguage(Number(e.target.value));
-              reset();
-            }}
-          >
-            {t.demoLanguages.map((l, i) => (
-              <option value={i} key={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Picker
+          className="demo-language"
+          label={t.demoLanguage}
+          value={language}
+          options={t.demoLanguages.map((l, i) => ({ value: i, label: l }))}
+          onChange={(next) => {
+            setLanguage(next);
+            reset();
+          }}
+        />
       </div>
       <div className="demo-body">
         <div

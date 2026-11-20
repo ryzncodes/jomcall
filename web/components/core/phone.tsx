@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import { ArrowLeft, Phone } from "@phosphor-icons/react";
@@ -233,13 +234,11 @@ function NumberRequest({
           "Kami padankan jika ada nombor di kawasan itu. Pelanggan anda terus menelefon nombor sedia ada, jadi kawasan nombor baharu jarang penting.",
         )}
       >
-        <select value={area} onChange={(e) => setArea(e.target.value as typeof area)}>
-          {phoneAreas.map((a) => (
-            <option key={a} value={a}>
-              {w(AREAS[a][0], AREAS[a][1])}
-            </option>
-          ))}
-        </select>
+        <Picker
+          value={area}
+          onChange={setArea}
+          options={phoneAreas.map((a) => ({ value: a, label: w(AREAS[a][0], AREAS[a][1]) }))}
+        />
       </Field>
       <Field
         label={w("Your existing business number (optional)", "Nombor perniagaan sedia ada anda (pilihan)")}
@@ -371,13 +370,11 @@ function NumberEditor({ number, onDone }: { number?: PhoneNumber; onDone: () => 
         <input value={label} maxLength={80} onChange={(e) => setLabel(e.target.value)} />
       </Field>
       <Field label={w("Location", "Lokasi")}>
-        <select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
-          {workspace.locations.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
+        <Picker
+          value={locationId}
+          onChange={setLocationId}
+          options={workspace.locations.map((l) => ({ value: l.id, label: l.name }))}
+        />
       </Field>
       <Field
         label={w("Staff number for transfers", "Nombor staf untuk pindahan")}

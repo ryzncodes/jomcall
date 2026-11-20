@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useSearchParams } from "next/navigation";
 import { ContactBookings } from "./bookings";
@@ -219,14 +220,15 @@ function ContactEditor({
           />
         </Field>
         <Field label={w("Preferred language", "Bahasa pilihan")}>
-          <select
+          <Picker
             value={language}
-            onChange={(e) => setLanguage(e.target.value as typeof language)}
-          >
-            <option value="ms">Bahasa Melayu</option>
-            <option value="en">English</option>
-            <option value="zh">中文</option>
-          </select>
+            onChange={setLanguage}
+            options={[
+              { value: "ms", label: "Bahasa Melayu" },
+              { value: "en", label: "English" },
+              { value: "zh", label: "中文" },
+            ]}
+          />
         </Field>
         <button className="button button-dark">
           {a.busy
@@ -313,7 +315,10 @@ function ContactRecords({ contact: c }: { contact: Profile }) {
     a = useAction();
   const [note, setNote] = useState(""),
     [reason, setReason] = useState(""),
-    [evidence, setEvidence] = useState("");
+    [evidence, setEvidence] = useState(""),
+    [channel, setChannel] = useState<"whatsapp" | "phone">("whatsapp"),
+    [purpose, setPurpose] = useState<"service" | "marketing">("service"),
+    [granted, setGranted] = useState<"yes" | "no">("yes");
   return (
     <>
       <Notice {...a} />
@@ -453,23 +458,38 @@ function ContactRecords({ contact: c }: { contact: Profile }) {
         >
           <div className="field-pair">
             <Field label={w("Channel", "Saluran")}>
-              <select name="channel">
-                <option value="whatsapp">WhatsApp</option>
-                <option value="phone">{w("Phone", "Telefon")}</option>
-              </select>
+              <Picker
+                name="channel"
+                value={channel}
+                onChange={setChannel}
+                options={[
+                  { value: "whatsapp", label: "WhatsApp" },
+                  { value: "phone", label: w("Phone", "Telefon") },
+                ]}
+              />
             </Field>
             <Field label={w("Purpose", "Tujuan")}>
-              <select name="purpose">
-                <option value="service">{w("Service", "Perkhidmatan")}</option>
-                <option value="marketing">{w("Marketing", "Pemasaran")}</option>
-              </select>
+              <Picker
+                name="purpose"
+                value={purpose}
+                onChange={setPurpose}
+                options={[
+                  { value: "service", label: w("Service", "Perkhidmatan") },
+                  { value: "marketing", label: w("Marketing", "Pemasaran") },
+                ]}
+              />
             </Field>
           </div>
           <Field label={w("Consent decision", "Keputusan persetujuan")}>
-            <select name="granted">
-              <option value="yes">{w("Granted", "Diberi")}</option>
-              <option value="no">{w("Withdrawn", "Ditarik balik")}</option>
-            </select>
+            <Picker
+              name="granted"
+              value={granted}
+              onChange={setGranted}
+              options={[
+                { value: "yes", label: w("Granted", "Diberi") },
+                { value: "no", label: w("Withdrawn", "Ditarik balik") },
+              ]}
+            />
           </Field>
           <Field label={w("Evidence / source", "Bukti / sumber")}>
             <textarea

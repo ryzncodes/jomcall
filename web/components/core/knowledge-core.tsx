@@ -1,6 +1,7 @@
 "use client";
 // Knowledge core editor (local app only): packs, pack fact fields, free facts,
 // rules and catalogue rows. Mock preview does not use it.
+import { Picker } from "@/components/picker";
 import { useState } from "react";
 import type { Input } from "../../../packages/contracts/src/core";
 import type { Job } from "@/lib/core/save-queue";
@@ -322,13 +323,12 @@ export function KnowledgeCoreEditor({
           }}
         >
           <Field label={w("Your rule: when", "Peraturan anda: bila")}>
-            <select value={rule.kind} disabled={busy} onChange={(e) => setRule({ ...rule, kind: e.target.value as Kind })}>
-              {kinds.map((k) => (
-                <option key={k} value={k}>
-                  {w(...kindWords[k])}
-                </option>
-              ))}
-            </select>
+            <Picker
+              value={rule.kind}
+              disabled={busy}
+              onChange={(kind) => setRule({ ...rule, kind })}
+              options={kinds.map((k) => ({ value: k, label: w(...kindWords[k]) }))}
+            />
           </Field>
           <Field label={w("Rule", "Peraturan")}>
             <textarea rows={2} maxLength={1000} value={rule.text} disabled={busy} onChange={(e) => setRule({ ...rule, text: e.target.value })} />

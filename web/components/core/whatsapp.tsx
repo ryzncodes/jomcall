@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 // WhatsApp channel settings for the local app. The access token is
 // write-only: it is sent once and never shown again. Until the server's
@@ -869,14 +870,15 @@ function Templates({
             />
           </Field>
           <Field label={w("Language", "Bahasa")}>
-            <select
+            <Picker
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-            >
-              <option value="ms">Bahasa Melayu</option>
-              <option value="en">English</option>
-              <option value="zh_CN">中文</option>
-            </select>
+              onChange={setLanguage}
+              options={[
+                { value: "ms", label: "Bahasa Melayu" },
+                { value: "en", label: "English" },
+                { value: "zh_CN", label: "中文" },
+              ]}
+            />
           </Field>
         </div>
         <Field

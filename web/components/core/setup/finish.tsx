@@ -8,6 +8,8 @@ import { useCore, useWords, Notice } from "../state";
 import { useExperience } from "../../experience";
 import { LocalAgentTest } from "../agent-test";
 import { useLanding } from "./flow";
+import { HOSTED as hosted } from "@/lib/hosted";
+import { WHATSAPP_WAITING_FOR_META, whatsappWaiting } from "@/lib/launch";
 import { pollDelay, unlocksPublish } from "./rules";
 
 // True once a draft test session created after this stage opened has a
@@ -205,18 +207,6 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
             </a>
           </li>
           <li>
-            <strong>{w("Connect WhatsApp", "Sambungkan WhatsApp")}</strong>
-            <p>
-              {w(
-                "Needs a WhatsApp Business number and the Growth plan.",
-                "Memerlukan nombor WhatsApp Business dan pelan Growth.",
-              )}
-            </p>
-            <a className="button secondary-button" href={href("/app/whatsapp")}>
-              {w("Open WhatsApp settings", "Buka tetapan WhatsApp")}
-            </a>
-          </li>
-          <li>
             <strong>{w("Phone line", "Talian telefon")}</strong>
             <p>
               {w(
@@ -227,6 +217,24 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
             <a className="button secondary-button" href={href("/app/phone-numbers")}>
               {w("Open Phone numbers", "Buka Nombor telefon")}
             </a>
+          </li>
+          <li>
+            <strong>{w("Connect WhatsApp", "Sambungkan WhatsApp")}</strong>
+            {hosted && WHATSAPP_WAITING_FOR_META ? (
+              <p>{w(whatsappWaiting.body[0], whatsappWaiting.body[1])}</p>
+            ) : (
+              <>
+                <p>
+                  {w(
+                    "Needs a WhatsApp Business number and the Growth plan.",
+                    "Memerlukan nombor WhatsApp Business dan pelan Growth.",
+                  )}
+                </p>
+                <a className="button secondary-button" href={href("/app/whatsapp")}>
+                  {w("Open WhatsApp settings", "Buka tetapan WhatsApp")}
+                </a>
+              </>
+            )}
           </li>
         </ol>
         <div className="setup-next-more">

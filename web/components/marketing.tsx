@@ -68,7 +68,7 @@ export function Marketing() {
             {real && <a href={href("/login")}>{t.remaining.login}</a>}
             {real && (
               <a className="navigation-start" href={href("/signup")}>
-                {t.startFree}
+                {hosted ? launchCopy.planButton[li] : t.startFree}
               </a>
             )}
           </nav>
@@ -78,7 +78,7 @@ export function Marketing() {
               className="button button-small button-dark"
               href={href(real ? "/signup" : "/app")}
             >
-              {real ? t.startFree : t.openApp}
+              {hosted ? launchCopy.planButton[li] : real ? t.startFree : t.openApp}
               <ArrowUpRight size={16} />
             </a>
             <button
@@ -111,7 +111,7 @@ export function Marketing() {
               {real ? (
                 <>
                   <a className="button button-dark" href={href("/signup")}>
-                    {t.startFree}
+                    {hosted ? launchCopy.planButton[li] : t.startFree}
                     <ArrowUpRight size={20} />
                   </a>
                   <a className="text-link hero-second" href="#demo">

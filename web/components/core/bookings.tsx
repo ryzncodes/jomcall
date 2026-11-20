@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -86,39 +87,31 @@ export function LocalBookings() {
       </Heading>
       <div className="core-booking-toolbar">
         <Field label={w("Branch", "Cawangan")}>
-          <select
+          <Picker
             value={locationId}
-            onChange={(e) => {
-              setLocation(e.target.value);
+            options={workspace.locations.map((l) => ({ value: l.id, label: l.name }))}
+            onChange={(v) => {
+              setLocation(v);
               setResource("");
               setCursor(undefined);
               setSelected("");
               setCreating(false);
               setManaging(false);
             }}
-          >
-            {workspace.locations.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <Field label={w("Resource filter", "Tapis sumber")}>
-          <select
+          <Picker
             value={resourceId}
-            onChange={(e) => {
-              setResource(e.target.value);
+            options={[
+              { value: "", label: w("All resources", "Semua sumber") },
+              ...(resources.data?.map((r) => ({ value: r.id, label: r.name })) ?? []),
+            ]}
+            onChange={(v) => {
+              setResource(v);
               setCursor(undefined);
             }}
-          >
-            <option value="">{w("All resources", "Semua sumber")}</option>
-            {resources.data?.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
         <Field label={w("Calendar date", "Tarikh kalendar")}>
           <input
@@ -288,17 +281,17 @@ function ResourceManager({
     <section className="core-panel">
       <h2>{w("Booking resources", "Sumber tempahan")}</h2>
       <Field label={w("Edit resource", "Sunting sumber")}>
-        <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-          <option value="">
-            {w("Add new resource", "Tambah sumber baharu")}
-          </option>
-          {resources.map((r) => (
-            <option key={r.id} value={r.id}>
-              {r.name}
-              {!r.active ? " · " + w("Archived", "Diarkibkan") : ""}
-            </option>
-          ))}
-        </select>
+        <Picker
+          value={selected}
+          onChange={setSelected}
+          options={[
+            { value: "", label: w("Add new resource", "Tambah sumber baharu") },
+            ...resources.map((r) => ({
+              value: r.id,
+              label: r.name + (!r.active ? " · " + w("Archived", "Diarkibkan") : ""),
+            })),
+          ]}
+        />
       </Field>
       <ResourceForm
         key={selected}

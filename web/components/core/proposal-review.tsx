@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
 import type { Proposal } from "../../../packages/contracts/src/agent-test";
@@ -155,22 +156,17 @@ export function ProposalReview({
                   <Field
                     label={w("Contact for proposal", "Kenalan untuk cadangan")}
                   >
-                    <select
+                    <Picker
                       required
                       value={contact}
-                      onChange={(e) => setContact(e.target.value)}
-                    >
-                      <option value="">
-                        {w("Choose a contact", "Pilih kenalan")}
-                      </option>
-                      {contacts.data?.items
-                        .filter((c) => !c.deletion_pending)
-                        .map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                    </select>
+                      onChange={setContact}
+                      options={[
+                        { value: "", label: w("Choose a contact", "Pilih kenalan") },
+                        ...(contacts.data?.items
+                          .filter((c) => !c.deletion_pending)
+                          .map((c) => ({ value: c.id, label: c.name })) ?? []),
+                      ]}
+                    />
                   </Field>
                 </>
               )}

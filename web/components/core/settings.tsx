@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useEffect, useState } from "react";
 import type { Location } from "../../../packages/contracts/src/core";
@@ -36,16 +37,14 @@ export function LocalSettings() {
       />
       <div className="core-workspace-switch">
         <Field label={w("Current workspace", "Ruang kerja semasa")}>
-          <select
+          <Picker
             value={workspace.workspace.id}
-            onChange={(e) => switchWorkspace(e.target.value)}
-          >
-            {session.memberships.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} · {m.role}
-              </option>
-            ))}
-          </select>
+            onChange={switchWorkspace}
+            options={session.memberships.map((m) => ({
+              value: m.id,
+              label: `${m.name} · ${m.role}`,
+            }))}
+          />
         </Field>
         <button
           className="button secondary-button"
@@ -186,6 +185,7 @@ function Team() {
   const { client, workspace, session } = useCore(),
     w = useWords(),
     a = useAction();
+  const [inviteRole, setInviteRole] = useState<"staff" | "admin">("staff");
   const r = useResource(() => client.execute("members", {}), "members"),
     inv = useResource(
       () =>
@@ -281,20 +281,27 @@ function Team() {
                     role: f.get("role") as "admin" | "staff",
                   }),
                 )
-              )
+              ) {
                 form.reset();
+                setInviteRole("staff");
+              }
             }}
           >
             <Field label={w("Invite email", "E-mel jemputan")}>
               <input name="email" type="email" required maxLength={254} />
             </Field>
             <Field label={w("Role", "Peranan")}>
-              <select name="role">
-                <option value="staff">{w("Staff", "Staf")}</option>
-                {workspace.role === "owner" && (
-                  <option value="admin">{w("Admin", "Pentadbir")}</option>
-                )}
-              </select>
+              <Picker
+                name="role"
+                value={inviteRole}
+                onChange={setInviteRole}
+                options={[
+                  { value: "staff", label: w("Staff", "Staf") },
+                  ...(workspace.role === "owner"
+                    ? [{ value: "admin" as const, label: w("Admin", "Pentadbir") }]
+                    : []),
+                ]}
+              />
             </Field>
             <button disabled={a.busy} className="button button-dark">
               {w(

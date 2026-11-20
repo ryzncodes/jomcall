@@ -693,14 +693,133 @@ a svg {
 .demo-toolbar .status-dot {
   color: #d7e7b6;
 }
-.demo-language select {
+/* Custom picker (web/components/picker.tsx): same look on every platform. */
+.picker {
+  position: relative;
+}
+.picker-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 5px;
+  font: inherit;
+  cursor: pointer;
+}
+.picker-button svg {
+  transition: transform 0.15s ease;
+}
+.picker.is-open .picker-button svg {
+  transform: rotate(180deg);
+}
+.picker-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 100%;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border-radius: 6px;
+  outline: none;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.picker-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.picker-value {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+/* Default look inside the app's forms and filters, matching the text fields. */
+.picker:not(.demo-language) {
+  width: 100%;
+  min-width: 0;
+}
+.picker:not(.demo-language) .picker-button {
+  width: 100%;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 10px 14px;
+  min-height: 44px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+}
+.picker:not(.demo-language) .picker-button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.picker-button.is-placeholder > span {
+  color: var(--secondary);
+}
+.picker-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.picker:not(.demo-language) .picker-list {
+  left: 0;
+  right: auto;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.14);
+}
+.picker:not(.demo-language) .picker-list li {
+  white-space: normal;
+}
+.picker:not(.demo-language) .picker-list li.is-active {
+  background: var(--paper);
+}
+.picker-list li[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+.picker:not(.demo-language) .picker-button:focus-visible {
+  outline: 3px solid #708b50;
+  outline-offset: 2px;
+}
+.demo-language .picker-button {
   border: 1px solid #788874;
   background: #2a4335;
   color: #f4f5e9;
-  padding: 8px 12px;
-  border-radius: 5px;
   font-size: 12px;
+}
+.demo-language .picker-list {
+  background: #1f3529;
+  border: 1px solid #61776688;
+  color: #f4f5e9;
+  font-size: 12px;
+}
+.demo-language .picker-list li.is-active {
+  background: #33503f;
+}
+.demo-language .picker-button:focus-visible,
+.demo-language .picker-list:focus-visible {
+  outline: 2px solid #d8f08a;
+  outline-offset: 2px;
 }
 .demo-body {
   display: grid;
@@ -2489,9 +2608,9 @@ a svg {
     font-size: 10px;
     flex-wrap: wrap;
   }
-  .demo-language select {
-    font-size: 10px;
-    padding: 6px 8px;
+  .demo-language .picker-button {
+    font-size: 11px;
+    padding: 6px 10px;
   }
   .demo-body {
     display: flex;

@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { isResourceUnavailable } from "@/lib/core/client";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -250,22 +251,27 @@ function AgentTestManager({
           <p className="eyebrow">{w("Test your agent", "Uji ejen anda")}</p>
           <h2>{draft.data?.draft.name ?? w("Your agent", "Ejen anda")}</h2>
           <Field label={w("Which version to test", "Versi yang diuji")}>
-            <select
+            <Picker
               value={source}
-              onChange={(e) => setSource(e.target.value as typeof source)}
-            >
-              <option value="draft">
-                {w("Latest changes (draft)", "Perubahan terkini (draf)")}
-              </option>
-              {workspace.agent.published_version_id && (
-                <option value="published">
-                  {w(
-                    "Live version (published)",
-                    "Versi langsung (diterbitkan)",
-                  )}
-                </option>
-              )}
-            </select>
+              onChange={setSource}
+              options={[
+                {
+                  value: "draft" as const,
+                  label: w("Latest changes (draft)", "Perubahan terkini (draf)"),
+                },
+                ...(workspace.agent.published_version_id
+                  ? [
+                      {
+                        value: "published" as const,
+                        label: w(
+                          "Live version (published)",
+                          "Versi langsung (diterbitkan)",
+                        ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </Field>
           <button
             className="button button-dark"
@@ -305,20 +311,21 @@ function AgentTestManager({
           <details className="core-test-more">
             <summary>{w("More options", "Pilihan lain")}</summary>
             <Field label={w("Resume a saved test", "Sambung ujian tersimpan")}>
-              <select
+              <Picker
                 value={sessionId}
-                onChange={(e) => select(e.target.value)}
-              >
-                <option value="">{w("Choose a test", "Pilih ujian")}</option>
-                {sessions.data?.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.source === "draft"
-                      ? w("Draft", "Draf")
-                      : w("Published", "Diterbitkan")}{" "}
-                    · {startedText(s.expires_at)}
-                  </option>
-                ))}
-              </select>
+                onChange={select}
+                options={[
+                  { value: "", label: w("Choose a test", "Pilih ujian") },
+                  ...(sessions.data?.map((s) => ({
+                    value: s.id,
+                    label: `${
+                      s.source === "draft"
+                        ? w("Draft", "Draf")
+                        : w("Published", "Diterbitkan")
+                    } · ${startedText(s.expires_at)}`,
+                  })) ?? []),
+                ]}
+              />
             </Field>
             <Notice error={sessions.error} />
             {detail && (
