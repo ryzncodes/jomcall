@@ -6,6 +6,7 @@ import { whatsappReadiness } from "../../../packages/whatsapp/src/provider.ts";
 import { whatsappRoute } from "../../../packages/domain/src/whatsapp/routes.ts";
 import { bookingRoute } from "../../../packages/domain/src/booking/routes.ts";
 import { phoneRoute } from "../../../packages/domain/src/phone/routes.ts";
+import { firstRunRoute } from "../../../packages/domain/src/first-run.ts";
 import { commands } from "../../../packages/contracts/src/core.ts";
 import { privacyRoute } from "../../../packages/domain/src/privacy.ts";
 import "server-only";
@@ -181,6 +182,8 @@ async function dispatch(request: Request, deps: CoreDeps) {
           new URL(request.url).searchParams,
         );
         if (phoneResult !== undefined) return respond(phoneResult);
+        const firstRunResult = await firstRunRoute(tx, context, method, path);
+        if (firstRunResult !== undefined) return respond(firstRunResult);
         const billingResult = await billingRoute(
           tx,
           context,
