@@ -40,7 +40,7 @@ const en: HowItWorksCopy = {
       {
         name: "Test the agent",
         you: "Talk to it in your browser, by voice or by typing.",
-        body: "Ask what your customers ask. If an answer is wrong, fix the fact and test again. Browser tests are not billed, and no customer hears them.",
+        body: "Ask what your customers ask. If an answer is wrong, fix the fact and test again. No customer hears these tests.",
       },
       {
         name: "Publish the agent",
@@ -90,11 +90,11 @@ const en: HowItWorksCopy = {
     items: [
       {
         q: "Can I test the agent before customers call?",
-        a: "Yes. Test it in your browser as often as you like, by voice or by typing. Browser tests are not billed, and no customer hears them.",
+        a: "Yes. Test it in your browser, by voice or by typing, before any customer calls. No customer hears these tests.",
       },
       {
         q: "What does the agent do when it does not know an answer?",
-        a: "It tells the caller it does not know and takes a message for your team. It does not make up an answer.",
+        a: "It tells the caller it does not know and takes a message for your team. It is set up to say so rather than guess.",
       },
       {
         q: "Can I change the agent's answers after I publish?",
@@ -129,7 +129,7 @@ const ms: HowItWorksCopy = {
       {
         name: "Uji ejen",
         you: "Bercakap dengannya dalam pelayar, sama ada dengan suara atau menaip.",
-        body: "Tanya apa yang pelanggan anda selalu tanya. Kalau jawapannya salah, betulkan fakta itu dan uji semula. Ujian dalam pelayar tidak dicaj, dan tiada pelanggan yang mendengarnya.",
+        body: "Tanya apa yang pelanggan anda selalu tanya. Kalau jawapannya salah, betulkan fakta itu dan uji semula. Tiada pelanggan yang mendengar ujian ini.",
       },
       {
         name: "Terbitkan ejen",
@@ -159,10 +159,10 @@ const ms: HowItWorksCopy = {
     items: [
       { name: "Ia memberitahu bahawa ia AI", body: "Ejen menyapa pemanggil dan memberitahu bahawa ia AI, sebelum apa-apa yang lain." },
       { name: "Ia bercakap dalam bahasa mereka", body: "BM, bahasa Inggeris, Manglish atau Mandarin. Ia mengikut pemanggil dan menjawab seperti cara mereka bercakap." },
-      { name: "Ia menjawab berdasarkan fakta anda", body: "Waktu operasi, harga, lokasi dan lain-lain datang daripada apa yang anda beri semasa persediaan. Kalau ia tidak tahu, ia berterus terang dan mengambil pesanan." },
-      { name: "Ia membuat tempahan janji temu", body: "Bagi perniagaan yang menerima tempahan, ia mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan tempahan dalam JomCall." },
+      { name: "Ia menjawab berdasarkan fakta anda", body: "Waktu operasi, harga, lokasi dan lain-lain datang daripada apa yang anda beri semasa persediaan. Kalau ia tidak tahu, ia memberitahu pemanggil dan mengambil pesanan." },
+      { name: "Ia membuat tempahan temu janji", body: "Bagi perniagaan yang menerima tempahan, ia mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan tempahan dalam JomCall." },
       { name: "Ia mengambil pesanan", body: "Ia mencatat siapa yang menelefon, cara menghubungi mereka dan apa yang mereka perlukan, untuk pasukan anda membuat susulan." },
-      { name: "Ia menyerahkan panggilan kepada staf", body: "Dalam waktu operasi, ia boleh menyerahkan pemanggil terus kepada staf anda. Ia tidak menunggu dalam talian untuk memperkenalkan pemanggil. Di luar waktu operasi, ia mengambil pesanan." },
+      { name: "Ia menyambungkan panggilan kepada staf", body: "Dalam waktu operasi, ia boleh menyambungkan pemanggil terus kepada staf anda. Ia tidak menunggu dalam talian untuk memperkenalkan pemanggil. Di luar waktu operasi, ia mengambil pesanan." },
     ],
     note: "Panggilan tidak dirakam.",
   },
@@ -179,11 +179,11 @@ const ms: HowItWorksCopy = {
     items: [
       {
         q: "Bolehkah saya uji ejen sebelum pelanggan menelefon?",
-        a: "Boleh. Uji dalam pelayar sekerap mana yang anda mahu, dengan suara atau menaip. Ujian dalam pelayar tidak dicaj, dan tiada pelanggan yang mendengarnya.",
+        a: "Boleh. Uji dalam pelayar, dengan suara atau menaip, sebelum ada pelanggan yang menelefon. Tiada pelanggan yang mendengar ujian ini.",
       },
       {
         q: "Apa yang ejen buat apabila ia tidak tahu jawapannya?",
-        a: "Ia memberitahu pemanggil bahawa ia tidak tahu dan mengambil pesanan untuk pasukan anda. Ia tidak mereka-reka jawapan.",
+        a: "Ia memberitahu pemanggil bahawa ia tidak tahu dan mengambil pesanan untuk pasukan anda. Ia ditetapkan supaya berkata begitu, bukan meneka jawapan.",
       },
       {
         q: "Bolehkah saya ubah jawapan ejen selepas diterbitkan?",

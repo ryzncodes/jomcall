@@ -56,6 +56,7 @@ const en = {
   // Shared by the reading pages (how it works, guides, industries, FAQ).
   article: {
     contents: "On this page",
+    breadcrumb: "Breadcrumb",
     questions: "Questions",
     related: "Read next",
     sample: "Sample call, made up",
@@ -116,6 +117,7 @@ const ms: typeof en = {
   preview: "Binaan pratonton. Ini bukan laman JomCall yang sebenar.",
   article: {
     contents: "Dalam halaman ini",
+    breadcrumb: "Laluan",
     questions: "Soalan",
     related: "Baca seterusnya",
     sample: "Contoh panggilan, rekaan",

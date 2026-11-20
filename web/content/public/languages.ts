@@ -110,7 +110,7 @@ const ms: LanguagesCopy = {
     lead: "Setiap ayat di bawah ialah contoh rekaan bagaimana pemanggil mungkin memulakan panggilan.",
     items: [
       { name: "Bahasa Melayu", lang: "ms", line: "Esok pagi klinik buka pukul berapa?", body: "BM harian atau BM yang lebih formal, ikut cara pemanggil bercakap." },
-      { name: "Bahasa Inggeris", lang: "en", line: "Hi, do you have anything free on Friday evening?", body: "Bahasa Inggeris Malaysia, seperti yang pelanggan anda tuturkan." },
+      { name: "Bahasa Inggeris", lang: "en", line: "Hi, do you have anything free on Friday evening?", body: "Bahasa Inggeris Malaysia, seperti cara pelanggan anda bercakap." },
       { name: "Manglish", lang: "en", line: "Boss, service aircond got do on Sunday or not?", body: "BM dan bahasa Inggeris dalam satu ayat, seperti ramai rakyat Malaysia bercakap. Ejen boleh ikut." },
       { name: "Mandarin", lang: "zh", line: "请问星期六还有位子吗？", body: "Pemanggil yang bercakap Mandarin mendapat jawapan dalam Mandarin." },
     ],
@@ -141,7 +141,7 @@ const ms: LanguagesCopy = {
   not: {
     heading: "Apa yang ia belum buat",
     items: [
-      "Bahasa Tamil belum disokong buat masa ini.",
+      "Bahasa Tamil belum disokong.",
       "Dialek Cina seperti Hokkien dan Kantonis tidak disokong. Pemanggil yang menuturkannya boleh menggunakan Mandarin.",
     ],
   },
@@ -149,12 +149,12 @@ const ms: LanguagesCopy = {
     heading: "Soalan",
     items: [
       {
-        q: "Bahasa apa yang ejen boleh tuturkan?",
+        q: "Bahasa apa yang ejen boleh cakap?",
         a: "BM, bahasa Inggeris, Manglish dan Mandarin. Ia mengikut pemanggil dan menjawab dalam bahasa yang mereka guna.",
       },
       {
         q: "Bagaimana dengan bahasa Tamil?",
-        a: "Bahasa Tamil belum disokong buat masa ini. Pemanggil boleh menggunakan BM atau bahasa Inggeris.",
+        a: "Bahasa Tamil belum disokong. Pemanggil boleh menggunakan BM atau bahasa Inggeris.",
       },
       {
         q: "Bolehkah pemanggil bertukar bahasa semasa panggilan?",

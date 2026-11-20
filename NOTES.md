@@ -98,3 +98,5 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - FAQ hub has 22 questions (spec asks at least 18).
 - The BM copy passed a pattern scan (no Indonesian words; two fixes) but still needs a native speaker's read.
 - Sample calls name car models (Myvi, Saga) as everyday examples; all businesses, people and plates are made up.
+- Review round 1: BM uses "temu janji" on the Task 7 pages, as the coordinator ruled; `home.ts` (not this task's file) still says "janji temu" three times and "menyerahkan pemanggil" once, so the site mixes both until home is aligned.
+- Review round 1: stylists and visit times are described as added on JomCall's Bookings page ("halaman Tempahan"), the app's own screen name; setup only stores them as fact text.

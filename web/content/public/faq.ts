@@ -6,6 +6,7 @@
 // come from web/lib/pricing.ts; WhatsApp appears only as waiting for Meta.
 import { publicPlans, publicPrices } from "../../lib/pricing.ts";
 import { whatsappWaiting } from "../../lib/launch.ts";
+import { FORWARD_CODES } from "./call-forwarding.ts";
 import { rm } from "./format.ts";
 import type { Bilingual, FaqItem, PageCopy } from "./types.ts";
 
@@ -13,6 +14,7 @@ const [starter, growth, payg] = publicPlans;
 const mins = (seconds: number) => seconds / 60;
 const perMinute = rm(publicPrices.voiceSenPerMinute);
 const [waitTitleEn, waitTitleMs] = whatsappWaiting.title;
+const [fwdAll, fwdNoAnswer, fwdBusy] = FORWARD_CODES;
 
 export const FAQ_GROUPS = ["price", "number", "languages", "ai", "privacy", "whatsapp"] as const;
 export type FaqGroupId = (typeof FAQ_GROUPS)[number];
@@ -67,7 +69,7 @@ const en: FaqCopy = {
         },
         codes: {
           q: "Which forwarding code should I use?",
-          a: "**21* sends every call to JomCall. **61* sends only the calls you do not answer. **67* sends calls only while your line is busy. Each has its own stop code, such as ##21#.",
+          a: `${fwdAll.start} sends every call to JomCall. ${fwdNoAnswer.start} sends only the calls you do not answer. ${fwdBusy.start} sends calls only while your line is busy. Each has its own stop code, such as ${fwdAll.stop}.`,
         },
         staff: {
           q: "Can callers still reach my staff?",
@@ -109,7 +111,7 @@ const en: FaqCopy = {
         },
         unknown: {
           q: "What does the agent do when it does not know an answer?",
-          a: "It tells the caller it does not know and takes a message for your team. It does not make up an answer.",
+          a: "It tells the caller it does not know and takes a message for your team. It is set up to say so rather than guess.",
         },
         google: {
           q: "Will bookings show up in my Google Calendar?",
@@ -147,7 +149,7 @@ const en: FaqCopy = {
         },
         plan: {
           q: "Which plan includes the WhatsApp agent?",
-          a: "Growth includes the WhatsApp agent once Meta approves JomCall. Meta bills its own message fees to the business.",
+          a: `${waitTitleEn}. Once it opens, the WhatsApp agent comes with Growth, and Meta bills its own message fees to the business.`,
         },
       },
     },
@@ -171,7 +173,7 @@ const ms: FaqCopy = {
           a: `Starter ${rm(starter.monthlyFeeSen)} sebulan dengan satu nombor telefon dan ${mins(starter.includedVoiceSeconds)} minit. Growth ${rm(growth.monthlyFeeSen)} sebulan dengan satu nombor telefon dan ${mins(growth.includedVoiceSeconds)} minit. Pelan bayar mengikut guna tidak mengenakan yuran bulanan (${rm(payg.monthlyFeeSen)}) dan tiada nombor telefon.`,
         },
         trial: {
-          q: "Adakah percubaan percuma?",
+          q: "Ada percubaan percuma?",
           a: "Tidak, tiada percubaan percuma. Anda boleh sediakan ejen dan mengujinya dalam pelayar dengan pelan bayar mengikut guna sebelum membayar sebarang yuran pelan.",
         },
         wallet: {
@@ -179,7 +181,7 @@ const ms: FaqCopy = {
           a: "Melalui dompet prabayar dalam MYR. Anda tambah nilai, dan yuran pelan serta minit tambahan diambil daripada dompet itu. Tiada kad dicaj secara automatik.",
         },
         extra: {
-          q: "Apa berlaku selepas minit pelan saya habis?",
+          q: "Apa yang berlaku selepas minit pelan saya habis?",
           a: `Panggilan diteruskan selagi dompet anda ada baki. Setiap minit tambahan berharga ${perMinute}, dicaj mengikut saat daripada dompet prabayar anda.`,
         },
       },
@@ -197,11 +199,11 @@ const ms: FaqCopy = {
         },
         codes: {
           q: "Kod pemajuan mana yang patut saya guna?",
-          a: "**21* menghantar semua panggilan ke JomCall. **61* hanya menghantar panggilan yang tidak anda jawab. **67* hanya menghantar panggilan semasa talian anda sibuk. Setiap satu ada kod hentinya sendiri, contohnya ##21#.",
+          a: `${fwdAll.start} menghantar semua panggilan ke JomCall. ${fwdNoAnswer.start} hanya menghantar panggilan yang tidak anda jawab. ${fwdBusy.start} hanya menghantar panggilan semasa talian anda sibuk. Setiap satu ada kod hentinya sendiri, contohnya ${fwdAll.stop}.`,
         },
         staff: {
           q: "Bolehkah pemanggil masih bercakap dengan staf saya?",
-          a: "Boleh, dalam waktu operasi. Ejen boleh menyerahkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
+          a: "Boleh, dalam waktu operasi. Ejen boleh menyambungkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
         },
       },
     },
@@ -209,12 +211,12 @@ const ms: FaqCopy = {
       heading: "Bahasa",
       faq: {
         which: {
-          q: "Bahasa apa yang JomCall tuturkan?",
+          q: "Bahasa apa yang JomCall boleh cakap?",
           a: "BM, bahasa Inggeris, Manglish dan Mandarin. Ejen mengikut pemanggil dan menjawab dalam bahasa yang mereka guna.",
         },
         tamil: {
           q: "Bagaimana dengan bahasa Tamil?",
-          a: "Bahasa Tamil belum disokong buat masa ini. Pemanggil boleh menggunakan BM atau bahasa Inggeris.",
+          a: "Bahasa Tamil belum disokong. Pemanggil boleh menggunakan BM atau bahasa Inggeris.",
         },
         switch: {
           q: "Bagaimana kalau pemanggil bertukar bahasa semasa panggilan?",
@@ -230,7 +232,7 @@ const ms: FaqCopy = {
           a: "Ya. Ejen memberitahu bahawa ia AI apabila menjawab, dan ejen tidak boleh diterbitkan tanpa pengenalan itu.",
         },
         book: {
-          q: "Bolehkah ejen membuat tempahan janji temu?",
+          q: "Bolehkah ejen membuat tempahan temu janji?",
           a: "Boleh, bagi perniagaan yang menerima tempahan. Ia mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan tempahan dalam JomCall.",
         },
         change: {
@@ -239,7 +241,7 @@ const ms: FaqCopy = {
         },
         unknown: {
           q: "Apa yang ejen buat apabila ia tidak tahu jawapannya?",
-          a: "Ia memberitahu pemanggil bahawa ia tidak tahu dan mengambil pesanan untuk pasukan anda. Ia tidak mereka-reka jawapan.",
+          a: "Ia memberitahu pemanggil bahawa ia tidak tahu dan mengambil pesanan untuk pasukan anda. Ia ditetapkan supaya berkata begitu, bukan meneka jawapan.",
         },
         google: {
           q: "Adakah tempahan akan muncul dalam Google Calendar saya?",
@@ -277,7 +279,7 @@ const ms: FaqCopy = {
         },
         plan: {
           q: "Pelan mana yang termasuk ejen WhatsApp?",
-          a: "Growth termasuk ejen WhatsApp sebaik sahaja Meta meluluskan JomCall. Meta mengenakan caj mesejnya sendiri kepada perniagaan.",
+          a: `${waitTitleMs}. Apabila ia dibuka, ejen WhatsApp disertakan dalam pelan Growth, dan Meta mengenakan caj mesejnya sendiri kepada perniagaan.`,
         },
       },
     },

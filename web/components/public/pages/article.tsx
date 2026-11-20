@@ -66,9 +66,13 @@ export function ArticlePage({
         <header className="art-hero">
           <div className="frame">
             {parent && (
-              <p className="crumb t-small">
-                <a href={localePath(parent, locale)}>{c.pages[parent]}</a>
-              </p>
+              <nav className="crumb t-small" aria-label={c.article.breadcrumb}>
+                <ol>
+                  <li>
+                    <a href={localePath(parent, locale)}>{c.pages[parent]}</a>
+                  </li>
+                </ol>
+              </nav>
             )}
             <h1 id="article-title" className="t-display">
               {copy.h1}

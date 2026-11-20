@@ -218,3 +218,91 @@ test("llms.txt describes each content page with its own meta description", () =>
     ])
       assert.match(d, /\.$/, d);
 });
+
+// ------------------------------------------------------- review round 1
+
+// Every string a content module exports, for the claims checks below.
+const strings = (value: unknown): string[] => {
+  if (typeof value === "string") return [value];
+  if (value && typeof value === "object") return Object.values(value).flatMap(strings);
+  return [];
+};
+const industryText = (locale: "en" | "ms", slug: (typeof INDUSTRY_SLUGS)[number]) =>
+  strings(industries[locale][slug]).join("\n");
+
+test("stylists and visit times are added on the Bookings page, not in setup", () => {
+  for (const slug of ["salons", "aircond-home-repair", "tuition-centres"] as const) {
+    assert.match(industryText("en", slug), /JomCall's Bookings page/, `en ${slug}`);
+    assert.match(industryText("ms", slug), /halaman Tempahan JomCall/, `ms ${slug}`);
+  }
+  const all = LOCALES.flatMap((l) => INDUSTRY_SLUGS.map((s) => industryText(l, s))).join("\n");
+  assert.doesNotMatch(all, /stylists in setup|set visit times|pendandan dalam persediaan|tetapkan masa lawatan|menetapkan masa lawatan/i);
+});
+
+test("no page promises that every caller is caught", () => {
+  const text = strings([howItWorks, forwarding, languages, faq, industries, industriesIndex]).join("\n");
+  assert.doesNotMatch(
+    text,
+    /\bevery (job|request|time|parent)\b|\bno (one|parent) is\b|nobody is missed|never miss|setiap kali|setiap permintaan kerja|tercicir|tiada sesiapa/i,
+  );
+});
+
+test("nothing claims browser tests are free of charge", () => {
+  const text = strings([howItWorks, faq, industries]).join("\n");
+  assert.doesNotMatch(text, /tests? (are )?not (billed|charged)|ujian[^.]*tidak dicaj/i);
+});
+
+test("unknown answers are described as a set-up behaviour, not a guarantee", () => {
+  const text = strings([howItWorks, faq]).join("\n");
+  assert.doesNotMatch(text, /does not make up|mereka-reka/i);
+  assert.match(howItWorks.en.faq.items.map((i) => i.a).join(" "), /rather than guess/);
+});
+
+test("forwarding codes in prose come from FORWARD_CODES", () => {
+  const known = new Set<string>(FORWARD_CODES.flatMap((c) => [c.start, c.stop]));
+  const text = strings([howItWorks, forwarding, languages, faq, industries, industriesIndex]).join("\n");
+  for (const code of text.match(/(?:\*\*|##)\d+[*#]/g) ?? []) assert.ok(known.has(code), code);
+  // No code is typed by hand outside the FORWARD_CODES list itself.
+  for (const name of ["how-it-works", "languages", "faq", "industries"])
+    assert.doesNotMatch(readFileSync(`web/content/public/${name}.ts`, "utf8"), /(?:\*\*|##)\d+[*#]/, name);
+  const own = readFileSync("web/content/public/call-forwarding.ts", "utf8").replace(/FORWARD_CODES = \[[\s\S]*?\] as const;/, "");
+  assert.doesNotMatch(own, /(?:\*\*|##)\d+[*#]/);
+});
+
+test("the codes heading does not say there are only three", () => {
+  for (const locale of LOCALES) assert.doesNotMatch(forwarding[locale].codes.heading, /three|tiga/i);
+});
+
+test("restaurants say table requests are messages next to the setup type", () => {
+  assert.match(industries.en.restaurants.setup.body.join(" "), /table requests as messages for your staff to confirm/);
+  assert.match(industries.ms.restaurants.setup.body.join(" "), /permintaan meja sebagai pesanan/);
+});
+
+test("night bookings depend on the owner's rule", () => {
+  const q = (l: "en" | "ms") => industries[l].salons.faqs.find((f) => /night|malam/i.test(f.q));
+  assert.match(q("en")!.a, /^Yes, when you allow it in setup\./);
+  assert.match(q("ms")!.a, /^Boleh, jika anda membenarkannya dalam persediaan\./);
+});
+
+test("the WhatsApp plan answer uses the waiting-for-Meta wording", () => {
+  assert.ok(faq.en.groups.whatsapp.faq.plan.a.startsWith("WhatsApp is waiting for Meta's approval."));
+  assert.ok(faq.ms.groups.whatsapp.faq.plan.a.startsWith("WhatsApp sedang menunggu kelulusan Meta."));
+});
+
+test("the breadcrumb is a labelled nav with a list", () => {
+  const src = readFileSync("web/components/public/pages/article.tsx", "utf8");
+  assert.match(src, /<nav className="crumb[^"]*" aria-label=\{c\.article\.breadcrumb\}>\s*<ol>/);
+  assert.equal(common.en.article.breadcrumb, "Breadcrumb");
+  assert.equal(common.ms.article.breadcrumb, "Laluan");
+});
+
+test("the sample plate number is obviously made up", () => {
+  const text = strings(industries).join("\n");
+  assert.doesNotMatch(text, /ABC 1234/);
+  assert.match(text, /XYZ 0000/);
+});
+
+test("BM uses one word for appointment and plain phone wording", () => {
+  const ms = strings([howItWorks.ms, forwarding.ms, languages.ms, faq.ms, industries.ms, industriesIndex.ms]).join("\n");
+  assert.doesNotMatch(ms, /janji temu|menyerahkan|tuturkan|memegang talian|tanpa jarak|atau lantai|Menyuruh|buat masa ini|berterus terang|Adakah percubaan|Apa berlaku/);
+});

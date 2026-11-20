@@ -155,7 +155,7 @@ const en: Record<IndustrySlug, IndustryCopy> = {
         { call: "Can I come in on Saturday for a cut?", does: "Finds a free time, reads it back to the caller and records the booking in JomCall." },
         { call: "How much is a colour for long hair?", does: "Gives the price from your price list, including any “from” price as you wrote it." },
         { call: "How long does a rebonding take?", does: "Answers from the duration in your price list." },
-        { call: "Is Kak Mira working tomorrow?", does: "When you list your stylists in setup, it books with the one the caller asks for." },
+        { call: "Is Kak Mira working tomorrow?", does: "When you add your stylists on JomCall's Bookings page, it books with the one the caller asks for." },
         { call: "I need to change my appointment.", does: "Takes a message so your staff can move it." },
       ],
     },
@@ -182,11 +182,11 @@ const en: Record<IndustrySlug, IndustryCopy> = {
     faqs: [
       {
         q: "Can the agent book with a particular stylist?",
-        a: "Yes. When you list your stylists in setup, the agent books with the stylist the caller asks for, at a time that stylist is free.",
+        a: "Yes. When you add your stylists on JomCall's Bookings page, the agent books with the stylist the caller asks for, at a time that stylist is free.",
       },
       {
         q: "Can it take bookings at night?",
-        a: "Yes. The agent answers day and night and books into the free times you have set, so a late-night caller can book for the next day.",
+        a: "Yes, when you allow it in setup. The agent answers day and night and books into the free times you have set, so a late-night caller can book for the next day.",
       },
       {
         q: "Does JomCall send booking reminders to customers?",
@@ -203,7 +203,7 @@ const en: Record<IndustrySlug, IndustryCopy> = {
     title: "AI receptionist for car workshops",
     description:
       "JomCall answers your workshop's calls in BM, English, Manglish and Mandarin while the mechanics are under a car, answers simple questions from your facts and takes a clear message for the mechanic.",
-    h1: "A clear message for the mechanic, every time the bay is busy.",
+    h1: "A clear message for the mechanic while the bay is busy.",
     lead: "When everyone is under a car, the phone rings out. JomCall answers, handles the simple questions from your facts, and leaves the mechanic a message with everything needed to call back.",
     summary: "Clear messages for the mechanic, and answers to the simple questions.",
     calls: {
@@ -222,10 +222,10 @@ const en: Record<IndustrySlug, IndustryCopy> = {
       { who: "agent", text: "Good morning, Bengkel Contoh. I'm the workshop's AI assistant. How can I help?" },
       { who: "caller", text: "Hi, I sent my Saga in yesterday for the brakes. Is it ready?" },
       { who: "agent", text: "I can't see the progress of the work, but I'll leave a message for the mechanic. What's the plate number?" },
-      { who: "caller", text: "ABC 1234." },
+      { who: "caller", text: "XYZ 0000." },
       { who: "agent", text: "Thank you. Should the mechanic call you back on this number?" },
       { who: "caller", text: "Yes, this one." },
-      { who: "event", text: "Message saved for the mechanic: Saga, brakes, ABC 1234, call back" },
+      { who: "event", text: "Message saved for the mechanic: Saga, brakes, XYZ 0000, call back" },
     ],
     sampleOutcome: "The mechanic sees the message in JomCall and calls the customer back.",
     setupType: setupType("car-workshops", "en"),
@@ -259,15 +259,15 @@ const en: Record<IndustrySlug, IndustryCopy> = {
   "aircond-home-repair": {
     title: "AI receptionist for aircond and home repair contractors",
     description:
-      "JomCall answers calls for your aircond or home repair business in BM, English, Manglish and Mandarin: prices from your list, the areas you cover, visits booked when you set visit times, and job details as a message.",
-    h1: "Every job request written down, even from the top of a ladder.",
+      "JomCall answers calls for your aircond or home repair business in BM, English, Manglish and Mandarin: prices from your list, the areas you cover, visits booked when you add visit times on JomCall's Bookings page, and job details as a message.",
+    h1: "Job requests written down, even from the top of a ladder.",
     lead: "You are on a job when the next customer calls. JomCall answers, tells them what you charge and where you go, and writes down the job so you can call back with a time.",
     summary: "Job requests, the areas you cover, prices and service visits.",
     calls: {
       heading: "The calls a contractor gets",
       body: ["A contractor's calls are job requests. Each one needs the same details, and the agent asks for them."],
       rows: [
-        { call: "My aircond is leaking water. Can someone come?", does: "Takes the address area, the number of units and the problem. If you set visit times, it books a visit into JomCall." },
+        { call: "My aircond is leaking water. Can someone come?", does: "Takes the address area, the number of units and the problem. If you add visit times on JomCall's Bookings page, it books a visit into JomCall." },
         { call: "How much to service two units?", does: "Gives the price from your price list." },
         { call: "Do you cover Shah Alam?", does: "Answers from the areas you cover." },
         { call: "Can you install a new unit this week?", does: "Takes the details as a message, for you to quote and confirm." },
@@ -300,7 +300,7 @@ const en: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Can it book a service visit?",
-        a: "Yes, when you set visit times. It finds a free time, reads it back to the caller and records the visit in JomCall. Otherwise it takes the job details as a message.",
+        a: "Yes, when you add visit times on JomCall's Bookings page. It finds a free time, reads it back to the caller and records the visit in JomCall. Otherwise it takes the job details as a message.",
       },
       {
         q: "Does it know which areas I cover?",
@@ -345,7 +345,7 @@ const en: Record<IndustrySlug, IndustryCopy> = {
     setup: {
       heading: "How setup fits a restaurant",
       body: [
-        "In setup, pick the business type below. The questions that follow ask about your opening hours, what callers can reserve and what a table request should include.",
+        "In setup, pick the business type below. Its name mentions bookings, but the agent takes table requests as messages for your staff to confirm. The questions that follow ask about your opening hours, what callers can reserve and what a table request should include.",
         "Bring your menu as a photo, PDF, CSV file or pasted text, so the agent can answer questions about dishes and prices. You check each row before it goes in.",
       ],
     },
@@ -372,18 +372,18 @@ const en: Record<IndustrySlug, IndustryCopy> = {
   "tuition-centres": {
     title: "AI receptionist for tuition centres",
     description:
-      "JomCall answers parents' calls to your tuition centre in BM, English, Manglish and Mandarin: fees and class times from your list, centre visits when you set visit times, and the parent's details as a message for your staff.",
+      "JomCall answers parents' calls to your tuition centre in BM, English, Manglish and Mandarin: fees and class times from your list, centre visits when you add visit times on JomCall's Bookings page, and the parent's details as a message for your staff.",
     h1: "Parents' questions answered, even during class.",
     lead: "Parents call about fees, class times and places while you are teaching. JomCall answers from your fee list and timetable, and takes the parent's details for your staff to follow up.",
     summary: "Fees, class times, centre visits and messages from parents.",
     calls: {
       heading: "The calls a tuition centre gets",
-      body: ["Most parents ask the same things before they sign up. The agent answers them and makes sure no parent is lost."],
+      body: ["Most parents ask the same things before they sign up. The agent answers them and takes the parent's details for your staff to follow up."],
       rows: [
         { call: "What are the fees for Form 4 Maths?", does: "Gives the fee from your list of classes." },
         { call: "Which days is the class?", does: "Answers from the class times you set." },
         { call: "Is there a place for my son?", does: "Takes the parent's details and the child's level for your staff. It does not promise a place." },
-        { call: "Can we come and see the centre?", does: "If you set visit times, it books a visit into JomCall. Otherwise it takes a message." },
+        { call: "Can we come and see the centre?", does: "If you add visit times on JomCall's Bookings page, it books a visit into JomCall. Otherwise it takes a message." },
         { call: "Can I speak to the teacher?", does: "During opening hours, passes the caller straight to your staff. Outside opening hours, takes a message." },
       ],
     },
@@ -412,7 +412,7 @@ const en: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Can it tell parents whether a class is full?",
-        a: "Not yet. Your staff confirm places. The agent takes the parent's details so nobody is missed.",
+        a: "Not yet. Your staff confirm places. The agent takes the parent's details for your staff to follow up.",
       },
       {
         q: "Can parents speak to it in Mandarin?",
@@ -420,7 +420,7 @@ const en: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Can it book a visit to the centre?",
-        a: "Yes, when you set visit times. It finds a free time, reads it back and records the visit in JomCall.",
+        a: "Yes, when you add visit times on JomCall's Bookings page. It finds a free time, reads it back and records the visit in JomCall.",
       },
     ],
   },
@@ -432,20 +432,20 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
   clinics: {
     title: "Penyambut tetamu AI untuk klinik di Malaysia",
     description:
-      "JomCall menjawab panggilan klinik anda dalam BM, bahasa Inggeris, Manglish dan Mandarin: waktu operasi, caj dan arah lokasi, janji temu yang ditempah dengan masa diulang kepada pemanggil, dan pesanan untuk staf anda.",
+      "JomCall menjawab panggilan klinik anda dalam BM, bahasa Inggeris, Manglish dan Mandarin: waktu operasi, caj dan arah lokasi, temu janji yang ditempah dengan masa diulang kepada pemanggil, dan pesanan untuk staf anda.",
     h1: "Penyambut tetamu untuk telefon klinik anda.",
-    lead: "Pesakit menelefon untuk tanya sama ada klinik buka, berapa caj rawatan dan bila mereka boleh datang. JomCall menjawab dalam bahasa mereka, menempah janji temu dan meninggalkan yang selebihnya untuk staf anda.",
-    summary: "Waktu operasi, caj, janji temu dan pesanan untuk doktor.",
+    lead: "Pesakit menelefon untuk tanya sama ada klinik buka, berapa caj rawatan dan bila mereka boleh datang. JomCall menjawab dalam bahasa mereka, menempah temu janji dan meninggalkan yang selebihnya untuk staf anda.",
+    summary: "Waktu operasi, caj, temu janji dan pesanan untuk doktor.",
     calls: {
       heading: "Panggilan yang klinik terima",
       body: ["Kebanyakan panggilan ke klinik ialah soalan yang sama, dan selalunya datang ketika kaunter sedang penuh."],
       rows: [
         { call: "Klinik buka sekarang? Sampai pukul berapa?", does: "Menjawab berdasarkan waktu operasi yang anda tetapkan." },
-        { call: "Berapa caj jumpa doktor?", does: "Memberi caj daripada senarai harga anda. Kalau caj itu tiada, ia berterus terang dan mengambil pesanan." },
-        { call: "Boleh jumpa doktor esok pagi?", does: "Mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan janji temu dalam JomCall." },
+        { call: "Berapa caj jumpa doktor?", does: "Memberi caj daripada senarai harga anda. Kalau caj itu tiada, ia memberitahu pemanggil dan mengambil pesanan." },
+        { call: "Boleh jumpa doktor esok pagi?", does: "Mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan temu janji dalam JomCall." },
         { call: "Klinik di mana? Ada parking?", does: "Menjawab berdasarkan alamat dan arah lokasi anda." },
         { call: "Saya ada soalan untuk doktor.", does: "Mengambil pesanan dengan nama, nombor dan soalan pemanggil. Ia tidak memberi nasihat perubatan." },
-        { call: "Ayah saya sakit dada.", does: "Menyuruh pemanggil menelefon 999 atau pergi ke jabatan kecemasan yang terdekat dengan segera." },
+        { call: "Ayah saya sakit dada.", does: "Meminta pemanggil menelefon 999 atau pergi ke jabatan kecemasan yang terdekat dengan segera." },
       ],
     },
     sampleBusiness: "Klinik Contoh",
@@ -460,7 +460,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       { who: "caller", text: "Ya, terima kasih." },
       { who: "event", text: "Ditempah dalam JomCall: esok, 10:00 pagi" },
     ],
-    sampleOutcome: "Staf anda melihat janji temu itu dalam senarai tempahan JomCall.",
+    sampleOutcome: "Staf anda melihat temu janji itu dalam senarai tempahan JomCall.",
     setupType: setupType("clinics", "ms"),
     setup: {
       heading: "Persediaan untuk klinik",
@@ -475,12 +475,12 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
         a: "Tidak. Ia tidak membuat diagnosis atau mencadangkan ubat. Soalan untuk doktor menjadi pesanan untuk staf anda, dan pemanggil yang menceritakan kecemasan disuruh menelefon 999.",
       },
       {
-        q: "Bolehkah pesakit menukar atau membatalkan janji temu melalui ejen?",
-        a: "Belum lagi. Ejen mengambil pesanan supaya staf anda boleh menukar atau membatalkan janji temu itu.",
+        q: "Bolehkah pesakit menukar atau membatalkan temu janji melalui ejen?",
+        a: "Belum lagi. Ejen mengambil pesanan supaya staf anda boleh menukar atau membatalkan temu janji itu.",
       },
       {
-        q: "Bolehkah ejen menyerahkan panggilan ke kaunter?",
-        a: "Boleh, dalam waktu operasi. Ia menyerahkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
+        q: "Bolehkah ejen menyambungkan panggilan ke kaunter?",
+        a: "Boleh, dalam waktu operasi. Ia menyambungkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
       },
       {
         q: "Butiran kesihatan apa yang ejen catat?",
@@ -494,7 +494,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     description:
       "JomCall menjawab panggilan salun anda dalam BM, bahasa Inggeris, Manglish dan Mandarin, menempah gunting, warna dan rawatan dengan masa diulang kepada pemanggil, dan menjawab soalan harga dan tempoh daripada senarai harga anda.",
     h1: "Tempahan diambil ketika tangan anda sibuk.",
-    lead: "Telefon berbunyi semasa anda sedang mewarna, menggunting atau membuat rawatan muka. JomCall mengangkat, menjawab soalan harga dan menempah slot, jadi anda boleh terus melayan pelanggan di kerusi.",
+    lead: "Telefon berbunyi semasa anda sedang mewarna, menggunting atau membuat rawatan muka. JomCall mengangkat telefon, menjawab soalan harga dan menempah slot, jadi anda boleh terus melayan pelanggan di kerusi.",
     summary: "Tempahan gunting, warna dan rawatan, dengan harga dan tempoh.",
     calls: {
       heading: "Panggilan yang salun terima",
@@ -503,7 +503,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
         { call: "Boleh datang hari Sabtu untuk gunting rambut?", does: "Mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan tempahan dalam JomCall." },
         { call: "Berapa harga warna untuk rambut panjang?", does: "Memberi harga daripada senarai harga anda, termasuk harga “bermula dari” seperti yang anda tulis." },
         { call: "Rebonding ambil masa berapa lama?", does: "Menjawab berdasarkan tempoh dalam senarai harga anda." },
-        { call: "Kak Mira kerja esok?", does: "Apabila anda senaraikan pendandan dalam persediaan, ia menempah dengan pendandan yang pemanggil minta." },
+        { call: "Kak Mira kerja esok?", does: "Apabila anda tambah pendandan di halaman Tempahan JomCall, ia menempah dengan pendandan yang pemanggil minta." },
         { call: "Saya nak tukar masa temu janji.", does: "Mengambil pesanan supaya staf anda boleh mengubahnya." },
       ],
     },
@@ -530,11 +530,11 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     faqs: [
       {
         q: "Bolehkah ejen menempah dengan pendandan tertentu?",
-        a: "Boleh. Apabila anda senaraikan pendandan dalam persediaan, ejen menempah dengan pendandan yang pemanggil minta, pada masa pendandan itu kosong.",
+        a: "Boleh. Apabila anda tambah pendandan di halaman Tempahan JomCall, ejen menempah dengan pendandan yang pemanggil minta, pada masa pendandan itu kosong.",
       },
       {
         q: "Bolehkah ia mengambil tempahan pada waktu malam?",
-        a: "Boleh. Ejen menjawab siang dan malam dan menempah dalam masa kosong yang anda tetapkan, jadi pemanggil lewat malam boleh menempah untuk esok.",
+        a: "Boleh, jika anda membenarkannya dalam persediaan. Ejen menjawab siang dan malam dan menempah dalam masa kosong yang anda tetapkan, jadi pemanggil lewat malam boleh menempah untuk esok.",
       },
       {
         q: "Adakah JomCall menghantar peringatan tempahan kepada pelanggan?",
@@ -551,7 +551,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     title: "Penyambut tetamu AI untuk bengkel kereta",
     description:
       "JomCall menjawab panggilan bengkel anda dalam BM, bahasa Inggeris, Manglish dan Mandarin ketika mekanik sedang di bawah kereta, menjawab soalan mudah daripada fakta anda dan mengambil pesanan yang jelas untuk mekanik.",
-    h1: "Pesanan yang jelas untuk mekanik, setiap kali bengkel sibuk.",
+    h1: "Pesanan yang jelas untuk mekanik ketika bengkel sibuk.",
     lead: "Apabila semua orang di bawah kereta, telefon tidak berjawab. JomCall menjawab, mengurus soalan mudah daripada fakta anda, dan meninggalkan pesanan untuk mekanik dengan semua butiran yang diperlukan untuk menelefon semula.",
     summary: "Pesanan yang jelas untuk mekanik, dan jawapan kepada soalan mudah.",
     calls: {
@@ -559,10 +559,10 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       body: ["Banyak panggilan ialah pelanggan yang bertanya tentang kereta mereka, dan jawapannya ada pada mekanik. Ejen memastikan soalan itu sampai kepada mekanik."],
       rows: [
         { call: "Kereta saya dah siap?", does: "Mengambil pesanan dengan nama, nombor telefon dan nombor plat pemanggil, supaya mekanik boleh menelefon semula. Ia tidak menyemak perkembangan kerja." },
-        { call: "Berapa harga servis biasa untuk Myvi?", does: "Memberi harga daripada senarai harga anda. Kalau harga bergantung pada kereta, ia berterus terang dan mengambil pesanan." },
+        { call: "Berapa harga servis biasa untuk Myvi?", does: "Memberi harga daripada senarai harga anda. Kalau harga bergantung pada kereta, ia memberitahu pemanggil dan mengambil pesanan." },
         { call: "Hari Ahad buka?", does: "Menjawab berdasarkan waktu operasi yang anda tetapkan." },
         { call: "Kereta saya tak boleh hidup. Boleh datang?", does: "Mengambil lokasi dan masalahnya sebagai pesanan untuk mekanik." },
-        { call: "Boleh cakap dengan foreman?", does: "Dalam waktu operasi, menyerahkan pemanggil terus kepada staf anda. Di luar waktu operasi, mengambil pesanan." },
+        { call: "Boleh cakap dengan foreman?", does: "Dalam waktu operasi, menyambungkan pemanggil terus kepada staf anda. Di luar waktu operasi, mengambil pesanan." },
       ],
     },
     sampleBusiness: "Bengkel Contoh",
@@ -570,10 +570,10 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       { who: "agent", text: "Selamat pagi, Bengkel Contoh. Saya pembantu AI bengkel. Boleh saya bantu?" },
       { who: "caller", text: "Hai, semalam saya hantar Saga untuk baiki brek. Dah siap ke?" },
       { who: "agent", text: "Saya tak dapat lihat perkembangan kerja, tapi saya tinggalkan pesanan untuk mekanik. Nombor plat kereta?" },
-      { who: "caller", text: "ABC 1234." },
+      { who: "caller", text: "XYZ 0000." },
       { who: "agent", text: "Terima kasih. Mekanik boleh telefon semula ke nombor ini?" },
       { who: "caller", text: "Ya, nombor ini." },
-      { who: "event", text: "Pesanan untuk mekanik disimpan: Saga, brek, ABC 1234, telefon semula" },
+      { who: "event", text: "Pesanan untuk mekanik disimpan: Saga, brek, XYZ 0000, telefon semula" },
     ],
     sampleOutcome: "Mekanik melihat pesanan itu dalam JomCall dan menelefon pelanggan semula.",
     setupType: setupType("car-workshops", "ms"),
@@ -598,8 +598,8 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
         a: "Nama, nombor telefon dan keperluan pemanggil, serta butiran yang anda minta dalam persediaan, seperti nombor plat dan model kereta.",
       },
       {
-        q: "Bolehkah ejen menyerahkan panggilan kepada foreman?",
-        a: "Boleh, dalam waktu operasi. Ia menyerahkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
+        q: "Bolehkah ejen menyambungkan panggilan kepada foreman?",
+        a: "Boleh, dalam waktu operasi. Ia menyambungkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
       },
     ],
   },
@@ -607,15 +607,15 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
   "aircond-home-repair": {
     title: "Penyambut tetamu AI untuk kontraktor aircond dan pembaikan rumah",
     description:
-      "JomCall menjawab panggilan perniagaan aircond atau pembaikan rumah anda dalam BM, bahasa Inggeris, Manglish dan Mandarin: harga daripada senarai anda, kawasan yang anda liputi, lawatan yang ditempah apabila anda menetapkan masa lawatan, dan butiran kerja sebagai pesanan.",
-    h1: "Setiap permintaan kerja dicatat, walaupun anda di atas tangga.",
+      "JomCall menjawab panggilan perniagaan aircond atau pembaikan rumah anda dalam BM, bahasa Inggeris, Manglish dan Mandarin: harga daripada senarai anda, kawasan yang anda liputi, lawatan yang ditempah apabila anda menambah masa lawatan di halaman Tempahan JomCall, dan butiran kerja sebagai pesanan.",
+    h1: "Permintaan kerja dicatat, walaupun anda di atas tangga.",
     lead: "Anda sedang buat kerja apabila pelanggan seterusnya menelefon. JomCall menjawab, memberitahu caj dan kawasan anda, dan mencatat kerja itu supaya anda boleh menelefon semula untuk menetapkan masa.",
     summary: "Permintaan kerja, kawasan liputan, harga dan lawatan servis.",
     calls: {
       heading: "Panggilan yang kontraktor terima",
       body: ["Panggilan ke kontraktor ialah permintaan kerja. Setiap satu perlukan butiran yang sama, dan ejen akan bertanya."],
       rows: [
-        { call: "Aircond saya bocor air. Boleh datang tengok?", does: "Mengambil kawasan alamat, bilangan unit dan masalahnya. Kalau anda tetapkan masa lawatan, ia menempah lawatan dalam JomCall." },
+        { call: "Aircond saya bocor air. Boleh datang tengok?", does: "Mengambil kawasan alamat, bilangan unit dan masalahnya. Kalau anda tambah masa lawatan di halaman Tempahan JomCall, ia menempah lawatan dalam JomCall." },
         { call: "Berapa harga servis dua unit?", does: "Memberi harga daripada senarai harga anda." },
         { call: "Ada cover Shah Alam?", does: "Menjawab berdasarkan kawasan yang anda liputi." },
         { call: "Boleh pasang unit baharu minggu ini?", does: "Mengambil butirannya sebagai pesanan, untuk anda beri sebut harga dan sahkan." },
@@ -648,7 +648,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Bolehkah ia menempah lawatan servis?",
-        a: "Boleh, apabila anda tetapkan masa lawatan. Ia mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan lawatan dalam JomCall. Jika tidak, ia mengambil butiran kerja sebagai pesanan.",
+        a: "Boleh, apabila anda tambah masa lawatan di halaman Tempahan JomCall. Ia mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan lawatan dalam JomCall. Jika tidak, ia mengambil butiran kerja sebagai pesanan.",
       },
       {
         q: "Adakah ia tahu kawasan yang saya liputi?",
@@ -656,7 +656,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Bagaimana dengan kerja kecemasan pada waktu malam?",
-        a: "Ejen mengambil butirannya sebagai pesanan. Ia menyerahkan panggilan kepada staf anda hanya dalam waktu operasi.",
+        a: "Ejen mengambil butirannya sebagai pesanan. Ia menyambungkan panggilan kepada staf anda hanya dalam waktu operasi.",
       },
     ],
   },
@@ -666,7 +666,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     description:
       "JomCall menjawab panggilan restoran anda dalam BM, bahasa Inggeris, Manglish dan Mandarin ketika waktu puncak: waktu operasi, lokasi, hidangan dan harga daripada menu anda, dan permintaan meja diambil sebagai pesanan untuk staf.",
     h1: "Jawapan untuk telefon yang berbunyi ketika waktu makan malam.",
-    lead: "Tiada siapa boleh tinggalkan dapur atau lantai pada pukul lapan malam untuk menerangkan lokasi restoran. JomCall menjawab soalan biasa daripada fakta dan menu anda, dan mencatat permintaan meja untuk staf.",
+    lead: "Tiada siapa boleh tinggalkan dapur atau ruang makan pada pukul lapan malam untuk menerangkan lokasi restoran. JomCall menjawab soalan biasa daripada fakta dan menu anda, dan mencatat permintaan meja untuk staf.",
     summary: "Waktu operasi, lokasi, soalan menu dan permintaan meja.",
     calls: {
       heading: "Panggilan yang restoran terima",
@@ -674,9 +674,9 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       rows: [
         { call: "Malam ni buka? Sampai pukul berapa?", does: "Menjawab berdasarkan waktu operasi yang anda tetapkan." },
         { call: "Restoran di mana? Ada parking?", does: "Menjawab berdasarkan alamat dan arah lokasi anda." },
-        { call: "Ada menu vegetarian?", does: "Menjawab daripada menu dan fakta yang anda tulis. Kalau tiada, ia berterus terang dan mengambil pesanan." },
+        { call: "Ada menu vegetarian?", does: "Menjawab daripada menu dan fakta yang anda tulis. Kalau tiada, ia memberitahu pemanggil dan mengambil pesanan." },
         { call: "Boleh dapat meja untuk enam orang pukul lapan?", does: "Mengambil permintaan itu sebagai pesanan dengan nama, nombor, tarikh, masa dan bilangan orang, untuk staf anda sahkan." },
-        { call: "Boleh cakap dengan pengurus?", does: "Dalam waktu operasi, menyerahkan pemanggil terus kepada staf anda. Di luar waktu operasi, mengambil pesanan." },
+        { call: "Boleh cakap dengan pengurus?", does: "Dalam waktu operasi, menyambungkan pemanggil terus kepada staf anda. Di luar waktu operasi, mengambil pesanan." },
       ],
     },
     sampleBusiness: "Restoran Contoh",
@@ -693,7 +693,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     setup: {
       heading: "Persediaan untuk restoran",
       body: [
-        "Dalam persediaan, pilih jenis perniagaan di bawah. Soalan seterusnya bertanya tentang waktu operasi, apa yang pemanggil boleh tempah dan apa yang perlu ada dalam permintaan meja.",
+        "Dalam persediaan, pilih jenis perniagaan di bawah. Namanya menyebut tempahan, tetapi ejen mengambil permintaan meja sebagai pesanan untuk staf anda sahkan. Soalan seterusnya bertanya tentang waktu operasi, apa yang pemanggil boleh tempah dan apa yang perlu ada dalam permintaan meja.",
         "Bawa menu anda sebagai foto, PDF, fail CSV atau teks yang ditampal, supaya ejen boleh menjawab soalan tentang hidangan dan harga. Anda semak setiap baris sebelum ia dimasukkan.",
       ],
     },
@@ -704,15 +704,15 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Bolehkah ia menjawab soalan tentang menu?",
-        a: "Boleh. Ia menjawab tentang hidangan dan harga daripada menu yang anda bawa semasa persediaan. Kalau sesuatu tiada dalam menu, ia berterus terang.",
+        a: "Boleh. Ia menjawab tentang hidangan dan harga daripada menu yang anda bawa semasa persediaan. Kalau sesuatu tiada dalam menu, ia memberitahu pemanggil.",
       },
       {
         q: "Adakah ia menjawab soalan tentang status halal?",
         a: "Hanya berdasarkan apa yang anda tulis dalam fakta. Kalau anda tidak menulis apa-apa tentangnya, ejen memberitahu bahawa ia tidak tahu dan mengambil pesanan.",
       },
       {
-        q: "Bolehkah ejen menyerahkan panggilan kepada restoran?",
-        a: "Boleh, dalam waktu operasi. Ia menyerahkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
+        q: "Bolehkah ejen menyambungkan panggilan kepada restoran?",
+        a: "Boleh, dalam waktu operasi. Ia menyambungkan pemanggil terus kepada staf anda. Di luar waktu operasi, ia mengambil pesanan.",
       },
     ],
   },
@@ -720,19 +720,19 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
   "tuition-centres": {
     title: "Penyambut tetamu AI untuk pusat tuisyen",
     description:
-      "JomCall menjawab panggilan ibu bapa ke pusat tuisyen anda dalam BM, bahasa Inggeris, Manglish dan Mandarin: yuran dan waktu kelas daripada senarai anda, lawatan ke pusat apabila anda menetapkan masa lawatan, dan butiran ibu bapa sebagai pesanan untuk staf.",
+      "JomCall menjawab panggilan ibu bapa ke pusat tuisyen anda dalam BM, bahasa Inggeris, Manglish dan Mandarin: yuran dan waktu kelas daripada senarai anda, lawatan ke pusat apabila anda menambah masa lawatan di halaman Tempahan JomCall, dan butiran ibu bapa sebagai pesanan untuk staf.",
     h1: "Soalan ibu bapa dijawab, walaupun semasa kelas.",
     lead: "Ibu bapa menelefon tentang yuran, waktu kelas dan tempat kosong ketika anda sedang mengajar. JomCall menjawab daripada senarai yuran dan jadual anda, dan mengambil butiran ibu bapa untuk staf membuat susulan.",
     summary: "Yuran, waktu kelas, lawatan ke pusat dan pesanan ibu bapa.",
     calls: {
       heading: "Panggilan yang pusat tuisyen terima",
-      body: ["Kebanyakan ibu bapa bertanya perkara yang sama sebelum mendaftar. Ejen menjawabnya dan memastikan tiada ibu bapa yang tercicir."],
+      body: ["Kebanyakan ibu bapa bertanya perkara yang sama sebelum mendaftar. Ejen menjawabnya dan mengambil butiran ibu bapa untuk staf membuat susulan."],
       rows: [
         { call: "Berapa yuran Matematik Tingkatan 4?", does: "Memberi yuran daripada senarai kelas anda." },
         { call: "Kelas hari apa?", does: "Menjawab berdasarkan waktu kelas yang anda tetapkan." },
         { call: "Ada tempat untuk anak lelaki saya?", does: "Mengambil butiran ibu bapa dan tahap anak untuk staf anda. Ia tidak menjanjikan tempat." },
-        { call: "Boleh kami datang tengok pusat?", does: "Kalau anda tetapkan masa lawatan, ia menempah lawatan dalam JomCall. Jika tidak, ia mengambil pesanan." },
-        { call: "Boleh saya cakap dengan cikgu?", does: "Dalam waktu operasi, menyerahkan pemanggil terus kepada staf anda. Di luar waktu operasi, mengambil pesanan." },
+        { call: "Boleh kami datang tengok pusat?", does: "Kalau anda tambah masa lawatan di halaman Tempahan JomCall, ia menempah lawatan dalam JomCall. Jika tidak, ia mengambil pesanan." },
+        { call: "Boleh saya cakap dengan cikgu?", does: "Dalam waktu operasi, menyambungkan pemanggil terus kepada staf anda. Di luar waktu operasi, mengambil pesanan." },
       ],
     },
     sampleBusiness: "Pusat Tuisyen Contoh",
@@ -760,7 +760,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Bolehkah ia memberitahu ibu bapa sama ada kelas sudah penuh?",
-        a: "Belum lagi. Staf anda yang mengesahkan tempat. Ejen mengambil butiran ibu bapa supaya tiada sesiapa tercicir.",
+        a: "Belum lagi. Staf anda yang mengesahkan tempat. Ejen mengambil butiran ibu bapa untuk staf membuat susulan.",
       },
       {
         q: "Bolehkah ibu bapa bercakap dengannya dalam Mandarin?",
@@ -768,7 +768,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Bolehkah ia menempah lawatan ke pusat?",
-        a: "Boleh, apabila anda tetapkan masa lawatan. Ia mencari masa yang kosong, mengulang masa itu dan merekodkan lawatan dalam JomCall.",
+        a: "Boleh, apabila anda tambah masa lawatan di halaman Tempahan JomCall. Ia mencari masa yang kosong, mengulang masa itu dan merekodkan lawatan dalam JomCall.",
       },
     ],
   },

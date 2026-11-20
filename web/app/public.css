@@ -2307,6 +2307,13 @@ body:has(.public) {
 .public .crumb {
   margin-bottom: var(--space-2);
 }
+.public .crumb ol {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .public .crumb a {
   display: inline-flex;
   align-items: center;

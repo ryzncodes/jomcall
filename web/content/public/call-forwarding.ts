@@ -10,6 +10,7 @@ export const FORWARD_CODES = [
   { id: "no-answer", start: "**61*", stop: "##61#" },
   { id: "busy", start: "**67*", stop: "##67#" },
 ] as const;
+const [allCode] = FORWARD_CODES;
 
 type CodeRow = { name: string; when: string };
 
@@ -40,7 +41,7 @@ const en: ForwardingCopy = {
     lead: "Your customers keep calling the number they know. You send that line's calls on to your JomCall number, and the agent answers them. Here is how, on a mobile line and on an office line.",
   },
   codes: {
-    heading: "The three codes",
+    heading: "The forwarding codes",
     lead: "On a mobile line, each kind of forwarding has a start code and a stop code. Type the start code, your JomCall number and #, then press call.",
     start: "Start",
     stop: "Stop",
@@ -97,7 +98,7 @@ const en: ForwardingCopy = {
       },
       {
         q: "How do I stop forwarding?",
-        a: "Type the stop code that matches the start code you used and press call. For example, ##21# stops forwarding every call.",
+        a: `Type the stop code that matches the start code you used and press call. For example, ${allCode.stop} stops forwarding every call.`,
       },
       {
         q: "Does my line provider charge for forwarded calls?",
@@ -116,7 +117,7 @@ const ms: ForwardingCopy = {
     lead: "Pelanggan terus menelefon nombor yang mereka kenal. Anda hantar panggilan talian itu ke nombor JomCall anda, dan ejen yang menjawabnya. Ini caranya, untuk talian mudah alih dan talian pejabat.",
   },
   codes: {
-    heading: "Tiga kod",
+    heading: "Kod pemajuan",
     lead: "Bagi talian mudah alih, setiap jenis pemajuan ada kod mula dan kod henti. Taip kod mula, nombor JomCall anda dan #, kemudian tekan panggil.",
     start: "Mula",
     stop: "Henti",
@@ -126,7 +127,7 @@ const ms: ForwardingCopy = {
       { name: "Hanya apabila anda tidak menjawab", when: "Telefon anda berdering dahulu. Kalau tiada siapa angkat, panggilan diteruskan ke JomCall." },
       { name: "Hanya apabila talian anda sibuk", when: "Semasa anda sedang bercakap dalam panggilan lain, pemanggil seterusnya pergi ke JomCall." },
     ],
-    note: "Aplikasi memaparkan nombor JomCall anda sebaik sahaja ia disediakan. Taip nombor itu cara tempatan, bermula dengan 0, tanpa jarak.",
+    note: "Aplikasi memaparkan nombor JomCall anda sebaik sahaja ia disediakan. Taip nombor itu cara tempatan, bermula dengan 0, tanpa ruang.",
   },
   choose: {
     heading: "Yang mana patut dipilih",
@@ -139,7 +140,7 @@ const ms: ForwardingCopy = {
   mobile: {
     heading: "Talian mudah alih",
     steps: [
-      "Guna telefon yang memegang talian yang pelanggan anda telefon.",
+      "Guna telefon yang ada SIM untuk nombor yang pelanggan anda telefon.",
       "Buka pad kekunci dan taip kod mula, kemudian nombor JomCall anda, kemudian #.",
       "Tekan panggil.",
       "Untuk berhenti, taip kod henti yang sepadan dengan cara yang sama dan tekan panggil.",
@@ -173,7 +174,7 @@ const ms: ForwardingCopy = {
       },
       {
         q: "Bagaimana cara menghentikan pemajuan?",
-        a: "Taip kod henti yang sepadan dengan kod mula yang anda guna, kemudian tekan panggil. Contohnya, ##21# menghentikan pemajuan semua panggilan.",
+        a: `Taip kod henti yang sepadan dengan kod mula yang anda guna, kemudian tekan panggil. Contohnya, ${allCode.stop} menghentikan pemajuan semua panggilan.`,
       },
       {
         q: "Adakah pembekal talian mengenakan caj untuk panggilan yang dimajukan?",
