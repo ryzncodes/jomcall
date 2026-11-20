@@ -1,8 +1,8 @@
 // The trust page, in English and Bahasa Melayu (spec sections 3 and 5,
 // Tier 2). Plain facts only, each from a row of the spec section 3 table or
-// from web/lib/operator.ts. The providers who receive data are quoted from
-// the privacy notice (web/messages/legal.ts), never restated here. No
-// certification or compliance claim of any kind.
+// from web/lib/operator.ts. Which providers receive data is left to the
+// privacy notice, which a fact row links to. No certification or compliance
+// claim of any kind.
 import { whatsappWaiting } from "../../lib/launch.ts";
 import type { Bilingual, FaqItem, PageCopy } from "./types.ts";
 
@@ -14,7 +14,8 @@ export type TrustCopy = {
   // Operator facts are filled in from web/lib/operator.ts: {name}, {reg}.
   operator: { fact: string; detail: string };
   source: { fact: string; detail: string; link: string };
-  providers: { heading: string; lead: string; from: string; link: string };
+  // A row pointing to the privacy notice for the providers that receive data.
+  providers: { fact: string; detail: string; link: string };
   documents: { heading: string; lead: string; privacy: string; terms: string };
   faq: { heading: string; items: FaqItem[] };
 };
@@ -23,7 +24,7 @@ const en: TrustCopy = {
   page: {
     title: "Trust: how JomCall handles calls and data",
     description:
-      "Plain facts about JomCall: calls are not recorded, the AI says it is an AI, which providers receive data and where it is stored, export and delete, the public source code and who runs the service.",
+      "Plain facts about JomCall: calls are not recorded, the AI says it is an AI, where to read which providers receive data, export and delete, the public source code and who runs the service.",
     h1: "What JomCall does with your calls and data",
     lead: "Plain facts, each one you can check. For the full text, read the privacy notice and the terms of use.",
   },
@@ -35,7 +36,7 @@ const en: TrustCopy = {
     rows: [
       {
         fact: "Calls are not recorded.",
-        detail: "The agent turns the caller's speech into text so it can reply. The providers that do this are listed below, quoted from the privacy notice.",
+        detail: "The agent turns the caller's speech into text so it can reply. The privacy notice names the providers that do this.",
       },
       {
         fact: "The AI says it is an AI.",
@@ -69,10 +70,9 @@ const en: TrustCopy = {
     link: "Read the source code",
   },
   providers: {
-    heading: "Who receives data, and where",
-    lead: "Quoted word for word from the privacy notice.",
-    from: "From the privacy notice",
-    link: "Read the whole section",
+    fact: "The providers that receive data are named.",
+    detail: "The privacy notice lists each provider that receives data, what for, and where it is stored.",
+    link: "Read the privacy notice",
   },
   documents: {
     heading: "The full text",
@@ -103,7 +103,7 @@ const ms: TrustCopy = {
   page: {
     title: "Kepercayaan: cara JomCall mengurus panggilan dan data",
     description:
-      "Fakta jelas tentang JomCall: panggilan tidak dirakam, AI memberitahu bahawa ia AI, pembekal yang menerima data dan tempat ia disimpan, eksport dan padam, kod sumber terbuka dan siapa yang mengendalikan perkhidmatan ini.",
+      "Fakta jelas tentang JomCall: panggilan tidak dirakam, AI memberitahu bahawa ia AI, tempat membaca pembekal yang menerima data, eksport dan padam, kod sumber terbuka dan siapa yang mengendalikan perkhidmatan ini.",
     h1: "Apa yang JomCall buat dengan panggilan dan data anda",
     lead: "Fakta yang jelas, dan setiap satu boleh anda semak. Untuk teks penuh, baca notis privasi dan terma penggunaan.",
   },
@@ -115,7 +115,7 @@ const ms: TrustCopy = {
     rows: [
       {
         fact: "Panggilan tidak dirakam.",
-        detail: "Ejen menukar percakapan pemanggil kepada teks supaya ia boleh membalas. Pembekal yang melakukannya disenaraikan di bawah, dipetik daripada notis privasi.",
+        detail: "Ejen menukar percakapan pemanggil kepada teks supaya ia boleh membalas. Notis privasi menamakan pembekal yang melakukannya.",
       },
       {
         fact: "AI memberitahu bahawa ia AI.",
@@ -149,10 +149,9 @@ const ms: TrustCopy = {
     link: "Baca kod sumber",
   },
   providers: {
-    heading: "Siapa yang menerima data, dan di mana",
-    lead: "Dipetik kata demi kata daripada notis privasi.",
-    from: "Daripada notis privasi",
-    link: "Baca bahagian penuh",
+    fact: "Pembekal yang menerima data dinamakan.",
+    detail: "Notis privasi menyenaraikan setiap pembekal yang menerima data, untuk apa, dan di mana ia disimpan.",
+    link: "Baca notis privasi",
   },
   documents: {
     heading: "Teks penuh",

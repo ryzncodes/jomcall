@@ -9,9 +9,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { PUBLIC_PAGES, canonicalPage, localePath } from "../../web/lib/site.ts";
 import { pageMetadata } from "../../web/lib/public-meta.ts";
 import { whatsappWaiting } from "../../web/lib/launch.ts";
-import { legalAnchors } from "../../web/components/public/legal-anchors.ts";
-import { providersSection } from "../../web/components/public/providers.ts";
-import { legalCopy } from "../../web/messages/legal.ts";
 import { llmsText } from "../../web/lib/llms.ts";
 import {
   COMPARE_SLUGS,
@@ -116,22 +113,13 @@ test("the trust page makes no compliance or certification claim", () => {
   assert.doesNotMatch(page, /complian|certif|patuh|PDPA/i);
 });
 
-test("the trust page quotes the privacy notice's provider list word for word", () => {
-  for (const locale of LOCALES) {
-    const quote = providersSection(locale);
-    const doc = legalCopy[locale].privacy;
-    const index = doc.sections.findIndex((s) => s.heading === quote.heading);
-    assert.ok(index >= 0, locale);
-    assert.equal(quote.anchor, legalAnchors(doc)[index].id);
-    assert.deepEqual(quote.list, doc.sections[index].list);
-    assert.ok(quote.list!.some((item) => /Singapore|Singapura/.test(item)));
-    // Not the section on the AI notice, which mentions recording.
-    assert.doesNotMatch(quote.heading, /record|rakam/i);
-  }
+test("the trust page is fact rows and document links only, nothing quoted from the legal text", () => {
   const page = readFileSync("web/components/public/pages/trust.tsx", "utf8");
-  assert.match(page, /providersSection\(locale\)/);
+  assert.doesNotMatch(page, /<blockquote|legalCopy\[locale\]\.privacy\.sections|providersSection/);
+  // The providers row points to the privacy notice, in the facts table.
+  assert.match(page, /fact: t\.providers\.fact[\s\S]*?href=\{privacy\}/);
   assert.match(page, /\(\["privacy", "terms"\] as const\)\.map/);
-  assert.match(page, /<blockquote cite=/);
+  for (const locale of LOCALES) assert.doesNotMatch(trust[locale].providers.detail, /record|rakam|WhatsApp|Meta/i);
 });
 
 test("the trust facts start with calls not being recorded and the AI disclosure", () => {

@@ -4,20 +4,25 @@ import { localePath, type PublicLocale } from "@/lib/site";
 import { legalCopy } from "@/messages/legal";
 import { Arrow } from "../icons";
 import { fillOperator } from "../operator";
-import { providersSection } from "../providers";
-import { ArticlePage, MoreLink } from "./article";
+import { ArticlePage } from "./article";
 
 // The trust page: the facts as plain rows (from spec section 3 and the
-// operator facts), the privacy notice's provider list quoted word for word,
-// and links to the privacy notice and the terms. No certification or
-// compliance claim.
+// operator facts) and links to the privacy notice and the terms. No
+// certification or compliance claim.
 export function TrustPage({ locale }: { locale: PublicLocale }) {
   const t = trust[locale];
-  const quote = providersSection(locale);
   const privacy = localePath("privacy", locale);
   const rows = [
     ...t.facts.rows.map((r) => ({ fact: r.fact, detail: <>{r.detail}</> })),
     { fact: t.operator.fact, detail: <>{fillOperator(t.operator.detail)}</> },
+    {
+      fact: t.providers.fact,
+      detail: (
+        <>
+          {t.providers.detail} <a href={privacy}>{t.providers.link}</a>
+        </>
+      ),
+    },
     {
       fact: t.source.fact,
       detail: (
@@ -59,33 +64,6 @@ export function TrustPage({ locale }: { locale: PublicLocale }) {
                 ))}
               </dl>
             </div>
-          ),
-        },
-        {
-          id: "providers",
-          heading: t.providers.heading,
-          lead: t.providers.lead,
-          children: (
-            <figure className="trust-quote">
-              <blockquote cite={`${privacy}#${quote.anchor}`}>
-                {quote.paragraphs.map((p) => (
-                  <p key={p}>{fillOperator(p)}</p>
-                ))}
-                {quote.list && (
-                  <ul>
-                    {quote.list.map((item) => (
-                      <li key={item}>{fillOperator(item)}</li>
-                    ))}
-                  </ul>
-                )}
-              </blockquote>
-              <figcaption className="t-small t-muted">
-                <span>
-                  {t.providers.from}: <cite>{quote.heading}</cite>
-                </span>
-                <MoreLink href={`${privacy}#${quote.anchor}`}>{t.providers.link}</MoreLink>
-              </figcaption>
-            </figure>
           ),
         },
         {
