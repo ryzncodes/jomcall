@@ -178,6 +178,28 @@ If the owner approves it later, the design should hold at least these:
 | Website | A plain https fetch, then the existing reader (Anthropic `claude-haiku-5-5`) | The page's text goes to Anthropic, as uploads already do. The fetch runs in the agent process; it needs no new key. | Ask later, with the safety list above. |
 | Facebook, Instagram, LinkedIn, TikTok | None for this use. Their terms forbid automated collection. Their official APIs need app review and the page owner's own sign-in. | — | Never fetch. The owner pastes the text (5.2). |
 
+### 6.1 Free options checked (owner asked, 2026-11-21: "anything that's free ... if not, let's park it")
+
+Checked on 2026-11-21 from vendors' public pages and repositories, by web search. Nothing was signed up for or called.
+
+- **Google Maps / Business Profile: parked.**
+  - *Cost.* The Places API has a free monthly allowance per SKU. Opening hours, phone number and website are Enterprise fields in Place Details (New), and the Enterprise allowance is 1,000 requests a month. That is enough for setup at JomCall's size. [Usage and billing](https://developers.google.com/maps/documentation/places/web-service/usage), [Place Details (New)](https://developers.google.com/maps/documentation/places/web-service/place-details)
+  - *Card on file.* Google Maps Platform needs a billing account even within the free allowance. This is from general knowledge and was not re-checked today.
+  - *The blocker is the terms, not the price.* Google's Places policy forbids pre-fetching, indexing, storing or caching Places content. Only the place ID may be kept. [Places API policies](https://developers.google.com/maps/documentation/places/web-service/policies)
+  - *Why that rules it out.* A published agent version freezes its facts. Copying Google's hours into it would be storing Places content, which conflicts with that policy.
+  - *Scrapers.* Free GitHub scrapers for Google Maps exist, but they break Google's terms and are not considered.
+- **Facebook, Instagram, LinkedIn, TikTok: parked.** Free scrapers exist on GitHub, but all break the platforms' terms and get accounts blocked. LinkedIn has sued scrapers. The sanctioned APIs need app review and the page owner's sign-in. The owner pastes the text instead (5.2).
+- **OpenStreetMap: not useful.** It is free, but few Malaysian SMEs are listed there, and its database licence (ODbL) carries share-alike duties on stored data.
+- **Website: free, and allowed by the site's own owner.**
+  - *How it would work.* A plain https fetch of the owner's own site, from the agent process. A free open-source extractor, Mozilla Readability (Apache-2.0), would pull the text out of the page.
+  - *Structured details.* The fetch would also read schema.org `LocalBusiness` data. Many site builders put opening hours, address and phone there in a machine-readable form.
+  - *Cost.* The text then goes through the existing reader, so the only cost is the reader's model call that uploads already make.
+  - *Limit.* Pages built only in the browser come back nearly empty. A headless browser (Playwright, Apache-2.0) would fix that, but it is too heavy for the one 1-vCPU, 2 GB server.
+  - *Alternative not taken.* Jina's hosted Reader is free with rate limits and its code is Apache-2.0 ([jina.ai/reader](https://jina.ai/reader)). It sends the address to another company, so it is not recommended.
+  - *Approval.* This is the only free route left. It is still a new outbound fetch: it needs the owner's explicit yes, with the safety list above.
+
+**Result.** Google, the social platforms and OpenStreetMap are parked. Website reading waits on one yes from the owner. Until then, links are stored, not read (5.2a).
+
 ## 7. Decisions (my recommendations, accepted under the owner's delegation of 2026-11-21)
 
 - F1. Approach A: extend the Home checklist.
@@ -190,7 +212,8 @@ If the owner approves it later, the design should hold at least these:
 - F8. No website or Google listing fetch in this work (section 6). It goes back to the owner as a separate yes or no.
 - F9. The agent page gets no list of its own.
 - F10 (owner's request, 2026-11-21; the form is my call). A "Your links" card on setup's review page stores website, Facebook, Instagram, TikTok, LinkedIn and Google Maps links into the existing `social_links` fact. They are checked without being opened, and are never fetched.
-- Open for the owner: whether to approve the Google Places API as a new outbound service for reading Maps links (section 6). Not asked yet, and not needed for this work.
+- F11 (owner, 2026-11-21: free only, else park). Google Maps reading, social-page reading and OpenStreetMap are parked (6.1).
+- Open for the owner: whether to approve a free website fetch from the agent process (6.1). Asked 2026-11-21.
 
 ## 8. Risks
 
