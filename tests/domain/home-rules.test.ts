@@ -8,9 +8,11 @@ import {
   isLive,
   klDayRange,
   needsYou,
+  keepLastGood,
   todayCounts,
   type HomeFacts,
 } from "../../web/lib/core/home-rules.ts";
+import { needText, todayParts } from "../../web/components/core/home/copy.ts";
 
 const any = (v: unknown) => v as never;
 const owner = (f: Partial<HomeFacts> = {}): HomeFacts => ({
@@ -180,4 +182,55 @@ test("review: phone button only when the plan includes a number", () => {
   const s = step(fullOwner({ phones: p }), "phone")!;
   assert.equal(s.state, "todo");
   assert.equal(s.href, null);
+});
+
+test("minors: plan step knows an unpaid fee", () => {
+  const s = step(fullOwner({ plan: plan("unpaid") }), "plan")!;
+  assert.equal(s.state, "todo");
+  assert.equal(s.unpaid, true);
+  assert.equal(step(fullOwner({ plan: plan("none") }), "plan")!.unpaid, undefined);
+});
+
+test("minors: a failed poll keeps the last good value", () => {
+  const prev = fullOwner({ published: true, phones: phones([]) });
+  const next = { ...prev, phones: undefined, wallet: undefined };
+  const kept = keepLastGood(prev, next);
+  assert.deepEqual(kept.phones, prev.phones);
+  assert.deepEqual(kept.wallet, prev.wallet);
+  assert.equal(keepLastGood(undefined, next).phones, undefined);
+  // A new value always wins, and the viewer's role and publish come from now.
+  const changed = { ...next, plan: plan("charged"), published: false };
+  assert.equal(keepLastGood(prev, changed).plan!.periodState, "charged");
+  assert.equal(keepLastGood(prev, changed).published, false);
+  // A change of viewer role drops what the other role read.
+  assert.equal(keepLastGood(prev, { ...next, manager: false }).phones, undefined);
+});
+
+const en = (a: string, _b: string) => a;
+const bm = (_a: string, b: string) => b;
+test("minors: plurals in the today line", () => {
+  assert.deepEqual(todayParts({ calls: 1, missed: 1, bookings: 1, balanceSen: null }, en).map((p) => p.text), [
+    "1 call",
+    "1 not answered",
+    "1 booking",
+  ]);
+  assert.deepEqual(todayParts({ calls: 2, missed: 0, bookings: 0, balanceSen: 4210 }, en).map((p) => p.text), [
+    "2 calls",
+    "0 not answered",
+    "0 bookings",
+    "RM 42.10",
+  ]);
+  assert.equal(todayParts({ calls: null, missed: null, bookings: null, balanceSen: 4210 }, en)[0].label, "Wallet");
+  assert.equal(todayParts({ calls: null, missed: null, bookings: null, balanceSen: 4210 }, bm)[0].label, "Dompet");
+});
+
+test("minors: plurals in the needs list", () => {
+  const n = (id: string, count: number) => needText(any({ id, count, href: "" }), en, null);
+  assert.equal(n("bookings", 1), "1 booking to confirm");
+  assert.equal(n("bookings", 2), "2 bookings to confirm");
+  assert.equal(n("chats", 1), "1 WhatsApp chat waiting for you");
+  assert.equal(n("chats", 3), "3 WhatsApp chats waiting for you");
+  assert.equal(n("gaps", 1), "1 question the agent could not answer");
+  assert.equal(n("gaps", 2), "2 questions the agent could not answer");
+  assert.equal(needText(any({ id: "bookings", count: 1, href: "" }), bm, null), "1 tempahan perlu disahkan");
 });

@@ -2784,6 +2784,9 @@
   font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
+.home-today-label {
+  color: var(--secondary);
+}
 .home-needs ul {
   list-style: none;
   margin: 0;
