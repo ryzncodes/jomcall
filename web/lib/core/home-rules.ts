@@ -54,8 +54,14 @@ export type ChecklistFacts = {
 };
 
 // The phone line is offered when the service has telephony configured.
+// An active number counts too, as in the firstRun read, so Home and the
+// sidebar agree where no phone service is configured (a local workspace).
 function phoneOffered(f: HomeFacts) {
-  return !!f.phones?.provider.configured || !!f.channels?.phone;
+  return (
+    !!f.phones?.provider.configured ||
+    !!f.channels?.phone ||
+    !!f.phones?.items.some((n) => n.active)
+  );
 }
 // A paid plan with a started period. Pay as you go is where every
 // workspace starts, and the plan card reads it as "choose a plan"; an

@@ -230,7 +230,7 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
             activeE164={run.phone.activeE164}
           />
         )}
-        <ol className="setup-next">
+        <ul className="setup-next">
           <li>
             <strong>{w("Connect WhatsApp", "Sambungkan WhatsApp")}</strong>
             {hosted && WHATSAPP_WAITING_FOR_META ? (
@@ -249,7 +249,7 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
               </>
             )}
           </li>
-        </ol>
+        </ul>
         <div className="setup-next-more">
           <a className="setup-link" href={href("/app/test")}>
             {w("Try a call", "Cuba buat panggilan")}

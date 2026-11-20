@@ -84,7 +84,7 @@ export function LinksCard({ item }: { item: SetupItem | undefined }) {
         </button>
       </div>
       {open && (
-        <div id={`${id}-fields`}>
+        <div id={`${id}-fields`} className="setup-links-fields">
           <p className="setup-hint">
             {w(
               "Customers who ask get these links. JomCall does not open or read them.",

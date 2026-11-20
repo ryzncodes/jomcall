@@ -1378,6 +1378,21 @@
   overflow-wrap: anywhere;
   white-space: pre-line;
 }
+/* Review page, "Your links": one field per kind, spaced so each note sits
+   with its own field. */
+.setup-links-fields {
+  display: grid;
+  gap: 14px;
+}
+.setup-links-fields .product-field {
+  margin: 0;
+}
+.setup-links-fields .product-field small {
+  display: block;
+  margin-top: 4px;
+  color: var(--secondary);
+  font-size: 13px;
+}
 .setup-card-actions {
   display: flex;
   gap: 8px;
@@ -2635,23 +2650,18 @@
 /* Setup, after publish: the steps that put the agent in front of customers. */
 .setup-next {
   list-style: none;
-  counter-reset: setup-next;
   display: grid;
   gap: 12px;
   margin: 0;
   padding: 0;
 }
 .setup-next > li {
-  counter-increment: setup-next;
   display: grid;
   gap: 8px;
   padding: 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
-}
-.setup-next > li > strong::before {
-  content: counter(setup-next) ". ";
 }
 .setup-next > li > p {
   color: var(--secondary);
@@ -2837,6 +2847,11 @@
   }
   .home-steps .button {
     margin-left: 36px;
+  }
+  /* A step with a note (step six's forwarding line) takes the row beside
+     its icon, and its button moves under it. */
+  .home-step-label:has(small) {
+    flex-basis: calc(100% - 36px);
   }
   .home-needs.core-panel {
     padding: 20px 16px;

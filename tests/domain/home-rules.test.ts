@@ -298,3 +298,15 @@ test("stepsFrom: the firstRun read gives the same list as Home", () => {
   assert.equal(liveFrom(c), false);
   assert.equal(liveFrom({ ...c, firstCall: call }), true);
 });
+
+test("checklist: an active number counts as a phone line without a provider, as on the server", () => {
+  const f = withRun(null, {
+    plan: plan("charged"),
+    published: true,
+    channels: channels(false),
+    phones: phones([{ active: true, e164: "+60311112222" }], null, false),
+  });
+  assert.equal(step(f, "phone")!.state, "done");
+  assert.equal(step(f, "call")!.state, "todo");
+  assert.equal(isLive(f), false);
+});
