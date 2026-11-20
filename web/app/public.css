@@ -2829,3 +2829,438 @@ body:has(.public) {
     line-height: 26px;
   }
 }
+
+/* -------------------------------------------------------- Tier 2 pages */
+
+/* The comparison table: one row per topic. Phones: the topic, then each
+   option with its own visible label, JomCall's on a faint wash. From 768 px:
+   three columns under a header row; the labels stay for screen readers. */
+.public .cmp-table {
+  border-radius: var(--radius-16);
+  background: var(--surface);
+  box-shadow: var(--ring);
+  overflow: hidden;
+}
+.public .cmp-table :where(dl, dd) {
+  margin: 0;
+}
+.public .cmp-row {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: inset 0 -1px 0 var(--line);
+}
+.public .cmp-table dl > .cmp-row:last-child {
+  box-shadow: none;
+}
+.public .cmp-head {
+  display: none;
+}
+.public .cmp-row dt {
+  font-family: var(--face-display);
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.public .cmp-row dd {
+  display: grid;
+  gap: var(--space-1);
+  font-size: 15px;
+  line-height: 22px;
+}
+.public .cmp-them {
+  color: var(--muted);
+}
+.public .cmp-us {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-8);
+  background: var(--wash);
+}
+.public .cmp-who {
+  color: var(--muted);
+}
+@media (min-width: 768px) {
+  .public .cmp-row {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 4fr) minmax(0, 4fr);
+    gap: var(--space-4);
+    align-items: start;
+  }
+  .public .cmp-row dt {
+    font-size: 17px;
+    line-height: 22px;
+  }
+  .public .cmp-head.cmp-row {
+    display: grid;
+    padding-block: var(--space-3);
+    background: var(--wash);
+    color: var(--muted);
+  }
+  .public .cmp-head span:last-child {
+    color: var(--ink);
+  }
+  .public .cmp-us {
+    padding: 0;
+    background: none;
+  }
+  .public .cmp-who {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* When each is better: the other option first, then JomCall on lime. */
+.public .cmp-better {
+  display: grid;
+  gap: var(--space-4);
+}
+.public .cmp-side {
+  display: grid;
+  gap: var(--space-4);
+  align-content: start;
+  padding: var(--space-5);
+  border-radius: var(--radius-16);
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+.public .cmp-side[data-us] {
+  background: var(--lime);
+  color: var(--on-lime);
+  box-shadow: none;
+}
+.public .cmp-side ul {
+  display: grid;
+  gap: var(--space-3);
+}
+.public .cmp-side li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+.public .cmp-side svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: var(--space-1);
+}
+@media (min-width: 641px) {
+  .public .cmp-better {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* The WhatsApp status, right under the lead. */
+.public .cmp-waiting {
+  display: grid;
+  gap: var(--space-1);
+  max-width: var(--measure);
+  margin-top: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-12);
+  background: var(--lime);
+  color: var(--on-lime);
+}
+.public .cmp-waiting strong {
+  font-family: var(--face-display);
+  font-weight: 600;
+}
+
+/* The worksheet: the one bold moment of the missed-calls guide. The fields
+   and the result read as one object: a light ledger on top, a dark panel
+   with the figure below. The panel keeps its colours in the dark theme. */
+.public .ws {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  min-width: 0;
+}
+.public .ws-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-5);
+  padding: var(--space-5);
+  border-radius: var(--radius-24) var(--radius-24) 0 0;
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+.public .ws-example {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-8);
+  background: var(--wash);
+  color: var(--muted);
+}
+.public .ws-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.public .ws-label {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 500;
+}
+.public .ws-box {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 56px;
+  padding-inline: var(--space-4);
+  border-radius: var(--radius-8);
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow var(--t-micro) var(--ease);
+}
+.public .ws-box:focus-within {
+  box-shadow: inset 0 0 0 2px var(--focus);
+}
+.public .ws-box input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 32px;
+  word-spacing: 0;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.public .ws-box input:focus-visible {
+  outline: none;
+}
+.public .ws-box input::-webkit-inner-spin-button,
+.public .ws-box input::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+.public .ws-box input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.public .ws-unit {
+  flex: none;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 22px;
+}
+.public .ws-out {
+  --w-bg: #1f3a2e;
+  --w-ink: #eef3ea;
+  --w-muted: #b9cbbf;
+  --w-lime: #d6eba8;
+  --w-track: rgb(238 243 234 / 0.14);
+  display: grid;
+  gap: var(--space-2);
+  margin-top: calc(var(--space-4) * -1);
+  padding: var(--space-5);
+  border-radius: 0 0 var(--radius-24) var(--radius-24);
+  background: var(--w-bg);
+  color: var(--w-ink);
+}
+[data-theme="dark"] .public .ws-out {
+  --w-bg: #1a3328;
+  box-shadow: 0 0 0 1px rgb(214 235 168 / 0.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .public .ws-out {
+    --w-bg: #1a3328;
+    box-shadow: 0 0 0 1px rgb(214 235 168 / 0.16);
+  }
+}
+.public .ws-out-label,
+.public .ws-working,
+.public .ws-line-name {
+  color: var(--w-muted);
+}
+.public .ws-out-label {
+  font-size: 15px;
+  line-height: 22px;
+}
+.public .ws-amount {
+  color: var(--w-lime);
+  font-size: 48px;
+  line-height: 56px;
+  letter-spacing: -0.02em;
+  word-spacing: -0.25em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.public .ws-working {
+  word-spacing: 0;
+}
+.public .ws-lines {
+  gap: var(--space-5);
+}
+.public .ws-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-2) var(--space-4);
+}
+.public .ws-fig {
+  font-size: 28px;
+  line-height: 34px;
+  word-spacing: -0.25em;
+  font-variant-numeric: tabular-nums;
+}
+.public .ws-line[data-us] .ws-fig {
+  color: var(--w-lime);
+}
+.public .ws-fig[data-empty] {
+  font-family: var(--face-text);
+  font-size: 15px;
+  line-height: 22px;
+  word-spacing: normal;
+  color: var(--w-muted);
+}
+.public .ws-bar {
+  grid-column: 1 / -1;
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--w-track);
+  overflow: hidden;
+}
+.public .ws-bar i {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-pill);
+  background: var(--w-ink);
+  transition: width var(--t-std) var(--ease);
+}
+.public .ws-line[data-us] .ws-bar i {
+  background: var(--w-lime);
+}
+.public .ws-out :focus-visible {
+  outline-color: var(--w-lime);
+}
+@media (min-width: 641px) {
+  .public .ws-field {
+    grid-template-columns: minmax(0, 1fr) 208px;
+    align-items: center;
+    gap: var(--space-1) var(--space-5);
+  }
+  .public .ws-box {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .public .ws-amount {
+    font-size: 64px;
+    line-height: 64px;
+  }
+}
+
+/* The trust page: the facts reuse the framed table; links inside a cell. */
+.public .trust-facts dd a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+.public .trust-quote {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+.public .trust-quote blockquote {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: var(--space-5);
+  border-radius: var(--radius-16);
+  background: var(--surface);
+  box-shadow: var(--ring);
+  font-size: 15px;
+  line-height: 22px;
+}
+.public .trust-quote ul {
+  display: grid;
+  gap: var(--space-2);
+}
+.public .trust-quote li {
+  position: relative;
+  padding-left: var(--space-4);
+}
+.public .trust-quote li::before {
+  content: "";
+  position: absolute;
+  top: var(--space-2);
+  left: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--forest);
+}
+.public .trust-quote figcaption {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-1);
+}
+.public .trust-quote cite {
+  font-style: normal;
+  color: var(--ink);
+}
+.public .trust-docs {
+  display: grid;
+  gap: var(--space-3);
+}
+.public .trust-doc {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name arrow" "note arrow";
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-16);
+  background: var(--surface);
+  box-shadow: var(--ring);
+}
+.public .trust-doc-name {
+  grid-area: name;
+  font-family: var(--face-display);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.public .trust-doc .t-small {
+  grid-area: note;
+}
+.public .trust-doc svg {
+  grid-area: arrow;
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+  transition: transform var(--t-micro) var(--ease);
+}
+.public .trust-doc:hover {
+  box-shadow: 0 0 0 1px var(--ink);
+}
+.public .trust-doc:hover svg {
+  transform: translateX(2px);
+  color: var(--ink);
+}
+@media (min-width: 641px) {
+  .public .trust-docs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Guides: two links side by side; the index's quiet line. */
+.public .guide-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-5);
+}
+.public .index-foot {
+  max-width: var(--measure);
+  margin-top: var(--space-5);
+}

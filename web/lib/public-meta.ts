@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { isIndexable, localePath, siteOrigin, type PublicLocale, type PublicPageId } from "./site.ts";
+import { canonicalPage, isIndexable, localePath, siteOrigin, type PublicLocale, type PublicPageId } from "./site.ts";
 
 export function pageMetadata(
   id: PublicPageId,
@@ -7,8 +7,11 @@ export function pageMetadata(
   { title, description }: { title: string; description: string },
 ): Metadata {
   const origin = siteOrigin() ?? "";
-  const en = origin + localePath(id, "en");
-  const ms = origin + localePath(id, "ms");
+  // A page that names another page as canonical points its canonical, its
+  // language alternates and its Open Graph URL there, so the signals agree.
+  const target = canonicalPage(id);
+  const en = origin + localePath(target, "en");
+  const ms = origin + localePath(target, "ms");
   const url = locale === "en" ? en : ms;
   return {
     title,

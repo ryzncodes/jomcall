@@ -470,10 +470,14 @@ test("robots: closed everywhere but jomcall.com", () => {
   assert.equal(robots().sitemap, "https://jomcall.com/sitemap.xml");
 });
 
-test("sitemap: 50 urls with en and ms alternates on jomcall.com, empty elsewhere", () => {
+test("sitemap: 48 canonical urls with en and ms alternates on jomcall.com, empty elsewhere", () => {
   set(PROD);
   const map = sitemap();
-  assert.equal(map.length, 50);
+  // 25 pages in two languages, less the forwarding guide, whose canonical
+  // is /call-forwarding (Task 8).
+  assert.equal(map.length, 48);
+  assert.ok(!map.some((e) => e.url.includes("/guides/call-forwarding-malaysia")));
+  assert.ok(map.some((e) => e.url === "https://jomcall.com/call-forwarding"));
   for (const entry of map) {
     const langs = (entry.alternates as { languages: Record<string, string> }).languages;
     assert.ok(langs.en?.startsWith("https://jomcall.com") && langs.ms?.startsWith("https://jomcall.com"));
@@ -497,8 +501,12 @@ test("llms.txt: 404 off jomcall.com, every url and no banned claim on it", async
   assert.equal(res.status, 200);
   const body = await res.text();
   assert.equal(body, llmsText());
-  for (const { id } of PUBLIC_PAGES)
-    for (const l of ["en", "ms"] as const) assert.ok(body.includes(`https://jomcall.com${localePath(id, l)})`), id + l);
+  for (const { id, canonical } of PUBLIC_PAGES)
+    for (const l of ["en", "ms"] as const) {
+      const listed = body.includes(`https://jomcall.com${localePath(id, l)})`);
+      // A page whose canonical is another page is not listed as its own page.
+      assert.equal(listed, !canonical, id + l);
+    }
   assert.deepEqual(findBannedClaims(body, "llms"), []);
   assert.ok(body.includes("RM 49.00") && body.includes("RM 129.00"));
   assert.ok(body.includes("waiting for Meta's approval"));

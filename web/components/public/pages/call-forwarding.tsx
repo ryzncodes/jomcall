@@ -1,5 +1,6 @@
-import { FORWARD_CODES, forwarding } from "@/content/public/call-forwarding";
+import { forwarding } from "@/content/public/call-forwarding";
 import type { PublicLocale } from "@/lib/site";
+import { CodesCard } from "../codes-card";
 import { ArticlePage, Points, Prose } from "./article";
 
 // The call forwarding guide: the app's three code pairs as a code card, which
@@ -19,37 +20,7 @@ export function CallForwardingPage({ locale }: { locale: PublicLocale }) {
           id: "codes",
           heading: codes.heading,
           lead: codes.lead,
-          children: (
-            <>
-              <ol className="codes-card">
-                {FORWARD_CODES.map((code, i) => (
-                  <li key={code.id} className="code-item">
-                    <div className="code-text">
-                      <h3 className="t-h3">{codes.rows[i].name}</h3>
-                      <p className="t-small t-muted">{codes.rows[i].when}</p>
-                    </div>
-                    <dl className="code-keys">
-                      <div>
-                        <dt className="t-label t-muted">{codes.start}</dt>
-                        <dd>
-                          <code className="key t-data">{code.start}</code>
-                          <var className="key-slot">{codes.number}</var>
-                          <code className="key t-data">#</code>
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="t-label t-muted">{codes.stop}</dt>
-                        <dd>
-                          <code className="key t-data">{code.stop}</code>
-                        </dd>
-                      </div>
-                    </dl>
-                  </li>
-                ))}
-              </ol>
-              <p className="t-small t-muted codes-note">{codes.note}</p>
-            </>
-          ),
+          children: <CodesCard locale={locale} />,
         },
         { id: "choose", heading: t.choose.heading, children: <Points items={t.choose.items} /> },
         {

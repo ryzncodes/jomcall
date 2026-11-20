@@ -25,13 +25,21 @@ const PAGES = [
   { id: "guides", path: "/guides" },
   { id: "guides-what-is-an-ai-receptionist", path: "/guides/what-is-an-ai-receptionist", parent: "guides" },
   { id: "guides-missed-calls-cost", path: "/guides/missed-calls-cost", parent: "guides" },
-  { id: "guides-call-forwarding-malaysia", path: "/guides/call-forwarding-malaysia", parent: "guides" },
+  // Shares most of its facts with /call-forwarding, so it names that page as
+  // its canonical (NOTES.md, Task 8): the sitemap and llms.txt leave it out.
+  {
+    id: "guides-call-forwarding-malaysia",
+    path: "/guides/call-forwarding-malaysia",
+    parent: "guides",
+    canonical: "call-forwarding",
+  },
   { id: "privacy", path: "/privacy" },
   { id: "terms", path: "/terms" },
 ] as const satisfies readonly {
   id: string;
   path: string;
   parent?: string;
+  canonical?: string;
 }[];
 
 export type PublicPageId = (typeof PAGES)[number]["id"];
@@ -40,7 +48,15 @@ export const PUBLIC_PAGES: readonly {
   id: PublicPageId;
   path: string;
   parent?: PublicPageId;
+  // Set when the page's canonical URL is another page's.
+  canonical?: PublicPageId;
 }[] = PAGES;
+
+// The page whose URL is this page's canonical: itself, unless the registry
+// names another page.
+export function canonicalPage(id: PublicPageId): PublicPageId {
+  return PUBLIC_PAGES.find((p) => p.id === id)?.canonical ?? id;
+}
 
 export function localePath(id: PublicPageId, locale: PublicLocale): string {
   const page = PUBLIC_PAGES.find((p) => p.id === id);

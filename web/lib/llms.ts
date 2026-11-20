@@ -5,6 +5,9 @@ import { home } from "../content/public/home.ts";
 import { howItWorks } from "../content/public/how-it-works.ts";
 import { INDUSTRY_SLUGS, industries, industriesIndex } from "../content/public/industries.ts";
 import { languages } from "../content/public/languages.ts";
+import { COMPARE_SLUGS, compare, compareIndex } from "../content/public/compare.ts";
+import { GUIDE_SLUGS, guides, guidesIndex } from "../content/public/guides.ts";
+import { trust } from "../content/public/trust.ts";
 import { pricing } from "../content/public/pricing.ts";
 import { legalCopy } from "../messages/legal.ts";
 import { whatsappWaiting } from "./launch.ts";
@@ -16,7 +19,8 @@ import { PUBLIC_PAGES, localePath, siteOrigin, type PublicLocale, type PublicPag
 // prices come from web/lib/pricing.ts. Nothing here states a wait time, and
 // WhatsApp is described as waiting for Meta.
 // Each page is described by its own meta description, taken from its
-// content module; a page not built yet falls back to its nav label.
+// content module; a page not built yet falls back to its nav label. A page
+// whose canonical is another page is not listed (it would be a duplicate).
 function describe(id: PublicPageId, locale: PublicLocale): string {
   if (id === "home") return home[locale].meta.description;
   if (id === "pricing") return pricing[locale].meta.description;
@@ -27,6 +31,13 @@ function describe(id: PublicPageId, locale: PublicLocale): string {
   if (id === "industries") return industriesIndex[locale].page.description;
   const slug = INDUSTRY_SLUGS.find((s) => id === `industries-${s}`);
   if (slug) return industries[locale][slug].description;
+  if (id === "compare") return compareIndex[locale].page.description;
+  const versus = COMPARE_SLUGS.find((s) => id === `compare-${s}`);
+  if (versus) return compare[locale][versus].description;
+  if (id === "trust") return trust[locale].page.description;
+  if (id === "guides") return guidesIndex[locale].page.description;
+  const guide = GUIDE_SLUGS.find((s) => id === `guides-${s}`);
+  if (guide) return guides[locale][guide].description;
   if (id === "privacy" || id === "terms") return legalCopy[locale][id].title;
   return common[locale].pages[id];
 }
@@ -36,7 +47,7 @@ export function llmsText(): string {
   const [starter, growth, payg] = publicPlans;
   const minutes = (s: number) => s / 60;
   const list = (locale: PublicLocale) =>
-    PUBLIC_PAGES.map(
+    PUBLIC_PAGES.filter((p) => !p.canonical).map(
       ({ id }) => `- [${common[locale].pages[id]}](${origin}${localePath(id, locale)}): ${describe(id, locale)}`,
     ).join("\n");
 
