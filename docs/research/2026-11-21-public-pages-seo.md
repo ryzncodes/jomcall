@@ -129,6 +129,12 @@ features that ship today, and marks any sample as made up.
 1. **Language in the path:** English at `/…`, BM at `/ms/…`, for public pages
    only (`/app` keeps `?lang`). Old `?lang=ms` public links get a 301 redirect.
    The server sends the right `<html lang>`.
+   *Amended 2026-11-21 (build):* the build sends `<html lang="en">` on every
+   page, because Next has a single root layout. BM pages instead set
+   `<main lang="ms">` (and `lang` on the public shell), send the
+   `Content-Language: ms` header, and run a pre-paint script that sets
+   `document.documentElement.lang` to `ms`. See `NOTES.md` (Task 10) for the
+   deviation.
 2. **Static public pages:** built once and served from the edge. The theme
    follows the device setting plus the existing toggle, not the URL.
 3. **Per-page metadata:** title, description, canonical, hreflang (`en`, `ms`,

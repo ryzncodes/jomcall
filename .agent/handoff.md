@@ -1,5 +1,29 @@
 # Handoff
 
+## 2026-11-21: public pages and SEO (branch `feat/public-pages-seo`, pull request not yet open, not merged)
+
+**What changed**
+- 25 public pages in English (`/…`) and Bahasa Melayu (`/ms/…`), all static: home, pricing (with an estimator), how it works, call forwarding, languages, FAQ, six industry pages and their index, four comparison pages and their index, trust, three guides and their index, privacy, terms. New "Kaunter" design on the public shell, dark theme, a sample call card on home.
+- Per-page title, description, canonical, hreflang and Open Graph; JSON-LD; `robots.txt`, `sitemap.xml` and `llms.txt` (hosted build only). Indexing turns on only when the hosted origin's host is `jomcall.com` (`isIndexable()` in `web/lib/site.ts`); `staging.jomcall.com` stays `noindex` with robots disallowing everything. A hosted build fails without `APP_ORIGIN`.
+- Old `?lang=ms` public links redirect (301) to `/ms/…` and keep `?theme`. BM pages are built with `<html lang="en">` (one root layout) and carry `main[lang=ms]`, `Content-Language: ms` and a pre-paint script that sets `lang="ms"` (see `NOTES.md`, Task 10).
+- A claims guard (`web/content/public/claims.ts`) fails the tests on banned claims (never miss a call, unlimited, recording, free trial, PDPA compliant, Tamil, calendar sync, WhatsApp as available, a stated wait for the number).
+- Sign-up and log-in side panel lists the same six steps as the in-app checklist; the old marketing screens were removed.
+- Last task: a BM wording pass (house term "temu janji", "menyambungkan" for a transfer, plainer phrasing; meaning and claims unchanged) and a type fix in `tests/hosting/auth-panel.test.ts`.
+
+**Verified (2026-11-21, local only)**
+- `npm run typecheck`: 13 errors, all in `tests/`, the existing baseline. `npm run test:guards` 69 of 69. `npm run check:core` 1315 of 1315. Hosting tests 265 of 265.
+- `build:mock`, `build:local` and `build:hosted` (with `APP_ORIGIN=https://example.test`) pass; every public route in the hosted route table is static (○ or ●).
+- Hosted build served with `next start` on 127.0.0.1, headless Chrome: all 50 routes answer 200 with no horizontal scroll at 360 px and the right `main[lang]`; home, pricing, clinics and FAQ seen at 390 and 1280 px in English, BM, light and dark; estimator moves by keyboard and the figures and announcement follow; mobile menu opens (keyboard and pointer), Escape closes it and focus returns to the menu button; `/?lang=ms` and `/pricing?lang=ms&theme=dark` redirect 301 and the theme is kept; a visible focus ring on the first 45 tab stops of `/` (light and dark), the estimator slider and three FAQ disclosures; reduced motion stops the call card cycling. No JavaScript exceptions, but the console check fails: every page logs the session check described below (pre-existing).
+- Throttled mobile (4x CPU, 150 ms latency, 1.6 Mbps, 390 px) on `/`, three runs: LCP median 872 ms (target under 2.5 s), CLS 0.0004 (target under 0.1). Served from localhost, so network cost is understated.
+
+**Not verified**
+- No native BM speaker has read the copy. Nothing ran on Vercel or on the hosted environment. No real search engine, Lighthouse or screen reader was used.
+- Every public page asks `GET /api/v1/session` to choose the header button; a signed-out visitor gets 401 (500 in the local check without Supabase), which Chrome logs as a console error. Pre-existing (#81); left for the final review.
+
+**Next**
+- The controller's final whole-branch review, then the pull request into `main` (not merged by the agent).
+- Owner steps: confirm `APP_ORIGIN` is set for builds in Vercel's environment; indexing turns on only when that origin is `jomcall.com`, so pointing it there is the owner's call; fix the privacy and terms text that says calls "may be recorded" and "Payments are not live yet" (the public pages say calls are not recorded, and legal text was left frozen); confirm the SST wording on pricing ("before SST"); decide the concurrency default (`JOMCALL_MAX_CONCURRENT_CALLS` is 1, the spec says 2; the copy states no number); have a native BM speaker read the copy; re-record the four demo greetings without "this call may be recorded" (the call card skips line 0 until then).
+
 ## 2026-11-20 (afternoon): staging is now production
 
 Owner decision. Read the entry "Staging is production" in `AGENTS.md` before touching the hosted environment: there is no second environment any more, no backups, and every write there is a production change.
