@@ -1,4 +1,5 @@
 import { test, after } from "node:test";
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import {
   PUBLIC_PAGES,
@@ -118,13 +119,14 @@ import { publicPlans } from "../../web/lib/pricing.ts";
 const HOME_PAGES = { en: "web/app/(public)/page.tsx", ms: "web/app/ms/page.tsx" } as const;
 
 test("home price line comes from the Starter plan", () => {
-  assert.equal(rm(publicPlans[0].monthlyFeeSen), "RM 49");
+  assert.equal(rm(publicPlans[0].monthlyFeeSen), "RM 49.00");
   assert.equal(home.en.hero.from, `From ${rm(publicPlans[0].monthlyFeeSen)} a month`);
   assert.equal(home.ms.hero.from, `Bermula ${rm(publicPlans[0].monthlyFeeSen)} sebulan`);
   // No amount is typed into the copy by hand.
   assert.doesNotMatch(readFileSync("web/content/public/home.ts", "utf8"), /RM\s?\d/);
   assert.equal(rm(32), "RM 0.32");
-  assert.equal(rm(12900), "RM 129");
+  assert.equal(rm(12900), "RM 129.00");
+  assert.equal(rmExact(4900), rm(4900));
 });
 
 test("home pages are static: metadata from pageMetadata, no query string", () => {
@@ -240,13 +242,14 @@ import { monthlyEstimateSen } from "../../web/lib/pricing.ts";
 import { pricing, pricingFaq } from "../../web/content/public/pricing.ts";
 import { rmExact } from "../../web/content/public/format.ts";
 
-test("estimates: every plan's figure comes from monthlyEstimateSen", () => {
+test("estimates: every phone plan's figure comes from monthlyEstimateSen; pay as you go shows its fee only", () => {
   for (const minutes of [0, 100, 400, 1000, 3000]) {
     const e = estimates(minutes);
     assert.deepEqual(e.rows.map((r) => r.code), publicPlans.map((p) => p.code));
     for (const row of e.rows) {
       const plan = publicPlans.find((p) => p.code === row.code)!;
-      assert.equal(row.sen, monthlyEstimateSen(plan, minutes));
+      assert.equal(row.sen, plan.phoneNumbers > 0 ? monthlyEstimateSen(plan, minutes) : plan.monthlyFeeSen);
+      if (!row.phone) assert.equal(row.sen, 0);
     }
   }
 });
@@ -266,7 +269,8 @@ test("estimates: the cheapest plan is chosen among plans with a phone number", (
   assert.equal(tie.cheapest, "starter");
   const payg = estimates(0).rows.find((r) => r.code === "payg")!;
   assert.equal(payg.phone, false);
-  assert.ok(payg.sen < estimates(0).rows.find((r) => r.code === "starter")!.sen);
+  // No phone number: minutes do not change its figure.
+  assert.equal(estimates(3000).rows.find((r) => r.code === "payg")!.sen, payg.sen);
 });
 
 test("clampMinutes keeps 0 to 3000 in steps of 10 and survives bad input", () => {
@@ -358,9 +362,51 @@ test("legal pages are static, in the public shell, with the legal text unchanged
       assert.match(src, new RegExp(`<LegalPage kind="${kind}" locale="${locale}"`));
       assert.ok(!existsSync(`web/app/${kind}/page.tsx`), `old ${kind} route still exists`);
     }
-  const page = readFileSync("web/components/public/pages/legal.tsx", "utf8");
-  assert.match(page, /fillOperator\(/);
-  assert.match(page, /legalCopy\[locale\]\[kind\]/);
   // The operator facts helper lives in one place.
   assert.match(readFileSync("web/components/public-pages.tsx", "utf8"), /from "\.\/public\/operator"/);
+});
+
+// react-dom/server is refused under the react-server condition the test runner
+// uses, and the app's "@/" paths need the web tsconfig, so the pages are
+// rendered in a child process. It also fills the operator facts into each
+// text of the legal copy, the way the page does, so the test can look for it.
+function renderLegal(): Record<string, { html: string; filled: Record<string, string> }> {
+  const script = `
+    import { createElement } from "react";
+    import { renderToStaticMarkup } from "react-dom/server";
+    import { LegalBody } from "./web/components/public/legal-body.tsx";
+    import { fillOperator } from "./web/components/public/operator.tsx";
+    import { legalCopy } from "./web/messages/legal.ts";
+    const out = {};
+    for (const locale of ["en", "ms"]) for (const kind of ["privacy", "terms"]) {
+      const filled = {};
+      for (const s of legalCopy[locale][kind].sections)
+        for (const x of [...s.paragraphs, ...(s.list ?? []), ...(s.after ?? [])]) filled[x] = fillOperator(x);
+      out[locale + "/" + kind] = { html: renderToStaticMarkup(createElement(LegalBody, { kind, locale })), filled };
+    }
+    process.stdout.write(JSON.stringify(out));
+  `;
+  const stdout = execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
+    encoding: "utf8",
+    env: { ...process.env, NODE_OPTIONS: "", TSX_TSCONFIG_PATH: "web/tsconfig.json" },
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  return JSON.parse(stdout);
+}
+
+test("legal body renders every heading and paragraph of the legal text, operator facts filled", () => {
+  const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;");
+  const rendered = renderLegal();
+  for (const locale of ["en", "ms"] as const)
+    for (const kind of ["privacy", "terms"] as const) {
+      const { html, filled } = rendered[`${locale}/${kind}`];
+      const doc = legalCopy[locale][kind];
+      for (const s of doc.sections) {
+        assert.ok(html.includes(escape(s.heading)), `${locale} ${kind}: heading "${s.heading}"`);
+        for (const x of [...s.paragraphs, ...(s.list ?? []), ...(s.after ?? [])])
+          assert.ok(html.includes(escape(filled[x])), `${locale} ${kind}: text under "${s.heading}"`);
+      }
+      assert.doesNotMatch(html, /\{(?:name|reg|address|email|date)\}/, "operator placeholder left unfilled");
+      for (const a of legalAnchors(doc)) assert.ok(html.includes(`id="${a.id}"`));
+    }
 });

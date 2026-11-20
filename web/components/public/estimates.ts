@@ -23,12 +23,13 @@ export type EstimateRow = {
 };
 
 // Every plan's month at `minutes` of voice, and the cheapest plan among those
-// that take phone calls. Pay as you go has no phone number, so its figure is
-// always the lowest and never wins; a tie goes to the lower monthly fee.
+// that take phone calls. A plan with no phone number cannot spend those
+// minutes, so its row shows only its fee (RM 0.00 for pay as you go) and it
+// never wins; a tie goes to the lower monthly fee.
 export function estimates(minutes: number): { rows: EstimateRow[]; cheapest: PublicPlan["code"] } {
   const rows = publicPlans.map((plan) => ({
     code: plan.code,
-    sen: monthlyEstimateSen(plan, minutes),
+    sen: plan.phoneNumbers > 0 ? monthlyEstimateSen(plan, minutes) : plan.monthlyFeeSen,
     phone: plan.phoneNumbers > 0,
     includedMinutes: plan.includedVoiceSeconds / 60,
     fee: plan.monthlyFeeSen,

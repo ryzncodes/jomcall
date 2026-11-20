@@ -79,11 +79,11 @@ const en = {
     unit: "minutes",
     included: (n: number) => `${n} minutes included`,
     nothingIncluded: "No minutes included",
-    noPhone: "No phone number: browser tests only",
+    noPhone: "Cannot take phone calls",
     cheapest: "Lowest for phone calls",
     resultsLabel: "Estimated month on each plan",
     summary: (minutes: number, plan: string, amount: string) =>
-      `At ${minutes} minutes a month, ${plan} costs ${amount}, the lowest plan that takes phone calls.`,
+      `At ${minutes.toLocaleString("en-MY")} minutes a month, ${plan} costs ${amount}, the lowest plan that takes phone calls.`,
     fine: "An estimate from the rates below, before SST. It does not include Meta's WhatsApp message fees.",
   },
   rates: {
@@ -192,11 +192,11 @@ const ms: typeof en = {
     unit: "minit",
     included: (n: number) => `${n} minit termasuk`,
     nothingIncluded: "Tiada minit termasuk",
-    noPhone: "Tiada nombor telefon: ujian dalam pelayar sahaja",
+    noPhone: "Tidak boleh menerima panggilan telefon",
     cheapest: "Termurah untuk panggilan telefon",
     resultsLabel: "Anggaran sebulan bagi setiap pelan",
     summary: (minutes: number, plan: string, amount: string) =>
-      `Pada ${minutes} minit sebulan, ${plan} berharga ${amount}, pelan paling murah yang menerima panggilan telefon.`,
+      `Pada ${minutes.toLocaleString("en-MY")} minit sebulan, ${plan} berharga ${amount}, pelan paling murah yang menerima panggilan telefon.`,
     fine: "Anggaran berdasarkan kadar di bawah, sebelum SST. Ia tidak termasuk yuran mesej WhatsApp daripada Meta.",
   },
   rates: {

@@ -2,7 +2,7 @@ import { common } from "@/content/public/common";
 import { pricing, pricingFaq } from "@/content/public/pricing";
 import { publicPlans, sourceUrl } from "@/lib/pricing";
 import type { PublicLocale } from "@/lib/site";
-import { Cta } from "../cta";
+import { AppLink, Cta } from "../cta";
 import { Estimator } from "../estimator";
 import { Arrow, Dash, Tick } from "../icons";
 import { PlanButton } from "../plan-button";
@@ -104,10 +104,10 @@ export function PricingPage({ locale }: { locale: PublicLocale }) {
               <h3 className="t-h3">{t.self.heading}</h3>
               <p className="t-muted">{t.self.body}</p>
               <p className="self-links">
-                <a className="link-arrow" href="/self-host">
+                <AppLink path="/self-host" locale={locale} className="link-arrow">
                   {t.self.link}
                   <Arrow />
-                </a>
+                </AppLink>
                 <a className="link-arrow" href={sourceUrl} rel="noopener noreferrer">
                   {t.self.source}
                   <Arrow />

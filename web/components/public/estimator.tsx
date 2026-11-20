@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { rmExact } from "@/content/public/format";
 import { pricing } from "@/content/public/pricing";
 import type { PublicLocale } from "@/lib/site";
@@ -12,18 +12,24 @@ import {
 } from "./estimates";
 
 // The one island on the pricing page: voice minutes in, each plan's month out.
-// The figures are the same `monthlyEstimateSen` the wallet uses. The slider
-// and the number box are two views of one value; the result is read out
-// politely, in one sentence, so a screen reader hears the answer and not
-// every step of a drag.
+// The figures are the same `monthlyEstimateSen` the wallet uses and follow
+// every change. The sentence read out to a screen reader waits 500 ms after
+// the last change, so a drag is announced once, with its final answer.
 export function Estimator({ locale }: { locale: PublicLocale }) {
   const t = pricing[locale].estimator;
   const names = pricing[locale].plans.plans;
   const [minutes, setMinutes] = useState(300);
   const [text, setText] = useState("300");
+  const [said, setSaid] = useState(300);
+  useEffect(() => {
+    const id = setTimeout(() => setSaid(minutes), 500);
+    return () => clearTimeout(id);
+  }, [minutes]);
   const { rows, cheapest } = estimates(minutes);
-  const top = Math.max(...rows.map((r) => r.sen));
-  const winner = rows.find((r) => r.code === cheapest)!;
+  // Bars compare the plans that can take calls; the others have no bar.
+  const top = Math.max(...rows.filter((r) => r.phone).map((r) => r.sen));
+  const heard = estimates(said);
+  const winner = heard.rows.find((r) => r.code === heard.cheapest)!;
   const fill = `${(minutes / MAX_MINUTES) * 100}%`;
   return (
     <div className="estimator">
@@ -67,9 +73,11 @@ export function Estimator({ locale }: { locale: PublicLocale }) {
               step={STEP_MINUTES}
               value={text}
               onChange={(e) => {
-                setText(e.target.value);
+                const raw = e.target.value;
+                // Past the top of the range the box shows the top at once.
+                setText(Number(raw) > MAX_MINUTES ? String(MAX_MINUTES) : raw);
                 // While typing, the figures follow the exact number.
-                setMinutes(clampMinutes(e.target.value, 1));
+                setMinutes(clampMinutes(raw, 1));
               }}
               onBlur={() => {
                 const n = clampMinutes(text);
@@ -99,8 +107,8 @@ export function Estimator({ locale }: { locale: PublicLocale }) {
                 </p>
               </div>
               <p className="est-figure t-data">{rmExact(row.sen)}</p>
-              <span className="est-bar" aria-hidden="true">
-                <i style={{ width: `${top ? (row.sen / top) * 100 : 0}%` }} />
+              <span className="est-bar" data-none={!row.phone} aria-hidden="true">
+                {row.phone && <i style={{ width: `${top ? (row.sen / top) * 100 : 0}%` }} />}
               </span>
             </li>
           );
@@ -108,7 +116,7 @@ export function Estimator({ locale }: { locale: PublicLocale }) {
       </ul>
 
       <p className="est-summary t-small" role="status" aria-live="polite">
-        {t.summary(minutes, names[winner.code].name, rmExact(winner.sen))}
+        {t.summary(said, names[winner.code].name, rmExact(winner.sen))}
       </p>
       <p className="t-small t-muted">{t.fine}</p>
     </div>
