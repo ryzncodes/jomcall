@@ -190,8 +190,11 @@ function WhatsAppBody({
   const waiting =
     HOSTED && WHATSAPP_WAITING_FOR_META && channel?.state !== "connected";
   return (
-    <>
-      <section className="core-panel">
+    <div className="core-stack">
+      <section
+        className="core-panel"
+        aria-labelledby={waiting && readiness.configured ? "wa-waiting" : undefined}
+      >
         <span className="remaining-chip">{w(label[0], label[1])}</span>
         {!readiness.configured ? (
           <>
@@ -226,6 +229,14 @@ function WhatsAppBody({
           </>
         ) : (
           <>
+            {/* Before Meta's approval the status panel carries the waiting
+                message, so it is not a box holding only a chip. */}
+            {waiting && (
+              <>
+                <h2 id="wa-waiting">{w(...whatsappWaiting.title)}</h2>
+                <p>{w(...whatsappWaiting.body)}</p>
+              </>
+            )}
             {readiness.provider === "fake" && (
               <p className="editor-note">
                 {w(
@@ -277,12 +288,6 @@ function WhatsAppBody({
           </>
         )}
       </section>
-      {waiting && (
-        <section className="core-panel" aria-labelledby="wa-waiting">
-          <h2 id="wa-waiting">{w(...whatsappWaiting.title)}</h2>
-          <p>{w(...whatsappWaiting.body)}</p>
-        </section>
-      )}
       {!waiting && readiness.configured && readiness.signup && (
         <WhatsAppSignup data={data} reload={reload} />
       )}
@@ -312,7 +317,7 @@ function WhatsAppBody({
       )}
       <section className="core-panel">
         <h2>{w("What customers see", "Apa yang pelanggan nampak")}</h2>
-        <ul>
+        <ul className="core-bullets">
           <li>
             {w(
               "The first reply in each conversation says an AI assistant is answering and how to reach staff.",
@@ -339,7 +344,7 @@ function WhatsAppBody({
           </li>
         </ul>
       </section>
-    </>
+    </div>
   );
 }
 

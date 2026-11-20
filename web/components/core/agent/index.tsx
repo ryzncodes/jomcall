@@ -30,11 +30,13 @@ export function LocalAgent(_props: { setup?: boolean }) {
             "Pemilik atau pentadbir mengurus draf dan penerbitan.",
           )}
         />
-        {workspace.agent.published_version_id && (
-          <PublishedAgent id={workspace.agent.published_version_id} />
-        )}
-        {/* Staff could read the hours before; they still can, read only. */}
-        <Hours editable={false} />
+        <div className="core-stack">
+          {workspace.agent.published_version_id && (
+            <PublishedAgent id={workspace.agent.published_version_id} />
+          )}
+          {/* Staff could read the hours before; they still can, read only. */}
+          <Hours editable={false} />
+        </div>
       </>
     );
   return (
