@@ -1037,8 +1037,9 @@ body:has(.public) {
   transition-duration: var(--t-reveal), var(--t-reveal), var(--t-micro);
   transition-delay: calc(var(--i) * 40ms), calc(var(--i) * 40ms), 0s;
 }
+/* 0.8 keeps every dimmed text pair at AA (lowest 5.05:1, the caller label). */
 .public .cc-lines[data-active="true"] > li[data-state="dim"] {
-  opacity: 0.6;
+  opacity: 0.8;
   transition-delay: 0s;
 }
 .public .cc-turn {
