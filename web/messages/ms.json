@@ -56,7 +56,7 @@
   "demoDescription": "Pemanggil tanya dalam BM. AI semak masa. Anda terima butirannya. Cuba contoh perbualan rekaan di bawah.",
   "caller": "Pemanggil",
   "agent": "Penyambut tetamu AI",
-  "turn0": "Hai, ini Studio Contoh. Saya pembantu AI, dan panggilan ini mungkin dirakam. Boleh saya bantu?",
+  "turn0": "Hai, ini Studio Contoh. Saya pembantu AI. Boleh saya bantu?",
   "turn1": "Boleh book esok, pukul tiga?",
   "turn2": "Boleh. Saya semak esok pukul 3 petang untuk anda.",
   "turn3": "Kalendar contoh disemak. Pukul 3 petang masih kosong.",
@@ -85,7 +85,7 @@
     "Mandarin"
   ],
   "turnsEnglish": [
-    "Hi, you've reached Studio Contoh. I'm an AI assistant, and this call may be recorded. How can I help?",
+    "Hi, you've reached Studio Contoh. I'm an AI assistant. How can I help?",
     "Can I book tomorrow at three?",
     "Let me check tomorrow at 3 pm.",
     "Sample calendar checked. 3 pm is available.",
@@ -93,7 +93,7 @@
     "Your appointment is set for tomorrow at 3 pm. See you then!"
   ],
   "turnsMandarin": [
-    "您好，这里是 Studio Contoh。我是 AI 助手，本通话可能会被录音。有什么可以帮您？",
+    "您好，这里是 Studio Contoh。我是 AI 助手。有什么可以帮您？",
     "可以预约明天下午三点吗？",
     "好的，我帮您看看明天下午三点。",
     "示例日历已检查。下午三点有空位。",

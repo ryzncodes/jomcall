@@ -102,7 +102,27 @@ export async function phoneRoute(
     // The page shows whenever a phone line can exist. Without a plan that
     // includes a number it says so and links to Billing.
     const phone = telephonyReadiness().configured;
-    return { phone, whatsapp, integrations: false };
+    // What this workspace actually answers on: a provider and an active
+    // number, or WhatsApp switched on and a connected number with the agent.
+    const live = {
+      phone:
+        phone &&
+        (
+          await tx.query(
+            "select 1 from app.phone_number where org_id=$1 and active limit 1",
+            [ctx.orgId],
+          )
+        ).rowCount! > 0,
+      whatsapp:
+        whatsapp &&
+        (
+          await tx.query(
+            "select 1 from app.whatsapp_channel where org_id=$1 and state='connected' and agent_enabled limit 1",
+            [ctx.orgId],
+          )
+        ).rowCount! > 0,
+    };
+    return { phone, whatsapp, integrations: false, live };
   }
   // Ask for a phone number. An operator buys it and adds it; the engine
   // emails the operator. Refused without a plan that includes a number,

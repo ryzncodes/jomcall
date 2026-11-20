@@ -7,6 +7,7 @@ import { topupAmounts } from "../../../packages/contracts/src/billing";
 import type { Topup, LedgerEntry } from "../../../packages/contracts/src/billing";
 import { useCore, useWords, useResource, useAction, Heading, Notice, Loading, PlanLoading } from "./state";
 import { CoreError } from "@/lib/core/client";
+import { balanceWords } from "@/lib/core/plan-rules";
 
 // The plan card exists only in the local and hosted builds. The mode is a
 // build-time constant, so the mock bundle drops this import.
@@ -67,6 +68,8 @@ export function LocalBilling() {
   const returned = useSearchParams().get("payment");
   const manager = workspace.role !== "staff";
   const wallet = useResource(() => client.execute("wallet", {}), "wallet");
+  // Read for the words under the balance: credit without a plan answers nothing.
+  const plan = useResource(() => client.execute("plan", {}), "plan");
   const ledger = useResource(() => client.execute("walletLedger", { limit: 25 }), "ledger");
   const usage = useResource(() => client.execute("usageEvents", { limit: 25 }), "usage");
   const topups = useResource(() => client.execute("topups", { limit: 10 }), "topups");
@@ -97,13 +100,6 @@ export function LocalBilling() {
   if (!wallet.data) return <Loading error={wallet.error} />;
   const v = wallet.data;
   const connected = v.provider.configured;
-  const stateText: Record<string, [string, string]> = {
-    unfunded: ["No credit yet", "Belum ada kredit"],
-    ok: ["Credit available", "Kredit mencukupi"],
-    low: ["Credit running low", "Kredit hampir habis"],
-    grace: ["Below zero: top up soon", "Di bawah sifar: tambah nilai segera"],
-    exhausted: ["Credit used up", "Kredit telah habis"],
-  };
   const kindText: Record<LedgerEntry["kind"], [string, string]> = {
     topup: ["Top-up", "Tambah nilai"],
     trial_credit: ["Trial credit", "Kredit percubaan"],
@@ -163,7 +159,7 @@ export function LocalBilling() {
         <div>
           <span>{w("Balance", "Baki")}</span>
           <strong data-state={v.state}>{formatSen(v.balanceSen)}</strong>
-          <small>{pick(stateText[v.state], v.state)}</small>
+          <small>{balanceWords(v.state, plan.data)[ms ? 1 : 0]}</small>
         </div>
         <div>
           <span>{w("Voice rate", "Kadar suara")}</span>

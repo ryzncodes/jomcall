@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  balanceWords,
   addMonth,
   cardState,
   dayText,
@@ -106,4 +107,26 @@ test("a plan choice keeps its key only when no answer came from JomCall", () => 
   assert.equal(keepPlanKey(failureOf(new ProxyError(504))), true);
   assert.equal(keepPlanKey(failureOf(new CoreError("PLAN_START_FAILED", 500))), false);
   assert.equal(keepPlanKey(failureOf(new CoreError("FORBIDDEN", 403))), false);
+});
+
+test("balance words say a plan is needed while nothing answers", () => {
+  // Credit but no plan: the agent answers nothing yet, so not "enough".
+  assert.deepEqual(balanceWords("ok", { plan: "payg", periodState: "none" }), [
+    "Choose a plan to start answering",
+    "Pilih pelan untuk mula menjawab",
+  ]);
+  assert.deepEqual(balanceWords("low", { plan: "starter", periodState: "downgraded" })[0],
+    "Choose a plan to start answering");
+  // A plan in force: the wallet's own state.
+  assert.deepEqual(balanceWords("ok", { plan: "starter", periodState: "charged" }), [
+    "Credit available",
+    "Kredit tersedia",
+  ]);
+  // No plan read yet: the wallet's own state.
+  assert.equal(balanceWords("low", undefined)[0], "Credit running low");
+  // Empty or below zero is said as it is, plan or not.
+  assert.equal(balanceWords("unfunded", { plan: "payg", periodState: "none" })[0], "No credit yet");
+  assert.equal(balanceWords("exhausted", { plan: "payg", periodState: "none" })[0], "Credit used up");
+  // An unknown state is shown as it came.
+  assert.deepEqual(balanceWords("odd", undefined), ["odd", "odd"]);
 });

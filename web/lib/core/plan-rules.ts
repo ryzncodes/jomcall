@@ -20,6 +20,24 @@ export function cardState(s: Pick<PlanSummary, "plan" | "periodState">): CardSta
   if (s.plan === "payg" || s.periodState === "downgraded") return "choose";
   return s.periodState === "unpaid" ? "unpaid" : "current";
 }
+// The words under the wallet balance, [English, Malay]. Credit without a
+// plan answers nothing, so it says a plan is needed instead of "available".
+// Empty and used-up credit are said as they are; an unknown state as it came.
+const walletWords: Record<string, [string, string]> = {
+  unfunded: ["No credit yet", "Belum ada kredit"],
+  ok: ["Credit available", "Kredit tersedia"],
+  low: ["Credit running low", "Kredit hampir habis"],
+  grace: ["Below zero: top up soon", "Di bawah sifar: tambah nilai segera"],
+  exhausted: ["Credit used up", "Kredit telah habis"],
+};
+export function balanceWords(
+  state: string,
+  plan: Pick<PlanSummary, "plan" | "periodState"> | undefined,
+): [string, string] {
+  if ((state === "ok" || state === "low") && plan && cardState(plan) === "choose")
+    return ["Choose a plan to start answering", "Pilih pelan untuk mula menjawab"];
+  return walletWords[state] ?? [state, state];
+}
 export function planStopped(s: Pick<PlanSummary, "periodState">) {
   return s.periodState === "downgraded";
 }

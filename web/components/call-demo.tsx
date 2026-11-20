@@ -169,7 +169,6 @@ export function CallDemo() {
             <div className="transcript-preview">
               <span>{t.caller}</span>
               <p>{turns[1]}</p>
-              <small>{t.sampleVoiceNotice}</small>
             </div>
           ) : (
             turns.slice(1, step + 1).map((turn, i) => (
