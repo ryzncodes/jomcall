@@ -46,6 +46,7 @@ function useSettled<T>(value: T): T {
 function Field({
   id,
   label,
+  said,
   hint,
   unit,
   unitFirst,
@@ -59,6 +60,9 @@ function Field({
 }: {
   id: string;
   label: string;
+  // The unit as a screen reader hears it ("(percentage, 0 to 100)"). The
+  // visible unit beside the box is decoration, so the label carries it.
+  said: string;
   hint?: string;
   unit: string;
   unitFirst?: boolean;
@@ -79,6 +83,7 @@ function Field({
     <div className="ws-field">
       <label className="ws-label" htmlFor={id}>
         {label}
+        <span className="sr-only"> {said}</span>
       </label>
       {hint && (
         <p className="t-small t-muted" id={`${id}-hint`}>
@@ -134,6 +139,7 @@ function Missed({ locale }: { locale: PublicLocale }) {
         <Field
           id={`${id}-week`}
           label={t.perWeek.label}
+          said={t.perWeek.said}
           unit={t.perWeek.unit}
           value={week}
           max={MAX_PER_WEEK}
@@ -145,6 +151,7 @@ function Missed({ locale }: { locale: PublicLocale }) {
         <Field
           id={`${id}-share`}
           label={t.share.label}
+          said={t.share.said}
           unit={t.share.unit}
           value={share}
           max={100}
@@ -156,6 +163,7 @@ function Missed({ locale }: { locale: PublicLocale }) {
         <Field
           id={`${id}-average`}
           label={t.average.label}
+          said={t.average.said}
           unit={t.average.unit}
           unitFirst
           value={average}
@@ -183,7 +191,8 @@ function Cost({ locale }: { locale: PublicLocale }) {
   const t = worksheetCopy[locale].cost;
   const names = pricing[locale].plans.plans;
   const id = useId();
-  // No starting cost: the page never states a salary figure.
+  // No starting cost: the page never states a salary figure. The minutes
+  // start from an example, which the sheet says above the fields.
   const [cost, setCost] = useState("");
   const [minutesText, setMinutesText] = useState("300");
 
@@ -206,9 +215,11 @@ function Cost({ locale }: { locale: PublicLocale }) {
   return (
     <div className="ws" role="group" aria-label={t.label}>
       <div className="ws-fields">
+        <p className="ws-example t-small">{t.example}</p>
         <Field
           id={`${id}-cost`}
           label={t.cost.label}
+          said={t.cost.said}
           hint={t.cost.hint}
           unit={t.cost.unit}
           unitFirst
@@ -222,6 +233,7 @@ function Cost({ locale }: { locale: PublicLocale }) {
         <Field
           id={`${id}-minutes`}
           label={t.minutes.label}
+          said={t.minutes.said}
           unit={t.minutes.unit}
           value={minutesText}
           max={MAX_MINUTES}

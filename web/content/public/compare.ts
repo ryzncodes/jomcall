@@ -69,7 +69,7 @@ export const jomcallFacts: Bilingual<Record<FactKey, string>> = {
     transfer: "Menyambungkan pemanggil kepada staf anda dalam waktu operasi.",
     number: "Kekalkan nombor anda dan majukan panggilannya ke nombor JomCall anda.",
     setup: "Anda sediakan sendiri: pilih jenis perniagaan, jawab hingga 8 soalan atau bawa senarai harga, kemudian uji dalam pelayar dan terbitkan.",
-    price: `Dari ${fee} sebulan, dibayar daripada dompet prabayar dalam ringgit. Tiada kad dicaj secara automatik.`,
+    price: `Daripada ${fee} sebulan, dibayar daripada dompet prabayar dalam ringgit. Tiada kad dicaj secara automatik.`,
     whatsapp: `${whatsappWaiting.title[1]}.`,
   },
 };
@@ -117,7 +117,7 @@ export const compareLabels: Bilingual<CompareLabels> = {
     us: "JomCall",
     others: "Perbandingan lain",
     cost: {
-      heading: "Letak angka anda sendiri sebelah-menyebelah",
+      heading: "Bandingkan dengan angka anda sendiri",
       lead: "Taip kos penyambut tetamu sebulan, termasuk gaji dan kos lain, dan anggaran minit panggilan yang anda terima. Angka JomCall diambil daripada jadual harga semasa.",
     },
     waiting: {
@@ -180,7 +180,7 @@ const en: Record<CompareSlug, CompareCopy> = {
     faqs: [
       {
         q: "Does JomCall replace my voicemail?",
-        a: "Only for the calls you forward to it. If you forward the calls you do not answer to your JomCall number, those callers reach the agent instead of your mailbox. You can stop forwarding at any time with the stop code.",
+        a: "Only for the calls you forward to it. If you forward the calls you do not answer to your JomCall number, the agent answers them instead of your mailbox, up to the number of calls it takes at a time; past that, the caller is told the line is busy. You can stop forwarding at any time with the stop code.",
       },
       {
         q: "How does a message reach me?",
@@ -301,7 +301,7 @@ const en: Record<CompareSlug, CompareCopy> = {
         points: [
           "You want to set it up yourself: pick a business type, answer a few questions or bring your price list, then test it in the browser.",
           "You want answers from your own facts and price list.",
-          "Your callers switch between BM and English in the same sentence.",
+          "You want one agent that follows BM, English, Manglish and Mandarin, whoever is on shift.",
           `You want to see the price before you start: plans from ${fee} a month.`,
         ],
       },
@@ -389,9 +389,9 @@ const ms: Record<CompareSlug, CompareCopy> = {
   voicemail: {
     title: "JomCall berbanding mel suara untuk perniagaan kecil",
     description:
-      "Mel suara mengambil pesanan dan menunggu anda telefon semula. JomCall bercakap dengan pemanggil: ia menjawab daripada fakta anda sendiri, membuat tempahan temu janji dan mengambil pesanan. Bila setiap satu lebih sesuai, sebelah-menyebelah.",
+      "Mel suara mengambil pesanan dan menunggu anda telefon semula. JomCall bercakap dengan pemanggil: ia menjawab daripada fakta anda sendiri, membuat tempahan temu janji dan mengambil pesanan. Bila setiap satu lebih sesuai, dibandingkan terus.",
     h1: "JomCall atau mel suara?",
-    lead: "Mel suara menunggu anda telefon semula. JomCall bercakap dengan pemanggil ketika itu juga: ia menjawab soalan daripada fakta anda sendiri, membuat tempahan temu janji dan mengambil pesanan. Ini bila setiap satu sesuai.",
+    lead: "Mel suara menunggu anda telefon semula. JomCall bercakap dengan pemanggil ketika itu juga: ia menjawab soalan daripada fakta anda sendiri, membuat tempahan temu janji dan mengambil pesanan. Di bawah, bila setiap satu lebih sesuai.",
     summary: "Bila peti mel sudah cukup, dan bila pemanggil perlukan jawapan semasa panggilan.",
     them: "Mel suara",
     short: {
@@ -402,7 +402,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
       ],
     },
     table: {
-      heading: "Sebelah-menyebelah",
+      heading: "Perbandingan terus",
       lead: "Apa yang berlaku kepada pemanggil dengan setiap satu.",
       rows: [
         { topic: "Siapa yang angkat", them: "Ucapan anda, kemudian bunyi bip. Pemanggil bercakap dengan peti mel.", us: "answers" },
@@ -438,7 +438,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
     faqs: [
       {
         q: "Adakah JomCall menggantikan mel suara saya?",
-        a: "Hanya bagi panggilan yang anda majukan kepadanya. Jika anda majukan panggilan yang tidak dijawab ke nombor JomCall, pemanggil itu sampai kepada ejen dan bukan ke peti mel. Anda boleh hentikan pemajuan bila-bila masa dengan kod henti.",
+        a: "Hanya bagi panggilan yang anda majukan kepadanya. Jika anda majukan panggilan yang tidak dijawab ke nombor JomCall, ejen menjawabnya dan bukan peti mel, sehingga bilangan panggilan yang boleh diterimanya pada satu masa; selepas itu, pemanggil diberitahu talian sibuk. Anda boleh hentikan pemajuan bila-bila masa dengan kod henti.",
       },
       {
         q: "Bagaimana pesanan sampai kepada saya?",
@@ -453,7 +453,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
   receptionist: {
     title: "JomCall berbanding penyambut tetamu: tugas masing-masing, dan kos anda sendiri",
     description:
-      "Penyambut tetamu buat lebih banyak daripada menjawab telefon; JomCall hanya mengurus panggilan. Bila orang lebih sesuai, apa yang JomCall buat di telefon, dan helaian untuk meletakkan kos penyambut tetamu anda sebelah harga JomCall.",
+      "Penyambut tetamu buat lebih banyak daripada menjawab telefon; JomCall hanya mengurus panggilan. Bila orang lebih sesuai, apa yang JomCall buat di telefon, dan kalkulator untuk meletakkan kos penyambut tetamu anda di sebelah harga JomCall.",
     h1: "JomCall atau penyambut tetamu?",
     lead: "Penyambut tetamu yang baik menyambut pelanggan yang datang, menjaga kaunter dan kenal pelanggan tetap anda. JomCall buat satu kerja sahaja: menjawab talian telefon anda. Ini perbandingan yang adil, dengan angka anda sendiri.",
     summary: "Apa yang orang di kaunter boleh buat tetapi JomCall tidak, dan sebaliknya.",
@@ -466,7 +466,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
       ],
     },
     table: {
-      heading: "Sebelah-menyebelah",
+      heading: "Perbandingan terus",
       lead: "Apa yang setiap satu uruskan pada hari kerja biasa.",
       rows: [
         { topic: "Waktu", them: "Waktu kerja mereka, kecuali anda aturkan pengganti.", us: "answers" },
@@ -476,7 +476,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
         { topic: "Tempahan", them: "Dalam buku atau sistem anda, secara manual.", us: "bookings" },
         { topic: "Permintaan luar biasa", them: "Orang boleh membuat keputusan di situ juga.", us: "messages" },
         { topic: "Menyambungkan panggilan", them: "Kepada sesiapa, bila mereka rasa sesuai.", us: "transfer" },
-        { topic: "Kos", them: "Gaji dan kos lain. Taip angka anda sendiri dalam helaian di bawah.", us: "price" },
+        { topic: "Kos", them: "Gaji dan kos lain. Taip angka anda sendiri dalam kalkulator di bawah.", us: "price" },
       ],
     },
     better: {
@@ -510,7 +510,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
       },
       {
         q: "Kenapa tiada angka gaji di halaman ini?",
-        a: "Gaji berbeza ikut bandar, waktu kerja dan jawatan, jadi helaian ini mengambil angka anda sendiri dan tidak meneka.",
+        a: "Gaji berbeza ikut bandar, waktu kerja dan jawatan, jadi kalkulator ini mengambil angka anda sendiri dan tidak meneka.",
       },
     ],
   },
@@ -530,7 +530,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
       ],
     },
     table: {
-      heading: "Sebelah-menyebelah",
+      heading: "Perbandingan terus",
       lead: "Cara setiap satu mengurus panggilan untuk perniagaan anda.",
       rows: [
         { topic: "Siapa yang bercakap", them: "Orang, selalunya berpandukan nota yang anda beri.", us: "answers" },
@@ -559,8 +559,8 @@ const ms: Record<CompareSlug, CompareCopy> = {
         points: [
           "Anda mahu menyediakannya sendiri: pilih jenis perniagaan, jawab beberapa soalan atau bawa senarai harga, kemudian uji dalam pelayar.",
           "Anda mahu jawapan daripada fakta dan senarai harga anda sendiri.",
-          "Pemanggil anda bertukar antara BM dan bahasa Inggeris dalam ayat yang sama.",
-          `Anda mahu melihat harga sebelum bermula: pelan dari ${fee} sebulan.`,
+          "Anda mahu satu ejen yang memahami BM, bahasa Inggeris, Manglish dan Mandarin, tidak kira siapa yang bertugas.",
+          `Anda mahu melihat harga sebelum bermula: pelan daripada ${fee} sebulan.`,
         ],
       },
     },
@@ -595,7 +595,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
       ],
     },
     table: {
-      heading: "Sebelah-menyebelah",
+      heading: "Perbandingan terus",
       lead: "Di mana setiap satu bertemu pelanggan anda.",
       rows: [
         { topic: "Tempat pelanggan menghubunginya", them: "Dalam sembang WhatsApp.", us: "answers" },

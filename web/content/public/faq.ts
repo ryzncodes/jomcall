@@ -266,7 +266,7 @@ const ms: FaqCopy = {
         },
         source: {
           q: "Bolehkah saya lihat cara JomCall berfungsi dari dalam?",
-          a: "Boleh. Kod sumber JomCall terbuka kepada umum di bawah lesen FSL-1.1-ALv2.",
+          a: "Boleh. Kod sumber JomCall tersedia kepada umum di bawah lesen FSL-1.1-ALv2.",
         },
       },
     },

@@ -5,7 +5,7 @@
 // route is static.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { PUBLIC_PAGES, canonicalPage, localePath } from "../../web/lib/site.ts";
 import { pageMetadata } from "../../web/lib/public-meta.ts";
 import { whatsappWaiting } from "../../web/lib/launch.ts";
@@ -85,7 +85,7 @@ test("the receptionist page states no salary: the visitor types it", () => {
   const sheet = readFileSync("web/components/public/worksheet.tsx", "utf8");
   assert.match(sheet, /useState\(""\)/, "the cost field starts empty");
   for (const locale of LOCALES)
-    assert.match(compare[locale].receptionist.table.rows.find((r) => r.us === "price")!.them, /sheet|helaian/i);
+    assert.match(compare[locale].receptionist.table.rows.find((r) => r.us === "price")!.them, /sheet|kalkulator/i);
 });
 
 test("the WhatsApp bot page says plainly that JomCall's WhatsApp is waiting for Meta", () => {
@@ -213,6 +213,15 @@ test("nothing claims browser tests are free, or that the agent never makes thing
 test("BM uses temu janji and plain wording", () => {
   const ms = strings([compare.ms, compareIndex.ms, compareLabels.ms, trust.ms, guides.ms, guidesIndex.ms, worksheetCopy.ms]).join("\n");
   assert.doesNotMatch(ms, /janji temu|menyerahkan|tuturkan|memegang talian|Menyuruh|buat masa ini|berterus terang|Adakah percubaan|Apa berlaku|\bkamu\b|\buang\b|\bkantor\b|\bmobil\b/);
+  // Stiff phrasing from review round 1.
+  assert.doesNotMatch(ms, /sebelah-menyebelah|helaian kira|\bDari RM|pelan \{plan\} pada|Ini bila/i);
+});
+
+test("the source code is never called open source: FSL-1.1-ALv2 is source-available", () => {
+  for (const file of readdirSync("web/content/public").filter((f) => f.endsWith(".ts"))) {
+    const text = readFileSync(`web/content/public/${file}`, "utf8");
+    assert.doesNotMatch(text, /sumber terbuka|terbuka kepada umum|open[- ]source/i, file);
+  }
 });
 
 // ---------------------------------------------------------------- routes

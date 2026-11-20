@@ -86,3 +86,28 @@ test("the worksheet island keeps its arithmetic in the pure module and announces
   assert.doesNotMatch(src, /\* 52|\/ 12/, "the island repeats the arithmetic");
   assert.doesNotMatch(readFileSync("web/components/public/worksheet-math.ts", "utf8"), /use client/);
 });
+
+test("every worksheet field says its unit to a screen reader, in both languages", async () => {
+  const { worksheetCopy } = await import("../../web/content/public/guides.ts");
+  for (const locale of ["en", "ms"] as const) {
+    const { missed, cost } = worksheetCopy[locale];
+    const fields = [missed.perWeek, missed.share, missed.average, cost.cost, cost.minutes];
+    for (const field of fields) assert.ok(field.said.trim().length > 2, `${locale} ${field.label}`);
+    // The share is a percentage from 0 to 100, so 0.3 is not read as 30%.
+    assert.match(missed.share.said, /(percentage|peratus)[^)]*100/);
+    assert.match(missed.average.said, /ringgit/);
+    assert.match(cost.cost.said, /ringgit/);
+  }
+  // The visible unit is decoration; the label carries the spoken unit.
+  const src = readFileSync("web/components/public/worksheet.tsx", "utf8");
+  assert.match(src, /<label className="ws-label" htmlFor=\{id\}>\s*\{label\}\s*<span className="sr-only"> \{said\}<\/span>\s*<\/label>/);
+  assert.equal(src.match(/said=\{t\.\w+\.said\}/g)?.length, 5);
+});
+
+test("both sheets say their starting figures are an example", async () => {
+  const { worksheetCopy } = await import("../../web/content/public/guides.ts");
+  assert.match(worksheetCopy.en.cost.example, /example/i);
+  assert.match(worksheetCopy.ms.cost.example, /contoh/i);
+  const src = readFileSync("web/components/public/worksheet.tsx", "utf8");
+  assert.equal(src.match(/<p className="ws-example t-small">\{t\.example\}<\/p>/g)?.length, 2);
+});

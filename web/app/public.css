@@ -2887,10 +2887,6 @@ body:has(.public) {
     gap: var(--space-4);
     align-items: start;
   }
-  .public .cmp-row dt {
-    font-size: 17px;
-    line-height: 22px;
-  }
   .public .cmp-head.cmp-row {
     display: grid;
     padding-block: var(--space-3);
@@ -3107,7 +3103,8 @@ body:has(.public) {
   gap: var(--space-2) var(--space-4);
 }
 .public .ws-fig {
-  font-size: 28px;
+  /* H2 at phone size (30/34), on the section 6.2 scale. */
+  font-size: 30px;
   line-height: 34px;
   word-spacing: -0.25em;
   font-variant-numeric: tabular-nums;

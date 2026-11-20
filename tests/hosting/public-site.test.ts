@@ -119,13 +119,13 @@ import { publicPlans } from "../../web/lib/pricing.ts";
 const HOME_PAGES = { en: "web/app/(public)/page.tsx", ms: "web/app/ms/page.tsx" } as const;
 
 test("home price line comes from the Starter plan", () => {
-  assert.equal(rm(publicPlans[0].monthlyFeeSen), "RM 49.00");
+  assert.equal(rm(publicPlans[0].monthlyFeeSen), "RM\u00a049.00");
   assert.equal(home.en.hero.from, `From ${rm(publicPlans[0].monthlyFeeSen)} a month`);
   assert.equal(home.ms.hero.from, `Bermula ${rm(publicPlans[0].monthlyFeeSen)} sebulan`);
   // No amount is typed into the copy by hand.
   assert.doesNotMatch(readFileSync("web/content/public/home.ts", "utf8"), /RM\s?\d/);
-  assert.equal(rm(32), "RM 0.32");
-  assert.equal(rm(12900), "RM 129.00");
+  assert.equal(rm(32), "RM\u00a00.32");
+  assert.equal(rm(12900), "RM\u00a0129.00");
   assert.equal(rmExact(4900), rm(4900));
 });
 
@@ -240,7 +240,7 @@ import { legalAnchors } from "../../web/components/public/legal-anchors.ts";
 import { legalCopy } from "../../web/messages/legal.ts";
 import { monthlyEstimateSen } from "../../web/lib/pricing.ts";
 import { pricing, pricingFaq } from "../../web/content/public/pricing.ts";
-import { rmExact } from "../../web/content/public/format.ts";
+import { rmExact, rmText } from "../../web/content/public/format.ts";
 
 test("estimates: every phone plan's figure comes from monthlyEstimateSen; pay as you go shows its fee only", () => {
   for (const minutes of [0, 100, 400, 1000, 3000]) {
@@ -288,8 +288,15 @@ test("clampMinutes keeps 0 to 3000 in steps of 10 and survives bad input", () =>
 });
 
 test("amounts are shown as RM 49.00 and come from the price table", () => {
-  assert.equal(rmExact(4900), "RM 49.00");
-  assert.equal(rmExact(32), "RM 0.32");
+  // A no-break space after RM, so an amount never wraps away from it.
+  assert.equal(rmExact(4900), "RM\u00a049.00");
+  assert.equal(rmExact(32), "RM\u00a00.32");
+  // A thousands separator for large amounts, such as the worksheet result.
+  assert.equal(rmExact(104000), "RM\u00a01,040.00");
+  assert.equal(rmExact(123456789), "RM\u00a01,234,567.89");
+  assert.equal(rmExact(0), "RM\u00a00.00");
+  // Plain-text output (llms.txt) keeps an ordinary space.
+  assert.equal(rmText(104000), "RM 1,040.00");
   assert.doesNotMatch(readFileSync("web/content/public/pricing.ts", "utf8"), /RM\s?\d/);
 });
 

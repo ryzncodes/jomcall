@@ -11,7 +11,7 @@ import { trust } from "../content/public/trust.ts";
 import { pricing } from "../content/public/pricing.ts";
 import { legalCopy } from "../messages/legal.ts";
 import { whatsappWaiting } from "./launch.ts";
-import { rm } from "../content/public/format.ts";
+import { rmText as rm } from "../content/public/format.ts";
 import { publicPlans } from "./pricing.ts";
 import { PUBLIC_PAGES, localePath, siteOrigin, type PublicLocale, type PublicPageId } from "./site.ts";
 

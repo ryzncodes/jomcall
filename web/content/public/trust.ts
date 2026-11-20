@@ -30,7 +30,7 @@ const en: TrustCopy = {
   },
   facts: {
     heading: "The facts",
-    lead: "What is true of every JomCall line today.",
+    lead: "What is true of JomCall today.",
     factHead: "Fact",
     detailHead: "What it means",
     rows: [
@@ -103,13 +103,13 @@ const ms: TrustCopy = {
   page: {
     title: "Kepercayaan: cara JomCall mengurus panggilan dan data",
     description:
-      "Fakta jelas tentang JomCall: panggilan tidak dirakam, AI memberitahu bahawa ia AI, tempat membaca pembekal yang menerima data, eksport dan padam, kod sumber terbuka dan siapa yang mengendalikan perkhidmatan ini.",
+      "Fakta jelas tentang JomCall: panggilan tidak dirakam, AI memberitahu bahawa ia AI, tempat membaca pembekal yang menerima data, eksport dan padam, kod sumber yang boleh dibaca oleh umum dan siapa yang mengendalikan perkhidmatan ini.",
     h1: "Apa yang JomCall buat dengan panggilan dan data anda",
     lead: "Fakta yang jelas, dan setiap satu boleh anda semak. Untuk teks penuh, baca notis privasi dan terma penggunaan.",
   },
   facts: {
     heading: "Faktanya",
-    lead: "Apa yang benar bagi setiap talian JomCall sekarang.",
+    lead: "Apa yang benar tentang JomCall sekarang.",
     factHead: "Fakta",
     detailHead: "Maksudnya",
     rows: [
@@ -144,7 +144,7 @@ const ms: TrustCopy = {
     detail: "{name}, nombor pendaftaran {reg}.",
   },
   source: {
-    fact: "Kod sumber terbuka kepada umum.",
+    fact: "Kod sumber boleh dibaca oleh umum.",
     detail: "Kod yang menjalankan JomCall diterbitkan di bawah FSL-1.1-ALv2, jadi sesiapa pun boleh membaca cara ia berfungsi.",
     link: "Baca kod sumber",
   },
@@ -172,7 +172,7 @@ const ms: TrustCopy = {
       },
       {
         q: "Di mana saya boleh membaca kodnya?",
-        a: "Kod sumber terbuka di bawah FSL-1.1-ALv2. Pautannya ada di halaman ini dan di kaki setiap halaman.",
+        a: "Kod sumber tersedia kepada umum di bawah FSL-1.1-ALv2. Pautannya ada di halaman ini dan di kaki setiap halaman.",
       },
     ],
   },

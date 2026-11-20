@@ -114,3 +114,7 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - Compare tables are a description list: on phones each cell carries its own visible label; from 768 px the labels move to a header row and the three columns sit side by side. All 20 new routes measured scrollWidth 360 at 360 px.
 - The BM copy passed the pattern scan and the "temu janji" rule but still needs a native speaker's read.
 - Playwright could only write screenshots inside the main repo (`call-agent/.playwright-mcp/t8/`); they were copied to `output/public-pages/task8-*`.
+- Review round 1: `rm()` now prints a thousands separator and a no-break space after RM ("RM 1,040.00"), site-wide; `llms.txt` uses `rmText()`, the same amount with a plain space. The formatter tests now expect U+00A0.
+- Review round 1: the worksheet's visible units stay decoration; each label carries the unit for screen readers in a visually hidden span ("(percentage, 0 to 100)"). "(in minutes)" tripped the stated-wait guard, so the minutes unit is said as "(number of minutes)".
+- Review round 1: "terbuka kepada umum" (reads as open source) also appeared in `faq.ts` and `pricing.ts` (Task 7 and earlier copy); both now say "tersedia kepada umum", and a test bans "sumber terbuka", "terbuka kepada umum" and "open source" in every public content module.
+- Review round 1: "helaian (kira)" became "kalkulator" throughout the BM Tier 2 copy.

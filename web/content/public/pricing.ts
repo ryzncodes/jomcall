@@ -208,7 +208,7 @@ const ms: typeof en = {
   },
   self: {
     heading: "Mahu menjalankannya sendiri?",
-    body: "Kod JomCall terbuka kepada umum di bawah FSL-1.1-ALv2 dan anda boleh menjalankannya sendiri. Ia bukan tanpa kos: anda perlu menyediakan pelayan, kunci suara dan bahasa serta pembawa telefon.",
+    body: "Kod JomCall tersedia kepada umum di bawah FSL-1.1-ALv2 dan anda boleh menjalankannya sendiri. Ia bukan tanpa kos: anda perlu menyediakan pelayan, kunci suara dan bahasa serta pembawa telefon.",
     link: "Panduan pasang sendiri",
     source: "Kod di GitHub",
   },

@@ -155,7 +155,7 @@ const en: GuidesCopy = {
     next: {
       heading: "If the figure is worth acting on",
       body: [
-        "You do not need a new number. Forward the calls you do not answer to your JomCall number, so those callers reach the agent instead of a ringing phone.",
+        "You do not need a new number. Forward the calls you do not answer to your JomCall number, so the agent can answer them instead of a ringing phone, up to the number of calls it takes at a time.",
         `Plans start at ${fee} a month. The Pricing page estimates your month from your own minutes.`,
       ],
       forwarding: "How call forwarding works",
@@ -283,7 +283,7 @@ const ms: GuidesCopy = {
         { call: "Bolehkah pemanggil bercakap dengan orang?", does: "Dalam waktu operasi, ejen menyambungkan pemanggil kepada staf anda." },
         { call: "Ada rakaman?", does: "Tiada. Panggilan tidak dirakam." },
         { call: "Bolehkah saya kekalkan nombor saya?", does: "Boleh. Anda majukan panggilannya ke nombor JomCall anda." },
-        { call: "Bagaimana harganya?", does: `Dari ${fee} sebulan, daripada dompet prabayar dalam ringgit. Tiada kad dicaj secara automatik.` },
+        { call: "Bagaimana harganya?", does: `Daripada ${fee} sebulan, daripada dompet prabayar dalam ringgit. Tiada kad dicaj secara automatik.` },
       ],
     },
     faqs: [
@@ -306,12 +306,12 @@ const ms: GuidesCopy = {
     ],
   },
   "missed-calls-cost": {
-    title: "Berapa kos panggilan yang terlepas? Helaian kira untuk perniagaan anda",
+    title: "Berapa kos panggilan yang terlepas? Kira untuk perniagaan anda",
     description:
-      "Helaian kira yang menukar angka anda sendiri kepada anggaran kos panggilan terlepas setiap bulan: panggilan terlepas seminggu, bahagian yang akan membuat tempahan dan nilai purata satu tempahan. Tiada purata rekaan, hanya angka anda.",
+      "Kalkulator ringkas yang menukar angka anda sendiri kepada anggaran kos panggilan terlepas setiap bulan: panggilan terlepas seminggu, bahagian yang akan membuat tempahan dan nilai purata satu tempahan. Tiada purata rekaan, hanya angka anda.",
     h1: "Berapa kos panggilan yang terlepas?",
-    lead: "Hanya anda yang tahu angkanya. Masukkan tiga angka daripada minggu biasa anda, dan helaian ini mengira nilai panggilan yang terlepas dalam sebulan.",
-    summary: "Helaian kira: masukkan angka anda sendiri, dapatkan nilai dalam ringgit setiap bulan.",
+    lead: "Hanya anda yang tahu angkanya. Masukkan tiga angka daripada minggu biasa anda, dan kalkulator ini mengira nilai panggilan yang terlepas dalam sebulan.",
+    summary: "Kalkulator: masukkan angka anda sendiri, dapatkan nilai dalam ringgit setiap bulan.",
     sheet: {
       heading: "Kira sendiri",
       lead: "Ubah tiga angka ini. Hasilnya berubah semasa anda menaip, dan tiada apa yang keluar dari pelayar anda.",
@@ -334,7 +334,7 @@ const ms: GuidesCopy = {
     next: {
       heading: "Jika angkanya wajar diambil tindakan",
       body: [
-        "Anda tidak perlu nombor baharu. Majukan panggilan yang tidak dijawab ke nombor JomCall anda, supaya pemanggil itu sampai kepada ejen dan bukan kepada telefon yang terus berdering.",
+        "Anda tidak perlu nombor baharu. Majukan panggilan yang tidak dijawab ke nombor JomCall anda, supaya ejen boleh menjawabnya dan bukan telefon yang terus berdering, sehingga bilangan panggilan yang boleh diterimanya pada satu masa.",
         `Pelan bermula pada ${fee} sebulan. Halaman Harga menganggarkan kos bulanan anda daripada minit anda sendiri.`,
       ],
       forwarding: "Cara pemajuan panggilan berfungsi",
@@ -350,12 +350,12 @@ const ms: GuidesCopy = {
         a: "Hanya panggilan yang anda majukan ke nombor JomCall anda, dan bilangannya terhad pada satu masa. Apabila taliannya penuh, pemanggil seterusnya diberitahu talian sibuk.",
       },
       {
-        q: "Bagaimana helaian ini menukar seminggu kepada sebulan?",
+        q: "Bagaimana kalkulator ini menukar seminggu kepada sebulan?",
         a: "Ia mendarab panggilan seminggu dengan 52 minggu dan membahagi dengan 12 bulan, kemudian dengan bahagian yang akan menempah dan nilai purata tempahan.",
       },
       {
         q: "Adakah halaman ini menyimpan angka saya?",
-        a: "Tidak. Helaian ini berjalan dalam pelayar anda dan tidak menghantar apa-apa ke mana-mana.",
+        a: "Tidak. Kalkulator ini berjalan dalam pelayar anda dan tidak menghantar apa-apa ke mana-mana.",
       },
     ],
   },
@@ -425,7 +425,7 @@ export const guidesIndex: Bilingual<GuidesIndexCopy> = {
     page: {
       title: "Panduan panggilan telefon untuk perniagaan kecil",
       description:
-        "Panduan ringkas untuk pemilik: apa itu penyambut tetamu AI, helaian kira kos panggilan yang terlepas, dan pemajuan panggilan di Malaysia.",
+        "Panduan ringkas untuk pemilik: apa itu penyambut tetamu AI, cara mengira kos panggilan yang terlepas, dan pemajuan panggilan di Malaysia.",
       h1: "Panduan",
       lead: "Jawapan ringkas untuk pemilik yang sedang melayan pelanggan ketika telefon berdering.",
     },
@@ -439,9 +439,10 @@ export type WorksheetCopy = {
   missed: {
     label: string;
     example: string;
-    perWeek: { label: string; unit: string };
-    share: { label: string; unit: string };
-    average: { label: string; unit: string };
+    // `said` is the unit as a screen reader hears it, inside the label.
+    perWeek: { label: string; unit: string; said: string };
+    share: { label: string; unit: string; said: string };
+    average: { label: string; unit: string; said: string };
     result: string;
     working: string;
     said: string;
@@ -449,8 +450,9 @@ export type WorksheetCopy = {
   };
   cost: {
     label: string;
-    cost: { label: string; hint: string; unit: string };
-    minutes: { label: string; unit: string };
+    example: string;
+    cost: { label: string; hint: string; unit: string; said: string };
+    minutes: { label: string; unit: string; said: string };
     yours: string;
     empty: string;
     jomcall: string;
@@ -465,9 +467,9 @@ export const worksheetCopy: Bilingual<WorksheetCopy> = {
     missed: {
       label: "Missed calls worksheet",
       example: "The figures below are an example to start from, not an average. Change them to your own.",
-      perWeek: { label: "Calls you miss in a normal week", unit: "calls" },
-      share: { label: "Share of those callers who would have booked", unit: "%" },
-      average: { label: "What an average booking is worth", unit: "RM" },
+      perWeek: { label: "Calls you miss in a normal week", unit: "calls", said: "(number of calls)" },
+      share: { label: "Share of those callers who would have booked", unit: "%", said: "(percentage, 0 to 100)" },
+      average: { label: "What an average booking is worth", unit: "RM", said: "(in ringgit)" },
       result: "At stake each month, by your figures",
       working: "{calls} missed calls a month × {share} × {average}",
       said: "About {amount} a month at stake, by your own figures.",
@@ -475,12 +477,14 @@ export const worksheetCopy: Bilingual<WorksheetCopy> = {
     },
     cost: {
       label: "Receptionist cost sheet",
+      example: "The minutes figure is an example to start from. Change it to your own.",
       cost: {
         label: "What a receptionist costs you a month",
         hint: "Salary plus extras, such as allowances and contributions. Your own figure: this page does not guess one.",
         unit: "RM",
+        said: "(in ringgit)",
       },
-      minutes: { label: "Minutes of calls a month", unit: "minutes" },
+      minutes: { label: "Minutes of calls a month", unit: "minutes", said: "(number of minutes)" },
       yours: "Your receptionist figure",
       empty: "Type your figure",
       jomcall: "JomCall on {plan} at {minutes} minutes",
@@ -491,29 +495,31 @@ export const worksheetCopy: Bilingual<WorksheetCopy> = {
   },
   ms: {
     missed: {
-      label: "Helaian kira panggilan terlepas",
+      label: "Kalkulator panggilan terlepas",
       example: "Angka di bawah hanya contoh untuk bermula, bukan purata. Tukar kepada angka anda sendiri.",
-      perWeek: { label: "Panggilan yang anda terlepas dalam minggu biasa", unit: "panggilan" },
-      share: { label: "Bahagian pemanggil itu yang akan menempah", unit: "%" },
-      average: { label: "Nilai purata satu tempahan", unit: "RM" },
+      perWeek: { label: "Panggilan yang anda terlepas dalam minggu biasa", unit: "panggilan", said: "(bilangan panggilan)" },
+      share: { label: "Bahagian pemanggil itu yang akan menempah", unit: "%", said: "(peratus, 0 hingga 100)" },
+      average: { label: "Nilai purata satu tempahan", unit: "RM", said: "(dalam ringgit)" },
       result: "Nilai setiap bulan, ikut angka anda",
       working: "{calls} panggilan terlepas sebulan × {share} × {average}",
       said: "Kira-kira {amount} sebulan, ikut angka anda sendiri.",
       fine: "Ini anggaran anda sendiri daripada angka yang anda taip. Ia bukan ramalan, dan bukan janji tentang hasil yang JomCall akan bawa.",
     },
     cost: {
-      label: "Helaian kos penyambut tetamu",
+      label: "Kalkulator kos penyambut tetamu",
+      example: "Angka minit ini hanya contoh untuk bermula. Tukar kepada angka anda sendiri.",
       cost: {
         label: "Kos penyambut tetamu sebulan",
         hint: "Gaji dan kos lain, seperti elaun dan caruman. Angka anda sendiri: halaman ini tidak meneka.",
         unit: "RM",
+        said: "(dalam ringgit)",
       },
-      minutes: { label: "Minit panggilan sebulan", unit: "minit" },
+      minutes: { label: "Minit panggilan sebulan", unit: "minit", said: "(bilangan minit)" },
       yours: "Angka penyambut tetamu anda",
       empty: "Taip angka anda",
-      jomcall: "JomCall pelan {plan} pada {minutes} minit",
-      said: "Angka anda: {cost}. JomCall pelan {plan} pada {minutes} minit: {jomcall}.",
-      saidEmpty: "JomCall pelan {plan} pada {minutes} minit: {jomcall}. Taip angka penyambut tetamu anda untuk dibandingkan.",
+      jomcall: "JomCall, pelan {plan}, untuk {minutes} minit",
+      said: "Angka anda: {cost}. JomCall, pelan {plan}, untuk {minutes} minit: {jomcall}.",
+      saidEmpty: "JomCall, pelan {plan}, untuk {minutes} minit: {jomcall}. Taip angka penyambut tetamu anda untuk dibandingkan.",
       fine: "Angka anda ialah angka anda sendiri. Angka JomCall diambil daripada jadual harga semasa dan hanya meliputi panggilan telefon, bukan kerja kaunter yang dibuat oleh orang.",
     },
   },
