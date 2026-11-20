@@ -19,11 +19,7 @@ import {
   publicPrices,
   sourceUrl,
 } from "@/lib/pricing";
-import {
-  OPERATOR,
-  PRIVACY_CONTACT_EMAIL,
-  LEGAL_EFFECTIVE_DATE,
-} from "@/lib/operator";
+import { OPERATOR } from "@/lib/operator";
 import { HOSTED } from "@/lib/hosted";
 import { useSignedIn } from "./signed-in";
 import {
@@ -32,16 +28,10 @@ import {
   launchCopy,
 } from "@/lib/launch";
 import { legalCopy } from "@/messages/legal";
+import { fillOperator } from "./public/operator";
 
-// Fills operator facts into legal text. Facts live only in lib/operator.ts.
-export function fillOperator(text: string): string {
-  return text
-    .replaceAll("{name}", OPERATOR.legalName)
-    .replaceAll("{reg}", OPERATOR.registrationNumber)
-    .replaceAll("{address}", OPERATOR.address)
-    .replaceAll("{email}", PRIVACY_CONTACT_EMAIL)
-    .replaceAll("{date}", LEGAL_EFFECTIVE_DATE);
-}
+// Operator facts are filled in one place; re-exported for the app's own pages.
+export { fillOperator } from "./public/operator";
 
 // Operator identity shown in every public footer.
 export function OperatorDetails() {

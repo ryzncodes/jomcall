@@ -63,3 +63,14 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
     - Phones: call rows put the outcome badge under the name (long BM outcomes squeezed the names onto two lines); the call card's side padding is 16 px under 400 px and language chips use 8 px padding under 641 px so both chip rows stay on one line at 360 px.
     - The header language link is `nowrap`; at 1024-1199 px the header row gap and link padding drop one step so the row still fits.
     - Language specimens: the duplicate chip is gone and the Manglish label names it ("Manglish: BM and English, mixed"); labels and lines share rows through subgrid so a wrapped label does not push its line down. Chinese breaks only after words of two or more characters (`Intl.Segmenter` plus `<wbr>`, and `word-break: keep-all`), so 三点吗？ stays whole.
+
+## Task 5: pricing, privacy, terms
+
+- Cheapest plan: brief said `payg` at 0 minutes; controller ruling applies. `estimates()` marks the cheapest only among plans with a phone number, tie to the lower fee (0/100/350 -> starter, 400/1000 -> growth). The payg row is shown and says "browser tests only".
+- Amounts use `rmExact` ("RM 49.00") in `format.ts`; `rm` (home) unchanged.
+- `pricing.trial` was already allowed. The trial answer lives at `faq.trial` (a key the guard already allows); `pricingFaq(locale)` returns the six in page order (trial fifth). The claims test already scans every file in `web/content/public/`, so `pricing.ts` is covered; I added an assertion for it.
+- `fillOperator` was duplicated in `public-pages.tsx`; it now re-exports the one in `public/operator.tsx`.
+- Self-host note kept (spec: card stays) as a quiet block linking to `/self-host` and the source.
+- Added "Prices are in MYR, before SST" (matches the terms text; the old page said "No SST is charged", which the terms contradict). Owner should confirm SST.
+- The estimator's slider and box are two views of one value; typing follows the exact number and snaps to the 10-minute step on blur.
+- Legal text is rendered verbatim from `legalCopy`. It still says calls "may be recorded", which conflicts with the owner rule "calls are not recorded"; not changed here (legal text is not ours to edit).

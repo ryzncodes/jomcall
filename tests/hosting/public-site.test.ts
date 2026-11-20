@@ -231,3 +231,136 @@ test("a feature a plan lacks is listed apart from what it includes", () => {
   assert.equal(home.en.pricing.plans.payg.missing[0], "No phone number");
   assert.equal(home.ms.pricing.plans.payg.missing[0], "Tiada nombor telefon");
 });
+
+// ------------------------------------------------------------ pricing page
+import { clampMinutes, estimates, MAX_MINUTES } from "../../web/components/public/estimates.ts";
+import { legalAnchors } from "../../web/components/public/legal-anchors.ts";
+import { legalCopy } from "../../web/messages/legal.ts";
+import { monthlyEstimateSen } from "../../web/lib/pricing.ts";
+import { pricing, pricingFaq } from "../../web/content/public/pricing.ts";
+import { rmExact } from "../../web/content/public/format.ts";
+
+test("estimates: every plan's figure comes from monthlyEstimateSen", () => {
+  for (const minutes of [0, 100, 400, 1000, 3000]) {
+    const e = estimates(minutes);
+    assert.deepEqual(e.rows.map((r) => r.code), publicPlans.map((p) => p.code));
+    for (const row of e.rows) {
+      const plan = publicPlans.find((p) => p.code === row.code)!;
+      assert.equal(row.sen, monthlyEstimateSen(plan, minutes));
+    }
+  }
+});
+
+test("estimates: the cheapest plan is chosen among plans with a phone number", () => {
+  // Pay as you go has no phone number, so it never takes the mark, even
+  // though its figure is the lowest.
+  const cheapest = (m: number) => estimates(m).cheapest;
+  assert.equal(cheapest(0), "starter");
+  assert.equal(cheapest(100), "starter");
+  assert.equal(cheapest(1000), "growth");
+  assert.equal(cheapest(400), "growth");
+  // A tie goes to the lower monthly fee: both cost RM 129.00 at 350 minutes.
+  const tie = estimates(350);
+  assert.equal(tie.rows.find((r) => r.code === "starter")!.sen, 12900);
+  assert.equal(tie.rows.find((r) => r.code === "growth")!.sen, 12900);
+  assert.equal(tie.cheapest, "starter");
+  const payg = estimates(0).rows.find((r) => r.code === "payg")!;
+  assert.equal(payg.phone, false);
+  assert.ok(payg.sen < estimates(0).rows.find((r) => r.code === "starter")!.sen);
+});
+
+test("clampMinutes keeps 0 to 3000 in steps of 10 and survives bad input", () => {
+  assert.equal(MAX_MINUTES, 3000);
+  assert.equal(clampMinutes(-5), 0);
+  assert.equal(clampMinutes(5000), 3000);
+  assert.equal(clampMinutes(344), 340);
+  assert.equal(clampMinutes(345), 350);
+  assert.equal(clampMinutes("250"), 250);
+  assert.equal(clampMinutes("abc"), 0);
+  assert.equal(clampMinutes(""), 0);
+  assert.equal(clampMinutes(Number.NaN), 0);
+  assert.equal(clampMinutes(Number.POSITIVE_INFINITY), 0);
+  assert.equal(clampMinutes(undefined), 0);
+});
+
+test("amounts are shown as RM 49.00 and come from the price table", () => {
+  assert.equal(rmExact(4900), "RM 49.00");
+  assert.equal(rmExact(32), "RM 0.32");
+  assert.doesNotMatch(readFileSync("web/content/public/pricing.ts", "utf8"), /RM\s?\d/);
+});
+
+test("pricing FAQ has six questions in a fixed order and answers the trial question", () => {
+  for (const locale of ["en", "ms"] as const) {
+    const items = pricingFaq(locale);
+    assert.equal(items.length, 6);
+    assert.equal(items[4].q, pricing[locale].faq.trial.q);
+    assert.ok(items.every((i) => i.q && i.a));
+  }
+  assert.match(pricing.en.faq.trial.a, /no free trial/i);
+});
+
+test("pricing pages are static and follow the home route pattern", () => {
+  for (const [locale, file] of [["en", "web/app/(public)/pricing/page.tsx"], ["ms", "web/app/ms/pricing/page.tsx"]] as const) {
+    const src = readFileSync(file, "utf8");
+    assert.match(src, new RegExp(`pageMetadata\\(\\s*"pricing",\\s*"${locale}"`));
+    assert.doesNotMatch(src, /searchParams|generateMetadata|headers\(|cookies\(/);
+    assert.match(src, new RegExp(`<PricingPage locale="${locale}"`));
+  }
+  assert.ok(!existsSync("web/app/pricing/page.tsx"), "old pricing route still exists");
+});
+
+test("pricing page sends visitors to sign-up and signed-in owners to Billing", () => {
+  const src = readFileSync("web/components/public/plan-button.tsx", "utf8");
+  assert.match(src, /"\/signup"/);
+  assert.match(src, /"\/app\/billing"/);
+});
+
+test("pricing content is scanned by the claims guard", () => {
+  assert.ok(existsSync("web/content/public/pricing.ts"));
+  assert.match(readFileSync("tests/hosting/public-claims.test.ts", "utf8"), /ROOT = resolve\("web\/content\/public"\)/);
+});
+
+test("pricing shows WhatsApp only as waiting for Meta", () => {
+  for (const locale of ["en", "ms"] as const) {
+    const strings: string[] = [];
+    const walk = (v: unknown) => {
+      if (typeof v === "string") strings.push(v);
+      else if (v && typeof v === "object" && "q" in v && "a" in v) strings.push(`${v.q} ${v.a}`);
+      else if (v && typeof v === "object") Object.values(v).forEach(walk);
+    };
+    walk(pricing[locale]);
+    // Plain denials and a rate label say nothing is on offer; every other
+    // mention carries Meta's approval.
+    const plain = new Set(["No WhatsApp agent", "Tiada ejen WhatsApp", "WhatsApp agent conversation", "Perbualan ejen WhatsApp"]);
+    for (const s of strings.filter((s) => /whatsapp/i.test(s) && !plain.has(s)))
+      assert.match(s, /Meta/, `WhatsApp without Meta's approval: ${s}`);
+  }
+});
+
+// ------------------------------------------------------------- legal pages
+test("legal pages: every heading of the legal text gets a unique anchor, text unchanged", () => {
+  for (const locale of ["en", "ms"] as const)
+    for (const kind of ["privacy", "terms"] as const) {
+      const doc = legalCopy[locale][kind];
+      const anchors = legalAnchors(doc);
+      assert.deepEqual(anchors.map((a) => a.heading), doc.sections.map((s) => s.heading));
+      assert.equal(new Set(anchors.map((a) => a.id)).size, anchors.length);
+      for (const a of anchors) assert.match(a.id, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    }
+});
+
+test("legal pages are static, in the public shell, with the legal text unchanged", () => {
+  for (const kind of ["privacy", "terms"] as const)
+    for (const [locale, dir] of [["en", "web/app/(public)"], ["ms", "web/app/ms"]] as const) {
+      const src = readFileSync(`${dir}/${kind}/page.tsx`, "utf8");
+      assert.match(src, new RegExp(`pageMetadata\\(\\s*"${kind}",\\s*"${locale}"`));
+      assert.doesNotMatch(src, /searchParams|generateMetadata|headers\(|cookies\(/);
+      assert.match(src, new RegExp(`<LegalPage kind="${kind}" locale="${locale}"`));
+      assert.ok(!existsSync(`web/app/${kind}/page.tsx`), `old ${kind} route still exists`);
+    }
+  const page = readFileSync("web/components/public/pages/legal.tsx", "utf8");
+  assert.match(page, /fillOperator\(/);
+  assert.match(page, /legalCopy\[locale\]\[kind\]/);
+  // The operator facts helper lives in one place.
+  assert.match(readFileSync("web/components/public-pages.tsx", "utf8"), /from "\.\/public\/operator"/);
+});
