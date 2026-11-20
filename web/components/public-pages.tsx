@@ -129,11 +129,13 @@ export function PublicPages({
 }: {
   page: "pricing" | "docs" | "privacy" | "terms";
 }) {
-  const { t, href, locale } = useExperience(),
+  const { t, href, locale, mode } = useExperience(),
     p = t.remaining,
     [minutes, setMinutes] = useState(300),
     [guide, setGuide] = useState<number | null>(null);
   const li = locale === "ms" ? 1 : 0;
+  // Signed in, a plan is chosen in Billing, not by signing up again.
+  const signedIn = Boolean(useSignedIn(mode !== "mock"));
   const routes = [
     "/app/setup",
     "/app/phone-numbers",
@@ -224,8 +226,17 @@ export function PublicPages({
                         ` (${whatsappWaiting.short[locale === "ms" ? 1 : 0]})`}
                     </li>
                   </ul>
-                  <a className="button button-dark" href={href("/signup")}>
-                    {HOSTED ? launchCopy.planButton[li] : p.signup}
+                  <a
+                    className="button button-dark"
+                    href={href(signedIn ? "/app/billing" : "/signup")}
+                  >
+                    {signedIn
+                      ? li
+                        ? "Pilih dalam Bil"
+                        : "Choose in Billing"
+                      : HOSTED
+                        ? launchCopy.planButton[li]
+                        : p.signup}
                     <ArrowUpRight size={18} />
                   </a>
                 </section>

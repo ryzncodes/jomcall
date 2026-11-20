@@ -61,6 +61,17 @@ function Shell() {
   const w = useWords(),
     page = useAgentPage(),
     view = useHashView();
+  // Opening hours has its own address (/app/hours leads here), so its tab
+  // says so; every other view keeps the agent page's title.
+  const hoursTitle = w("Opening hours", "Waktu operasi") + " · JomCall";
+  useEffect(() => {
+    if (view !== "hours") return;
+    const before = document.title;
+    document.title = hoursTitle;
+    return () => {
+      document.title = before;
+    };
+  }, [view, hoursTitle]);
   return (
     <div className="agent-page">
       <header className="agent-head">

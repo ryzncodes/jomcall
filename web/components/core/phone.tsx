@@ -111,7 +111,15 @@ export function LocalPhoneNumbers() {
           )}
           <section className="core-panel">
             {!list.data.items.length ? (
-              <p className="core-empty">{w("No numbers yet.", "Belum ada nombor.")}</p>
+              <p className="core-empty">
+                {/* The badge above already says there is no number yet. */}
+                {HOSTED
+                  ? w(
+                      "Your number shows here once it is ready.",
+                      "Nombor anda dipaparkan di sini apabila sedia.",
+                    )
+                  : w("No numbers yet.", "Belum ada nombor.")}
+              </p>
             ) : (
               list.data.items.map((n) => (
                 <div className="directory-row" key={n.id}>

@@ -1368,7 +1368,7 @@
     "voiceMinutes": "Voice minutes",
     "messages": "Delivered WhatsApp messages",
     "estimate": "Sample usage estimate",
-    "rateHint": "Amounts in MYR, before SST. Monthly fees are taken from your prepaid wallet; no card is charged automatically. Unused minutes do not carry over to the next month.",
+    "rateHint": "Amounts in MYR. No SST is charged. Monthly fees are taken from your prepaid wallet; no card is charged automatically. Unused minutes do not carry over to the next month.",
     "walletLink": "Explore the sample wallet",
     "paygo": "A wallet you control.",
     "paygoBody": "Top up when you need it, inspect every usage entry and set an automatic refill threshold in the preview.",

@@ -166,9 +166,9 @@ export function WorkspaceChrome({
       ? [
           ...(channels?.phone ? [] : ["phones"]),
           ...(channels?.whatsapp ? [] : ["whatsapp"]),
-          // The inbox holds WhatsApp chats only for now, so it follows the
-          // WhatsApp switch.
-          ...(channels?.whatsapp ? [] : ["inbox"]),
+          // The inbox holds WhatsApp chats only for now: it shows once this
+          // workspace has a connected WhatsApp number, not just the service.
+          ...(channels?.live?.whatsapp ? [] : ["inbox"]),
           ...(channels?.integrations ? [] : ["integrations"]),
           // Follow-up (outbound) is not built for real workspaces yet.
           ...(hosted ? ["outbound"] : []),
@@ -178,6 +178,11 @@ export function WorkspaceChrome({
         ]
       : [];
   const navigation = all.filter((item) => !hidden.includes(item.key));
+  // A real workspace never shows the sample business's name, even while its
+  // own name is loading; the mock preview keeps the sample.
+  const shownName =
+    workspace.name ||
+    (mode === "mock" ? t.workspace : locale === "ms" ? "Ruang kerja" : "Workspace");
   return (
     <div className="workspace product-workspace">
       <a className="skip-link" href="#workspace-content">
@@ -186,9 +191,11 @@ export function WorkspaceChrome({
       <aside className="workspace-sidebar">
         <Brand />
         <div className="workspace-switch">
-          <div className="workspace-avatar">C</div>
+          <div className="workspace-avatar" aria-hidden="true">
+            {(Array.from(shownName.trim())[0] ?? "?").toLocaleUpperCase()}
+          </div>
           <div>
-            <strong>{workspace.name || t.workspace}</strong>
+            <strong>{shownName}</strong>
             <small>{workspace.location || "—"}</small>
           </div>
         </div>

@@ -13,8 +13,8 @@ export const whatsappWaiting = {
     "WhatsApp sedang menunggu kelulusan Meta",
   ],
   body: [
-    "Meta is reviewing JomCall before businesses can connect their WhatsApp numbers. This usually takes a few weeks. Nothing is needed from you, and your phone line works now. We will tell you when WhatsApp is ready.",
-    "Meta sedang menyemak JomCall sebelum perniagaan boleh menyambungkan nombor WhatsApp mereka. Ini biasanya mengambil masa beberapa minggu. Tiada apa yang perlu anda lakukan, dan talian telefon anda sudah berfungsi. Kami akan maklumkan apabila WhatsApp sedia.",
+    "Meta is reviewing JomCall before businesses can connect their WhatsApp numbers. This usually takes a few weeks. Nothing is needed from you, and phone calls do not wait for this. We will tell you when WhatsApp is ready.",
+    "Meta sedang menyemak JomCall sebelum perniagaan boleh menyambungkan nombor WhatsApp mereka. Ini biasanya mengambil masa beberapa minggu. Tiada apa yang perlu anda lakukan, dan panggilan telefon tidak perlu menunggu kelulusan ini. Kami akan maklumkan apabila WhatsApp sedia.",
   ],
 } as const;
 
