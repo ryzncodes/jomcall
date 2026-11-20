@@ -169,7 +169,7 @@ const ms: typeof en = {
           `${growth.phoneNumbers} nombor telefon`,
           `${mins(growth.includedVoiceSeconds)} minit setiap bulan`,
           `Selepas itu ${perMinute} seminit, dicaj mengikut saat`,
-          `Ejen WhatsApp: ${waitMs}. Apabila dibuka, yuran JomCall ialah ${perConversation} setiap perbualan, dan Meta mengecaj yuran mesejnya sendiri kepada anda.`,
+          `Ejen WhatsApp: ${waitMs}. Apabila dibuka, yuran JomCall ialah ${perConversation} setiap perbualan, dan Meta mengenakan caj mesejnya sendiri kepada anda.`,
         ],
         missing: [],
       },
@@ -186,7 +186,7 @@ const ms: typeof en = {
   },
   estimator: {
     heading: "Anggarkan bulan anda",
-    lead: "Gerakkan peluncur atau taip minit suara yang anda jangka. Setiap angka ialah yuran pelan campur minit yang melebihi kuota.",
+    lead: "Gerakkan peluncur atau taip minit suara yang anda jangka. Setiap angka ialah yuran pelan ditambah minit yang melebihi kuota.",
     sliderLabel: "Minit suara sebulan",
     inputLabel: "Taip bilangan minit",
     unit: "minit",
@@ -203,12 +203,12 @@ const ms: typeof en = {
     heading: "Kadar",
     rows: [
       { label: "Minit suara melebihi kuota anda", value: `${perMinute} seminit`, note: "Dicaj mengikut saat." },
-      { label: "Perbualan ejen WhatsApp", value: `${perConversation} setiap perbualan`, note: `Belum dibuka: ${waitMs}. Meta mengecaj yuran mesejnya kepada anda.` },
+      { label: "Perbualan ejen WhatsApp", value: `${perConversation} setiap perbualan`, note: `Belum dibuka: ${waitMs}. Meta mengenakan caj mesejnya kepada anda.` },
     ],
   },
   self: {
     heading: "Mahu menjalankannya sendiri?",
-    body: "Kod JomCall tersedia kepada umum di bawah FSL-1.1-ALv2 dan anda boleh menjalankannya sendiri. Ia bukan tanpa kos: anda perlu menyediakan pelayan, kunci suara dan bahasa serta pembawa telefon.",
+    body: "Kod JomCall tersedia kepada umum di bawah FSL-1.1-ALv2 dan anda boleh menjalankannya sendiri. Ia bukan tanpa kos: anda perlu menyediakan pelayan, kunci suara dan bahasa serta pembekal talian telefon.",
     link: "Panduan pasang sendiri",
     source: "Kod di GitHub",
   },
@@ -237,12 +237,12 @@ const ms: typeof en = {
       },
     ] satisfies FaqItem[],
     trial: {
-      q: "Adakah ada percubaan percuma?",
-      a: `Tidak, tiada percubaan percuma. Starter berharga ${rmExact(starter.monthlyFeeSen)} sebulan, dan anda boleh menguji ejen anda dalam pelayar pada bayar mengikut guna sebelum membayar sebarang yuran pelan.`,
+      q: "Ada percubaan percuma?",
+      a: `Tidak, tiada percubaan percuma. Starter berharga ${rmExact(starter.monthlyFeeSen)} sebulan, dan anda boleh menguji ejen anda dalam pelayar dengan pelan bayar mengikut guna sebelum membayar sebarang yuran pelan.`,
     } satisfies FaqItem,
   },
   closing: {
-    heading: "Sedia menyediakan penyambut tetamu anda?",
+    heading: "Mahu mula menyediakan penyambut tetamu anda?",
     body: "Sediakan perniagaan anda dan uji ejen dalam pelayar sebelum memilih pelan.",
   },
 };

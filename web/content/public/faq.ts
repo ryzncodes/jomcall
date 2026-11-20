@@ -158,11 +158,11 @@ const en: FaqCopy = {
 
 const ms: FaqCopy = {
   page: {
-    title: "Soalan tentang JomCall, dijawab",
+    title: "Soalan tentang JomCall, dan jawapannya",
     description:
       "Jawapan terus tentang JomCall: harga dan bil, nombor telefon dan pemajuan panggilan, bahasa, apa yang AI buat dan tidak buat, privasi, dan WhatsApp yang sedang menunggu kelulusan Meta.",
-    h1: "Soalan lazim, dijawab",
-    lead: "Jawapan ringkas tentang harga, nombor telefon, bahasa, apa yang ejen buat dan tidak buat, privasi, dan WhatsApp yang sedang menunggu kelulusan Meta. Setiap jawapan boleh dibaca sendiri.",
+    h1: "Soalan lazim dan jawapannya",
+    lead: "Jawapan ringkas tentang harga, nombor telefon, bahasa, apa yang ejen buat dan tidak buat, privasi, dan WhatsApp yang sedang menunggu kelulusan Meta. Setiap jawapan lengkap dengan sendirinya.",
   },
   groups: {
     price: {
@@ -279,7 +279,7 @@ const ms: FaqCopy = {
         },
         plan: {
           q: "Pelan mana yang termasuk ejen WhatsApp?",
-          a: `${waitTitleMs}. Apabila ia dibuka, ejen WhatsApp disertakan dalam pelan Growth, dan Meta mengenakan caj mesejnya sendiri kepada perniagaan.`,
+          a: `${waitTitleMs}. Apabila ia tersedia, ejen WhatsApp disertakan dalam pelan Growth, dan Meta mengenakan caj mesejnya sendiri kepada perniagaan.`,
         },
       },
     },

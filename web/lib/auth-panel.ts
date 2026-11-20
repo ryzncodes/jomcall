@@ -9,7 +9,7 @@ export const authPanel = {
   ],
   intro: [
     "JomCall is an AI receptionist for your business phone line. It answers calls in Bahasa Melayu, English, Manglish or Mandarin, answers questions about your business, takes messages and passes the caller to your staff during opening hours.",
-    "JomCall ialah penyambut tetamu AI untuk talian telefon perniagaan anda. Ia menjawab panggilan dalam BM, Inggeris, Manglish atau Mandarin, menjawab soalan tentang perniagaan anda, mengambil pesanan dan menyambungkan pemanggil kepada staf anda dalam waktu operasi.",
+    "JomCall ialah penyambut tetamu AI untuk talian telefon perniagaan anda. Ia menjawab panggilan dalam BM, bahasa Inggeris, Manglish atau Mandarin, menjawab soalan tentang perniagaan anda, mengambil pesanan dan menyambungkan pemanggil kepada staf anda dalam waktu operasi.",
   ],
   stepsLabel: ["The six steps", "Enam langkah"],
   steps: [

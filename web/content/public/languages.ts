@@ -107,7 +107,7 @@ const ms: LanguagesCopy = {
   },
   list: {
     heading: "Empat bahasa",
-    lead: "Setiap ayat di bawah ialah contoh rekaan bagaimana pemanggil mungkin memulakan panggilan.",
+    lead: "Setiap ayat di bawah ialah contoh rekaan cara pemanggil mungkin memulakan panggilan.",
     items: [
       { name: "Bahasa Melayu", lang: "ms", line: "Esok pagi klinik buka pukul berapa?", body: "BM harian atau BM yang lebih formal, ikut cara pemanggil bercakap." },
       { name: "Bahasa Inggeris", lang: "en", line: "Hi, do you have anything free on Friday evening?", body: "Bahasa Inggeris Malaysia, seperti cara pelanggan anda bercakap." },
@@ -124,7 +124,7 @@ const ms: LanguagesCopy = {
   },
   sample: {
     heading: "Panggilan yang bertukar bahasa",
-    lead: "Panggilan rekaan ke salun rekaan. Pemanggil mula dalam bahasa Inggeris dan bertukar ke BM di pertengahan.",
+    lead: "Panggilan rekaan ke salun rekaan. Pemanggil mula dalam bahasa Inggeris dan bertukar ke BM di pertengahan panggilan.",
     business: "Salun Contoh",
     lines: [
       { who: "agent", text: spoken.greet, lang: "en" },
@@ -136,7 +136,7 @@ const ms: LanguagesCopy = {
       { who: "caller", text: spoken.yes, lang: "ms" },
       { who: "event", text: "Ditempah dalam JomCall: Sabtu, 10:30 pagi" },
     ],
-    outcome: "Masa itu diulang dalam BM, bahasa yang pemanggil sudah tukar.",
+    outcome: "Masa itu diulang dalam BM, iaitu bahasa yang pemanggil guna selepas bertukar.",
   },
   not: {
     heading: "Apa yang ia belum buat",

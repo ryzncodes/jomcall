@@ -103,7 +103,7 @@ const ms: TrustCopy = {
   page: {
     title: "Kepercayaan: cara JomCall mengurus panggilan dan data",
     description:
-      "Fakta jelas tentang JomCall: panggilan tidak dirakam, AI memberitahu bahawa ia AI, tempat membaca pembekal yang menerima data, eksport dan padam, kod sumber yang boleh dibaca oleh umum dan siapa yang mengendalikan perkhidmatan ini.",
+      "Fakta jelas tentang JomCall: panggilan tidak dirakam, AI memberitahu bahawa ia AI, senarai pembekal yang menerima data, eksport dan padam, kod sumber yang boleh dibaca oleh umum dan siapa yang mengendalikan perkhidmatan ini.",
     h1: "Apa yang JomCall buat dengan panggilan dan data anda",
     lead: "Fakta yang jelas, dan setiap satu boleh anda semak. Untuk teks penuh, baca notis privasi dan terma penggunaan.",
   },
@@ -155,7 +155,7 @@ const ms: TrustCopy = {
   },
   documents: {
     heading: "Teks penuh",
-    lead: "Notis privasi dan terma penggunaan ialah dokumen yang mengikat JomCall. Halaman ini hanya menunjukkan jalan kepadanya.",
+    lead: "Notis privasi dan terma penggunaan ialah dokumen yang mengikat JomCall. Halaman ini hanya memberi pautan kepadanya.",
     privacy: "Apa yang JomCall kumpul, sebabnya, siapa yang menerimanya dan cara meminta data anda.",
     terms: "Apa yang dipersetujui oleh perniagaan apabila menggunakan JomCall, termasuk mengekalkan notis AI.",
   },

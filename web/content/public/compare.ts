@@ -389,7 +389,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
   voicemail: {
     title: "JomCall berbanding mel suara untuk perniagaan kecil",
     description:
-      "Mel suara mengambil pesanan dan menunggu anda telefon semula. JomCall bercakap dengan pemanggil: ia menjawab daripada fakta anda sendiri, membuat tempahan temu janji dan mengambil pesanan. Bila setiap satu lebih sesuai, dibandingkan terus.",
+      "Mel suara mengambil pesanan dan menunggu anda telefon semula. JomCall bercakap dengan pemanggil: ia menjawab daripada fakta anda sendiri, membuat tempahan temu janji dan mengambil pesanan. Perbandingan terus: bila setiap satu lebih sesuai.",
     h1: "JomCall atau mel suara?",
     lead: "Mel suara menunggu anda telefon semula. JomCall bercakap dengan pemanggil ketika itu juga: ia menjawab soalan daripada fakta anda sendiri, membuat tempahan temu janji dan mengambil pesanan. Di bawah, bila setiap satu lebih sesuai.",
     summary: "Bila peti mel sudah cukup, dan bila pemanggil perlukan jawapan semasa panggilan.",
@@ -517,9 +517,9 @@ const ms: Record<CompareSlug, CompareCopy> = {
   "answering-service": {
     title: "JomCall berbanding khidmat jawab panggilan",
     description:
-      "Khidmat jawab panggilan meletakkan orang pada panggilan anda; JomCall meletakkan AI, disediakan daripada fakta dan senarai harga anda sendiri. Siapa yang bercakap, apa yang mereka tahu, cara menyediakannya dan bila khidmat manusia lebih sesuai.",
+      "Khidmat jawab panggilan menggunakan orang untuk menjawab panggilan anda; JomCall menggunakan AI yang disediakan daripada fakta dan senarai harga anda sendiri. Siapa yang bercakap, apa yang mereka tahu, cara menyediakannya dan bila khidmat manusia lebih sesuai.",
     h1: "JomCall atau khidmat jawab panggilan?",
-    lead: "Khidmat jawab panggilan meletakkan orang yang terlatih pada panggilan anda. JomCall meletakkan AI, disediakan daripada fakta dan senarai harga anda sendiri. Kedua-duanya angkat panggilan; bezanya pada siapa yang bercakap, apa yang mereka tahu dan cara anda membayar.",
+    lead: "Khidmat jawab panggilan menggunakan orang yang terlatih untuk menjawab panggilan anda. JomCall menggunakan AI yang disediakan daripada fakta dan senarai harga anda sendiri. Kedua-duanya angkat panggilan; bezanya pada siapa yang bercakap, apa yang mereka tahu dan cara anda membayar.",
     summary: "Orang yang membaca nota anda, atau AI yang disediakan daripada fakta anda sendiri.",
     them: "Khidmat jawab panggilan",
     short: {
@@ -582,9 +582,9 @@ const ms: Record<CompareSlug, CompareCopy> = {
   "whatsapp-bot": {
     title: "JomCall berbanding bot WhatsApp: panggilan dan sembang",
     description:
-      "Bot WhatsApp membalas sembang; JomCall menjawab panggilan telefon. Ejen WhatsApp JomCall sendiri sedang menunggu kelulusan Meta. Pelanggan mana yang dicapai oleh setiap satu, dan bila bot sembang lebih sesuai.",
+      "Bot WhatsApp membalas sembang; JomCall menjawab panggilan telefon. Ejen WhatsApp JomCall sendiri sedang menunggu kelulusan Meta. Pelanggan mana yang dilayan oleh setiap satu, dan bila bot sembang lebih sesuai.",
     h1: "JomCall atau bot WhatsApp?",
-    lead: "Bot WhatsApp membalas sembang. JomCall menjawab panggilan telefon. Kedua-duanya mencapai pelanggan yang berbeza: yang menaip, dan yang menelefon.",
+    lead: "Bot WhatsApp membalas sembang. JomCall menjawab panggilan telefon. Kedua-duanya melayan pelanggan yang berbeza: yang menaip, dan yang menelefon.",
     summary: "Pelanggan yang menaip, dan pelanggan yang menelefon. Ejen WhatsApp JomCall sedang menunggu kelulusan Meta.",
     them: "Bot WhatsApp",
     short: {
@@ -604,7 +604,7 @@ const ms: Record<CompareSlug, CompareCopy> = {
         { topic: "Soalan", them: "Daripada balasan yang anda tetapkan dalam bot.", us: "questions" },
         { topic: "Tempahan", them: "Bergantung pada bot itu.", us: "bookings" },
         { topic: "Bercakap dengan orang", them: "Memindahkan sembang kepada pasukan anda, jika bot itu menyokongnya.", us: "transfer" },
-        { topic: "Nombor anda", them: "Berjalan pada nombor WhatsApp Business.", us: "number" },
+        { topic: "Nombor anda", them: "Menggunakan nombor WhatsApp Business.", us: "number" },
       ],
     },
     better: {
@@ -668,6 +668,6 @@ export const compareIndex: Bilingual<CompareIndexCopy> = {
       lead: "Perbandingan yang adil dengan cara lain untuk mengurus panggilan anda. Setiap halaman menyatakan dengan jelas bila pilihan lain lebih sesuai.",
     },
     heading: "Perbandingan",
-    note: "Halaman ini membandingkan jenis pilihan, bukan produk yang dinamakan. Bahagian JomCall hanya menggunakan apa yang JomCall buat sekarang.",
+    note: "Halaman ini membandingkan jenis pilihan, bukan produk yang dinamakan. Bahagian JomCall hanya menyebut apa yang JomCall buat sekarang.",
   },
 };

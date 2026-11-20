@@ -233,13 +233,13 @@ const ms: GuidesCopy = {
     description:
       "Penyambut tetamu AI menjawab telefon perniagaan anda dan bercakap dengan pemanggil dalam bahasa harian. Apa yang ia buat semasa panggilan, bezanya dengan menu telefon atau mel suara, apa yang ia tidak buat, dan soalan untuk ditanya sebelum memilih.",
     h1: "Apa itu penyambut tetamu AI?",
-    lead: "Penyambut tetamu AI menjawab telefon perniagaan anda, bercakap dengan pemanggil dalam bahasa harian, dan membuat kerja kaunter yang diperlukan oleh panggilan: menjawab soalan, menempah lawatan, mengambil pesanan atau menyambungkan pemanggil kepada orang.",
+    lead: "Penyambut tetamu AI menjawab telefon perniagaan anda, bercakap dengan pemanggil dalam bahasa harian, dan membuat kerja kaunter yang biasa dalam panggilan: menjawab soalan, menempah lawatan, mengambil pesanan atau menyambungkan pemanggil kepada orang.",
     summary: "Apa itu, apa yang ia buat semasa panggilan, dan soalan untuk ditanya sebelum memilih.",
     what: {
       heading: "Apa itu",
       body: [
         "Penyambut tetamu AI ialah perisian yang mengangkat telefon perniagaan anda dan bercakap dengan pemanggil. Pemanggil menyebut apa yang mereka perlukan dengan kata-kata sendiri, dan ia membalas dengan suara.",
-        "Ia membuat kerja yang biasanya diperlukan oleh panggilan di kaunter. Ia bukan manusia, dan yang baik akan memberitahunya pada awal panggilan.",
+        "Ia membuat kerja yang biasanya dibuat oleh orang di kaunter apabila telefon berdering. Ia bukan manusia, dan yang baik akan memberitahu hal itu pada awal panggilan.",
       ],
     },
     does: {
@@ -263,7 +263,7 @@ const ms: GuidesCopy = {
     not: {
       heading: "Apa yang ia tidak buat",
       items: [
-        "Ia bukan manusia, dan ia memberitahunya: ejen memperkenalkan dirinya sebagai AI.",
+        "Ia bukan manusia, dan ia tidak menyembunyikannya: ejen memperkenalkan dirinya sebagai AI.",
         "Ia hanya tahu apa yang anda beritahu. Apabila ia tidak tahu, ia ditetapkan untuk berkata begitu dan mengambil pesanan, bukan meneka.",
         "Ia menyambungkan pemanggil kepada staf hanya dalam waktu operasi. Di luar waktu itu, ia mengambil pesanan.",
         "Ia menerima bilangan panggilan yang terhad pada satu masa. Apabila taliannya penuh, pemanggil seterusnya diberitahu talian sibuk.",
@@ -332,7 +332,7 @@ const ms: GuidesCopy = {
       ],
     },
     next: {
-      heading: "Jika angkanya wajar diambil tindakan",
+      heading: "Jika angkanya berbaloi untuk bertindak",
       body: [
         "Anda tidak perlu nombor baharu. Majukan panggilan yang tidak dijawab ke nombor JomCall anda, supaya ejen boleh menjawabnya dan bukan telefon yang terus berdering, sehingga bilangan panggilan yang boleh diterimanya pada satu masa.",
         `Pelan bermula pada ${fee} sebulan. Halaman Harga menganggarkan kos bulanan anda daripada minit anda sendiri.`,

@@ -158,7 +158,7 @@ const ms: HowItWorksCopy = {
     lead: "Setiap panggilan bermula dengan cara yang sama. Selepas itu, bergantung pada apa yang pemanggil perlukan.",
     items: [
       { name: "Ia memberitahu bahawa ia AI", body: "Ejen menyapa pemanggil dan memberitahu bahawa ia AI, sebelum apa-apa yang lain." },
-      { name: "Ia bercakap dalam bahasa mereka", body: "BM, bahasa Inggeris, Manglish atau Mandarin. Ia mengikut pemanggil dan menjawab seperti cara mereka bercakap." },
+      { name: "Ia bercakap dalam bahasa mereka", body: "BM, bahasa Inggeris, Manglish atau Mandarin. Ia mengikut pemanggil dan menjawab mengikut cara mereka bercakap." },
       { name: "Ia menjawab berdasarkan fakta anda", body: "Waktu operasi, harga, lokasi dan lain-lain datang daripada apa yang anda beri semasa persediaan. Kalau ia tidak tahu, ia memberitahu pemanggil dan mengambil pesanan." },
       { name: "Ia membuat tempahan temu janji", body: "Bagi perniagaan yang menerima tempahan, ia mencari masa yang kosong, mengulang masa itu kepada pemanggil dan merekodkan tempahan dalam JomCall." },
       { name: "Ia mengambil pesanan", body: "Ia mencatat siapa yang menelefon, cara menghubungi mereka dan apa yang mereka perlukan, untuk pasukan anda membuat susulan." },

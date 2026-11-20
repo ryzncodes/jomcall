@@ -472,7 +472,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     faqs: [
       {
         q: "Adakah ejen memberi nasihat perubatan?",
-        a: "Tidak. Ia tidak membuat diagnosis atau mencadangkan ubat. Soalan untuk doktor menjadi pesanan untuk staf anda, dan pemanggil yang menceritakan kecemasan disuruh menelefon 999.",
+        a: "Tidak. Ia tidak membuat diagnosis atau mencadangkan ubat. Soalan untuk doktor menjadi pesanan untuk staf anda, dan pemanggil yang menceritakan kecemasan diminta menelefon 999.",
       },
       {
         q: "Bolehkah pesakit menukar atau membatalkan temu janji melalui ejen?",
@@ -484,7 +484,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Butiran kesihatan apa yang ejen catat?",
-        a: "Hanya apa yang staf anda perlukan untuk mengurus permintaan itu, dalam perkataan pemanggil sendiri. Ia tidak bertanya tentang sejarah perubatan, dan panggilan tidak dirakam.",
+        a: "Hanya apa yang staf anda perlukan untuk mengurus permintaan itu, mengikut kata-kata pemanggil sendiri. Ia tidak bertanya tentang sejarah perubatan, dan panggilan tidak dirakam.",
       },
     ],
   },
@@ -591,7 +591,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
       },
       {
         q: "Bolehkah ia memberi sebut harga pembaikan?",
-        a: "Hanya untuk harga yang anda senaraikan, seperti servis biasa. Untuk apa-apa yang perlu kereta itu diperiksa dahulu, ia mengambil pesanan.",
+        a: "Hanya untuk harga yang anda senaraikan, seperti servis biasa. Untuk kerja yang memerlukan kereta itu diperiksa dahulu, ia mengambil pesanan.",
       },
       {
         q: "Apa yang ada dalam pesanan untuk mekanik?",
@@ -613,7 +613,7 @@ const ms: Record<IndustrySlug, IndustryCopy> = {
     summary: "Permintaan kerja, kawasan liputan, harga dan lawatan servis.",
     calls: {
       heading: "Panggilan yang kontraktor terima",
-      body: ["Panggilan ke kontraktor ialah permintaan kerja. Setiap satu perlukan butiran yang sama, dan ejen akan bertanya."],
+      body: ["Panggilan ke kontraktor ialah permintaan kerja. Setiap satu perlukan butiran yang sama, dan ejen akan bertanyakannya."],
       rows: [
         { call: "Aircond saya bocor air. Boleh datang tengok?", does: "Mengambil kawasan alamat, bilangan unit dan masalahnya. Kalau anda tambah masa lawatan di halaman Tempahan JomCall, ia menempah lawatan dalam JomCall." },
         { call: "Berapa harga servis dua unit?", does: "Memberi harga daripada senarai harga anda." },

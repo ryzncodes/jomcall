@@ -127,10 +127,10 @@ const ms: ForwardingCopy = {
       { name: "Hanya apabila anda tidak menjawab", when: "Telefon anda berdering dahulu. Kalau tiada siapa angkat, panggilan diteruskan ke JomCall." },
       { name: "Hanya apabila talian anda sibuk", when: "Semasa anda sedang bercakap dalam panggilan lain, pemanggil seterusnya pergi ke JomCall." },
     ],
-    note: "Aplikasi memaparkan nombor JomCall anda sebaik sahaja ia disediakan. Taip nombor itu cara tempatan, bermula dengan 0, tanpa ruang.",
+    note: "Aplikasi memaparkan nombor JomCall anda sebaik sahaja ia disediakan. Taip nombor itu dalam format tempatan, bermula dengan 0, tanpa ruang.",
   },
   choose: {
-    heading: "Yang mana patut dipilih",
+    heading: "Mana satu yang sesuai",
     items: [
       { name: "Semua panggilan", body: "Apabila anda mahu JomCall mengambil alih talian sepenuhnya, contohnya selepas waktu tutup atau pada hari kaunter tidak cukup staf. Taip kod henti apabila anda mahu telefon sendiri berdering semula." },
       { name: "Hanya apabila anda tidak menjawab", body: "Apabila anda atau staf mahu menjawab dahulu, dan JomCall mengangkat panggilan yang tiada siapa sempat jawab." },
@@ -156,7 +156,7 @@ const ms: ForwardingCopy = {
   check: {
     heading: "Semak sama ada ia berfungsi",
     body: [
-      "Telefon nombor anda sendiri dari telefon lain. Anda patut mendengar ejen, dan panggilan itu kemudian dipaparkan dalam log panggilan dalam aplikasi.",
+      "Telefon nombor anda sendiri dari telefon lain. Anda sepatutnya mendengar ejen menjawab, dan panggilan itu kemudian dipaparkan dalam log panggilan dalam aplikasi.",
       "Jika kod ditolak, pembekal anda perlu menghidupkan perkhidmatan itu untuk talian anda dahulu.",
       "Pembekal anda mungkin mengenakan caj bagi panggilan yang dimajukan. Tanya mereka kos pemajuan bagi pelan anda.",
     ],

@@ -318,15 +318,15 @@ const en = {
 const ms: typeof en = {
   meta: {
     title: "Penyambut tetamu AI untuk perniagaan Malaysia",
-    description: `JomCall menjawab panggilan perniagaan anda siang dan malam dalam BM, bahasa Inggeris, Manglish dan Mandarin, membuat tempahan janji temu dan mengambil pesanan. Bermula ${fee} sebulan, prabayar dalam RM.`,
+    description: `JomCall menjawab panggilan perniagaan anda siang dan malam dalam BM, bahasa Inggeris, Manglish dan Mandarin, membuat tempahan temu janji dan mengambil pesanan. Bermula ${fee} sebulan, prabayar dalam RM.`,
   },
   hero: {
     h1: "Telefon anda dijawab dalam bahasa pelanggan anda.",
-    lead: "JomCall ialah penyambut tetamu AI untuk perniagaan Malaysia. Ia menjawab panggilan anda siang dan malam, membuat tempahan janji temu dan mengambil pesanan untuk pasukan anda.",
+    lead: "JomCall ialah penyambut tetamu AI untuk perniagaan Malaysia. Ia menjawab panggilan anda siang dan malam, membuat tempahan temu janji dan mengambil pesanan untuk pasukan anda.",
     from: `Bermula ${fee} sebulan`,
     ticks: [
       "Bercakap dalam BM, bahasa Inggeris, Manglish dan Mandarin",
-      "Membuat tempahan janji temu dan mengambil pesanan",
+      "Membuat tempahan temu janji dan mengambil pesanan",
       "Kekalkan nombor anda: majukan panggilannya ke JomCall",
     ],
     hear: "Dengar contoh panggilan",
@@ -360,18 +360,18 @@ const ms: typeof en = {
         { name: "Pelanggan Contoh A", lang: "BM", time: "09:14", length: "1:52", outcome: "Ditempah", kind: "booked" },
         { name: "Pelanggan Contoh B", lang: "EN", time: "11:02", length: "0:47", outcome: "Pesanan diambil", kind: "message" },
         { name: "Pelanggan Contoh C", lang: "中文", time: "13:30", length: "1:05", outcome: "Dijawab", kind: "answered" },
-        { name: "Pelanggan Contoh D", lang: "Manglish", time: "16:48", length: "0:38", outcome: "Diserahkan kepada staf", kind: "staff" },
+        { name: "Pelanggan Contoh D", lang: "Manglish", time: "16:48", length: "0:38", outcome: "Disambungkan kepada staf", kind: "staff" },
         { name: "Pelanggan Contoh E", lang: "BM", time: "18:20", length: "0:56", outcome: "Pesanan diambil", kind: "message" },
         { name: "Pelanggan Contoh F", lang: "EN", time: "21:05", length: "1:10", outcome: "Dijawab", kind: "answered" },
       ],
     },
     booking: {
-      title: "Tempahan, dibaca semula",
+      title: "Tempahan, diulang semula",
       day: "Esok",
       time: "3:00 petang",
       service: "Konsultasi · Studio Contoh",
       quote: "Janji temu anda ditetapkan esok, pukul 3 petang.",
-      note: "Masa dibaca semula kepada pemanggil sebelum tempahan disimpan.",
+      note: "Masa diulang kepada pemanggil sebelum tempahan disimpan.",
     },
     price: {
       amount: fee,
@@ -390,14 +390,14 @@ const ms: typeof en = {
       ],
     },
     transfer: {
-      title: "Menyerahkan pemanggil kepada staf",
+      title: "Menyambungkan pemanggil kepada staf",
       open: "Buka",
       openTime: "9:00 pagi – 6:00 petang",
-      openResult: "Diserahkan ke kaunter anda",
+      openResult: "Disambungkan ke kaunter anda",
       closed: "Tutup",
       closedTime: "Selepas 6:00 petang",
       closedResult: "Pesanan diambil untuk pasukan",
-      note: "Semasa waktu operasi, ia menyerahkan pemanggil kepada staf anda. Selepas waktu operasi, ia mengambil pesanan.",
+      note: "Semasa waktu operasi, ia menyambungkan pemanggil kepada staf anda. Selepas waktu operasi, ia mengambil pesanan.",
     },
     languages: {
       title: "Ikut bahasa pemanggil",
@@ -421,7 +421,7 @@ const ms: typeof en = {
       { title: "Kedai sudah tutup", body: "Orang menelefon ketika mereka lapang, selalunya selepas anda tutup kedai." },
       { title: "Anda dalam panggilan lain", body: "Seorang pemanggil sedang bercakap dengan anda, dan pemanggil seterusnya hanya mendengar deringan." },
     ],
-    close: "JomCall mengangkat telefon apabila anda tidak dapat, menempah slot atau mengambil pesanan, dan log panggilan menunjukkan apa yang berlaku.",
+    close: "JomCall mengangkat telefon apabila anda tidak sempat, menempah slot atau mengambil pesanan, dan log panggilan menunjukkan apa yang berlaku.",
   },
   how: {
     heading: "Dari daftar hingga panggilan sebenar pertama",
@@ -445,12 +445,12 @@ const ms: typeof en = {
       zh: "Mandarin",
       en: "Bahasa Inggeris",
     },
-    note: "Bahasa Tamil belum disokong buat masa ini.",
+    note: "Bahasa Tamil belum disokong.",
   },
   industries: {
     heading: "Dibina untuk panggilan yang perniagaan anda terima",
     items: {
-      "industries-clinics": "Janji temu, waktu operasi dan arah lokasi",
+      "industries-clinics": "Temu janji, waktu operasi dan arah lokasi",
       "industries-salons": "Tempahan gunting, warna dan rawatan",
       "industries-car-workshops": "Pesanan untuk mekanik",
       "industries-aircond-home-repair": "Permintaan servis dan pesanan",
@@ -461,7 +461,7 @@ const ms: typeof en = {
   },
   pricing: {
     heading: "Harga mudah dalam RM",
-    lead: "Pelan bulanan atas dompet prabayar, atau tiada yuran bulanan semasa anda menguji.",
+    lead: "Pelan bulanan yang dibayar daripada dompet prabayar, atau tiada yuran bulanan semasa anda menguji.",
     plans: {
       starter: {
         name: "Starter",
@@ -513,7 +513,7 @@ const ms: typeof en = {
       },
       {
         q: "Bahasa apa yang ia gunakan?",
-        a: "BM, bahasa Inggeris, Manglish dan Mandarin. Ia mengikut pemanggil dan menjawab dalam bahasa mereka. Bahasa Tamil belum disokong buat masa ini.",
+        a: "BM, bahasa Inggeris, Manglish dan Mandarin. Ia mengikut pemanggil dan menjawab dalam bahasa mereka. Bahasa Tamil belum disokong.",
       },
       {
         q: "Berapakah kosnya?",
