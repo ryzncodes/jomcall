@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { formatSen } from "../../../packages/billing/src/money";
 import { topupAmounts } from "../../../packages/contracts/src/billing";
 import type { Topup, LedgerEntry } from "../../../packages/contracts/src/billing";
-import { useCore, useWords, useResource, useAction, Heading, Notice, Loading } from "./state";
+import { useCore, useWords, useResource, useAction, Heading, Notice, Loading, PlanLoading } from "./state";
 import { CoreError } from "@/lib/core/client";
 
 // The plan card exists only in the local and hosted builds. The mode is a
@@ -14,7 +14,7 @@ const PlanCard =
   process.env.NEXT_PUBLIC_JOMCALL_MODE === "local" ||
   process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
     ? dynamic(() => import("./plan-card").then((m) => m.PlanCard), {
-        loading: () => <div className="core-panel core-plan-placeholder" aria-hidden="true" />,
+        loading: () => <PlanLoading />,
       })
     : null;
 

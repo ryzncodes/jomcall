@@ -3228,3 +3228,32 @@ a svg {
     font-weight: 600;
   }
 }
+
+.not-found {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 12px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 48px 16px;
+}
+.not-found-code {
+  margin: 0;
+  font-family: Plex, monospace;
+  color: var(--secondary);
+}
+.not-found h1 {
+  margin: 0;
+  font-family: Manrope, sans-serif;
+  font-size: clamp(28px, 6vw, 40px);
+  line-height: 1.15;
+}
+.not-found p {
+  margin: 0;
+}
+.not-found-hint {
+  color: var(--secondary);
+  margin-bottom: 12px !important;
+}
