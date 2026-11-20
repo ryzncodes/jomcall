@@ -48,6 +48,7 @@
     "whatsapp:simulate": "node --env-file-if-exists=.env.local --import tsx scripts/local/whatsapp-simulate.ts",
     "voice:prewarm": "cd voice && uv run --env-file ../.env.local $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice.prewarm",
     "voice:samples": "cd voice && uv run $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice.samples",
+    "voice:demo": "cd voice && uv run $([ -f ../.env.hosted ] && echo --env-file ../.env.hosted) python -m jomcall_voice.demo_clips",
     "dev:agent": "JOMCALL_MODE=local node --env-file=.env.local --env-file-if-exists=.env.hosted --import tsx engine/src/agent/index.ts",
     "check:billing": "npm run test:local -- tests/billing/*.test.ts",
     "billing:simulate": "node --env-file=.env.local --import tsx scripts/billing/simulate.ts",

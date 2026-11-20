@@ -29,6 +29,7 @@
   "sample": "Sample conversation",
   "sampleShort": "Interactive preview",
   "sampleNotice": "Text simulation · no microphone or audio",
+  "sampleVoiceNotice": "Sample call · recorded AI voices, made-up business",
   "heroCaller": "Pelanggan Contoh A",
   "heroOutcome": "Tomorrow, 3:00 pm",
   "heroOutcomeLabel": "A call becomes a booking",
@@ -55,12 +56,12 @@
   "demoDescription": "A caller asks in BM. The AI checks a time. You get the details. Try a fictional conversation below.",
   "caller": "Caller",
   "agent": "AI front desk",
-  "turn0": "Hi, I'm an AI assistant. This sample call includes an AI and recording disclosure. How can I help?",
+  "turn0": "Hi, you've reached Studio Contoh. I'm an AI assistant, and this call may be recorded. How can I help?",
   "turn1": "Boleh book esok, pukul tiga?",
   "turn2": "Boleh. Let me check tomorrow at 3 pm for you.",
   "turn3": "Sample calendar checked. 3 pm is available.",
   "turn4": "Yes, please. That works for me.",
-  "turn5": "Dah siap. Your sample appointment is set for tomorrow, 3 pm. See you then!",
+  "turn5": "Dah siap. Your appointment is set for tomorrow, 3 pm. See you then!",
   "play": "Start the sample",
   "pause": "Pause sample",
   "resume": "Continue sample",
@@ -84,22 +85,22 @@
     "Mandarin"
   ],
   "turnsEnglish": [
-    "Hi, I'm an AI assistant. This sample includes an AI and recording disclosure. How can I help?",
+    "Hi, you've reached Studio Contoh. I'm an AI assistant, and this call may be recorded. How can I help?",
     "Can I book tomorrow at three?",
     "Let me check tomorrow at 3 pm.",
     "Sample calendar checked. 3 pm is available.",
     "Yes, please. That works for me.",
-    "Your sample appointment is set for tomorrow at 3 pm. See you then!"
+    "Your appointment is set for tomorrow at 3 pm. See you then!"
   ],
   "turnsMandarin": [
-    "您好，我是 AI 助手。这是包含 AI 和录音告知的示例。有什么可以帮您？",
+    "您好，这里是 Studio Contoh。我是 AI 助手，本通话可能会被录音。有什么可以帮您？",
     "可以预约明天下午三点吗？",
     "好的，我帮您看看明天下午三点。",
     "示例日历已检查。下午三点有空位。",
     "可以，谢谢。",
-    "示例预约已确认，明天下午三点见！"
+    "预约已确认，明天下午三点见！"
   ],
-  "voiceDisclaimer": "Language examples show how the agent answers. This sample is text only.",
+  "voiceDisclaimer": "Language examples show how the agent answers. Both voices are AI; the caller is not a real person.",
   "workflowTitle": "Your front desk, on the same page.",
   "workflowBody": "The call, the booking, the follow-up. One clear record of what happened and what needs you.",
   "workflow1": "Keep your number",
