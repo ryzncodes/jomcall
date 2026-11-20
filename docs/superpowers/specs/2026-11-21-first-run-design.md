@@ -1,6 +1,6 @@
 # First run: from sign-up to the first real call
 
-Status: design only, nothing built. Written 2026-11-21. The owner asked that JomCall's path after sign-up feel like other AI receptionists' and has said setup on staging felt very tedious. Asked which direction to take, the owner answered on 2026-11-21, relayed by the session that started this work: "Just do whatever is recommended for the first run onboarding." Every decision in section 7 is therefore my recommendation, accepted under that delegation. The owner can overrule any of them. That delegation does **not** approve a new outbound call (section 6).
+Status: design only, nothing built. Written 2026-11-21. The owner asked that JomCall's path after sign-up feel like other AI receptionists' and has said setup on staging felt very tedious. Asked which direction to take, the owner answered on 2026-11-21, relayed by the session that started this work: "Just do whatever is recommended for the first run onboarding." Every decision in section 7 is therefore my recommendation, accepted under that delegation. The owner can overrule any of them. That delegation does **not** approve a new outbound call. Website reading was approved separately on 2026-11-21 (F12); every other link stays parked (section 6).
 
 ## 1. Why
 
@@ -110,7 +110,7 @@ The list's other rules:
 The owner asked that owners can link their company's pages during setup: Facebook, LinkedIn, Google Maps or Business Profile, a website, or similar. This round **stores** the links. It does **not read** them (section 6).
 
 - **What exists.** The always-on pack already has a fact `social_links`, a list labelled "Facebook, Instagram, TikTok or Google profile" (`packages/domain/src/packs/every-business.json`). Its only interview question is number 19 of 20, and it is shared with branches. Under the 8-question cap it is almost never asked, and a question that fills two facts is never prefilled.
-- **A "Your links" card on the review page**, optional, beside the hours, address and contact cards. It is on the review page because that page is reached by every owner. The bring stage is shown only when the reader is switched on (`JOMCALL_SETUP_READER`), and whether it is on in production is not recorded here. It has one field per kind, each optional:
+- **A "Your links" card on the review page**, optional, beside the hours, address and contact cards. It is on the review page because that page is reached by every owner. The bring stage is shown only when the reader is switched on (`JOMCALL_SETUP_READER`). The owner confirmed on 2026-11-21 that it is on in production (`anthropic`), so the bring stage and its paste hint (F7) are live for owners; the card stays on the review page so it does not depend on that switch. It has one field per kind, each optional:
   - Website
   - Facebook
   - Instagram
@@ -161,7 +161,7 @@ These lines were agreed through the orchestrating session with the public-pages 
 - **Forwarding codes.** They live only in `web/components/core/phone.tsx`.
 - **Files.** This work owns `web/lib/core/home-rules.ts`, `web/components/core/home/`, setup's finish, review and bring stages, `web/components/core/chrome.tsx`, `packages/contracts/src/core.ts` and the `firstRun` route. If the move to setup after workspace creation touches `web/components/core/auth.tsx`, it changes only that redirect, never the side panel. Shared files (`web/messages/en.json`, `web/messages/ms.json`, `web/lib/launch.ts`) take added keys only; no rename or removal of keys added by the other work. Whichever code pull request opens second rebases on `main` first.
 
-## 6. Reading links and web pages automatically (not approved; not in this work)
+## 6. Reading links and web pages automatically (website approved as its own later pull request; the rest parked)
 
 Reading a web address the owner types would be a new outbound fetch from JomCall's servers. It needs the owner's explicit yes, and the delegation in the status line does not give it. **Recommendation: do not build it now.** Instead, use the paste hint in 5.2. The reasons:
 
@@ -208,7 +208,7 @@ Checked on 2026-11-21 from vendors' public pages and repositories, by web search
   - *Alternative not taken.* Jina's hosted Reader is free with rate limits and its code is Apache-2.0 ([jina.ai/reader](https://jina.ai/reader)). It sends the address to another company, so it is not recommended.
   - *Approval.* This is the only free route left. It is still a new outbound fetch: it needs the owner's explicit yes, with the safety list above.
 
-**Result.** Google, the social platforms and OpenStreetMap are parked. Website reading waits on one yes from the owner. Until then, links are stored, not read (5.2a).
+**Result.** Google, the social platforms and OpenStreetMap are parked. Website reading was approved by the owner on 2026-11-21 (F12) and is built as its own pull request after the checklist work. Until it ships, links are stored, not read (5.2a).
 
 ## 7. Decisions (my recommendations, accepted under the owner's delegation of 2026-11-21)
 
@@ -223,7 +223,21 @@ Checked on 2026-11-21 from vendors' public pages and repositories, by web search
 - F9. The agent page gets no list of its own.
 - F10 (owner's request, 2026-11-21; the form is my call). A "Your links" card on setup's review page stores website, Facebook, Instagram, TikTok, LinkedIn and Google Maps links into the existing `social_links` fact. They are checked without being opened, and are never fetched.
 - F11 (owner, 2026-11-21: free only, else park). Google Maps reading, social-page reading and OpenStreetMap are parked (6.1).
-- Open for the owner: whether to approve a free website fetch from the agent process (6.1). Asked 2026-11-21.
+- F12 (owner, 2026-11-21, relayed by the orchestrating session: "Yes, with safety guards"). JomCall may read the owner's own website when the owner gives its address. Scope:
+  - A plain https fetch from the agent process only. No headless browser and no third-party reader service.
+  - Every guard in section 6 applies:
+    - https only;
+    - public addresses only, checked after DNS resolution and after every redirect;
+    - a redirect limit;
+    - size and time caps;
+    - no JavaScript rendering;
+    - a notice that the text goes to Anthropic;
+    - the fetched text enters the existing pasted-text path and review page unchanged;
+    - rate limits per workspace and service-wide.
+  - Facebook, Instagram, LinkedIn, TikTok and Google Maps stay parked (F11).
+  - Delivery: its own pull request, after the checklist work, not inside it.
+  - When it ships, it is added to the approved outbound list in `AGENTS.md`, worded like the setup-reader exception.
+  - The links card text in 5.2a ("JomCall does not open or read them") stays true for every link until that pull request ships. That pull request then words the Website field to match what it does.
 
 ## 8. Risks
 
