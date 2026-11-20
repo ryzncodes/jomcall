@@ -1,6 +1,6 @@
 # Handoff
 
-## 2026-11-21: public pages and SEO (branch `feat/public-pages-seo`, pull request not yet open, not merged)
+## 2026-11-21: public pages and SEO (branch `feat/public-pages-seo`, pull request #86, not merged)
 
 **What changed**
 - 25 public pages in English (`/…`) and Bahasa Melayu (`/ms/…`), all static: home, pricing (with an estimator), how it works, call forwarding, languages, FAQ, six industry pages and their index, four comparison pages and their index, trust, three guides and their index, privacy, terms. New "Kaunter" design on the public shell, dark theme, a sample call card on home.
@@ -21,7 +21,7 @@
 - Every public page asks `GET /api/v1/session` to choose the header button; for a signed-out visitor 401 is expected from the code but was not observed (locally it answered 500, because there is no Supabase); either way Chrome logs a console error. Pre-existing (#81); left for the final review.
 
 **Next**
-- The controller's final whole-branch review, then the pull request into `main` (not merged by the agent).
+- Final whole-branch review done and its fixes re-reviewed clean; pull request #86 open, waiting for the owner. Hosting tests 270 of 270 after the fix wave; the full `check:core` was not re-run after the last test fix.
 - Owner steps: confirm `APP_ORIGIN` is set for builds in Vercel's environment; indexing turns on only when that origin is `jomcall.com`, so pointing it there is the owner's call; fix the privacy and terms text that says calls "may be recorded" and "Payments are not live yet" (the public pages say calls are not recorded, and legal text was left frozen), and `web/messages/legal.ts:64` (EN and BM), which says businesses use JomCall for "phone calls and WhatsApp messages" and conflicts with WhatsApp waiting for Meta; before indexing moves to jomcall.com, check Search Console for staging (it served `index, follow` from 2026-11-15, and with `Disallow: /` Google cannot recrawl to see noindex), and at the switch 301 staging to jomcall.com; confirm the SST wording on pricing ("before SST"); decide the concurrency default (`JOMCALL_MAX_CONCURRENT_CALLS` is 1, the spec says 2; the copy states no number); have a native BM speaker read the copy; re-record the four demo greetings without "this call may be recorded" (the call card skips line 0 until then). Once they are re-recorded, change the two sample lines that say "Janji temu" in `web/content/public/home.ts` (lines 47 and 373) to "Temu janji"; they stay as they are now because they must match the recordings.
 
 ## 2026-11-20 (afternoon): staging is now production
