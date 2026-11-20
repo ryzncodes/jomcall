@@ -125,6 +125,17 @@ export function coreSections(
   ];
 }
 
+// From the first real calls and chats (2026-11-20): the agent closed almost
+// every answer with the same offer ("Would you like to book a free scope
+// session?"), because a pack rule says to offer it after answering, and its
+// WhatsApp replies ran past a hundred words. The spoken path gets the first
+// rule; the typed path (typed test and WhatsApp) gets both, but only with a
+// hosted model: the small local model has no room for them in 6000 bytes.
+export const offerOnceRule =
+  " Offer a booking, trial, tour or session at most once in a conversation; never repeat it after the customer declined or ignored it.";
+export const typedLengthRule =
+  " Keep the answer under about 60 words, answer only what was asked, and put listed items on separate lines.";
+
 // Typed path: the required system message. Old snapshots get the old text.
 export function typedSystemPrompt(
   rules: { shared: string; core: string },
@@ -136,7 +147,9 @@ export function typedSystemPrompt(
 ): string {
   const core = usesCore(snapshot) && tools === "core";
   return [
-    core ? rules.core : rules.shared,
+    core
+      ? rules.core + (inputBudget > 6000 ? offerOnceRule + typedLengthRule : "")
+      : rules.shared,
     ...coreSections(snapshot, inputBudget, tools),
     "Business configuration: " + configuration,
     "Current date/time: " + now.toISOString() + "; timezone Asia/Kuala_Lumpur.",

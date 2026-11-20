@@ -14,6 +14,7 @@ import { buildKnowledgeIndex, searchKnowledge, type Snapshot } from "../agent-te
 import { agentRules } from "../agent-test/prompt.ts";
 import { voiceRules } from "../agent-test/voice-prompt.ts";
 import type { CoreSnapshot } from "./snapshot.ts";
+import { offerOnceRule } from "./prompt.ts";
 import { factText, unitHash } from "./snapshot.ts";
 import { formatSen, maskContact, questionKey } from "./text.ts";
 import { vectorLiteral, type Embedder } from "../../../inference/src/embedding.ts";
@@ -128,9 +129,17 @@ export function typedShownResult(result: Extract<ToolResult, { kind: "proposal" 
 // is asked again, without a new tool step.
 export const TRUNCATED_RETRY =
   "Your previous reply was cut off. Return the JSON decision again, with an answer of at most two short sentences.";
+// Spoken path, same day: asked for a person, the agent said "I'll ask staff
+// to transfer you to Faiz now" and, after the tool result, "I can't transfer
+// you directly from here". The sentence spoken before the tool must not
+// promise what only the tool result can tell.
+export const handoffLeadInRule =
+  " Before handoff_to_human, the one sentence you say first only says you are checking with the team; never say that you will transfer, connect or put the caller through, or that someone is coming, before the tool result says so.";
 export const coreVoiceRules =
   voiceRules +
-  " Use lookup_catalogue for prices, stock and items in the catalogue; pass an empty string for an argument you do not know. When the knowledge does not answer, say you will ask staff and call take_message with unanswered true.";
+  " Use lookup_catalogue for prices, stock and items in the catalogue; pass an empty string for an argument you do not know. When the knowledge does not answer, say you will ask staff and call take_message with unanswered true." +
+  handoffLeadInRule +
+  offerOnceRule;
 
 const descriptions: Record<string, string> = {
   search_knowledge:

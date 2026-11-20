@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   coreAgentRules,
+  coreVoiceRules,
+  handoffLeadInRule,
   typedLanguageRule,
   typedProposalRule,
   typedShownResult,
@@ -11,7 +13,7 @@ import {
   TRUNCATED_RETRY,
   BAD_LOOKUP_NEXT,
 } from "../../packages/domain/src/knowledge/tools.ts";
-import { typedSystemPrompt } from "../../packages/domain/src/knowledge/prompt.ts";
+import { typedSystemPrompt, offerOnceRule, typedLengthRule } from "../../packages/domain/src/knowledge/prompt.ts";
 import { resolveRules } from "../../packages/domain/src/knowledge/snapshot.ts";
 import { agentRules, businessConfiguration } from "../../packages/domain/src/agent-test/prompt.ts";
 import { voiceRules } from "../../packages/domain/src/agent-test/voice-prompt.ts";
@@ -128,4 +130,27 @@ test("the small local model still fits a full prompt, a gate question and a prop
     6000,
   );
   assert.equal(packed.messages.length, 4);
+});
+
+// Findings from the first real calls and chats (2026-11-20).
+test("hosted typed prompt: one offer per conversation and short answers; the local model keeps its prompt", () => {
+  const snapshot = { settings: { name: "Agent", greeting: "" }, knowledge: [], packs: [], facts: [], rules: [], catalogue: null };
+  const config = businessConfiguration({ name: "Agent", greeting: "", aiDisclosure: "", instructions: "", voicePreference: "", recordingEnabled: false, recordingDisclosure: "" });
+  const now = new Date("2026-11-20T02:00:00Z");
+  const hosted = typedSystemPrompt({ shared: agentRules, core: coreAgentRules }, snapshot, config, now, 48000);
+  assert.ok(hosted.startsWith(coreAgentRules + offerOnceRule + typedLengthRule + "\n"));
+  const local = typedSystemPrompt({ shared: agentRules, core: coreAgentRules }, snapshot, config, now, 6000);
+  assert.ok(local.startsWith(coreAgentRules + "\n"));
+  assert.ok(!local.includes(offerOnceRule) && !local.includes(typedLengthRule));
+  // A snapshot from before the knowledge core keeps the old text on any model.
+  const old = typedSystemPrompt({ shared: agentRules, core: coreAgentRules }, { settings: { name: "Agent", greeting: "" }, knowledge: [] }, config, now, 48000);
+  assert.ok(old.startsWith(agentRules + "\n"));
+  assert.match(offerOnceRule, /at most once/);
+  assert.match(typedLengthRule, /60 words/);
+});
+
+test("spoken core rules: no transfer promise before the tool result, one offer per call", () => {
+  assert.ok(coreVoiceRules.startsWith(voiceRules));
+  assert.ok(coreVoiceRules.endsWith(handoffLeadInRule + offerOnceRule));
+  assert.match(handoffLeadInRule, /never say that you will transfer, connect or put the caller through/);
 });
