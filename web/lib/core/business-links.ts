@@ -2,7 +2,9 @@
 // social_links fact. Checked as text only: nothing here opens a link.
 export const LINK_KINDS = ["website", "facebook", "instagram", "tiktok", "linkedin", "maps"] as const;
 export type LinkKind = (typeof LINK_KINDS)[number];
-export type Links = Partial<Record<LinkKind, string>>;
+// extra: lines that are not one of the six links (older free text, a second
+// link of the same kind), kept as they were and written back after the links.
+export type Links = Partial<Record<LinkKind, string>> & { extra?: string };
 
 export const LINK_LABELS: Record<LinkKind, string> = {
   website: "Website",
@@ -52,22 +54,33 @@ export function normaliseLink(
   return { url, warning: kind !== "website" && !HOSTS[kind](host, u.pathname) };
 }
 
-// One "Label: URL" line per link, in LINK_KINDS order.
+// One "Label: URL" line per link, in LINK_KINDS order, then any extra lines.
 export const linksToText = (links: Links) =>
-  LINK_KINDS.filter((k) => links[k])
-    .map((k) => `${LINK_LABELS[k]}: ${links[k]}`)
-    .join("\n");
+  [
+    ...LINK_KINDS.filter((k) => links[k]).map((k) => `${LINK_LABELS[k]}: ${links[k]}`),
+    ...(links.extra ? [links.extra] : []),
+  ].join("\n");
+
+const isLink = (text: string) => {
+  const r = normaliseLink("website", text);
+  return !!r && "url" in r;
+};
 
 export function textToLinks(text: string): Links {
   const out: Links = {};
+  const extra: string[] = [];
   const byLabel = new Map(LINK_KINDS.map((k) => [LINK_LABELS[k].toLowerCase(), k] as const));
   for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
     const m = line.match(/^\s*([^:]+?)\s*:\s*(\S.*)$/);
     const kind = m && byLabel.get(m[1]!.toLowerCase());
-    if (kind) out[kind] = m![2]!.trim();
-    // Older free text (an interview answer) lands in Website once, so the
-    // owner sees it and can move it.
-    else if (line.trim() && !out.website) out.website = line.trim();
+    if (kind && !out[kind]) out[kind] = m![2]!.trim();
+    // An unlabelled web address fills an empty Website; anything else (older
+    // free text, a second link of a kind) is kept as it is.
+    else if (!kind && !out.website && !/\s/.test(line.trim()) && isLink(line))
+      out.website = line.trim();
+    else extra.push(line.trim());
   }
+  if (extra.length) out.extra = extra.join("\n");
   return out;
 }

@@ -29,10 +29,12 @@ export async function firstRunRoute(
        coalesce((select state='open' from app.phone_number_request where org_id=$1 order by created_at desc,id limit 1),false) as request_open,
        app_private.plan_has_phone_number($1) as plan_number`,
   );
-  // Refused and abandoned calls never count: only a call the agent took.
+  // Only a call the agent took: answered_at is set once the caller is
+  // answered, and stays set when a worker crash later ends the call as
+  // abandoned. Refused calls and calls dropped before the answer never count.
   const call = await one(
     `select id,started_at from app.call
-     where org_id=$1 and state='ended' and outcome is not null and outcome not in('refused','abandoned')
+     where org_id=$1 and state='ended' and answered_at is not null and outcome is distinct from 'refused'
      order by started_at,id limit 1`,
   );
   const active = !!flags.active_e164;

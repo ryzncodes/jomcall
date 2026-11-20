@@ -484,7 +484,13 @@ export function Review({
             }}
           />
         )}
-        <LinksCard item={links} />
+        <LinksCard
+          item={links}
+          choice={(next) =>
+            links ? choice(links, factText(conflictOf(links)?.current), next) : null
+          }
+          onConfirm={() => (links ? setItemState(links.id, "confirmed") : Promise.resolve(false))}
+        />
         {facts.length > 0 && (
           <section className="setup-section" aria-labelledby="setup-facts">
             <h2 id="setup-facts">{w("Your answers", "Jawapan anda")}</h2>

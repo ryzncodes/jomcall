@@ -2,7 +2,7 @@
 // "Your links" on the review page (first-run design 5.2a): the business's
 // own pages, staged into the social_links fact through the review page's
 // "missing:" answer path. The links are checked as text; nothing opens them.
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 import type { SetupItem } from "../../../../packages/contracts/src/setup";
 import {
   LINK_KINDS,
@@ -15,12 +15,24 @@ import {
 } from "@/lib/core/business-links";
 import { useCore, useWords } from "../state";
 import { useAutosave, useSetup } from "./flow";
+import { factFlagged } from "./rules";
 
 export const LINKS_QUESTION = "missing:every-business:social_links";
 
 const LABEL_MS: Partial<Record<LinkKind, string>> = { website: "Laman web" };
 
-export function LinksCard({ item }: { item: SetupItem | undefined }) {
+// choice: the review page's keep-or-use-new choice, drawn when the agent
+// already has links. onConfirm: confirms links read from a document that the
+// reader was unsure of; apply leaves them out until then.
+export function LinksCard({
+  item,
+  choice,
+  onConfirm,
+}: {
+  item: SetupItem | undefined;
+  choice: (next: string) => ReactNode;
+  onConfirm: () => Promise<boolean>;
+}) {
   const { client } = useCore(),
     w = useWords(),
     store = useSetup();
@@ -41,20 +53,22 @@ export function LinksCard({ item }: { item: SetupItem | undefined }) {
       }),
     ),
   );
+  const [confirming, setConfirming] = useState(false);
   const checked = LINK_KINDS.map((k) => [k, normaliseLink(k, values[k] ?? "")] as const);
   const send = (next: Links) => {
-    const good: Links = {};
-    let bad = false;
+    const good: Links = stored.extra ? { extra: stored.extra } : {};
     for (const k of LINK_KINDS) {
       const r = normaliseLink(k, next[k] ?? "");
       if (r && "url" in r) good[k] = r.url;
-      else if (r) bad = true;
+      // A field that is not a link yet keeps what was saved for it, so a
+      // half-typed address never replaces a good one and the other fields
+      // still save.
+      else if (r && stored[k]) good[k] = stored[k];
     }
-    // A field that is not a link yet holds the save, so a half-typed
-    // address never replaces a good one.
-    if (bad) auto.cancel();
-    else auto.change(linksToText(good));
+    auto.change(linksToText(good));
   };
+  const flagged = !!item && factFlagged(item);
+  const text = item && item.state !== "removed" ? linksToText(stored) : "";
   const saved = LINK_KINDS.filter((k) => stored[k]);
   const label = (k: LinkKind) => w(LINK_LABELS[k], LABEL_MS[k] ?? LINK_LABELS[k]);
   return (
@@ -83,6 +97,40 @@ export function LinksCard({ item }: { item: SetupItem | undefined }) {
           {open ? w("Done", "Siap") : saved.length ? w("Edit", "Sunting") : w("Add", "Tambah")}
         </button>
       </div>
+      {stored.extra && (
+        <p className="setup-hint">
+          {w("Also kept with your links:", "Turut disimpan bersama pautan anda:")} {stored.extra}
+        </p>
+      )}
+      {flagged && text && (
+        <div className="setup-check">
+          <p className="setup-check-title">{w("Please check", "Sila semak")}</p>
+          <p className="setup-hint">
+            {w(
+              "Read from your document. These links are left out until you confirm them.",
+              "Dibaca daripada dokumen anda. Pautan ini tidak dimasukkan sehingga anda mengesahkannya.",
+            )}
+          </p>
+          <button
+            type="button"
+            className="button secondary-button"
+            aria-disabled={confirming || undefined}
+            onClick={async () => {
+              if (confirming) return;
+              setConfirming(true);
+              try {
+                await auto.flush();
+                await onConfirm();
+              } finally {
+                setConfirming(false);
+              }
+            }}
+          >
+            {w("Confirm links", "Sahkan pautan")}
+          </button>
+        </div>
+      )}
+      {text && choice(text)}
       {open && (
         <div id={`${id}-fields`} className="setup-links-fields">
           <p className="setup-hint">

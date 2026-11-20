@@ -38,3 +38,14 @@ test("links: round trip", () => {
   assert.deepEqual(textToLinks(linksToText(x)), x);
   assert.equal(linksToText(x).split("\n")[0], "Website: https://kedai.example/");
 });
+
+test("links: lines that are not one of the six links are kept", () => {
+  const x = textToLinks("kedai.example\nIG @kedai\nFacebook: https://facebook.com/a\nFacebook: https://facebook.com/b");
+  assert.equal(x.website, "kedai.example");
+  assert.equal(x.facebook, "https://facebook.com/a");
+  assert.equal(x.extra, "IG @kedai\nFacebook: https://facebook.com/b");
+  const back = linksToText({ ...x, instagram: "https://instagram.com/kedai" });
+  assert.match(back, /IG @kedai/);
+  assert.match(back, /facebook\.com\/b/);
+  assert.deepEqual(textToLinks("We are on Facebook as Kedai"), { extra: "We are on Facebook as Kedai" });
+});
