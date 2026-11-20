@@ -4,7 +4,10 @@
 import { useEffect, useRef, useState } from "react";
 import { CoreError } from "@/lib/core/client";
 import type { SessionDetail } from "../../../../packages/contracts/src/agent-test";
-import { useCore, useWords, Notice } from "../state";
+import { useCore, useWords, Notice, Loading } from "../state";
+import type { FirstRun } from "../../../../packages/contracts/src/first-run";
+import { stepsFrom } from "@/lib/core/home-rules";
+import { ChecklistSteps } from "../home/steps";
 import { useExperience } from "../../experience";
 import { LocalAgentTest } from "../agent-test";
 import { useLanding } from "./flow";
@@ -177,7 +180,21 @@ export function FinishStage({
 
 export function LiveStage({ onRestart }: { onRestart: () => void }) {
   const w = useWords(),
-    { href } = useExperience();
+    { href } = useExperience(),
+    { client } = useCore();
+  // The same list as Home, from the plan step on. undefined while loading,
+  // null when the read failed (plain links then).
+  const [run, setRun] = useState<FirstRun | null>();
+  useEffect(() => {
+    let alive = true;
+    client
+      .execute("firstRun", {})
+      .then((v) => alive && setRun(v))
+      .catch(() => alive && setRun(null));
+    return () => {
+      alive = false;
+    };
+  }, [client]);
   const heading = useLanding<HTMLHeadingElement>("live");
   return (
     <div className="setup-flow">
@@ -187,37 +204,33 @@ export function LiveStage({ onRestart }: { onRestart: () => void }) {
         </h1>
         <p className="setup-lead">
           {w(
-            "It answers test calls and chats now. Three steps put it in front of real customers.",
-            "Ia menjawab panggilan dan sembang ujian sekarang. Tiga langkah lagi untuk pelanggan sebenar.",
+            "It answers test calls and chats now. These steps put it in front of real customers.",
+            "Ia menjawab panggilan dan sembang ujian sekarang. Langkah-langkah ini membawanya kepada pelanggan sebenar.",
           )}
         </p>
       </header>
       <div className="setup-body">
-        <ol className="setup-next">
-          <li>
-            <strong>{w("Choose a plan", "Pilih pelan")}</strong>
-            <p>
-              {w(
-                "The agent answers customers only on a paid plan. Test calls stay free.",
-                "Ejen menjawab pelanggan hanya dengan pelan berbayar. Panggilan ujian kekal percuma.",
-              )}
-            </p>
-            <a className="button button-dark" href={href("/app/billing")}>
+        {run === undefined ? (
+          <Loading />
+        ) : run === null ? (
+          <p>
+            <a className="setup-link" href={href("/app/billing")}>
               {w("Choose a plan", "Pilih pelan")}
-            </a>
-          </li>
-          <li>
-            <strong>{w("Phone line", "Talian telefon")}</strong>
-            <p>
-              {w(
-                "After you choose a plan, ask for your phone number. We set it up by hand, usually within 2 working hours, and email you when it is ready.",
-                "Selepas memilih pelan, minta nombor telefon anda. Kami menyediakannya secara manual, biasanya dalam 2 jam bekerja, dan e-mel anda apabila sedia.",
-              )}
-            </p>
-            <a className="button secondary-button" href={href("/app/phone-numbers")}>
+            </a>{" "}
+            <a className="setup-link" href={href("/app/phone-numbers")}>
               {w("Open Phone numbers", "Buka Nombor telefon")}
             </a>
-          </li>
+          </p>
+        ) : (
+          <ChecklistSteps
+            steps={stepsFrom({ manager: true, ...run }).filter((x) =>
+              ["plan", "phone", "call"].includes(x.id),
+            )}
+            manager
+            activeE164={run.phone.activeE164}
+          />
+        )}
+        <ol className="setup-next">
           <li>
             <strong>{w("Connect WhatsApp", "Sambungkan WhatsApp")}</strong>
             {hosted && WHATSAPP_WAITING_FOR_META ? (
