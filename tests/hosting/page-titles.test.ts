@@ -1,5 +1,6 @@
 // Every page names itself in the browser tab, in English and Bahasa Melayu,
 // so an owner with several tabs open can tell them apart.
+import { rootMetadata } from "../../web/lib/root-meta.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -14,8 +15,10 @@ function pages(dir: string): string[] {
 }
 
 test("the layout adds JomCall to every page title", () => {
-  const src = readFileSync("web/app/layout.tsx", "utf8");
-  assert.match(src, /template: "%s · JomCall"/);
+  const title = rootMetadata().title as { template: string };
+  assert.equal(title.template, "%s · JomCall");
+  // The layout takes its metadata from rootMetadata.
+  assert.match(readFileSync("web/app/layout.tsx", "utf8"), /metadata: Metadata = rootMetadata\(\)/);
 });
 
 // Static public pages (English under app/(public), Bahasa Melayu under
