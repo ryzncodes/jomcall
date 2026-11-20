@@ -965,3 +965,10 @@ Pull request #64 merged as `fffbff7`. Migration on the hosted database, web depl
 
 Pull requests #66 and #67 merged and deployed. Hosted public pages read launch copy; legal pages state today's facts (owner has not read the wording). Sign-up allow-list removed from Vercel staging; payments no longer depend on it. No bot check on sign-up. Not verified: a stranger's sign-up, a top-up.
 
+
+## 2026-11-20 (night): call limit 2, server check, uptime, landing voices
+
+- `jomcall.com` 308 and `www.jomcall.com` 307 redirect to `staging.jomcall.com` (Vercel domain settings), paths kept.
+- Footer fix #71 and sample-call voices #72 merged and live (20 AAC clips, `npm run voice:demo -- --paid`, owner listened).
+- `JOMCALL_MAX_CONCURRENT_CALLS=2` in `/etc/jomcall/agent.env` (backup `agent.env.bak-20261120`), agent recreated on `12cc37e`, healthy. Not tested with two real calls.
+- Branch `feat/server-monitor`: `infra/hosted/monitor.sh` (load log, service, SIP-trunk, memory, load and disk alerts by email) and `.github/workflows/uptime.yml`. Tried on the server from a temp copy: load line written, a forced alert and the all-clear email sent. Not installed in cron until merged (RUNBOOK step 17).
