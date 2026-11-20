@@ -676,12 +676,8 @@ function curlecFindings(env: Env, missing: Set<string>, findings: Finding[]) {
       name: "CURLEC_LIVE_ON_STAGING",
       code: "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED",
     });
-  // An invalid list is already reported by its own check.
-  if (!env.JOMCALL_SIGNUP_ALLOW?.trim())
-    findings.push({
-      name: "JOMCALL_SIGNUP_ALLOW",
-      code: "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING",
-    });
+  // The sign-up allow-list is optional since 2026-11-20 (sign-up is open by
+  // the owner's decision); an invalid list is still reported by its own check.
 }
 
 // Names what is missing or wrong for one service. Never returns a value.

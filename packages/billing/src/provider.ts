@@ -3,7 +3,6 @@ import { createFakeProvider, fakeSecrets } from "./fake.ts";
 import {
   curlecKeyMode,
   isHosted,
-  signupAllow,
 } from "../../contracts/src/hosting.ts";
 
 // What a provider reported about one payment, after its signature (webhook)
@@ -190,8 +189,10 @@ export function paymentReadiness(env: Env = process.env): PaymentReadiness {
     };
   // Live keys on the hosted staging namespace take real money on a public
   // site. They work only when the owner has acknowledged that
-  // (CURLEC_LIVE_ON_STAGING=1) and sign-up is limited (JOMCALL_SIGNUP_ALLOW).
-  // `hosted:readiness` reports the same two codes.
+  // (CURLEC_LIVE_ON_STAGING=1). Until 2026-11-20 a sign-up allow-list was
+  // required too; the owner then made this environment the production one
+  // and opened sign-up, so the list is optional. `hosted:readiness` reports
+  // the same code.
   if (
     !sandbox &&
     isHosted(env) &&
@@ -203,19 +204,6 @@ export function paymentReadiness(env: Env = process.env): PaymentReadiness {
         configured: false,
         sandbox,
         reason: "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED",
-      };
-    let allow: ReturnType<typeof signupAllow> = null;
-    try {
-      allow = signupAllow(env);
-    } catch {
-      allow = null;
-    }
-    if (!allow)
-      return {
-        provider,
-        configured: false,
-        sandbox,
-        reason: "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING",
       };
   }
   const origin = publicOriginSetting(env);

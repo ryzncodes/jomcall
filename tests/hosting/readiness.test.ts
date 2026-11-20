@@ -140,7 +140,7 @@ test("a Curlec key with an unknown prefix or an unknown environment is refused",
   assert.equal(d.CURLEC_ENVIRONMENT, "INVALID_ENVIRONMENT");
 });
 
-test("live Curlec keys on staging need the acknowledgement and an allow-list", () => {
+test("live Curlec keys on staging need the acknowledgement; the allow-list is optional", () => {
   const liveStaging = {
     ...good,
     ...CURLEC,
@@ -149,12 +149,8 @@ test("live Curlec keys on staging need the acknowledgement and an allow-list", (
   };
   assert.deepEqual(codes(liveStaging), {
     CURLEC_LIVE_ON_STAGING: "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED",
-    JOMCALL_SIGNUP_ALLOW: "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING",
   });
-  assert.deepEqual(
-    codes({ ...liveStaging, CURLEC_LIVE_ON_STAGING: "1" }),
-    { JOMCALL_SIGNUP_ALLOW: "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING" },
-  );
+  assert.deepEqual(codes({ ...liveStaging, CURLEC_LIVE_ON_STAGING: "1" }), {});
   assert.deepEqual(
     codes({ ...liveStaging, JOMCALL_SIGNUP_ALLOW: "@example.test" }),
     { CURLEC_LIVE_ON_STAGING: "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED" },
