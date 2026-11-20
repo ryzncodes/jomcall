@@ -28,6 +28,37 @@ function Tick() {
   );
 }
 
+function Dash() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M4 8h8" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+// Chinese has no spaces, so a line may break between any two characters,
+// even inside a word. The specimen breaks only between words: keep-all in CSS,
+// and a break opportunity after each word of two or more characters the
+// segmenter finds. Single characters stay with what follows, so 三点吗？
+// (which the segmenter splits into 三, 点, 吗 and ？) never breaks.
+function ZhWords({ text }: { text: string }) {
+  const chunks: string[] = [""];
+  for (const { segment } of new Intl.Segmenter("zh", { granularity: "word" }).segment(text)) {
+    chunks[chunks.length - 1] += segment;
+    if (segment.length > 1) chunks.push("");
+  }
+  return (
+    <>
+      {chunks.filter(Boolean).map((chunk, i) => (
+        <span key={i}>
+          {i > 0 && <wbr />}
+          {chunk}
+        </span>
+      ))}
+    </>
+  );
+}
+
 function Arrow() {
   return (
     <svg viewBox="0 0 16 16" aria-hidden="true">
@@ -70,7 +101,7 @@ export function HomePage({ locale }: { locale: PublicLocale }) {
               {t.hero.h1}
             </h1>
             <p className="t-lead hero-lead">{t.hero.lead}</p>
-            <p className="hero-from">
+            <p className="hero-from t-lead">
               <WithAmount text={t.hero.from} amount={fee} />
             </p>
             <ul className="ticks">
@@ -165,11 +196,8 @@ export function HomePage({ locale }: { locale: PublicLocale }) {
               <li key={v.id} className="specimen">
                 <span className="t-label t-muted">{t.languages.samples[v.id]}</span>
                 <p className="specimen-line" lang={v.lang}>
-                  {v.id === "manglish" ? v.lines[2] : v.lines[1]}
+                  {v.lang === "zh" ? <ZhWords text={v.lines[1]} /> : v.id === "manglish" ? v.lines[2] : v.lines[1]}
                 </p>
-                <span className="specimen-chip t-label" lang={v.lang}>
-                  {v.chip}
-                </span>
               </li>
             ))}
           </ul>
@@ -234,6 +262,12 @@ export function HomePage({ locale }: { locale: PublicLocale }) {
                     {plan.features.map((f) => (
                       <li key={f} className="t-small">
                         <Tick />
+                        {f}
+                      </li>
+                    ))}
+                    {plan.missing.map((f) => (
+                      <li key={f} className="t-small plan-missing">
+                        <Dash />
                         {f}
                       </li>
                     ))}

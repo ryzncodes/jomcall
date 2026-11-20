@@ -657,6 +657,7 @@ body:has(.public) {
   display: inline-flex;
   align-items: center;
   min-height: 40px;
+  white-space: nowrap;
   padding: 0 var(--space-3);
   border-radius: var(--radius-pill);
   font-size: 15px;
@@ -666,6 +667,17 @@ body:has(.public) {
 }
 .public .lang-link:hover {
   background: var(--wash);
+}
+/* 1024-1199 px: the full desktop row, with "Bahasa Melayu" on one line, fits
+   only with tighter padding. */
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .public .site-header-row {
+    gap: var(--space-2);
+  }
+  .public .site-header .nav-link,
+  .public .site-header .lang-link {
+    padding: 0 var(--space-2);
+  }
 }
 .public .theme-toggle .moon {
   display: none;
@@ -870,9 +882,14 @@ body:has(.public) {
   max-width: 560px;
   color: var(--muted);
 }
+/* The price line: Lead size, the amount in the data face one step larger. */
 .public .hero-from {
   margin-top: var(--space-5);
   font-weight: 500;
+}
+.public .hero-from .t-data {
+  font-size: 24px;
+  letter-spacing: -0.01em;
 }
 .public .ticks {
   display: grid;
@@ -887,19 +904,28 @@ body:has(.public) {
   align-items: flex-start;
   gap: var(--space-3);
 }
+/* Icons sit centred on the first line of their text: (line box - icon) / 2. */
 .public .ticks svg,
 .public .plan-features svg,
 .public .b-check {
   flex: none;
   width: 16px;
   height: 16px;
-  margin-top: 5px;
+  margin-top: var(--space-1);
+  margin-top: calc((1lh - 16px) / 2);
   color: var(--forest);
+}
+.public .plan-features .plan-missing {
+  color: var(--muted);
+}
+.public .plan-missing svg {
+  color: var(--muted);
 }
 .public .ticks svg {
   width: 20px;
   height: 20px;
-  margin-top: 3px;
+  margin-top: var(--space-1);
+  margin-top: calc((1lh - 20px) / 2);
   padding: 2px;
   border-radius: var(--radius-pill);
   background: var(--lime);
@@ -914,6 +940,15 @@ body:has(.public) {
 .public .hear-btn svg {
   width: 16px;
   height: 16px;
+}
+@media (max-width: 479px) {
+  .public .hero-actions {
+    display: grid;
+    width: 100%;
+  }
+  .public .hero-actions .btn {
+    width: 100%;
+  }
 }
 .public .hero-note {
   margin-top: var(--space-4);
@@ -954,12 +989,16 @@ body:has(.public) {
   color: var(--cc-ink);
   box-shadow: var(--float);
 }
+/* Dark theme: a darker card with a faint lime ring, so it stands off both
+   the page and the lime-tinted calls tile (the float shadow is lost on dark). */
 [data-theme="dark"] .public .call-card {
-  --cc-bg: #203c30;
+  --cc-bg: #1a3328;
+  box-shadow: 0 0 0 1px rgb(214 235 168 / 0.16), 0 32px 64px -32px rgb(0 0 0 / 0.7);
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .public .call-card {
-    --cc-bg: #203c30;
+    --cc-bg: #1a3328;
+    box-shadow: 0 0 0 1px rgb(214 235 168 / 0.16), 0 32px 64px -32px rgb(0 0 0 / 0.7);
   }
 }
 .public .call-card :focus-visible {
@@ -1025,7 +1064,7 @@ body:has(.public) {
 }
 .public .cc-lines > li {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(var(--space-2));
   transition:
     opacity var(--t-std) var(--ease),
     transform var(--t-std) var(--ease),
@@ -1035,7 +1074,7 @@ body:has(.public) {
   opacity: 1;
   transform: none;
   transition-duration: var(--t-reveal), var(--t-reveal), var(--t-micro);
-  transition-delay: calc(var(--i) * 40ms), calc(var(--i) * 40ms), 0s;
+  transition-delay: calc(var(--i) * var(--t-micro) / 2), calc(var(--i) * var(--t-micro) / 2), 0s;
 }
 /* 0.8 keeps every dimmed text pair at AA (lowest 5.05:1, the caller label). */
 .public .cc-lines[data-active="true"] > li[data-state="dim"] {
@@ -1122,6 +1161,12 @@ body:has(.public) {
     padding: 0 var(--space-3);
   }
 }
+/* 360 px: a narrower card edge keeps the four language chips on one row. */
+@media (max-width: 400px) {
+  .public .call-card {
+    padding: var(--space-5) var(--space-4);
+  }
+}
 .public .cc-chip:hover {
   background: var(--cc-bubble);
 }
@@ -1130,7 +1175,42 @@ body:has(.public) {
   color: var(--cc-bg);
   box-shadow: none;
 }
+/* The progress row keeps the Pause button's height even when the button is
+   hidden, so the card never changes height. */
+.public .cc-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 32px;
+}
+.public .cc-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--cc-bubble);
+  color: var(--cc-ink);
+  font-family: var(--face-text);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.public .cc-cycle:hover {
+  background: var(--cc-line);
+}
+.public .cc-cycle[hidden] {
+  display: none;
+}
+.public .cc-cycle svg {
+  width: 12px;
+  height: 12px;
+}
 .public .cc-track {
+  flex: 1;
   position: relative;
   height: 2px;
   overflow: hidden;
@@ -1144,8 +1224,8 @@ body:has(.public) {
   transform-origin: left center;
   animation: cc-fill 2.6s linear forwards;
 }
-.public .call-card:hover .cc-track i,
-.public .call-card:focus-within .cc-track i,
+.public .call-card[data-paused="true"] .cc-track i,
+.public .call-card:has(.cc-chip:focus-visible) .cc-track i,
 .public .call-card[data-away="true"] .cc-track i {
   animation-play-state: paused;
 }
@@ -1186,10 +1266,6 @@ body:has(.public) {
 }
 .public .tile {
   grid-column: span 2;
-}
-.public .tile-price,
-.public .tile-languages {
-  grid-column: span 1;
 }
 .public .tile-head {
   display: flex;
@@ -1243,12 +1319,19 @@ body:has(.public) {
 .public .call-meta .call-time {
   display: inline;
 }
+/* Phones: the outcome sits under the name, so long BM outcomes never squeeze
+   the name onto two lines. */
 .public .call-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.public .call-row > .badge {
+  justify-self: start;
 }
 @media (min-width: 641px) {
   .public .call-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: var(--space-3);
   }
   .public .call-row > .call-time {
     display: inline;
@@ -1330,13 +1413,14 @@ body:has(.public) {
   border-radius: var(--radius-12);
   background: var(--paper);
 }
-.public .usage-bar {
+.public .usage-meter {
+  display: block;
   height: 4px;
   overflow: hidden;
   border-radius: var(--radius-pill);
   background: var(--line);
 }
-.public .usage-bar i {
+.public .usage-meter i {
   display: block;
   height: 100%;
   border-radius: inherit;
@@ -1348,16 +1432,20 @@ body:has(.public) {
 .public .tile-price .tile-foot {
   color: var(--muted);
 }
+/* Same rhythm as the forwarding codes beside it: hairline rows. */
 .public .honest-list {
   display: grid;
-  gap: var(--space-2);
+}
+.public .honest-list li {
+  padding-block: var(--space-2);
+  box-shadow: inset 0 1px 0 var(--line);
 }
 .public .codes {
   display: grid;
 }
 .public .code-row {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: calc(var(--space-8) + var(--space-2)) minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-3);
   padding-block: var(--space-2);
@@ -1405,8 +1493,7 @@ body:has(.public) {
   flex-wrap: wrap;
   gap: var(--space-2);
 }
-.public .lang-chips li,
-.public .specimen-chip {
+.public .lang-chips li {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
@@ -1416,6 +1503,12 @@ body:has(.public) {
   font-size: 15px;
   line-height: 22px;
   font-weight: 500;
+}
+/* Phones: the four chips stay on one row down to 360 px. */
+@media (max-width: 640px) {
+  .public .lang-chips li {
+    padding: 0 var(--space-2);
+  }
 }
 @media (min-width: 641px) {
   .public .tile {
@@ -1433,29 +1526,53 @@ body:has(.public) {
   .public .bento {
     grid-template-columns: repeat(12, minmax(0, 1fr));
   }
+  /* Rows 1-2: the calls on the left, the booking over the price on the
+     right. Row 3: three tiles of four columns. Row 4: the languages as one
+     wide strip, so the chips sit in a single row. */
   .public .tile-calls {
     grid-column: 1 / 8;
     grid-row: 1 / 3;
   }
   .public .tile-booking {
     grid-column: 8 / 13;
+    grid-row: 1;
   }
   .public .tile-price {
-    grid-column: 8 / 11;
-  }
-  .public .tile-languages {
-    grid-column: 11 / 13;
+    grid-column: 8 / 13;
     grid-row: 2;
   }
   .public .tile-forward {
-    grid-column: 1 / 6;
+    grid-column: 1 / 5;
+    grid-row: 3;
   }
   .public .tile-transfer {
-    grid-column: 6 / 10;
+    grid-column: 5 / 9;
+    grid-row: 3;
   }
   .public .tile-honest {
-    grid-column: 10 / 13;
+    grid-column: 9 / 13;
     grid-row: 3;
+  }
+  .public .tile-languages {
+    grid-column: 1 / 13;
+    grid-row: 4;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-4) var(--space-6);
+  }
+  .public .tile-languages .tile-foot {
+    margin-top: 0;
+    margin-left: auto;
+  }
+  /* The call rows share the tile's height, so no empty band is left under
+     them when the right column is taller. */
+  .public .tile-calls .calls-list {
+    flex: 1;
+    grid-auto-rows: minmax(0, 1fr);
+  }
+  .public .tile-calls .tile-foot {
+    margin-top: 0;
   }
 }
 
@@ -1557,10 +1674,9 @@ body:has(.public) {
 }
 .public .specimen-line:lang(zh) {
   letter-spacing: 0;
-}
-.public .specimen-chip {
-  align-self: flex-start;
-  margin-top: auto;
+  word-break: keep-all;
+  line-break: strict;
+  overflow-wrap: break-word;
 }
 .public .specimen-note {
   margin-top: var(--space-5);
@@ -1568,6 +1684,15 @@ body:has(.public) {
 @media (min-width: 641px) {
   .public .specimens {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  /* Label and line share rows across the specimens, so a label that wraps
+     (the BM Manglish one) does not push its line below the others. */
+  .public .specimen {
+    display: grid;
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+    row-gap: var(--space-4);
+    align-content: start;
   }
 }
 @media (min-width: 1024px) {
@@ -1706,9 +1831,31 @@ body:has(.public) {
 }
 
 /* Closing band: the brand colour, full width. */
+/* In the dark theme --forest turns lime, so the band keeps its own colours:
+   dark green with a lime button. */
 .public .band-forest {
-  background: var(--forest);
-  color: var(--on-forest);
+  --band-bg: var(--forest);
+  --band-ink: var(--on-forest);
+  --band-btn: var(--on-forest);
+  --band-btn-ink: var(--forest);
+  background: var(--band-bg);
+  color: var(--band-ink);
+}
+[data-theme="dark"] .public .band-forest {
+  --band-bg: #1f3a2e;
+  --band-ink: #eef3ea;
+  --band-btn: #d6eba8;
+  --band-btn-ink: #17241d;
+  box-shadow: inset 0 1px 0 rgb(214 235 168 / 0.16);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .public .band-forest {
+    --band-bg: #1f3a2e;
+    --band-ink: #eef3ea;
+    --band-btn: #d6eba8;
+    --band-btn-ink: #17241d;
+    box-shadow: inset 0 1px 0 rgb(214 235 168 / 0.16);
+  }
 }
 .public .home-closing {
   display: grid;
@@ -1726,18 +1873,18 @@ body:has(.public) {
   opacity: 0.85;
 }
 .public .band-forest .btn-primary {
-  background: var(--on-forest);
-  color: var(--forest);
+  background: var(--band-btn);
+  color: var(--band-btn-ink);
 }
 .public .band-forest .btn-primary:hover {
-  background: color-mix(in srgb, var(--on-forest) 86%, var(--forest));
+  background: color-mix(in srgb, var(--band-btn) 86%, var(--band-bg));
 }
 .public .band-forest .btn-wait {
-  background: color-mix(in srgb, var(--on-forest) 16%, transparent);
+  background: color-mix(in srgb, var(--band-ink) 16%, transparent);
   color: transparent;
 }
 .public .band-forest :focus-visible {
-  outline-color: var(--on-forest);
+  outline-color: var(--band-btn);
 }
 
 /* ---------------------------------------------------------- reduced motion */

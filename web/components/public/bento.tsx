@@ -1,4 +1,4 @@
-import type { HomeCopy, SampleVoice } from "@/content/public/home";
+import { SAMPLE_USAGE, type HomeCopy, type SampleVoice } from "@/content/public/home";
 
 // The bento under the hero (spec 6.3, item 2): each tile is a small view of
 // JomCall itself, filled with made-up data, never an icon and a sentence.
@@ -83,8 +83,8 @@ export function Bento({
         <p className="t-small">{price.body}</p>
         <div className="usage">
           <span className="t-label t-muted">{price.usageLabel}</span>
-          <span className="usage-bar" aria-hidden="true">
-            <i style={{ width: "38%" }} />
+          <span className="usage-meter" aria-hidden="true">
+            <i style={{ width: `${(SAMPLE_USAGE.used / SAMPLE_USAGE.included) * 100}%` }} />
           </span>
           <span className="t-small">{price.usage}</span>
         </div>
@@ -101,6 +101,7 @@ export function Bento({
             </li>
           ))}
         </ul>
+        <p className="tile-foot t-small t-muted">{honest.note}</p>
       </article>
 
       <article className="tile tile-forward">

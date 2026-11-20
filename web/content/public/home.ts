@@ -12,6 +12,10 @@ const minutes = (seconds: number) => seconds / 60;
 const fee = rm(starter.monthlyFeeSen);
 const perMinute = rm(publicPrices.voiceSenPerMinute);
 
+// The made-up usage in the bento's price tile: minutes used this month out of
+// the Starter plan's included minutes.
+export const SAMPLE_USAGE = { used: 38, included: minutes(starter.includedVoiceSeconds) };
+
 // ------------------------------------------------------------ sample call
 
 // The four recorded languages, in the order the card cycles through them.
@@ -80,7 +84,8 @@ export const sampleCall: SampleVoice[] = [
 
 // ------------------------------------------------------------------ copy
 
-type Plan = { name: string; price: string; per: string; body: string; features: string[] };
+// `missing` lists what a plan does not include; it is shown with a dash, not a tick.
+type Plan = { name: string; price: string; per: string; body: string; features: string[]; missing: string[] };
 type CallRow = {
   name: string;
   lang: string;
@@ -120,6 +125,8 @@ const en = {
     playing: "Playing",
     stopped: "Sample stopped",
     stop: "Stop",
+    pause: "Pause",
+    resume: "Play",
   },
   bento: {
     heading: "What you see in JomCall",
@@ -151,7 +158,7 @@ const en = {
       body: `a month, with one phone number and ${minutes(starter.includedVoiceSeconds)} minutes`,
       note: "Paid from a prepaid wallet in RM",
       usageLabel: "This month, made up",
-      usage: `38 of ${minutes(starter.includedVoiceSeconds)} minutes used`,
+      usage: `${SAMPLE_USAGE.used} of ${SAMPLE_USAGE.included} minutes used`,
     },
     forward: {
       title: "Keep your number",
@@ -183,6 +190,7 @@ const en = {
         "Calls are not recorded",
         "Export or delete a contact's data",
       ],
+      note: "An agent cannot be published without the AI introduction.",
     },
   },
   problem: {
@@ -213,7 +221,7 @@ const en = {
     body: "BM, English, Manglish and Mandarin. The agent follows the caller and answers in their language.",
     samples: {
       ms: "Bahasa Melayu",
-      manglish: "BM and English, mixed",
+      manglish: "Manglish: BM and English, mixed",
       zh: "Mandarin",
       en: "English",
     },
@@ -245,6 +253,7 @@ const en = {
           `${minutes(starter.includedVoiceSeconds)} minutes each month`,
           `Then ${perMinute} a minute, billed per second`,
         ],
+        missing: [],
       },
       growth: {
         name: "Growth",
@@ -257,13 +266,15 @@ const en = {
           `Then ${perMinute} a minute, billed per second`,
           `WhatsApp agent: ${whatsappWaiting.short[0]}`,
         ],
+        missing: [],
       },
       payg: {
         name: "Pay as you go",
         price: rm(payg.monthlyFeeSen),
         per: "a month",
         body: "No monthly fee and no phone number. Test your agent in the browser before you choose a plan.",
-        features: ["No phone number", "Top up your wallet when you need to"],
+        features: ["Top up your wallet when you need to"],
+        missing: ["No phone number"],
       },
     } satisfies Record<(typeof publicPlans)[number]["code"], Plan>,
     link: "See full pricing",
@@ -334,6 +345,8 @@ const ms: typeof en = {
     playing: "Sedang dimainkan",
     stopped: "Contoh dihentikan",
     stop: "Henti",
+    pause: "Jeda",
+    resume: "Teruskan",
   },
   bento: {
     heading: "Apa yang anda lihat dalam JomCall",
@@ -365,7 +378,7 @@ const ms: typeof en = {
       body: `sebulan, dengan satu nombor telefon dan ${minutes(starter.includedVoiceSeconds)} minit`,
       note: "Dibayar daripada dompet prabayar dalam RM",
       usageLabel: "Bulan ini, rekaan",
-      usage: `38 daripada ${minutes(starter.includedVoiceSeconds)} minit digunakan`,
+      usage: `${SAMPLE_USAGE.used} daripada ${SAMPLE_USAGE.included} minit digunakan`,
     },
     forward: {
       title: "Kekalkan nombor anda",
@@ -397,6 +410,7 @@ const ms: typeof en = {
         "Panggilan tidak dirakam",
         "Eksport atau padam data kenalan",
       ],
+      note: "Ejen tidak boleh diterbitkan tanpa pengenalan AI itu.",
     },
   },
   problem: {
@@ -427,7 +441,7 @@ const ms: typeof en = {
     body: "BM, bahasa Inggeris, Manglish dan Mandarin. Ejen mengikut pemanggil dan menjawab dalam bahasa mereka.",
     samples: {
       ms: "Bahasa Melayu",
-      manglish: "BM dan bahasa Inggeris, bercampur",
+      manglish: "Manglish: BM dan bahasa Inggeris, bercampur",
       zh: "Mandarin",
       en: "Bahasa Inggeris",
     },
@@ -459,6 +473,7 @@ const ms: typeof en = {
           `${minutes(starter.includedVoiceSeconds)} minit setiap bulan`,
           `Kemudian ${perMinute} seminit, dikira sesaat`,
         ],
+        missing: [],
       },
       growth: {
         name: "Growth",
@@ -471,13 +486,15 @@ const ms: typeof en = {
           `Kemudian ${perMinute} seminit, dikira sesaat`,
           `Ejen WhatsApp: ${whatsappWaiting.short[1]}`,
         ],
+        missing: [],
       },
       payg: {
         name: "Bayar ikut guna",
         price: rm(payg.monthlyFeeSen),
         per: "sebulan",
         body: "Tiada yuran bulanan dan tiada nombor telefon. Uji ejen anda dalam pelayar sebelum memilih pelan.",
-        features: ["Tiada nombor telefon", "Tambah nilai dompet bila perlu"],
+        features: ["Tambah nilai dompet bila perlu"],
+        missing: ["Tiada nombor telefon"],
       },
     },
     link: "Lihat harga penuh",

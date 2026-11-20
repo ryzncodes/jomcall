@@ -196,3 +196,38 @@ test("home FAQ has six questions and WhatsApp appears only as waiting for Meta",
   for (const s of strings.filter((s) => /whatsapp/i.test(s)))
     assert.match(s, /Meta/, `WhatsApp without Meta's approval: ${s}`);
 });
+
+// ------------------------------------------------------ home review round 1
+import { nextInCycle } from "../../web/components/public/call-cycle.ts";
+import { SAMPLE_USAGE } from "../../web/content/public/home.ts";
+
+test("the call card cycles the languages once, then rests on the first", () => {
+  const seen: number[] = [];
+  let state = { voice: 0, auto: true };
+  for (let i = 0; i < 10 && state.auto; i += 1) {
+    state = nextInCycle(state.voice, CALL_LANGS.length);
+    seen.push(state.voice);
+  }
+  assert.deepEqual(seen, [1, 2, 3, 0]);
+  assert.equal(state.auto, false);
+});
+
+test("the usage bar is computed from the Starter plan, not typed", () => {
+  const included = publicPlans[0].includedVoiceSeconds / 60;
+  assert.equal(SAMPLE_USAGE.included, included);
+  assert.ok(SAMPLE_USAGE.used > 0 && SAMPLE_USAGE.used < included);
+  assert.equal(home.en.bento.price.usage, `${SAMPLE_USAGE.used} of ${included} minutes used`);
+  assert.equal(home.ms.bento.price.usage, `${SAMPLE_USAGE.used} daripada ${included} minit digunakan`);
+  const bento = readFileSync("web/components/public/bento.tsx", "utf8");
+  assert.doesNotMatch(bento, /["'`]\d+%["'`]/);
+});
+
+test("a feature a plan lacks is listed apart from what it includes", () => {
+  for (const locale of ["en", "ms"] as const) {
+    const { payg } = home[locale].pricing.plans;
+    assert.equal(payg.missing.length, 1);
+    assert.ok(payg.features.every((f) => !/^(No|Tiada)\b/.test(f)), `${locale}: negative feature with a tick`);
+  }
+  assert.equal(home.en.pricing.plans.payg.missing[0], "No phone number");
+  assert.equal(home.ms.pricing.plans.payg.missing[0], "Tiada nombor telefon");
+});

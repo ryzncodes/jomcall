@@ -54,3 +54,12 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
   - `tests/hosting/page-titles.test.ts` (controller ruling): pages under `app/(public)/` and `app/ms/` must export `metadata = pageMetadata(...)`; every other page keeps the `pageTitle(` rule.
   - Industry links point at pages Tasks 6-7 build; until then they 404.
   - Deleting `web/app/page.tsx` leaves stale `.next-*/types/validator.ts` files that fail `tsc`; delete `web/.next-*/types` (build output) once, then builds regenerate them.
+  - Fix round 1 (review `task-4-review-1.md`), calls beyond the findings:
+    - The bento at 1024 px and up is now calls (rows 1-2) beside booking over price, then forwarding, transfer and honest in three equal tiles, then the languages as one full-width strip; the reviewer's "languages 10/13" option would have left the price tile two columns wide, too narrow for "RM 49" at 56 px.
+    - The cycle's pause no longer follows hover or any focus inside the card: the Pause button (its own control) pauses it, and keyboard focus on a language chip or the card off screen still do. With hover and focus pausing, pressing Play left the bar paused while the pointer or focus stayed on the button.
+    - Audio: voiced clips chain straight from `ended` (the 300 ms gap timer is gone). The booking check still waits 900 ms on a timer, but loads the next clip at once and calls play() on the same element; WebKit keeps an element unlocked after a tap-started play. Not checked on a real iPhone.
+    - The class `usage-bar` collided with `app/remaining.css` (a 20 px top margin, the source of the uneven gap); renamed `usage-meter`.
+    - The honest tile gained a foot line ("An agent cannot be published without the AI introduction."), the same claim as the home FAQ answer, to fill the tile's empty lower half.
+    - Phones: call rows put the outcome badge under the name (long BM outcomes squeezed the names onto two lines); the call card's side padding is 16 px under 400 px and language chips use 8 px padding under 641 px so both chip rows stay on one line at 360 px.
+    - The header language link is `nowrap`; at 1024-1199 px the header row gap and link padding drop one step so the row still fits.
+    - Language specimens: the duplicate chip is gone and the Manglish label names it ("Manglish: BM and English, mixed"); labels and lines share rows through subgrid so a wrapped label does not push its line down. Chinese breaks only after words of two or more characters (`Intl.Segmenter` plus `<wbr>`, and `word-break: keep-all`), so 三点吗？ stays whole.

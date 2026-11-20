@@ -2,22 +2,28 @@
 import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from "react";
 import type { HomeCopy, SampleVoice } from "@/content/public/home";
 import type { PublicLocale } from "@/lib/site";
+import { nextInCycle } from "./call-cycle";
 
 // The hero call card (spec 6.3, item 1) and the hero's "Hear a sample call"
 // button. They sit in different columns, so they share one small store.
 //
-// The card cycles BM, Manglish, 中文, English every 2.6 s. The timing is the
-// progress bar's CSS animation: when it ends the next language shows, and
-// pausing the bar (hover, focus, off screen) pauses the cycle with it. A tap
-// on a language or on play stops the cycle for good (WCAG 2.2.2). With
+// The card shows BM, Manglish, 中文 and English for 2.6 s each, once, then
+// rests on BM. The timing is the progress bar's CSS animation: when it ends
+// the next language shows, and pausing the bar (the Pause button, keyboard
+// focus on a language, or the card off screen) pauses the cycle with it. A
+// tap on a language or on play stops the cycle for good (WCAG 2.2.2). With
 // reduced motion, and in the server HTML, there is no bar and no cycle.
 //
 // Playback reads public/demo-call/<voice>-<line>.m4a for lines 1, 2, 4 and 5.
 // Line 0, the greeting, also says the call may be recorded, so it is never
 // played; line 3 is the booking check, shown for a moment and not spoken.
+// Every clip plays on one reused audio element: the tap starts the first, and
+// each next clip starts from the element's own `ended` event. The one wait,
+// the booking check, loads the next clip at once and only delays its play();
+// Safari keeps an element it has played from a tap unlocked for later play().
 
-type Snap = { voice: number; auto: boolean; playing: boolean; line: number | null };
-const INITIAL: Snap = { voice: 0, auto: true, playing: false, line: null };
+type Snap = { voice: number; auto: boolean; paused: boolean; playing: boolean; line: number | null };
+const INITIAL: Snap = { voice: 0, auto: true, paused: false, playing: false, line: null };
 let snap = INITIAL;
 const subs = new Set<() => void>();
 function set(patch: Partial<Snap>) {
@@ -45,7 +51,6 @@ const useStill = () =>
 
 const SEQUENCE = [1, 2, 3, 4, 5] as const;
 const CHECK_MS = 900;
-const GAP_MS = 300;
 const FALLBACK_MS = 1800;
 let audio: HTMLAudioElement | null = null;
 let run = 0;
@@ -72,7 +77,9 @@ function playSample(voice: string) {
   const later = (i: number, ms: number) => {
     if (me === run) timer = setTimeout(() => step(i), ms);
   };
-  const step = (i: number) => {
+  const clip = (n: number) => `/demo-call/${voice}-${n}.m4a`;
+  // `loaded`: the clip is already the element's source (after the check).
+  const step = (i: number, loaded = false) => {
     if (me !== run) return;
     if (i >= SEQUENCE.length) {
       set({ playing: false, line: null });
@@ -80,14 +87,39 @@ function playSample(voice: string) {
     }
     const n = SEQUENCE[i];
     set({ line: n });
-    if (n === 3) return later(i + 1, CHECK_MS);
-    el.onended = () => later(i + 1, GAP_MS);
+    if (n === 3) {
+      el.onended = null;
+      el.onerror = null;
+      el.src = clip(SEQUENCE[i + 1]);
+      el.load();
+      if (me === run) timer = setTimeout(() => step(i + 1, true), CHECK_MS);
+      return;
+    }
+    // Each line moves on once, whichever of ended, error or a refused play()
+    // comes first.
+    let moved = false;
+    const next = (wait: boolean) => {
+      if (moved) return;
+      moved = true;
+      if (wait) later(i + 1, FALLBACK_MS);
+      else step(i + 1);
+    };
+    el.onended = () => next(false);
     // A missing or blocked clip: the transcript still moves on, silently.
-    el.onerror = () => later(i + 1, FALLBACK_MS);
-    el.src = `/demo-call/${voice}-${n}.m4a`;
-    el.play().catch(() => later(i + 1, FALLBACK_MS));
+    el.onerror = () => next(true);
+    if (!loaded) el.src = clip(n);
+    el.play().catch(() => next(true));
   };
   step(0);
+}
+
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="4" y="3.5" width="2.75" height="9" rx="1" fill="currentColor" />
+      <rect x="9.25" y="3.5" width="2.75" height="9" rx="1" fill="currentColor" />
+    </svg>
+  );
 }
 
 function PlayIcon({ playing }: { playing: boolean }) {
@@ -139,7 +171,7 @@ export function CallCard({
   lines: SampleVoice[];
   labels: HomeCopy["card"];
 }) {
-  const { voice, auto, playing, line } = useSnap();
+  const { voice, auto, paused, playing, line } = useSnap();
   const still = useStill();
   const card = useRef<HTMLElement>(null);
 
@@ -185,7 +217,12 @@ export function CallCard({
   );
 
   return (
-    <figure ref={card} className="call-card" aria-label={`${labels.business}. ${labels.label}`}>
+    <figure
+      ref={card}
+      className="call-card"
+      data-paused={paused}
+      aria-label={`${labels.business}. ${labels.label}`}
+    >
       <div className="cc-top">
         <span className="cc-business t-data">{labels.business}</span>
         <span className="cc-label">{labels.label}</span>
@@ -236,14 +273,27 @@ export function CallCard({
             </button>
           ))}
         </div>
-        <span className="cc-track" aria-hidden="true">
-          {cycling && (
-            <i
-              key={voice}
-              onAnimationEnd={() => set({ voice: (snap.voice + 1) % lines.length })}
-            />
-          )}
-        </span>
+        <div className="cc-progress">
+          <span className="cc-track" aria-hidden="true">
+            {cycling && (
+              <i key={voice} onAnimationEnd={() => set(nextInCycle(snap.voice, lines.length))} />
+            )}
+          </span>
+          <button
+            type="button"
+            className="cc-cycle"
+            hidden={!cycling}
+            onClick={() => set({ paused: !snap.paused })}
+          >
+            {paused ? <PlayIcon playing={false} /> : <PauseIcon />}
+            <span className="cta-label">
+              <span>{paused ? labels.resume : labels.pause}</span>
+              <span className="cta-reserve" aria-hidden="true">
+                {paused ? labels.pause : labels.resume}
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
       <p className="sr-only" role="status">
         {playing ? `${labels.playing}: ${lines[voice].chip}` : ""}
