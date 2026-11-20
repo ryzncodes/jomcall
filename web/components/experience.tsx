@@ -162,7 +162,7 @@ export function Experience({
           data-theme={theme}
         >
           {screen === "docs" ? (
-            <PublicPages page="docs" />
+            <PublicPages />
           ) : mode !== "mock" ? (
             <LocalApp screen={screen} />
           ) : (

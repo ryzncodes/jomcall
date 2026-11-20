@@ -32,7 +32,7 @@ export default function MockExperience({
     <ProductProvider locale={locale}>
       <CrmProvider locale={locale}>
         {screen === "docs" ? (
-          <PublicPages page="docs" />
+          <PublicPages />
         ) : ["login", "signup", "forgot", "invite"].includes(screen) ? (
           <Access mode={screen as "login" | "signup" | "forgot" | "invite"} />
         ) : screen === "outbound" ? (

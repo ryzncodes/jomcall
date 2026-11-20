@@ -94,7 +94,8 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
     </>
   );
 }
-export function PublicPages({ page }: { page: "docs" }) {
+// The guides page: /docs, shown outside hosted mode only.
+export function PublicPages() {
   const { t, href } = useExperience(),
     p = t.remaining,
     [guide, setGuide] = useState<number | null>(null);
@@ -106,7 +107,6 @@ export function PublicPages({ page }: { page: "docs" }) {
     "/app/settings",
     "/self-host",
   ];
-  void page;
   return (
     <PublicFrame>
       <main tabIndex={-1} id="content" className="public-content">

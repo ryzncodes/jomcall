@@ -59,7 +59,7 @@ export function LocalAuth({
           </span>
           <h1>{w(...authPanel.heading)}</h1>
           <p>{w(...authPanel.intro)}</p>
-          <ol className="access-steps" aria-label={w(...authPanel.stepsLabel)}>
+          <ol className="access-steps" role="list" aria-label={w(...authPanel.stepsLabel)}>
             {authPanel.steps.map(([en, ms]) => (
               <li key={en}>{w(en, ms)}</li>
             ))}

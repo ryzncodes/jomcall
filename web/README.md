@@ -11,7 +11,7 @@ npm ci --prefix web
 npm run dev --prefix web -- --port 4180
 ```
 
-Open `http://127.0.0.1:4180/` for marketing, `/app` for the home dashboard, `/app/calls` for the call log, `/app/setup` for guided setup, `/app/test` for the agent test panel, `/app/agent` for the agent builder, `/app/inbox` for the shared inbox, `/app/contacts` for contacts, `/app/bookings` for the calendar, `/app/integrations` for connected tools, `/app/phone-numbers` for routing, `/app/whatsapp` for channel/templates, `/app/billing` for the shared wallet, or `/app/settings` for workspace administration. Use `?lang=ms&theme=dark` to review BM/dark. The header switches locale and theme.
+Open `http://127.0.0.1:4180/` for the public home page (`app/(public)`, `/ms` for Bahasa Melayu), `/app` for the home dashboard, `/app/calls` for the call log, `/app/setup` for guided setup, `/app/test` for the agent test panel, `/app/agent` for the agent builder, `/app/inbox` for the shared inbox, `/app/contacts` for contacts, `/app/bookings` for the calendar, `/app/integrations` for connected tools, `/app/phone-numbers` for routing, `/app/whatsapp` for channel/templates, `/app/billing` for the shared wallet, or `/app/settings` for workspace administration. Use `?lang=ms&theme=dark` to review BM/dark. The header switches locale and theme.
 
 Production verification:
 
@@ -26,7 +26,7 @@ The dev/start scripts bind to localhost. No environment variables or backend acc
 ## Structure
 
 - `app/`: App Router entry points and theme/responsive CSS.
-- `components/marketing.tsx`: editorial landing page, business examples and FAQ.
+- `components/public/` and `content/public/`: the public pages (home, pricing, FAQ, guides, legal); `components/public-pages.tsx` keeps the shared frame and the `/docs` guides.
 - `components/call-demo.tsx`: controllable text simulation and illustrative waveform.
 - `components/workspace.tsx`: searchable call log, details and contact controls.
 - `components/product/`: shared app shell, persistent setup, agent builder/version history, shared contact inbox, simulated browser call and text-chat tester.
