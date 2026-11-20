@@ -118,7 +118,8 @@ export function Experience({
     | "login"
     | "signup"
     | "forgot"
-    | "invite";
+    | "invite"
+    | "link";
 }) {
   const routeParams = useSearchParams();
   const [theme, setTheme] = useState<Theme>(initialTheme);

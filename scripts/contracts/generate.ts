@@ -202,7 +202,7 @@ for (const action of [
       operationId: "auth_" + action.replaceAll("-", "_"),
       security: [],
       description: callback
-        ? "Single-use local email callback. Only token_hash accepted. Never log this URL."
+        ? "Email link. GET spends nothing: it redirects to /open-link, whose button POSTs { tokenHash } here (same Origin and CSRF pair). Only token_hash accepted on GET. Never log this URL."
         : "Local Auth endpoint. POST requires same Origin and CSRF cookie/header pair.",
       parameters: callback
         ? [
