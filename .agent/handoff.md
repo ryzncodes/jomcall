@@ -1,5 +1,35 @@
 # Handoff
 
+## 2026-11-20 (midday): Meta App Review submitted
+
+**Submitted** about 11:45 (Asia/Kuala_Lumpur). Status "Review in progress", three permissions. Up to 20 days by Meta's own estimate. Watch the app's contact email and the Alert Inbox in the developer console.
+
+**Do not change until Meta answers**
+- The reviewer account (an Admin of the staging workspace, on a plus-address of the owner's mailbox) and its password.
+- The staging workspace: Growth plan, WhatsApp test number connected, agent published.
+- `https://staging.jomcall.com` reachable; privacy and terms pages at `www.jomcall.com`.
+
+**What was sent**
+- Data handling: five processors (Supabase, DigitalOcean, Vercel, OpenRouter, Anthropic), responsible entity Digitalize Plus Enterprise, Malaysia, "No" on national security requests, "None of the above" on policies. The provider names and countries were entered from memory and read by the owner, not checked against the providers' terms.
+- Two permission descriptions and reviewer instructions; the wording is in `drafts/meta-app-review.md` (not committed).
+- Two videos, kept in `output/meta/` (not committed). Both are step captures without the browser's address bar.
+
+**If Meta sends it back**
+- For the videos: the owner records the screen (Cmd+Shift+5) while the steps are driven in the browser; about two minutes each.
+- For a number to message: connect a real number through "Connect WhatsApp", or add the reviewer's number to the test number's allowed list.
+
+**Staging state the same day**
+- Templates at Meta: `jomcall_reply_request` (ms) and `jomcall_reply_en` (en), both `PENDING`.
+- Voice cache: 88 lines for each of Kore, Achird, Charon, Leda, Sulafat (Kore has 90 files). The job that did it is `/root/prewarm-all.sh`, log `/var/log/jomcall-prewarm.log`; run it again after a voice cache volume is lost.
+- Firewall: 5060/tcp to Twilio's ranges, no 5060/udp, 10000-10200/udp to `168.86.128.0/18`. If a call connects with no sound, widen that last rule first.
+- Twilio account upgraded from trial by the owner. Auto-recharge and a usage alert are the owner's to set.
+
+**Next**
+1. One real call that stays on the line: confirms audio through the firewall and whether fillers are heard.
+2. Prompt fixes from the test call (the transfer contradiction, the repeated booking offer, shorter WhatsApp replies): one paid gate run for all, on the owner's go.
+3. Place names for the speech recogniser; why a booking became a message; first-sound timing on phone calls; a warning when the SIP trunk or dispatch rule is missing.
+4. Production: paid database with backups, Curlec approval, the PDPA decision. These, with Meta's answer, are what stands between staging and a paying customer.
+
 ## 2026-11-20: first answered phone call
 
 **What happened**
