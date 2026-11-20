@@ -41,6 +41,33 @@ test("banned claims are caught and the required negations pass", () => {
   assert.equal(hit("Panggilan tidak dirakam"), 0);
 });
 
+const MUST_HIT = [
+  "No hidden fees, unlimited calls", "No setup, we record every call", "No fuss, PDPA compliant",
+  "No, WhatsApp is available now", "WhatsApp is live, not a demo", "Tiada yuran, menjawab semua panggilan",
+  "JomCall answers all your calls", "Answers every phone call", "Never miss calls again",
+  "Calls recorded for quality", "We may record calls", "Recordings are stored 30 days",
+  "Syncs with your Google Calendar", "Sync your calendar", "Tamil supported", "BM, English, Mandarin, Tamil",
+  "Bahasa Tamil disokong", "Available on WhatsApp", "Chat on WhatsApp with JomCall", "JomCall works on WhatsApp",
+  "Answers calls and WhatsApp messages", "WhatsApp tersedia", "Jawab WhatsApp pelanggan anda",
+  "Fully compliant with PDPA", "PDPA ready", "Patuh kepada PDPA", "Booking alerts instantly",
+  "You get notified instantly", "Pulls info from your Google Maps listing", "We scan your website and Instagram",
+  "Try it free for 14 days", "Start free", "Cuba percuma", "ready in 2 working days", "Ready in 24 hours",
+  "Siap dalam 2 hari", "Siap dalam sehari",
+];
+const MUST_PASS = [
+  "Calls are not recorded.", "We do not record calls.", "We record nothing.",
+  "JomCall does not speak Tamil yet.", "WhatsApp is waiting for Meta's approval.",
+  "Growth includes the WhatsApp agent once Meta approves JomCall.", "Pay as you go: no monthly fee.",
+  "Bring your price list as a photo, PDF, CSV file or pasted text.",
+  "Keep your number: forward its calls to your JomCall number.",
+  "Passes the caller to your staff during opening hours.",
+];
+test("every reviewed affirmative claim hits and every required denial passes", () => {
+  for (const t of MUST_HIT) assert.ok(findBannedClaims(t, "x").length > 0, `should hit: ${t}`);
+  for (const t of MUST_PASS) assert.deepEqual(findBannedClaims(t, "x"), [], `should pass: ${t}`);
+  assert.deepEqual(findBannedClaims("There is no free trial.", "faq.trial"), []);
+});
+
 function tsFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((n) => {
     const p = join(dir, n);
@@ -76,6 +103,17 @@ async function modules() {
 
 const isBilingual = (v: unknown): v is { en: unknown; ms: unknown } =>
   !!v && typeof v === "object" && "en" in v && "ms" in v;
+
+test("content/public holds only .ts modules", () => {
+  const stray = (function walk(d: string): string[] {
+    return readdirSync(d).flatMap((n) => {
+      const p = join(d, n);
+      if (statSync(p).isDirectory()) return walk(p);
+      return /\.ts$/.test(n) ? [] : [p];
+    });
+  })(ROOT);
+  assert.deepEqual(stray, []);
+});
 
 test("no string under web/content/public/ makes a banned claim", async () => {
   const hits: string[] = [];
