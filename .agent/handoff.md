@@ -1,5 +1,12 @@
 # Handoff
 
+## 2026-11-20 (afternoon): staging is now production
+
+Owner decision. Read the entry "Staging is production" in `AGENTS.md` before touching the hosted environment: there is no second environment any more, no backups, and every write there is a production change.
+
+- Launch is phone first, by invitation. WhatsApp shows "waiting for Meta's approval" until `WHATSAPP_WAITING_FOR_META` in `web/lib/launch.ts` is set to false.
+- Still to build for launch: an operator command that buys a Twilio number and wires it (not started; first check whether Twilio allows numbers under the Digitalize Plus bundle to serve other businesses), prompt fixes from the test call (needs the owner's go for a paid gate run), `jomcall.com` email aliases (Cloudflare Email Routing is already on; the owner's Cloudflare account is not the one connected to the agent's tools).
+
 ## 2026-11-20 (midday): Meta App Review submitted
 
 **Submitted** about 11:45 (Asia/Kuala_Lumpur). Status "Review in progress", three permissions. Up to 20 days by Meta's own estimate. Watch the app's contact email and the Alert Inbox in the developer console.

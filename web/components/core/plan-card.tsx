@@ -22,6 +22,8 @@ import {
   type PlanCode,
   type PlanOffer,
 } from "@/lib/core/plan-rules";
+import { HOSTED } from "@/lib/hosted";
+import { WHATSAPP_WAITING_FOR_META, whatsappWaiting } from "@/lib/launch";
 import { useCore, useWords, useResource, useAction, Notice } from "./state";
 
 type Done = { choice: PlanChoice; code: PlanCode; feeSen: number; from: PlanCode; date: string | null };
@@ -150,7 +152,7 @@ export function PlanCard({
           </li>
         ))}
       <li>
-        {p.whatsappAgent ? w("WhatsApp agent included", "Ejen WhatsApp termasuk") : w("No WhatsApp agent", "Tiada ejen WhatsApp")}
+        {p.whatsappAgent ? w("WhatsApp agent included", "Ejen WhatsApp termasuk") + (HOSTED && WHATSAPP_WAITING_FOR_META ? ` (${w(...whatsappWaiting.short)})` : "") : w("No WhatsApp agent", "Tiada ejen WhatsApp")}
       </li>
       {p.whatsappAgent && <li>{w("Meta bills its own fees to your business", "Meta mengenakan caj sendiri terus kepada perniagaan anda")}</li>}
       {payg && (
