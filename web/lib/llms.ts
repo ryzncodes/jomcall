@@ -11,7 +11,7 @@ import { trust } from "../content/public/trust.ts";
 import { pricing } from "../content/public/pricing.ts";
 import { legalCopy } from "../messages/legal.ts";
 import { whatsappWaiting } from "./launch.ts";
-import { rmText as rm } from "../content/public/format.ts";
+import { plainSpaces, rmText as rm } from "../content/public/format.ts";
 import { publicPlans } from "./pricing.ts";
 import { PUBLIC_PAGES, localePath, siteOrigin, type PublicLocale, type PublicPageId } from "./site.ts";
 
@@ -21,7 +21,7 @@ import { PUBLIC_PAGES, localePath, siteOrigin, type PublicLocale, type PublicPag
 // Each page is described by its own meta description, taken from its
 // content module; a page not built yet falls back to its nav label. A page
 // whose canonical is another page is not listed (it would be a duplicate).
-function describe(id: PublicPageId, locale: PublicLocale): string {
+export function describe(id: PublicPageId, locale: PublicLocale): string {
   if (id === "home") return home[locale].meta.description;
   if (id === "pricing") return pricing[locale].meta.description;
   if (id === "how-it-works") return howItWorks[locale].page.description;
@@ -42,7 +42,13 @@ function describe(id: PublicPageId, locale: PublicLocale): string {
   return common[locale].pages[id];
 }
 
+// Plain text, so plain spaces throughout: the page descriptions it quotes may
+// carry the no-break space that rm() puts after "RM".
 export function llmsText(): string {
+  return plainSpaces(llmsBody());
+}
+
+function llmsBody(): string {
   const origin = siteOrigin() ?? "";
   const [starter, growth, payg] = publicPlans;
   const minutes = (s: number) => s / 60;

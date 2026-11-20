@@ -562,3 +562,35 @@ test("JSON-LD: offers, no ratings, escaped, absolute urls", () => {
   assert.equal(organizationLd(), null);
   assert.equal(softwareAppLd("en"), null);
 });
+
+// ------------------------------------------- plain spaces off the page
+
+import { describe as pageDescription } from "../../web/lib/llms.ts";
+import { faqItems } from "../../web/content/public/faq.ts";
+import { common as commonCopy } from "../../web/content/public/common.ts";
+
+const NBSP = " ";
+
+test("no no-break space leaves the page: metadata, FAQ data and llms.txt use plain spaces", () => {
+  // The guard is worth having: some source copy does carry rm()'s no-break space.
+  const sources = PUBLIC_PAGES.flatMap(({ id }) => (["en", "ms"] as const).map((l) => pageDescription(id, l)));
+  assert.ok(sources.some((d) => d.includes(NBSP)), "expected an amount in some description");
+
+  for (const { id } of PUBLIC_PAGES)
+    for (const l of ["en", "ms"] as const) {
+      const meta = pageMetadata(id, l, { title: `${commonCopy[l].pages[id]} ${rm(4900)}`, description: pageDescription(id, l) });
+      const og = meta.openGraph as { title?: string; description?: string };
+      for (const text of [meta.title, meta.description, og.title, og.description])
+        assert.ok(typeof text === "string" && !text.includes(NBSP), `${id} ${l}`);
+    }
+
+  for (const l of ["en", "ms"] as const)
+    for (const items of [pricingFaq(l), home[l].faq.items, faqItems(l)]) {
+      const ld = faqLd(items);
+      assert.ok(!JSON.stringify(ld).includes(NBSP), l);
+      assert.ok(!ldScriptText(ld).includes(NBSP), l);
+    }
+  assert.ok(pricingFaq("en").some((f) => f.a.includes(NBSP)), "expected an amount in a pricing answer");
+
+  assert.ok(!llmsText().includes(NBSP));
+});

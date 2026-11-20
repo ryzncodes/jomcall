@@ -1,5 +1,5 @@
 import { common } from "../content/public/common.ts";
-import { rm } from "../content/public/format.ts";
+import { plainSpaces } from "../content/public/format.ts";
 import type { FaqItem } from "../content/public/types.ts";
 import { publicPlans } from "./pricing.ts";
 import { OPERATOR } from "./operator.ts";
@@ -75,8 +75,8 @@ export function faqLd(items: FaqItem[]): LdNode {
     "@type": "FAQPage",
     mainEntity: items.map((item) => ({
       "@type": "Question",
-      name: item.q,
-      acceptedAnswer: { "@type": "Answer", text: item.a },
+      name: plainSpaces(item.q),
+      acceptedAnswer: { "@type": "Answer", text: plainSpaces(item.a) },
     })),
   };
 }
@@ -105,7 +105,8 @@ export function breadcrumbLd(id: PublicPageId, locale: PublicLocale): LdNode | n
 
 // A string safe to place inside <script type="application/ld+json">.
 export function ldScriptText(data: LdNode): string {
-  return JSON.stringify(data)
+  // Plain spaces in every structured-data string, whatever builder made it.
+  return plainSpaces(JSON.stringify(data))
     .replaceAll("<", "\\u003c")
     .replaceAll(String.fromCharCode(0x2028), "\\u2028")
     .replaceAll(String.fromCharCode(0x2029), "\\u2029");
