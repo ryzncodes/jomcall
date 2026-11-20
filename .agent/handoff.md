@@ -961,3 +961,7 @@ Branch `docs/twilio-staging-plan`, pull request #55. Document only; this session
 
 Pull request #64 merged as `fffbff7`. Migration on the hosted database, web deployed, engine on `fffbff7` with `JOMCALL_OPERATOR_EMAIL` set. Hosted mode now refuses a number added from the app. Seen live: forwarding panel, no "Add number". Not seen: the request panel, the two emails, a forwarded call.
 
+## 2026-11-20 (evening): launch copy and open sign-up
+
+Pull requests #66 and #67 merged and deployed. Hosted public pages read launch copy; legal pages state today's facts (owner has not read the wording). Sign-up allow-list removed from Vercel staging; payments no longer depend on it. No bot check on sign-up. Not verified: a stranger's sign-up, a top-up.
+
