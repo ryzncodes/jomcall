@@ -1,5 +1,4 @@
 "use client";
-import { useId } from "react";
 import type { AgentSettings } from "../../../../packages/contracts/src/core";
 import { Field } from "../field";
 import { GreetingField } from "../agent-fields";
@@ -17,18 +16,16 @@ export function useFieldEvents(field: keyof AgentSettings) {
 
 const LANGS = ["ms", "en", "zh"] as const;
 
-// Name, greeting, AI introduction, recording, languages and voice. Every
+// Name, greeting, AI introduction, languages and voice. Every
 // field saves by itself through the page's queue; there is no Save button.
 export function Greeting() {
   const w = useWords(),
     p = useAgentPage(),
     s = p.settings,
     bad = (f: keyof AgentSettings) => p.invalid.includes(f);
-  const recId = useId();
   const name = useFieldEvents("name"),
     greeting = useFieldEvents("greeting"),
-    intro = useFieldEvents("aiDisclosure"),
-    rec = useFieldEvents("recordingDisclosure");
+    intro = useFieldEvents("aiDisclosure");
   // A switch or a choice has no typing to wait for: it is sent at once.
   const choose = (partial: Partial<AgentSettings>) => {
     p.change(partial);
@@ -77,41 +74,6 @@ export function Greeting() {
             {...intro}
           />
         </Field>
-        <label className="product-check" htmlFor={recId}>
-          <input
-            id={recId}
-            type="checkbox"
-            checked={s.recordingEnabled}
-            onChange={(e) => choose({ recordingEnabled: e.target.checked })}
-          />
-          <span>
-            {w(
-              "Record calls when calling is available",
-              "Rakam panggilan apabila panggilan tersedia",
-            )}
-          </span>
-        </label>
-        {s.recordingEnabled && (
-          <Field
-            label={w("Recording disclosure", "Pendedahan rakaman")}
-            hint={
-              s.recordingDisclosure.trim()
-                ? undefined
-                : w(
-                    "Required before publishing while recording is on.",
-                    "Wajib sebelum diterbitkan selagi rakaman dihidupkan.",
-                  )
-            }
-          >
-            <textarea
-              rows={2}
-              maxLength={2000}
-              value={s.recordingDisclosure}
-              onChange={(e) => p.change({ recordingDisclosure: e.target.value })}
-              {...rec}
-            />
-          </Field>
-        )}
         <fieldset className="builder-languages">
           <legend>{w("Languages", "Bahasa")}</legend>
           {LANGS.map((lang) => (

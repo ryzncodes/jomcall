@@ -535,14 +535,14 @@ export function groupChanges(changes: AgentChange[]): {
 export const groupTotal = (lines: AgentChange[]): number =>
   lines.reduce((n, c) => n + (c.count ?? 1), 0);
 
+// JomCall stores no call recordings, so there is no recording notice to
+// require; the settings keep the field only for older drafts.
 export function missingDisclosure(
   s: AgentSettings,
-): ("greeting" | "aiDisclosure" | "recordingDisclosure")[] {
-  const out: ("greeting" | "aiDisclosure" | "recordingDisclosure")[] = [];
+): ("greeting" | "aiDisclosure")[] {
+  const out: ("greeting" | "aiDisclosure")[] = [];
   if (!s.greeting.trim()) out.push("greeting");
   if (!s.aiDisclosure.trim()) out.push("aiDisclosure");
-  if (s.recordingEnabled && !s.recordingDisclosure.trim())
-    out.push("recordingDisclosure");
   return out;
 }
 
