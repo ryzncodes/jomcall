@@ -97,16 +97,16 @@ test("checklist: failed read", () => {
 
 test("isLive", () => {
   assert.equal(isLive(fullOwner({ phones: phones([{ active: true }]) })), false);
-  assert.equal(isLive(fullOwner({ published: true, phones: phones([{ active: true }]) })), true);
+  assert.equal(isLive(fullOwner({ plan: plan("charged"), published: true, phones: phones([{ active: true }]) })), true);
   assert.equal(
-    isLive(fullOwner({ published: true, channels: channels(false), phones: phones([], null, false) })),
+    isLive(fullOwner({ plan: plan("charged"), published: true, channels: channels(false), phones: phones([], null, false) })),
     true,
   );
-  assert.equal(isLive(fullOwner({ published: true, phones: phones([], { state: "open" }) })), false);
+  assert.equal(isLive(fullOwner({ plan: plan("charged"), published: true, phones: phones([], { state: "open" }) })), false);
   assert.equal(isLive(owner({ manager: false, published: true, channels: channels(false) })), true);
   assert.equal(isLive(owner({ manager: false, published: true, channels: channels(true) })), true);
   assert.equal(isLive(owner({ manager: false, published: false })), false);
-  assert.equal(isLive(fullOwner({ published: true, phones: undefined })), true);
+  assert.equal(isLive(fullOwner({ plan: plan("charged"), published: true, phones: undefined })), true);
 });
 
 test("klDayRange", () => {
@@ -159,5 +159,25 @@ test("needsYou order and drops", () => {
 test("homeState", () => {
   assert.equal(homeState(owner()), "failed");
   assert.equal(homeState(fullOwner()), "checklist");
-  assert.equal(homeState(fullOwner({ published: true, phones: phones([{ active: true }]) })), "today");
+  assert.equal(homeState(fullOwner({ plan: plan("charged"), published: true, phones: phones([{ active: true }]) })), "today");
+});
+
+test("review: a manager without a chosen plan is not live", () => {
+  const f = fullOwner({ published: true, channels: channels(false), phones: phones([], null, false) });
+  assert.equal(isLive(f), false);
+  assert.equal(isLive({ ...f, plan: plan("charged") }), true);
+  assert.equal(isLive({ ...f, plan: undefined }), true);
+  assert.equal(homeState(f), "checklist");
+});
+
+test("review: unpaid date is the last day of grace in KL", () => {
+  const f = fullOwner({ plan: plan("unpaid", "starter", { graceUntil: "2026-11-26T16:00:00.000Z" }) });
+  assert.equal(needsYou(f).find((n) => n.id === "plan_unpaid")!.date, "2026-11-26");
+});
+
+test("review: phone button only when the plan includes a number", () => {
+  const p = any({ items: [], request: null, provider: { configured: true, reason: null }, planIncludesNumber: false });
+  const s = step(fullOwner({ phones: p }), "phone")!;
+  assert.equal(s.state, "todo");
+  assert.equal(s.href, null);
 });

@@ -13,7 +13,7 @@ import {
 } from "@/lib/core/home-rules";
 import { dayText } from "@/lib/core/plan-rules";
 import { useExperience } from "../../experience";
-import { Heading, useCore, useResource, useWords } from "../state";
+import { Heading, Loading, useCore, useResource, useWords } from "../state";
 import { loadHomeFacts } from "./load";
 
 type W = (en: string, ms: string) => string;
@@ -68,10 +68,14 @@ export function LocalHome() {
   const state = facts && homeState(facts);
   const steps = facts ? checklist(facts) : [];
   const done = steps.filter((s) => s.state === "done").length;
+  // Neutral until the facts arrive, so a live workspace never flashes the
+  // checklist title.
   const title =
     state === "today"
       ? w("Today", "Hari ini")
-      : w("Get your agent answering", "Sediakan ejen anda untuk menjawab");
+      : state === "checklist"
+        ? w("Get your agent answering", "Sediakan ejen anda untuk menjawab")
+        : w("Home", "Utama");
   const description =
     state === "checklist"
       ? w(`${done} of ${steps.length} done`, `${done} daripada ${steps.length} selesai`)
@@ -81,6 +85,7 @@ export function LocalHome() {
   return (
     <>
       <Heading eyebrow={workspace.workspace.name} title={title} description={description} />
+      {!facts && <Loading />}
       {state === "failed" && (
         <section className="core-panel home-failed" role="alert">
           <p>{w("Home could not load.", "Laman utama tidak dapat dimuatkan.")}</p>
