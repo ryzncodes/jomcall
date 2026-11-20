@@ -1582,8 +1582,11 @@
   display: inline-flex;
   align-items: center;
 }
+/* One row of links, top-aligned with the brand, instead of a sparse column. */
 .site-footer > .site-footer-links {
-  gap: 4px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 4px 24px;
 }
 .operator-details {
   width: 100%;
@@ -1596,6 +1599,7 @@
 .operator-details p {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px 18px;
   margin: 0;
 }
