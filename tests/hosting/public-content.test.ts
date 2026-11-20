@@ -72,11 +72,10 @@ test("how it works uses the app checklist's six step names, the same as home", (
 
 test("forwarding codes are exactly the app's phone screen codes", () => {
   const phone = readFileSync("web/components/core/phone.tsx", "utf8");
-  assert.deepEqual(FORWARD_CODES.map((c) => [c.start, c.stop]), [
-    ["**21*", "##21#"],
-    ["**61*", "##61#"],
-    ["**67*", "##67#"],
-  ]);
+  // Every code the app shows, read from the file: none missing, none extra.
+  const appCodes = [...phone.matchAll(/`(\*\*\d+\*)\$\{local\}#`,\s*"(##\d+#)"/g)].map((m) => [m[1], m[2]]);
+  assert.equal(appCodes.length, 4);
+  assert.deepEqual(FORWARD_CODES.map((c) => [c.start, c.stop]), appCodes);
   for (const { start, stop } of FORWARD_CODES) {
     assert.ok(phone.includes(`\`${start}\${local}#\``), `${start} not in phone.tsx`);
     assert.ok(phone.includes(`"${stop}"`), `${stop} not in phone.tsx`);

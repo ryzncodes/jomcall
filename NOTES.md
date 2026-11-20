@@ -89,7 +89,7 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - `page-titles.test.ts` widened: a public page under a `[param]` folder must return `pageMetadata(` from `generateMetadata`; the others keep `export const metadata = pageMetadata(`.
 - Extra page components beyond the brief (`pages/how-it-works.tsx`, `call-forwarding.tsx`, `languages.tsx`) on the shared `pages/article.tsx` layout, so the routes stay thin.
 - `SampleLine` gained `who: "event"` (a tick such as "Message saved for the mechanic") and an optional `lang`, used for `lang` attributes in the sample call.
-- Forwarding: only the three codes the app's phone screen shows (`**21*`, `**61*`, `**67*` and their stops). `**62*` (unreachable) and `##002#` (cancel all) are left out because `phone.tsx` does not show them; the test reads `phone.tsx` as text.
+- Forwarding: the four codes the app's phone screen shows (`**21*`, `**61*`, `**67*`, `**62*` and their stops), in the app's order; the parity test reads every code pair out of `phone.tsx`. `##002#` (cancel all) is left out because the app does not show it.
 - Restaurants: table requests are taken as messages for staff, not booked (bookings are capacity-one, party size is not handled). Car workshops: a message for the mechanic, no booking, no job lookup (`lookup_job_status` is not built). No page promises reschedule or cancel.
 - Home and pricing FAQs switched to the shared `FaqList` (question as plain summary text, no heading inside summary).
 - Legal pages: the old `.legal-toc` list (and its CSS) is replaced by the shared `Toc`, a `<details>` on phones and a sticky list from 1024 px.
@@ -122,7 +122,7 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 
 ## Task 9: auth panel copy, old marketing retired
 
-- Titles use the brief's exact strings ("Log in to JomCall", "Create your JomCall account", BM equivalents) through `pageTitle(`. The layout template adds " · JomCall", so the tab reads "Log in to JomCall · JomCall". Left as the brief says; shorten if wanted.
+- Titles use the brief's exact strings ("Log in to JomCall", "Create your JomCall account", BM equivalents) through `pageTitle(` with `absolute: true`, so the tab reads exactly that (the double " · JomCall" suffix was fixed).
 - Panel copy lives in the new `web/lib/auth-panel.ts` (no shared message file touched). The old decorative bar lines in the side panel were replaced by the six-step list. `tests/hosting/auth-panel.test.ts` reads `home.tsx` as text and checks the five in-app step names equal the panel's first five; step 6 is checked against the spec's wording (the in-app home has no sixth step entry).
 - `PublicPages` in `web/components/public-pages.tsx` now renders only `docs` (the pricing, privacy and terms branches are gone). Still exported and needed: `PublicFrame` (auth, access, platform), `OperatorDetails` (used by `PublicFrame`), `fillOperator` re-export, `PublicPages`.
 - `web/components/marketing.tsx` deleted. In `globals.css` removed 179 rule blocks and trimmed 2 selector lists whose selector contained a class used only by the old marketing screen (no importer in any .ts/.tsx, absent from other CSS). Kept on purpose: `@keyframes` that only deleted rules used; `.site-footer-links` rules in `remaining.css`; classes also used elsewhere (`button`, `eyebrow`, `faq`, `hero`, `closing`, `promise`, `site-header`, `site-footer`, `header-actions`, `skip-link`, `text-link`, `workflow`, ...) because the new public CSS or in-app screens still use them.

@@ -14,7 +14,7 @@ const [starter, growth, payg] = publicPlans;
 const mins = (seconds: number) => seconds / 60;
 const perMinute = rm(publicPrices.voiceSenPerMinute);
 const [waitTitleEn, waitTitleMs] = whatsappWaiting.title;
-const [fwdAll, fwdNoAnswer, fwdBusy] = FORWARD_CODES;
+const [fwdAll, fwdNoAnswer, fwdBusy, fwdOff] = FORWARD_CODES;
 
 export const FAQ_GROUPS = ["price", "number", "languages", "ai", "privacy", "whatsapp"] as const;
 export type FaqGroupId = (typeof FAQ_GROUPS)[number];
@@ -69,7 +69,7 @@ const en: FaqCopy = {
         },
         codes: {
           q: "Which forwarding code should I use?",
-          a: `${fwdAll.start} sends every call to JomCall. ${fwdNoAnswer.start} sends only the calls you do not answer. ${fwdBusy.start} sends calls only while your line is busy. Each has its own stop code, such as ${fwdAll.stop}.`,
+          a: `${fwdAll.start} sends every call to JomCall. ${fwdNoAnswer.start} sends only the calls you do not answer. ${fwdBusy.start} sends calls only while your line is busy. ${fwdOff.start} sends calls only while your phone is off or has no signal. Each has its own stop code, such as ${fwdAll.stop}.`,
         },
         staff: {
           q: "Can callers still reach my staff?",
@@ -199,7 +199,7 @@ const ms: FaqCopy = {
         },
         codes: {
           q: "Kod pemajuan mana yang patut saya guna?",
-          a: `${fwdAll.start} menghantar semua panggilan ke JomCall. ${fwdNoAnswer.start} hanya menghantar panggilan yang tidak anda jawab. ${fwdBusy.start} hanya menghantar panggilan semasa talian anda sibuk. Setiap satu ada kod hentinya sendiri, contohnya ${fwdAll.stop}.`,
+          a: `${fwdAll.start} menghantar semua panggilan ke JomCall. ${fwdNoAnswer.start} hanya menghantar panggilan yang tidak anda jawab. ${fwdBusy.start} hanya menghantar panggilan semasa talian anda sibuk. ${fwdOff.start} hanya menghantar panggilan semasa telefon anda dimatikan atau tiada isyarat. Setiap satu ada kod hentinya sendiri, contohnya ${fwdAll.stop}.`,
         },
         staff: {
           q: "Bolehkah pemanggil masih bercakap dengan staf saya?",

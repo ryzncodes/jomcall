@@ -167,6 +167,7 @@ const en = {
         { code: "**21*", meaning: "Every call" },
         { code: "**61*", meaning: "Only when you do not answer" },
         { code: "**67*", meaning: "Only when your line is busy" },
+        { code: "**62*", meaning: "Only when your phone is off or out of coverage" },
       ],
     },
     transfer: {
@@ -387,6 +388,7 @@ const ms: typeof en = {
         { code: "**21*", meaning: "Semua panggilan" },
         { code: "**61*", meaning: "Hanya apabila anda tidak menjawab" },
         { code: "**67*", meaning: "Hanya apabila talian anda sibuk" },
+        { code: "**62*", meaning: "Hanya apabila telefon anda dimatikan atau di luar liputan" },
       ],
     },
     transfer: {

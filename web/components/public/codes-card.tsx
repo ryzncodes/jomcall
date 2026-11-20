@@ -1,7 +1,7 @@
 import { FORWARD_CODES, forwarding } from "@/content/public/call-forwarding";
 import type { PublicLocale } from "@/lib/site";
 
-// The app's three forwarding code pairs as a dark card of keys, with what
+// The app's forwarding code pairs as a dark card of keys, with what
 // each one does. Shared by the call forwarding page and the forwarding guide,
 // so the codes are typed in one place (FORWARD_CODES).
 export function CodesCard({ locale }: { locale: PublicLocale }) {
