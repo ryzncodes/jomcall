@@ -222,8 +222,8 @@ export function WhatsAppSignup({
                       "Tetingkap Facebook ditutup sebelum selesai, atau disekat oleh pelayar anda. Tiada apa-apa diubah.",
                     )
                   : w(
-                      "Facebook did not return your number. Try again.",
-                      "Facebook tidak memulangkan nombor anda. Cuba lagi.",
+                      'Facebook did not return your number. Press the button again and, if Facebook offers to continue with your saved choices, pick "Edit settings" and choose the number again.',
+                      'Facebook tidak memulangkan nombor anda. Tekan butang sekali lagi dan, jika Facebook menawarkan untuk meneruskan dengan pilihan tersimpan, pilih "Edit settings" dan pilih nombor itu semula.',
                     )}
             </p>
           )}
