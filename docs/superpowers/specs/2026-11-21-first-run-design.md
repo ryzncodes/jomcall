@@ -105,6 +105,33 @@ The list's other rules:
 - **The business-type stage on a first run reads as a confirmation.** It keeps the type picked at workspace creation preselected (as today) and keeps the optional extra call types. Its heading changes to say the type is already chosen: "You picked <type>. Add anything else you do, or continue." The type is not asked as a new question. A second setup run keeps today's wording.
 - **The bring stage names where text can come from.** Its pasted-text option gets a hint: "Copy the text from your website, Facebook or Instagram page, or Google Maps listing, and paste it here." This uses the existing reader, adds no outbound call, and covers owners whose only online presence is a social page or a Maps pin.
 
+### 5.2a Your links (owner request, 2026-11-21)
+
+The owner asked that owners can link their company's pages during setup: Facebook, LinkedIn, Google Maps or Business Profile, a website, or similar. This round **stores** the links. It does **not read** them (section 6).
+
+- **What exists.** The always-on pack already has a fact `social_links`, a list labelled "Facebook, Instagram, TikTok or Google profile" (`packages/domain/src/packs/every-business.json`). Its only interview question is number 19 of 20, and it is shared with branches. Under the 8-question cap it is almost never asked, and a question that fills two facts is never prefilled.
+- **A "Your links" card on the bring stage**, optional, above the upload choices. It has one field per kind, each optional:
+  - Website
+  - Facebook
+  - Instagram
+  - TikTok
+  - LinkedIn
+  - Google Maps
+
+  The card says: "Customers who ask get these links. JomCall does not open or read them."
+- **Checks, in the web service, without opening the link.**
+  - The text must parse as a URL. A bare address gets `https://` added.
+  - Only `http` and `https` are accepted.
+  - At most 300 characters each, 6 links in all.
+  - The kind's field checks the host loosely: Facebook takes `facebook.com` or `fb.com`, Google Maps takes `google.com/maps`, `maps.google.com`, `maps.app.goo.gl` or `g.page`, and so on. A mismatch shows a warning, not a refusal; the Website field takes any host.
+  - Nothing is fetched to check a link: no preview, no icon, no redirect follow.
+- **Where they go.** On Continue, the links are staged as one setup item filling `social_links`, a list of "Kind: URL" lines. The item shows on the review page like any fact and goes into the agent on apply, as setup does today. The interview treats `social_links` as answered, so question 19 drops out when the links are given. After setup they are edited where the fact lives, under the agent page's "What it knows".
+- **What the agent does with them.** On WhatsApp and typed chat it can give a link when asked. On a phone call it should name the page ("search Kedai Contoh on Facebook") rather than spell out a URL. The current prompt has no rule for this.
+  - Adding one is a prompt change and needs both paid gates re-run, with the owner's go.
+  - Until then, a spoken URL is a known rough edge, noted in section 8.
+  - The builder must also check whether the fact's label is rendered into the prompt. If changing the label to name Website and LinkedIn changes prompt bytes, it falls under the same gate rule. Old published versions are frozen and unaffected.
+- **Privacy.** These are the business's own public pages, not customer data. No new PDPA scope.
+
 ### 5.3 One list, three places
 
 - **Home** owns the list (5.1).
@@ -112,7 +139,7 @@ The list's other rules:
 - **The sidebar** gets one small link above the navigation for owners and admins until the list is complete: "Getting started: 3 of 6" / "Bermula: 3 daripada 6". It opens Home and disappears when every step is done. It has no dismiss button. Market products hide theirs on completion, and one line costs little.
 - **The agent page** keeps its status card and its setup link before the first publish. It gets no list of its own. When the agent is published but the list is not complete, the card's line already names the channels the agent answers on (pull request #82); it adds nothing about plan or number.
 
-## 6. Reading a website address (not approved; not in this work)
+## 6. Reading links and web pages automatically (not approved; not in this work)
 
 Reading a web address the owner types would be a new outbound fetch from JomCall's servers. It needs the owner's explicit yes, and the delegation in the status line does not give it. **Recommendation: do not build it now.** Instead, use the paste hint in 5.2. The reasons:
 
@@ -131,7 +158,13 @@ If the owner approves it later, the design should hold at least these:
 - The fetched text enters the existing pasted-text path and review page unchanged.
 - Rate limits per workspace and service-wide, like the reading limits.
 
-**Google business listing.** Reading it would need the Google Places API: a new paid key, a new outbound service, and Google Maps Platform terms on how long Places content may be stored. Not checked: whether those terms allow keeping hours and descriptions in a published agent version indefinitely. Published versions freeze their facts, so a storage limit would conflict with that. This is not recommended without that check and the owner's yes.
+**Reading the stored links later, source by source.** Each automatic reader is its own outbound service. Each needs its own explicit yes from the owner, and none is asked for or approved in this work.
+
+| Source | Sanctioned route | What would be sent, by which process, with which key | Recommendation |
+|---|---|---|---|
+| Google Maps / Business Profile link | Google Places API (New), Place Details, for name, address, phone, opening hours and website | The place reference from the owner's link (a short `maps.app.goo.gl` link first needs Google's redirect followed, a second request). Sent by the agent process. Key: a new Google Maps Platform key restricted to the Places API, held only by the agent process. It is kept separate from the voice worker's `GOOGLE_CLOUD_API_KEY`. | The one worth asking for next: it gives structured hours and an address, which the owner today types by hand. Before asking, check two things: the price per request, and Google Maps Platform's terms on how long Places content may be stored. Published versions freeze their facts, so a time limit on storage would conflict with that; the result would have to become the owner's own confirmed fact on the review page. Both are **not checked**. |
+| Website | A plain https fetch, then the existing reader (Anthropic `claude-haiku-5-5`) | The page's text goes to Anthropic, as uploads already do. The fetch runs in the agent process; it needs no new key. | Ask later, with the safety list above. |
+| Facebook, Instagram, LinkedIn, TikTok | None for this use. Their terms forbid automated collection. Their official APIs need app review and the page owner's own sign-in. | — | Never fetch. The owner pastes the text (5.2). |
 
 ## 7. Decisions (my recommendations, accepted under the owner's delegation of 2026-11-21)
 
@@ -144,12 +177,16 @@ If the owner approves it later, the design should hold at least these:
 - F7. The bring stage's paste option names website, Facebook, Instagram and Google Maps text as sources.
 - F8. No website or Google listing fetch in this work (section 6). It goes back to the owner as a separate yes or no.
 - F9. The agent page gets no list of its own.
+- F10 (owner's request, 2026-11-21; the form is my call). A "Your links" card on the bring stage stores website, Facebook, Instagram, TikTok, LinkedIn and Google Maps links into the existing `social_links` fact. They are checked without being opened, and are never fetched.
+- Open for the owner: whether to approve the Google Places API as a new outbound service for reading Maps links (section 6). Not asked yet, and not needed for this work.
 
 ## 8. Risks
 
 - **A workspace with a number but no calls stays on the list.** Its "Today" view would have shown zeros anyway. The "Needs you" panel under the list (F3) is the guard against hidden billing problems.
 - **The first answered call might be a stranger's, not the owner's check.** Fine: it still proves forwarding works.
 - **A forwarded call has never reached the line** (noted with pull request #64). If the business's own number arrives as the caller instead of the customer's, step 6 still turns done, but the six-calls-an-hour limit per caller may refuse later customers. That is a phone-line risk, not a list risk, and stays open there.
+- **A spoken URL.** Until a prompt rule says otherwise, the agent may read a link aloud on a call (5.2a).
+- **A wrong link.** An owner can paste a page that is not theirs. The review page shows the links before apply, and the agent gives only what the owner confirmed.
 - **Polling.** Home reloads every 15 seconds and already reads calls. No new read is added.
 - **Words.** New BM strings need a person's read. The "Getting started" label must not promise a time.
 
