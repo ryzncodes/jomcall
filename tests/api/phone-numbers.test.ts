@@ -168,7 +168,12 @@ test("channels: phone follows a configured provider; whatsapp follows its switch
     (await api.request(actor, h.orgA.id, "GET", "/api/v1/channels")).body.data;
   try {
     for (const k of names) delete process.env[k];
-    assert.deepEqual(await channels(), { phone: false, whatsapp: false, integrations: false });
+    assert.deepEqual(await channels(), {
+      phone: false,
+      whatsapp: false,
+      integrations: false,
+      live: { phone: false, whatsapp: false },
+    });
     // Configured provider, no number and no plan: the page shows (it says
     // a plan brings a number).
     Object.assign(process.env, {
@@ -179,6 +184,8 @@ test("channels: phone follows a configured provider; whatsapp follows its switch
       LIVEKIT_API_SECRET: "test-secret",
     });
     assert.equal((await channels()).phone, true);
+    // The page shows, but nothing answers: no number yet.
+    assert.equal((await channels()).live.phone, false);
     // A number but no provider: false.
     const made = await req("POST", "/phone-numbers", {
       e164: fakeNumber(),
@@ -188,15 +195,20 @@ test("channels: phone follows a configured provider; whatsapp follows its switch
     assert.equal(made.status, 200);
     delete process.env.JOMCALL_TELEPHONY_PROVIDER;
     assert.equal((await channels()).phone, false);
+    assert.equal((await channels()).live.phone, false);
     process.env.JOMCALL_TELEPHONY_PROVIDER = "livekit_sip";
     assert.equal((await channels(h.staff)).phone, true);
+    // A provider and an active number: calls are answered.
+    assert.equal((await channels(h.staff)).live.phone, true);
     // Another organization, with no number, sees the page too.
-    assert.equal(
-      (await api.request(h.bob, h.orgB.id, "GET", "/api/v1/channels")).body.data.phone,
-      true,
-    );
+    const other = (await api.request(h.bob, h.orgB.id, "GET", "/api/v1/channels")).body.data;
+    assert.equal(other.phone, true);
+    // Its own number decides whether it answers, not another workspace's.
+    assert.equal(other.live.phone, false);
     process.env.JOMCALL_WHATSAPP_PROVIDER = "fake";
     assert.equal((await channels(h.staff)).whatsapp, true);
+    // WhatsApp is available but this workspace has not connected a number.
+    assert.equal((await channels(h.staff)).live.whatsapp, false);
     process.env.JOMCALL_WHATSAPP_PROVIDER = "bogus";
     assert.equal((await channels()).whatsapp, false);
   } finally {

@@ -90,11 +90,15 @@ export function Home() {
     ? w("Could not check your channels.", "Tidak dapat menyemak saluran anda.")
     : !ch
     ? ""
-    : ch.phone && ch.whatsapp
+    : // What this workspace answers on now, not what the service offers.
+      // An agent never published answers nothing but tests.
+      !publishedId
+      ? w("Answers test calls only", "Menjawab panggilan ujian sahaja")
+      : ch.live?.phone && ch.live?.whatsapp
       ? w("Answers on phone and WhatsApp", "Menjawab di telefon dan WhatsApp")
-      : ch.phone
+      : ch.live?.phone
         ? w("Answers on the phone", "Menjawab di telefon")
-        : ch.whatsapp
+        : ch.live?.whatsapp
           ? w("Answers on WhatsApp", "Menjawab di WhatsApp")
           : w("Answers test calls only", "Menjawab panggilan ujian sahaja");
 
@@ -236,7 +240,9 @@ export function Home() {
         >
           {nothing
             ? w("Nothing to publish", "Tiada apa untuk diterbitkan")
-            : w("Publish changes", "Terbitkan perubahan")}
+            : publishedId
+              ? w("Publish changes", "Terbitkan perubahan")
+              : w("Publish", "Terbitkan")}
         </button>
       </div>
     </>

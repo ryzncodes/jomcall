@@ -1021,6 +1021,7 @@ test("channels reports false for all three on a fresh workspace", async () => {
       phone: false,
       whatsapp: false,
       integrations: false,
+      live: { phone: false, whatsapp: false },
     });
   } finally {
     await f.close();

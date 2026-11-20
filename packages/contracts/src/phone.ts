@@ -41,9 +41,12 @@ export type PhoneNumber = {
   created_at: string;
 };
 export type Channels = {
+  // The service offers the channel: its page shows in the sidebar.
   phone: boolean;
   whatsapp: boolean;
   integrations: boolean;
+  // This workspace answers on it now (a number or a connected channel).
+  live: { phone: boolean; whatsapp: boolean };
 };
 // A request for a phone number. Numbers are bought by an operator, so the
 // owner asks and waits; the areas are the ones a local number can be had in.

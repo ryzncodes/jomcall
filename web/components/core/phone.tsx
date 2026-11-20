@@ -27,15 +27,17 @@ function useMs() {
   return useExperience().locale === "ms";
 }
 
-// Whether a telephony provider is set up on the agent side. Until it is, the
-// numbers are only routing records: nothing rings.
-function ProviderChip({ configured }: { configured: boolean }) {
+// Whether this workspace's line rings: a telephony provider set up on the
+// agent side and an active number here. Until both, nothing rings.
+function ProviderChip({ configured, live }: { configured: boolean; live: boolean }) {
   const w = useWords();
   return (
     <span className="remaining-chip" role="status">
-      {configured
-        ? w("Phone line connected", "Talian telefon disambungkan")
-        : w("Not connected", "Belum disambungkan")}
+      {!configured
+        ? w("Not connected", "Belum disambungkan")
+        : live
+          ? w("Phone line connected", "Talian telefon disambungkan")
+          : w("No number yet", "Belum ada nombor")}
     </span>
   );
 }
@@ -75,7 +77,10 @@ export function LocalPhoneNumbers() {
       ) : (
         <>
           <section className="core-panel">
-            <ProviderChip configured={list.data.provider.configured} />
+            <ProviderChip
+              configured={list.data.provider.configured}
+              live={list.data.items.some((n) => n.active)}
+            />
             {!list.data.provider.configured && (
               <p>
                 {w(
