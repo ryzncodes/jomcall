@@ -325,6 +325,16 @@ export function Loading({ error }: { error?: unknown }) {
     <p role="status">{w("Loading workspace…", "Memuatkan ruang kerja…")}</p>
   );
 }
+// Stands in for the plan card while its code or its data loads, so the
+// billing page never shows an empty box.
+export function PlanLoading() {
+  const w = useWords();
+  return (
+    <div className="core-panel core-plan-placeholder">
+      <p role="status">{w("Loading plans…", "Memuatkan pelan…")}</p>
+    </div>
+  );
+}
 export function Heading({
   eyebrow,
   title,

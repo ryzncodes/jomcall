@@ -24,7 +24,7 @@ import {
 } from "@/lib/core/plan-rules";
 import { HOSTED } from "@/lib/hosted";
 import { WHATSAPP_WAITING_FOR_META, whatsappWaiting } from "@/lib/launch";
-import { useCore, useWords, useResource, useAction, Notice } from "./state";
+import { useCore, useWords, useResource, useAction, Notice, PlanLoading } from "./state";
 
 type Done = { choice: PlanChoice; code: PlanCode; feeSen: number; from: PlanCode; date: string | null };
 
@@ -76,7 +76,7 @@ export function PlanCard({
         </button>
       </section>
     ) : (
-      <div className="core-panel core-plan-placeholder" aria-hidden="true" />
+      <PlanLoading />
     );
 
   const s = plan.data;

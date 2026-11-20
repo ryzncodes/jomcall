@@ -69,7 +69,7 @@ export function LocalSettings() {
               [
                 w("Business", "Perniagaan"),
                 w("Team & access", "Pasukan & akses"),
-                w("Privacy jobs", "Tugas privasi"),
+                w("Privacy requests", "Permintaan privasi"),
                 w("Audit history", "Sejarah audit"),
               ][i]
             }
@@ -120,8 +120,8 @@ export function LocalSettings() {
             </form>
             <p className="editor-note">
               {w(
-                "Roles control access to every command. Ownership transfer is outside this phase.",
-                "Peranan mengawal akses setiap arahan. Pemindahan pemilikan di luar skop fasa ini.",
+                "Only owners and admins can change these details.",
+                "Hanya pemilik dan pentadbir boleh menukar butiran ini.",
               )}
             </p>
           </section>
