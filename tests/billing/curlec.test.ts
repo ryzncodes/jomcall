@@ -141,11 +141,12 @@ test("run time refuses unknown key prefixes and unacknowledged live keys on host
   assert.equal(paymentReadiness(staging).reason, "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED");
   assert.equal(paymentReadiness({ ...staging, CURLEC_LIVE_ON_STAGING: "true" }).reason, "LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED");
   const acknowledged = { ...staging, CURLEC_LIVE_ON_STAGING: "1" };
-  assert.equal(paymentReadiness(acknowledged).reason, "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING");
-  assert.equal(paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: " " }).reason, "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING");
-  // An invalid list counts as no list; it never reaches the reason.
-  const invalid = paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: "owner@example.test," });
-  assert.equal(invalid.reason, "SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING");
+  // The acknowledgement is enough: the sign-up list is optional since
+  // 2026-11-20 (open sign-up), set, blank or invalid.
+  const ready = { provider: "curlec", configured: true, sandbox: false, reason: null };
+  assert.deepEqual(paymentReadiness(acknowledged), ready);
+  assert.deepEqual(paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: " " }), ready);
+  assert.deepEqual(paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: "owner@example.test," }), ready);
   assert.deepEqual(paymentReadiness({ ...acknowledged, JOMCALL_SIGNUP_ALLOW: "owner@example.test" }), {
     provider: "curlec", configured: true, sandbox: false, reason: null,
   });

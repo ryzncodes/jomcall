@@ -104,9 +104,10 @@ C5. **R2 bucket and token.** Cloudflare, R2: create `jomcall-backups-staging` an
 - Vercel Deployment Protection was removed for the staging domain so Curlec's webhook can reach it. Staging is therefore **public**: anyone can open it and, without step 4d, sign up.
 - Production approval of Curlec (D2 for production) is still pending.
 
-Because of the last three points, live keys on staging need two extra settings. Without them `npm run hosted:readiness -- --service web` fails, **and the running web app refuses payments**: the wallet shows payments as not connected, top-ups cannot start, and the Curlec webhook is refused (reason `LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED` or `SIGNUP_ALLOW_REQUIRED_FOR_LIVE_STAGING`). The rule applies in hosted mode with `JOMCALL_QUEUE_NAMESPACE=staging` and a live key or `CURLEC_ENVIRONMENT=live`:
-- `CURLEC_LIVE_ON_STAGING=1` — says in writing that live keys on staging are intended.
-- `JOMCALL_SIGNUP_ALLOW` — the sign-up allow-list (step 4d).
+Live keys on staging need one extra setting. Without it `npm run hosted:readiness -- --service web` fails, **and the running web app refuses payments**: the wallet shows payments as not connected, top-ups cannot start, and the Curlec webhook is refused (reason `LIVE_KEYS_ON_STAGING_UNACKNOWLEDGED`). The rule applies in hosted mode with `JOMCALL_QUEUE_NAMESPACE=staging` and a live key or `CURLEC_ENVIRONMENT=live`:
+- `CURLEC_LIVE_ON_STAGING=1`, which says in writing that live keys on staging are intended.
+
+Until 2026-11-20 a sign-up allow-list (`JOMCALL_SIGNUP_ALLOW`, step 4d) was required as well. The owner then opened sign-up on this environment, which is now the production one, so the list is optional: leave it unset for open sign-up, or set it to close sign-up to listed addresses and domains again.
 
 The readiness check also fails when the key does not match `CURLEC_ENVIRONMENT` (a key starting `rzp_live_` needs `CURLEC_ENVIRONMENT=live`; `rzp_test_` needs `test` or empty). Curlec's documentation does not state these prefixes; they are the ones seen on the owner's accounts, so a key with another prefix is reported as `CURLEC_KEY_MODE_UNKNOWN`. The running app uses the same rules: a mismatched or unknown key leaves payments not connected.
 
