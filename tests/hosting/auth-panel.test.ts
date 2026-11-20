@@ -38,10 +38,10 @@ test("login and sign-up titles are absolute and name JomCall once", async () => 
     const m = src.match(/pageTitle\("([^"]+)", "([^"]+)", \{\}, \{ absolute: true \}\)/);
     assert.ok(m, `${f} uses the absolute option`);
     for (const [i, lang] of [undefined, "ms"].entries()) {
-      const meta = await pageTitle(m[1], m[2], {}, { absolute: true })({
+      const meta: { title?: unknown } = await pageTitle(m[1], m[2], {}, { absolute: true })({
         searchParams: Promise.resolve({ lang }),
       });
-      const t = (meta.title as { absolute?: string }).absolute;
+      const t: string | undefined = (meta.title as { absolute?: string }).absolute;
       assert.equal(t, m[i + 1]);
       assert.equal(t!.match(/JomCall/g)?.length, 1, t);
     }
