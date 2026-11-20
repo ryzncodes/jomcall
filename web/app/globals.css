@@ -832,7 +832,6 @@ a svg {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: #72856c transparent;
-  overscroll-behavior: contain;
   border-right: 1px solid #61776655;
 }
 .disclosure-turn {

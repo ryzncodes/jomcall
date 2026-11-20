@@ -1,7 +1,8 @@
 import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
 import { notFound } from "next/navigation";
-export const metadata = { title: "Guides" };
+import { pageTitle } from "@/lib/page-title";
+export const generateMetadata = pageTitle("Guides", "Panduan");
 export default async function Page({
   searchParams,
 }: {

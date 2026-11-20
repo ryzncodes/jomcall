@@ -300,14 +300,22 @@ export function LocalAuth({
             </form>
           )}
           <div className="core-actions">
-            <a href={href(mode === "signup" ? "/login" : "/signup")}>
-              {mode === "signup"
-                ? w("Already have an account?", "Sudah mempunyai akaun?")
-                : w("Create account", "Cipta akaun")}
-            </a>
-            <a href={href("/forgot-password")}>
-              {w("Forgot password?", "Lupa kata laluan?")}
-            </a>
+            {mode === "forgot" ? (
+              <a href={href("/login")}>
+                {w("Back to sign in", "Kembali ke log masuk")}
+              </a>
+            ) : (
+              <>
+                <a href={href(mode === "signup" ? "/login" : "/signup")}>
+                  {mode === "signup"
+                    ? w("Already have an account?", "Sudah mempunyai akaun?")
+                    : w("Create account", "Cipta akaun")}
+                </a>
+                <a href={href("/forgot-password")}>
+                  {w("Forgot password?", "Lupa kata laluan?")}
+                </a>
+              </>
+            )}
           </div>
         </section>
       </main>
