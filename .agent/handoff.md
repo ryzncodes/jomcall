@@ -972,3 +972,10 @@ Pull requests #66 and #67 merged and deployed. Hosted public pages read launch c
 - Footer fix #71 and sample-call voices #72 merged and live (20 AAC clips, `npm run voice:demo -- --paid`, owner listened).
 - `JOMCALL_MAX_CONCURRENT_CALLS=2` in `/etc/jomcall/agent.env` (backup `agent.env.bak-20261120`), agent recreated on `12cc37e`, healthy. Not tested with two real calls.
 - Branch `feat/server-monitor`: `infra/hosted/monitor.sh` (load log, service, SIP-trunk, memory, load and disk alerts by email) and `.github/workflows/uptime.yml`. Tried on the server from a temp copy: load line written, a forced alert and the all-clear email sent. Not installed in cron until merged (RUNBOOK step 17).
+
+## 2026-11-20: Home is a checklist, then Today (branch feat/home-today)
+
+- Changed: Home in the local and hosted apps (web/components/core/home/) shows a checklist until the workspace is live (set up, test, publish, choose a paid plan, get a phone number when the line is offered), then a Today line (calls, not answered, bookings, wallet) and a "Needs you" list (billing, bookings to confirm, WhatsApp chats waiting, unanswered questions). Rules in web/lib/core/home-rules.ts; no backend change. booking-summary.tsx removed.
+- Verified: typecheck, test:guards 69/69, tests/domain 433/433, build:hosted, build:mock, build:local. Browser: new local workspace at desktop and 375 px, EN and BM, dark theme (checklist only).
+- Not verified: the Today and Needs you views in a browser (needs a published agent and a paid plan); staff view in a browser.
+- Next: deferred minors in the PR body (plurals, poll flicker, screen-reader text, dead channel-line.ts).
