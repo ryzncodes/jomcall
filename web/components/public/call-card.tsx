@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useSyncExternalStore, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore, type CSSProperties } from "react";
 import type { HomeCopy, SampleVoice } from "@/content/public/home";
 import type { PublicLocale } from "@/lib/site";
 import { nextInCycle } from "./call-cycle";
@@ -187,7 +187,23 @@ export function CallCard({
   }, []);
   useEffect(() => () => stopSample(), []);
 
+  // Stop and Pause hide when the sample or the cycle ends. A hidden button
+  // that holds focus drops it to <body>, so focus moves to the active
+  // language chip first (or to "Hear a sample call").
+  const stopBtn = useRef<HTMLButtonElement>(null);
+  const cycleBtn = useRef<HTMLButtonElement>(null);
   const cycling = auto && !playing && !still;
+  useLayoutEffect(() => {
+    const here = document.activeElement;
+    const lost =
+      (here === stopBtn.current && !playing) || (here === cycleBtn.current && !cycling);
+    if (!lost) return;
+    const target =
+      card.current?.querySelector<HTMLElement>('.cc-chip[aria-pressed="true"]') ??
+      document.querySelector<HTMLElement>(".hear-btn");
+    target?.focus();
+  }, [playing, cycling]);
+
   const now = (n: number) => (playing ? (line === n ? "now" : "dim") : undefined);
   const turn = (v: SampleVoice, n: 1 | 2 | 4 | 5, i: number) => {
     const caller = n === 1 || n === 4;
@@ -229,6 +245,7 @@ export function CallCard({
         <button
           type="button"
           className="cc-stop"
+          ref={stopBtn}
           hidden={!playing}
           onClick={stopSample}
         >
@@ -282,6 +299,7 @@ export function CallCard({
           <button
             type="button"
             className="cc-cycle"
+            ref={cycleBtn}
             hidden={!cycling}
             onClick={() => set({ paused: !snap.paused })}
           >
