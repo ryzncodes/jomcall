@@ -23,6 +23,8 @@
 - Every public route is static in the `build:hosted` route table (○ or ●), never ƒ.
 - Commits: Conventional Commits, ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Work on `feat/public-pages-seo` in `/Users/faiz/Documents/project/call-agent-seo`.
 - Log any deviation from the spec in `NOTES.md` at the repo root of the worktree.
+- File ownership (spec §15): never edit first-run's files (`web/lib/core/home-rules.ts`, `home.tsx`, setup finish/review/bring, `chrome.tsx`, `packages/contracts/src/core.ts`). In `web/messages/*.json` and `web/lib/launch.ts` add keys only.
+- The path after sign-up is the six checklist steps of spec §7, names verbatim in EN and BM.
 
 ## Review Focus
 
@@ -98,7 +100,7 @@
   - `type Bilingual<T> = { en: T; ms: T }`
   - `type FaqItem = { q: string; a: string }`, `type Section = { heading: string; body: string[] }`, `type SampleLine = { who: "caller" | "agent"; text: string }`
   - `type PageCopy = { title: string; description: string; h1: string; lead: string }`
-  - `BANNED: { pattern: RegExp; allowIn?: string }[]` in `claims.ts` — from spec section 3 "Banned outright" plus `/\bwe record\b/i`; `free trial` allowed only in the FAQ item keyed `faq.trial`.
+  - `BANNED: { pattern: RegExp; allowIn?: string }[]` in `claims.ts` — from spec section 3 "Banned outright" plus `/\bwe record\b/i`, phone-number waits (`/within \d+ (minutes?|hours?)/i`, `/dalam \d+ (minit|jam)/i`) and import claims (`/(import|read)s? (from )?your (website|facebook|instagram|google maps)/i`); `free trial` allowed only in the FAQ item keyed `faq.trial`.
   - `findBannedClaims(text: string, where: string): string[]`
 - [ ] **Step 1: Write failing tests:** `findBannedClaims("Calls are not recorded.","x")` → `[]`; `"Calls are recorded."` → one hit; `"Never miss a call again"` → hit; `"JomCall does not speak Tamil yet."` → `[]`; `"Speaks BM, English and Tamil"` → hit; `"There is no free trial."` with `where="faq.trial"` → `[]`, with `where="home.hero"` → hit; `"PDPA compliant"` → hit; `"books automatically"` → hit. A second test walks every module under `web/content/public/`, flattens all strings with their key path, and asserts no hits; a third asserts `en` and `ms` of every exported `Bilingual` have identical key paths.
 - [ ] **Step 2:** run → FAIL.
@@ -200,7 +202,7 @@
 - Test: existing tests
 
 **Interfaces:**
-- Panel copy: what JomCall is, then the path after sign-up: set up, test in the browser, choose a plan, get your JomCall number. Fields, checks, Turnstile unchanged.
+- Panel copy: what JomCall is, then the six steps of spec §7 with their exact EN/BM names. Fields, checks, Turnstile unchanged.
 - [ ] **Step 1:** `grep -rn "marketing\"\|<Marketing\|screen=\"pricing\"" web` → only the lines being removed.
 - [ ] **Step 2: Implement.**
 - [ ] **Step 3:** `npm run typecheck`, `npm run test:guards`, `npm run check:core` → pass.

@@ -81,7 +81,7 @@ Plain claims (proven or true today):
 | From RM49 a month, prepaid MYR wallet, no card charged automatically | `web/lib/pricing.ts`, `launchCopy` |
 | Calls are not recorded | Owner rule for this work |
 | Export and delete a contact's data | Contacts PDPA actions |
-| Setup: pick a business type, up to 8 questions or bring a price list, review, test in the browser, publish | Guided setup (#24) and import door |
+| Setup: pick a business type, answer up to 8 questions, review, test in the browser, publish | Guided setup (#24) |
 | Source code is public under FSL-1.1-ALv2 | `LICENSE.md` |
 | Sign-up is self-serve | `AGENTS.md`, 2026-11-20 |
 | Where data is stored and which providers receive it | The privacy notice (`@/messages/legal`), quoted, not restated |
@@ -95,9 +95,14 @@ Hedged only (built, not yet proven on a real call):
 | Forwarding your own number (`**21*`, `**61*`, `**67*`) | "You can forward your existing number to your JomCall number. The usual codes are below; check with your carrier, and we help you set it up." Never "keep your number" as a headline promise. |
 | Transfer to staff | Not claimed until a real transfer has worked. |
 | Several calls at once | Not claimed (the service takes 2 at a time today). |
+| Bring a price list (photo, PDF, CSV, pasted text) | Not claimed until the owner confirms `JOMCALL_SETUP_READER` is on in production. |
+| Business links (website, Facebook, Instagram, TikTok, LinkedIn, Google Maps) | Only after the first-run "Your links" card has merged, and only as "Add your website and social links; customers who ask get them." |
+| When the phone number is ready | No time is ever stated. Reuse the wording in `web/lib/launch.ts` (`launchCopy`). |
 
 Banned outright (the test fails on them): "never miss a call", "unlimited
-calls", "answers every call", "books automatically", "calls are
+calls", "answers every call", "books automatically", any stated wait for
+the phone number ("within 2 hours", "in minutes"), any claim that JomCall
+imports or reads your website, Facebook, Instagram or Google Maps, "calls are
 recorded", "free trial" (outside the one FAQ answer saying there is none),
 "PDPA compliant", Tamil listed as supported, "calendar sync", WhatsApp as
 available.
@@ -332,16 +337,28 @@ client island so the app keeps today's behaviour.
 - **Home, in order**: hero (promise, "From RM49 a month", three ticks, Get
   started plus "Hear a sample call", reassurance "Prepaid wallet in RM, no
   card charged automatically. Calls are not recorded."); bento; the problem
-  (missed calls); how it works in four steps; languages; industries strip;
+  (missed calls); how it works (the six steps); languages; industries strip;
   pricing at a glance (three plans, link to Pricing); FAQ (6); closing band
   with Get started.
 - The workspace preview no longer links visitors into `/app`.
 - **Pricing**: plan buttons as above; estimator; FAQ.
 - **Footer**: every public page grouped, language switch, operator details
   (`OperatorDetails`), licence line, Privacy and Terms.
+- **The path after sign-up** (sign-up panel, home "how it works", and the
+  `/how-it-works` page) uses the in-app checklist's six steps, in this
+  order and with these names, so the public promise matches what the owner
+  sees after sign-up (source of truth `checklist()` in
+  `web/lib/core/home-rules.ts`; first-run design §5.1, PR #84):
+  1. Set up your business / Sediakan perniagaan anda
+  2. Test the agent / Uji ejen
+  3. Publish the agent / Terbitkan ejen
+  4. Choose a plan / Pilih pelan
+  5. Get a phone number / Dapatkan nombor telefon
+  6. Take your first real call / Terima panggilan sebenar pertama (forward
+     your business number, using the hedged forwarding wording)
+  After creating a workspace the app opens `/app/setup` (first-run §5.2).
 - **Sign-up and log-in panels**: new copy that describes the receptionist
-  and the path after sign-up (set up, test in the browser, choose a plan,
-  forward your number); titles "Create your JomCall account" / "Log in to
+  and the six steps above; titles "Create your JomCall account" / "Log in to
   JomCall" and BM equivalents. Fields and checks unchanged.
 - WhatsApp appears only as "waiting for Meta's approval" while
   `WHATSAPP_WAITING_FOR_META` is true.
@@ -444,7 +461,24 @@ coherent.
 - Open Graph image: one static image per language, or text-only cards.
 - Dark-theme value tuning for AA.
 
-## 15. Risks
+## 15. Coordination with the first-run work (PR #84)
+
+Owner request, 2026-11-21: the public pages and the first-run work must not
+contradict each other.
+
+- This work owns: `web/components/marketing.tsx`, `web/components/public-pages.tsx`,
+  `web/components/public/`, `web/content/public/`, `web/lib/site.ts`,
+  `web/lib/public-meta.ts`, the new public routes, and the auth pages'
+  side-panel copy and titles.
+- First-run owns: `web/lib/core/home-rules.ts`, `home.tsx`, setup
+  finish/review/bring, `chrome.tsx`, `packages/contracts/src/core.ts`, the
+  `firstRun` read.
+- Shared: `web/messages/en.json`, `web/messages/ms.json`, `web/lib/launch.ts`.
+  Add keys only; never rename or remove a key this work did not add.
+- Forwarding codes have one source: `web/components/core/phone.tsx`.
+- Whoever opens a pull request second rebases on `main` first.
+
+## 16. Risks
 
 - **Single root layout**: `<html lang>` is set before paint rather than by
   the server; `Content-Language` and the `lang` wrapper cover crawlers.
