@@ -151,6 +151,16 @@ Home has the facts it needs, except the first answered call. The sidebar (`Works
 
 - Step 5's button links to `/app/phones` (`checklist()` in `web/lib/core/home-rules.ts`, expected by `tests/domain/home-rules.test.ts`). That route does not exist; the page is `/app/phone-numbers`. Both change.
 
+### 5.6 Agreed with the public-pages work (2026-11-21)
+
+These lines were agreed through the orchestrating session with the public-pages design (`docs/superpowers/specs/2026-11-21-public-pages-design.md`, branch `feat/public-pages-seo`), so the two do not contradict each other:
+
+- **Step names.** The EN and BM step names in 5.1 are the source of truth. The public sign-up panel describes the path in the same order and words. A rename here is sent to the orchestrating session to relay.
+- **Phone number wait.** No screen states a time. Copy reuses the existing `launchCopy` wording in `web/lib/launch.ts`. The "2 working hours" in sections 2 and 4 describes today's live page, which 5.3 replaces.
+- **Links.** No public page claims JomCall reads links. The card text in 5.2a stays as written.
+- **Forwarding codes.** They live only in `web/components/core/phone.tsx`.
+- **Files.** This work owns `web/lib/core/home-rules.ts`, `web/components/core/home/`, setup's finish, review and bring stages, `web/components/core/chrome.tsx`, `packages/contracts/src/core.ts` and the `firstRun` route. If the move to setup after workspace creation touches `web/components/core/auth.tsx`, it changes only that redirect, never the side panel. Shared files (`web/messages/en.json`, `web/messages/ms.json`, `web/lib/launch.ts`) take added keys only; no rename or removal of keys added by the other work. Whichever code pull request opens second rebases on `main` first.
+
 ## 6. Reading links and web pages automatically (not approved; not in this work)
 
 Reading a web address the owner types would be a new outbound fetch from JomCall's servers. It needs the owner's explicit yes, and the delegation in the status line does not give it. **Recommendation: do not build it now.** Instead, use the paste hint in 5.2. The reasons:
