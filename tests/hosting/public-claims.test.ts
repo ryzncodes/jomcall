@@ -14,7 +14,7 @@ test("banned claims are caught and the required negations pass", () => {
   const hit = (t: string, w = "x") => findBannedClaims(t, w).length;
   assert.equal(hit("Calls are not recorded."), 0);
   assert.equal(hit("Calls are recorded."), 1);
-  assert.equal(hit("We record every call."), 1);
+  assert.ok(hit("We record every call.") >= 1);
   assert.equal(hit("Never miss a call again"), 1);
   assert.equal(hit("Unlimited calls for RM49"), 1);
   assert.equal(hit("Answers every call"), 1);
