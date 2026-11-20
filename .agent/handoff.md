@@ -1,5 +1,37 @@
 # Handoff
 
+## 2026-11-21: first-run checklist built (branch `feat/first-run-checklist`, not merged)
+
+Design: `docs/superpowers/specs/2026-11-21-first-run-design.md` (pull request #84). Plan: `docs/superpowers/plans/2026-11-21-first-run-checklist.md`. No migration.
+
+**What changed**
+- New read `firstRun` (`GET /first-run`, managers only): setup applied, tested, published, plan, phone, and the first answered real call.
+- Home's checklist gains step six, "Take your first real call", shown only when a phone line is offered. Home goes live only after that call. The first time, a line links to the call.
+- One step list (`web/components/core/home/steps.tsx`) in three places: Home, the setup live page, and a "Getting started: N of M" link in the sidebar.
+- After a new workspace is created, the app opens setup. The business-type page asks the owner to confirm the type they picked.
+- Review page: a "Your links" card (website, Facebook, Instagram, TikTok, LinkedIn, Google Maps) saved into the `social_links` fact. JomCall checks the text only; it never opens the links.
+- The Phone numbers link now goes to `/app/phone-numbers` (it was a dead `/app/phones`).
+
+**Verified (local database, made-up workspace)**
+- Typecheck; guards 69 of 69; new and changed tests pass.
+- Browser at 375 px, EN and BM, light and dark:
+  - a new workspace opens setup on the confirmation heading;
+  - the links card saves and survives a reload, and a typed test answered with the stored links;
+  - publish, then the live page list;
+  - the sidebar link counting up;
+  - Home through plan, number (added on the local Phone numbers screen) and a faked answered call (SQL, since deleted);
+  - "Show me how" opens the forwarding codes.
+- Browser-pass fixes are in commit `868afb5`.
+
+**Not verified**
+- No person has used it. Nothing is on hosted staging.
+- A real forwarded call has not completed step six.
+- The BM links card was not seen in a browser.
+
+**Next**
+- Merge needs the owner's yes, through the orchestrating session.
+- Website reading (F12) is a separate, later pull request. It is approved with safety guards. When it ships, it goes on the AGENTS.md outbound list.
+
 ## 2026-11-20 (afternoon): staging is now production
 
 Owner decision. Read the entry "Staging is production" in `AGENTS.md` before touching the hosted environment: there is no second environment any more, no backups, and every write there is a production change.
