@@ -40,6 +40,10 @@ export function PlanCard({
     { client } = useCore();
   const ms = w("en", "ms") === "ms";
   const plan = useResource(() => client.execute("plan", {}), "plan");
+  // The workspace's own number, if it has one: the note about asking for a
+  // number is for workspaces still waiting for theirs.
+  const numbers = useResource(() => client.execute("phoneNumbers", {}), "plan-numbers");
+  const ownNumber = numbers.data?.items.find((n) => n.active)?.e164;
   const choose = useAction();
   const [confirm, setConfirm] = useState<PlanCode | null>(null);
   const [changing, setChanging] = useState(false);
@@ -123,14 +127,16 @@ export function PlanCard({
           : p.phoneNumbers
             ? w(`${p.phoneNumbers} phone numbers`, `${p.phoneNumbers} nombor telefon`)
             : w("No phone number", "Tiada nombor telefon")}
-        {p.phoneNumbers > 0 && (
+        {p.phoneNumbers > 0 && numbers.data && (
           <>
             {" "}
             <small className="core-plan-note">
-              {w(
-                "(ask for yours under Phone numbers; ready within about 2 working hours)",
-                "(minta nombor anda di Nombor telefon; sedia dalam kira-kira 2 jam bekerja)",
-              )}
+              {ownNumber
+                ? `(${ownNumber})`
+                : w(
+                    "(ask for yours under Phone numbers; ready within about 2 working hours)",
+                    "(minta nombor anda di Nombor telefon; sedia dalam kira-kira 2 jam bekerja)",
+                  )}
             </small>
           </>
         )}
