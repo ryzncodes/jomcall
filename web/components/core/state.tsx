@@ -152,8 +152,8 @@ export function errorText(error: unknown, ms = false, context?: ErrorContext) {
       "Sambungan terputus. Input anda dikekalkan.",
     ],
     DISCLOSURE_REQUIRED: [
-      "Add greeting, AI introduction and recording notice before publishing.",
-      "Tambah salam, pengenalan AI dan notis rakaman sebelum menerbitkan.",
+      "Add a greeting and an AI introduction before publishing.",
+      "Tambah salam dan pengenalan AI sebelum menerbitkan.",
     ],
     CHANGES_MOVED: [
       "Something changed since you opened this. Check the list again.",

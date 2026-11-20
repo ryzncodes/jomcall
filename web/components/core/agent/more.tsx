@@ -175,7 +175,6 @@ function History({ onRestored }: { onRestored: () => void }) {
               "greeting",
               "instructions",
               "aiDisclosure",
-              "recordingDisclosure",
               "voicePreference",
             ] as const
           ).map((k) => (

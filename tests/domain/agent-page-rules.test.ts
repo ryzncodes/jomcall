@@ -520,7 +520,7 @@ test("missingDisclosure", () => {
       recordingEnabled: true,
       recordingDisclosure: "  ",
     }),
-    ["recordingDisclosure"],
+    [],
   );
   assert.deepEqual(
     missingDisclosure({

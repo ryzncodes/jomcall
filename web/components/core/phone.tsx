@@ -86,8 +86,8 @@ export function LocalPhoneNumbers() {
             )}
             <p>
               {w(
-                "Every call opens with the AI disclosure, then the recording notice when recording is on. It cannot be skipped.",
-                "Setiap panggilan bermula dengan makluman AI, kemudian makluman rakaman jika rakaman dihidupkan. Ia tidak boleh dilangkau.",
+                "Every call opens with the AI disclosure. It cannot be skipped.",
+                "Setiap panggilan bermula dengan makluman AI. Ia tidak boleh dilangkau.",
               )}
             </p>
           </section>
@@ -532,7 +532,6 @@ function CallDetail({ id }: { id: string }) {
         {c.disclosure_played_at
           ? w("AI disclosure played", "Makluman AI dimainkan")
           : w("Disclosure not played (call not answered)", "Makluman tidak dimainkan (panggilan tidak dijawab)")}
-        {c.recording_enabled ? w(" · recording notice included", " · makluman rakaman disertakan") : ""}
       </p>
       {c.turns === null ? (
         <p className="core-empty">
