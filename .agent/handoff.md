@@ -957,3 +957,7 @@ Branch `docs/twilio-staging-plan`, pull request #55. Document only; this session
 - Owner: forward a mobile to `+6042253068` and call it from a second phone; read the call row.
 - Decide the public address: `jomcall.com` serves the mock preview today; the product is `staging.jomcall.com`.
 
+## 2026-11-20 (later): number requests live
+
+Pull request #64 merged as `fffbff7`. Migration on the hosted database, web deployed, engine on `fffbff7` with `JOMCALL_OPERATOR_EMAIL` set. Hosted mode now refuses a number added from the app. Seen live: forwarding panel, no "Add number". Not seen: the request panel, the two emails, a forwarded call.
+
