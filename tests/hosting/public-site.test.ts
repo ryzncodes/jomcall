@@ -8,6 +8,7 @@ import {
   siteOrigin,
 } from "../../web/lib/site.ts";
 import { pageMetadata } from "../../web/lib/public-meta.ts";
+import { rootMetadata } from "../../web/lib/root-meta.ts";
 import { appHref } from "../../web/components/public/links.ts";
 import { config, legacyRedirect } from "../../web/proxy.ts";
 
@@ -458,9 +459,32 @@ test("page metadata robots follow isIndexable", () => {
   set(STAGING);
   assert.deepEqual(pageMetadata("pricing", "en", meta).robots, { index: false, follow: false });
   set(PROD);
-  assert.equal(pageMetadata("pricing", "en", meta).robots, undefined);
+  assert.deepEqual(pageMetadata("pricing", "en", meta).robots, { index: true, follow: true });
   set({ JOMCALL_MODE: "mock" });
   assert.deepEqual(pageMetadata("pricing", "en", meta).robots, { index: false, follow: false });
+});
+
+test("root layout metadata: noindex on staging, mock and local, index on jomcall.com", () => {
+  const robotsOf = () => rootMetadata().robots;
+  set(STAGING);
+  assert.deepEqual(robotsOf(), { index: false, follow: false });
+  set({ JOMCALL_MODE: "mock" });
+  assert.deepEqual(robotsOf(), { index: false, follow: false });
+  set({ JOMCALL_MODE: "local" });
+  assert.deepEqual(robotsOf(), { index: false, follow: false });
+  set(PROD);
+  assert.deepEqual(robotsOf(), { index: true, follow: true });
+});
+
+test("root layout description passes the claims guard and names opening hours", () => {
+  for (const env of [PROD, { JOMCALL_MODE: "mock" } as const]) {
+    set(env);
+    const d = String(rootMetadata().description);
+    assert.deepEqual(findBannedClaims(d, "layout.description"), [], d);
+  }
+  set(PROD);
+  assert.match(String(rootMetadata().description), /passes callers to your staff during opening hours/);
+  assert.doesNotMatch(String(rootMetadata().description), /to your team/);
 });
 
 test("robots: closed everywhere but jomcall.com", () => {

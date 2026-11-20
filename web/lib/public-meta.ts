@@ -32,8 +32,9 @@ export function pageMetadata(
       siteName: "JomCall",
       locale: locale === "en" ? "en_MY" : "ms_MY",
     },
-    ...(isIndexable()
-      ? {}
-      : { robots: { index: false, follow: false } }),
+    // Explicit either way, so nothing depends on what the layout says.
+    robots: isIndexable()
+      ? { index: true, follow: true }
+      : { index: false, follow: false },
   };
 }
