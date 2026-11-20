@@ -1,0 +1,178 @@
+# First run: from sign-up to the first real call
+
+Status: design only, nothing built. Written 2026-11-21. The owner asked that JomCall's path after sign-up feel like other AI receptionists' and has said setup on staging felt very tedious. Asked which direction to take, the owner answered on 2026-11-21, relayed by the session that started this work: "Just do whatever is recommended for the first run onboarding." Every decision in section 7 is therefore my recommendation, accepted under that delegation. The owner can overrule any of them. That delegation does **not** approve a new outbound call (section 6).
+
+## 1. Why
+
+A market scan (section 5 of `docs/research/2026-11-21-public-pages-seo.md`, branch `feat/public-pages-seo`) found the same first run at other AI receptionists:
+
+1. Build the agent from something the owner already has: a Google business listing or a website.
+2. Make a test call.
+3. Show a visible "getting started" checklist (for example "1 of 6 done") that runs until the first real call.
+
+An owner who has seen any of them expects that shape. JomCall already has most of the parts. The gaps are at the ends of the path.
+
+## 2. What exists today (read from `main` at `696cce6`)
+
+Note: the research doc's sections 5.2 and 5.3 say JomCall has no checklist and that the agent page is still being designed. Both are out of date.
+
+- **Sign-up**: email and password, email confirmation (`web/components/core/auth.tsx`).
+- **Workspace creation** (`web/components/core/local-app.tsx`): business name, business type (picker, or "Something else" with free text), main branch. After it, the owner lands on **Home**.
+- **Home checklist** (pull requests #75 and #76; `web/lib/core/home-rules.ts`, `web/components/core/home/home.tsx`). The title is "Get your agent answering", with "N of M done". The steps are:
+  1. Set up your business: done when setup is applied or the agent is published.
+  2. Test the agent: done when any test session exists.
+  3. Publish the agent.
+  4. Choose a plan (owners and admins only): done when a paid plan has a started period; the button says "Pay fee" when the fee is unpaid.
+  5. Get a phone number (owners and admins only, when a phone line is offered). It reads "Waiting for your number" while a request is open. Its button appears only once the plan includes a number.
+
+  Home switches to the "Today" view (numbers and "Needs you") when `isLive()` is true. That means published, a paid plan chosen and an active number. It happens **before any real call has reached the agent**, and the checklist disappears at that point.
+- **Guided setup** (`/app/setup`, `docs/superpowers/specs/2026-11-14-setup-flow-design.md`) runs in four stages:
+  1. Business type, which asks again for the type picked at workspace creation, preselected, with optional extra call types.
+  2. Bring a document (photo, PDF, CSV, pasted text) or answer up to 8 questions.
+  3. Review.
+  4. Test, then Publish.
+
+  The "live" page after Publish (`web/components/core/setup/finish.tsx`) lists three hand-written next steps: choose a plan, phone line, WhatsApp.
+- **Agent page** (`/app/agent`, pull request #37). It has a status card ("Not published yet" / "is answering") and links to guided setup before the first publish. It shows no list of the whole path.
+- **Phone numbers** (pull request #64). The owner asks for a number, and a person sets it up, usually within 2 working hours. With an active number the page shows "Forward your existing number" with the mobile forwarding codes and a line to call your own number from another phone to check.
+- **Calls**: `app.call` holds real phone calls only, each tied to a phone number. Browser tests are test sessions, stored apart. Home already reads the latest 100 calls.
+- **Forwarding** cannot be seen by JomCall. It happens at the owner's phone company. The first answered real call is the only sign that it worked.
+
+## 3. Goals, non-goals, anti-goals
+
+Goals:
+
+- One visible list from sign-up to the first real call, which an owner on a phone can follow alone.
+- The list ends at the step the owner cares about: a real customer's call answered.
+- No second list that disagrees with the first.
+- Billing problems are never hidden while the list is showing.
+
+Non-goals:
+
+- Changing what setup asks or how the reader reads (the setup design stands).
+- WhatsApp in the list while it waits for Meta's approval.
+- Google sign-in, a free trial, or self-serve phone numbers.
+- The mock preview (port 4181).
+
+Anti-goals (any one makes this a failure):
+
+- The list says a step is done when it is not, or promises a time JomCall does not control.
+- A new outbound call is added without the owner's explicit yes.
+- An owner who skips a step can no longer reach the rest of the app.
+
+## 4. Approaches
+
+- **A. Extend the Home checklist (chosen).** Add the missing last step, keep the list showing until the first real call, use the same list on setup's live page, and add a small progress link in the sidebar. This builds on pull requests #75 and #76, needs no migration and adds no outbound call.
+- **B. A separate full-screen onboarding wizard** that walks sign-up, setup, plan and number in one forced sequence. Rejected:
+  - It duplicates guided setup.
+  - It blocks owners who want to look around first.
+  - The phone step waits up to 2 working hours, and a wizard cannot wait well.
+- **C. The list on the agent page.** Rejected: plan, wallet and phone number are not agent settings. The agent page would grow a second job it was redesigned to shed.
+
+## 5. The design
+
+### 5.1 The list (Home)
+
+Six steps. The source of truth stays `checklist()` in `web/lib/core/home-rules.ts`.
+
+| # | Step (EN / BM) | Done when | Button |
+|---|---|---|---|
+| 1 | Set up your business / Sediakan perniagaan anda | setup applied, or agent published (unchanged) | Setup |
+| 2 | Test the agent / Uji ejen | any test session exists (unchanged) | Try it |
+| 3 | Publish the agent / Terbitkan ejen | agent published (unchanged) | Publish |
+| 4 | Choose a plan / Pilih pelan | paid plan with a started period (unchanged) | Choose plan, or Pay fee |
+| 5 | Get a phone number / Dapatkan nombor telefon | an active number (unchanged; "Waiting for your number" while a request is open) | Request number |
+| 6 | **Forward your number and take a first call** / **Majukan nombor anda dan terima panggilan pertama** | **new:** at least one real call with `state = 'ended'` and an `outcome` other than `refused` or `abandoned` | Show me how (opens `/app/phone-numbers`, where the forwarding codes are) |
+
+Step 6 details:
+
+- Under the label: "Forward your business number to <your JomCall number>, then call it from another phone." The number is shown in local format, as the forwarding panel does. The step is shown only when step 5 applies (a phone line is offered) and only to owners and admins.
+- It reads the calls Home already loads, so it needs no new read. With fewer than 100 calls the check is exact. With 100 or more there is always an answered call among them, or the business has bigger problems; the builder confirms this edge.
+- The owner's own check call counts. That is intended: it proves forwarding works.
+- It has no "mark as done" button. A self-mark would need storage and could be wrong.
+
+The list's other rules:
+
+- **Order** stays as above. Step 5's button stays hidden until the plan includes a number, as today. A step whose button is hidden shows one line saying what unlocks it ("Choose a plan first").
+- **"Live" moves to the end.** `isLive()` also needs step 6 done whenever step 6 applies, so Home keeps the list until a real call has been answered. Staff, and workspaces without a phone line on offer, keep today's rule.
+- **"Needs you" also shows under the list.** Today, billing rows (wallet empty, fee unpaid, wallet low) and waiting customers appear only in the "Today" view. With the list staying up longer, the same "Needs you" panel shows under the list whenever it has rows. It is hidden while empty, so a new workspace sees only the list.
+- **Completion moment.** On the first load after step 6 turns done, Home shows one line above "Today": "Your agent answered its first real call." It links to that call. The builder decides how "first load after" is remembered; browser storage is acceptable, since showing the line a second time is harmless.
+- **WhatsApp** stays out of the list while `WHATSAPP_WAITING_FOR_META` is true. Once Meta approves, a seventh, optional step can be designed then.
+
+### 5.2 Getting there faster
+
+- **After creating a workspace, open setup, not Home.** The owner has just named the business. Step 1 is the obvious next move, and the market goes straight into building. Home is one tap away and shows the list.
+- **The business-type stage on a first run reads as a confirmation.** It keeps the type picked at workspace creation preselected (as today) and keeps the optional extra call types. Its heading changes to say the type is already chosen: "You picked <type>. Add anything else you do, or continue." The type is not asked as a new question. A second setup run keeps today's wording.
+- **The bring stage names where text can come from.** Its pasted-text option gets a hint: "Copy the text from your website, Facebook or Instagram page, or Google Maps listing, and paste it here." This uses the existing reader, adds no outbound call, and covers owners whose only online presence is a social page or a Maps pin.
+
+### 5.3 One list, three places
+
+- **Home** owns the list (5.1).
+- **Setup's live page** (`finish.tsx`) replaces its three hand-written next steps with the same `checklist()` steps from step 4 on, rendered from the same rules and words. The two can then never disagree. The WhatsApp line there stays as today (the "waiting for Meta" text) until WhatsApp joins the list.
+- **The sidebar** gets one small link above the navigation for owners and admins until the list is complete: "Getting started: 3 of 6" / "Bermula: 3 daripada 6". It opens Home and disappears when every step is done. It has no dismiss button. Market products hide theirs on completion, and one line costs little.
+- **The agent page** keeps its status card and its setup link before the first publish. It gets no list of its own. When the agent is published but the list is not complete, the card's line already names the channels the agent answers on (pull request #82); it adds nothing about plan or number.
+
+## 6. Reading a website address (not approved; not in this work)
+
+Reading a web address the owner types would be a new outbound fetch from JomCall's servers. It needs the owner's explicit yes, and the delegation in the status line does not give it. **Recommendation: do not build it now.** Instead, use the paste hint in 5.2. The reasons:
+
+- **What owners actually have.** Many Malaysian SMEs have no website of their own. They have a Facebook or Instagram page, a WhatsApp catalogue or a Google Maps pin. Those platforms block automated reading or forbid it in their terms, so a URL reader would mostly help owners who are not the typical customer. Not measured: no data on JomCall's sign-ups exists yet.
+- **Pasting already works.** The reader takes pasted text up to 1 MiB, with the same review step that keeps unconfirmed prices away from callers.
+- **Site-builder pages.** Many Malaysian SME sites are built with tools that render in the browser. A fetch without a browser engine often gets a near-empty page.
+
+If the owner approves it later, the design should hold at least these:
+
+- The fetch runs in the agent process, never the web service.
+- https only.
+- Public addresses only, checked after DNS resolution and after every redirect, with a redirect limit.
+- Size and time caps.
+- No JavaScript rendering.
+- A clear notice that the page is sent to Anthropic, as for uploads.
+- The fetched text enters the existing pasted-text path and review page unchanged.
+- Rate limits per workspace and service-wide, like the reading limits.
+
+**Google business listing.** Reading it would need the Google Places API: a new paid key, a new outbound service, and Google Maps Platform terms on how long Places content may be stored. Not checked: whether those terms allow keeping hours and descriptions in a published agent version indefinitely. Published versions freeze their facts, so a storage limit would conflict with that. This is not recommended without that check and the owner's yes.
+
+## 7. Decisions (my recommendations, accepted under the owner's delegation of 2026-11-21)
+
+- F1. Approach A: extend the Home checklist.
+- F2. Add step 6, "Forward your number and take a first call", done on the first answered real call. No self-mark.
+- F3. Home stays on the list until step 6 is done, where it applies. "Needs you" shows under the list when it has rows.
+- F4. Setup's live page renders the same steps as Home from step 4 on.
+- F5. A sidebar progress link for owners and admins until the list is complete. No dismiss.
+- F6. A new workspace opens setup, not Home. The first-run type stage reads as a confirmation.
+- F7. The bring stage's paste option names website, Facebook, Instagram and Google Maps text as sources.
+- F8. No website or Google listing fetch in this work (section 6). It goes back to the owner as a separate yes or no.
+- F9. The agent page gets no list of its own.
+
+## 8. Risks
+
+- **A workspace with a number but no calls stays on the list.** Its "Today" view would have shown zeros anyway. The "Needs you" panel under the list (F3) is the guard against hidden billing problems.
+- **The first answered call might be a stranger's, not the owner's check.** Fine: it still proves forwarding works.
+- **A forwarded call has never reached the line** (noted with pull request #64). If the business's own number arrives as the caller instead of the customer's, step 6 still turns done, but the six-calls-an-hour limit per caller may refuse later customers. That is a phone-line risk, not a list risk, and stays open there.
+- **Polling.** Home reloads every 15 seconds and already reads calls. No new read is added.
+- **Words.** New BM strings need a person's read. The "Getting started" label must not promise a time.
+
+## 9. How it will be checked
+
+- Unit tests in `tests/` for `checklist()` and `isLive()`:
+  - step 6 present or absent;
+  - done on an answered call, not on a refused or abandoned one;
+  - staff unchanged;
+  - "Needs you" rows while the list shows.
+- A test that the live page and Home produce the same steps from the same facts.
+- `npm run typecheck`, `npm run test:guards`, `npm run check:core`, `npm run build:hosted`, `npm run build:mock`.
+- A browser pass in the local app at 375 px, English and Bahasa Melayu, light and dark:
+  - a new workspace opens setup;
+  - the list through each state, with a fake call row for step 6;
+  - the sidebar link;
+  - the live page after Publish.
+- No migration and no paid model gate: no prompt, pack or tool list changes.
+
+## 10. Left to the builder
+
+- Component split, and whether the list becomes a shared component used by Home and `finish.tsx`.
+- Exact wording in both languages, within the meaning above.
+- How the completion line is remembered (5.1).
+- Where the sidebar link sits at each width.
+- Whether the step 5 and step 6 lines show the area or number when known.
