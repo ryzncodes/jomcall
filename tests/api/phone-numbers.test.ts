@@ -160,7 +160,9 @@ test("channels: phone needs a configured provider and a number; whatsapp follows
     "JOMCALL_WHATSAPP_PROVIDER",
   ];
   const saved = Object.fromEntries(names.map((k) => [k, process.env[k]]));
-  const p = await phoneFixture();
+  // No plan here: a plan with a number shows the page too (see
+  // tests/api/phone-number-request.test.ts).
+  const p = await phoneFixture({ entitled: false });
   const { h, api, req } = p;
   const channels = async (actor = h.alice) =>
     (await api.request(actor, h.orgA.id, "GET", "/api/v1/channels")).body.data;

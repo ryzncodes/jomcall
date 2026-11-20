@@ -29,11 +29,13 @@ import {
 } from "./booking.ts";
 import {
   phoneNumberCreate,
+  phoneNumberRequestCreate,
   phoneNumberUpdate,
   callList,
   type PhoneNumber,
   type Channels,
   type PhoneNumbers,
+  type PhoneNumberRequest,
   type CallSummary,
   type CallDetail,
 } from "./phone.ts";
@@ -728,6 +730,12 @@ export const commands = {
     "/phone-numbers",
     phoneNumberCreate,
     out<PhoneNumber>(),
+  ),
+  requestPhoneNumber: route(
+    "POST",
+    "/phone-number-requests",
+    phoneNumberRequestCreate,
+    out<PhoneNumberRequest>(),
   ),
   updatePhoneNumber: route(
     "PATCH",

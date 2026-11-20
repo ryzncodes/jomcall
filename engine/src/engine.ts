@@ -16,6 +16,11 @@ import {
   type BytesCeilingNotice,
   type ReadCeilingNotice,
 } from "./read-ceiling.ts";
+import {
+  openRequestMail,
+  readyRequestMail,
+  type PhoneRequestNotices,
+} from "./phone-request.ts";
 const payload = z
   .object({
     outboxId: z.uuid(),
@@ -122,6 +127,33 @@ async function bytesCeilingNotice(pool: pg.Pool) {
     )
   ).rows[0].value;
 }
+// Phone number requests (2026-11-20). Every five minutes the engine asks
+// app_private.phone_request_notices() which requests to write about. Open
+// requests are always logged as PHONE_NUMBER_REQUESTED with a count and go
+// to the operator when JOMCALL_OPERATOR_EMAIL is set; a ready number goes to
+// the organization's owners. The database marks each row before the email
+// goes out, and it comes back after four hours. A ready request is confirmed
+// after its send and otherwise tried three times, then logged as
+// PHONE_REQUEST_READY_UNSENT.
+export type PhoneRequestOptions = {
+  firstAfterMs?: number;
+  everyMs?: number;
+  retryMs?: number;
+  now?: () => number;
+  notices?: (pool: pg.Pool) => Promise<PhoneRequestNotices>;
+  sent?: (pool: pg.Pool, id: string) => Promise<void>;
+  operatorEmail?: string | null;
+};
+async function phoneRequestNotices(pool: pg.Pool) {
+  return (
+    await pool.query<{ value: PhoneRequestNotices }>(
+      "select app_private.phone_request_notices() as value",
+    )
+  ).rows[0].value;
+}
+async function phoneRequestSent(pool: pg.Pool, id: string) {
+  await pool.query("select app_private.phone_request_sent($1)", [id]);
+}
 async function queuePlanNotices(pool: pg.Pool, namespace: string) {
   await pool.query("select app_private.queue_plan_notices($1)", [namespace]);
 }
@@ -142,11 +174,14 @@ export class Engine {
   private ceiling: Required<ReadCeilingOptions>;
   private ceilingDueAt: number;
   private bytesDueAt: number;
+  private requests: Required<PhoneRequestOptions>;
+  private requestsDueAt: number;
   private constructor(
     readonly namespace: string,
     plans: PlanChargeOptions = {},
     ceiling: ReadCeilingOptions = {},
     mail?: MailSender,
+    requests: PhoneRequestOptions = {},
   ) {
     validNamespace(namespace);
     this.plans = {
@@ -174,6 +209,17 @@ export class Engine {
     };
     this.ceilingDueAt = this.ceiling.now() + this.ceiling.firstAfterMs;
     this.bytesDueAt = this.ceilingDueAt;
+    this.requests = {
+      firstAfterMs: 60_000,
+      everyMs: 300_000,
+      retryMs: 300_000,
+      now: Date.now,
+      notices: phoneRequestNotices,
+      sent: phoneRequestSent,
+      operatorEmail: this.ceiling.operatorEmail,
+      ...requests,
+    };
+    this.requestsDueAt = this.requests.now() + this.requests.firstAfterMs;
     // Local mode: Mailpit on loopback. Hosted mode: SMTP with TLS, or
     // Cloudflare Email Service when JOMCALL_MAIL_PROVIDER=cloudflare.
     this.mail = mail ?? createMailSender();
@@ -196,6 +242,7 @@ export class Engine {
       plans?: PlanChargeOptions;
       readCeiling?: ReadCeilingOptions;
       mail?: MailSender;
+      phoneRequests?: PhoneRequestOptions;
     } = {},
   ) {
     const e = new Engine(
@@ -203,6 +250,7 @@ export class Engine {
       options.plans,
       options.readCeiling,
       options.mail,
+      options.phoneRequests,
     );
     try {
       await e.boss.start();
@@ -339,11 +387,65 @@ export class Engine {
       console.error("SETUP_BYTES_CEILING_MAIL_FAILED");
     }
   }
+  // Phone number requests. Never throws.
+  private async noticePhoneRequests() {
+    const now = this.requests.now();
+    if (now < this.requestsDueAt) return;
+    let n: PhoneRequestNotices;
+    try {
+      n = await this.requests.notices(this.pool);
+    } catch {
+      this.requestsDueAt = now + this.requests.retryMs;
+      console.error("PHONE_REQUEST_CHECK_FAILED");
+      return;
+    }
+    this.requestsDueAt = now + this.requests.everyMs;
+    if (n.open.length)
+      console.error("PHONE_NUMBER_REQUESTED", `open=${n.open.length}`);
+    for (const r of n.open) {
+      if (!this.requests.operatorEmail) break;
+      try {
+        await this.mail.send({
+          to: this.requests.operatorEmail,
+          ...openRequestMail(r),
+          operationId: `phone-request-${r.id}-${Math.floor(now / 3_600_000)}`,
+        });
+      } catch {
+        console.error("PHONE_REQUEST_MAIL_FAILED", "kind=operator");
+      }
+    }
+    for (const r of n.ready) {
+      let sent = 0;
+      if (r.e164)
+        for (const [i, to] of r.emails.entries()) {
+          try {
+            await this.mail.send({
+              to,
+              ...readyRequestMail(r, this.mail.inviteBase),
+              operationId: `phone-ready-${r.id}:${i}`,
+            });
+            sent++;
+          } catch {
+            console.error("PHONE_REQUEST_MAIL_FAILED", "kind=owner");
+          }
+        }
+      // Confirmed only when every owner was written to; otherwise the
+      // database returns it again, three times in all.
+      if (r.e164 && r.emails.length > 0 && sent === r.emails.length) {
+        try {
+          await this.requests.sent(this.pool, r.id);
+        } catch {
+          console.error("PHONE_REQUEST_CONFIRM_FAILED");
+        }
+      } else if (r.lastTry) console.error("PHONE_REQUEST_READY_UNSENT", `id=${r.id}`);
+    }
+  }
   async tick(failAt?: "after-enqueue" | "before-commit") {
     if (failAt && process.env.NODE_ENV !== "test") throw Error("TEST_ONLY");
     await this.chargeDuePlans();
     await this.noticeReadCeiling();
     await this.noticeBytesCeiling();
+    await this.noticePhoneRequests();
     await this.pool.query("select app_private.maintain_jobs($1)", [
       this.namespace,
     ]);

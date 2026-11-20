@@ -415,7 +415,24 @@ RUN="docker compose exec -T $T -w /app agent node --import tsx scripts/hosted/ph
 - `$RUN --buy <number> --label "<customer>" --allowed <the supplier ranges from firewall.md, comma separated>` buys it on the trunk and adds it to LiveKit's inbound trunk. Safe to repeat for the same number: it is not bought twice.
 - `$RUN --release <number>` releases it at Twilio.
 
-Then add the number on the customer's Phone numbers screen (the command does not write to JomCall's database), and switch it off there after a release.
+Then add the number to the customer's workspace (the command does not write to JomCall's database), and switch it off on their Phone numbers screen after a release. In hosted mode the server refuses a number added from the app (every number sits on one shared trunk, so a workspace that could add any number could answer another business's callers), so the operator adds the row, as the database owner in the SQL editor, with the owner's yes each time:
+
+```sql
+insert into app.phone_number(org_id, location_id, agent_id, e164, label)
+select o.id,
+       (select l.id from app.location l where l.org_id = o.id and l.primary_location and l.archived_at is null),
+       (select a.id from app.agent a where a.org_id = o.id order by a.created_at limit 1),
+       '<the number, +60...>', '<label>'
+from app.organization o where o.id = '<workspace id from the request email>';
+```
+
+#### How a customer asks (migration `20261120100000_phone_number_request.sql`)
+
+An owner or admin on a plan that includes a number presses "Request my number" on the Phone numbers screen, with the area they would like and, optionally, their existing business number. The screen then says the number is being set up, usually within 2 working hours. Every five minutes the engine reads the open requests: it logs `PHONE_NUMBER_REQUESTED open=<n>` and, when `JOMCALL_OPERATOR_EMAIL` is set in `engine.env`, emails that address the workspace name and id, the area, the existing number and who asked, and again every 4 hours while the request stays open. **Set `JOMCALL_OPERATOR_EMAIL`, or nobody is told.** The insert above answers the request by itself (a trigger marks it ready when the number is active), and the engine then emails the workspace's owners that the number is ready (tried up to three times; a third failure logs `PHONE_REQUEST_READY_UNSENT`), with a link to the forwarding steps on the Phone numbers screen. The area is a wish only: a number's prefix must match the locality of the Twilio bundle's address.
+
+Deploy order: apply the migration first (the web reads the new table as soon as it is deployed, and Vercel deploys on merge), then rebuild the engine.
+
+Open requests, read only: `select r.created_at, o.name, r.area, r.forward_from from app.phone_number_request r join app.organization o on o.id = r.org_id where r.state = 'open' order by 1;`
 
 Not known: whether Twilio allows numbers bought under the operator's own bundle to serve other businesses. Twilio's pages define the bundle's end user as the one who answers the calls and do not answer this for a platform; ask Twilio before selling numbers widely. A number's prefix must also match the locality of the bundle's address, which Twilio checks at purchase.
 

@@ -128,8 +128,8 @@ export function PlanCard({
             {" "}
             <small className="core-plan-note">
               {w(
-                "(not open yet: we email you when yours is ready)",
-                "(belum dibuka: kami e-mel anda apabila nombor anda sedia)",
+                "(ask for yours under Phone numbers; ready within about 2 working hours)",
+                "(minta nombor anda di Nombor telefon; sedia dalam kira-kira 2 jam bekerja)",
               )}
             </small>
           </>

@@ -2674,3 +2674,23 @@
   color: var(--secondary);
   font-size: 14px;
 }
+
+/* Call forwarding codes on the Phone numbers screen. */
+.forward-codes {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.forward-codes li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(127, 127, 127, 0.3));
+  border-radius: 10px;
+}
+.forward-codes code {
+  font-size: 1.05em;
+  user-select: all;
+}
