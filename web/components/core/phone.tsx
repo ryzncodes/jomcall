@@ -1,4 +1,5 @@
 "use client";
+import { localNumber } from "@/lib/core/phone-format";
 import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
@@ -281,7 +282,7 @@ function NumberRequest({
 // service differently, so the text says to ask it when a code is refused.
 function Forwarding({ e164 }: { e164: string }) {
   const w = useWords();
-  const local = e164.startsWith("+60") ? "0" + e164.slice(3) : e164;
+  const local = localNumber(e164);
   const rows: [string, string, string][] = [
     [w("Every call", "Semua panggilan"), `**21*${local}#`, "##21#"],
     [w("Only when you do not answer", "Hanya apabila anda tidak menjawab"), `**61*${local}#`, "##61#"],
