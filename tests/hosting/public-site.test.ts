@@ -41,9 +41,9 @@ test("localePath", () => {
 
 test("legacyRedirect", () => {
   const r = (u: string) => legacyRedirect(new URL(u))?.href ?? null;
-  assert.equal(r("https://x.test/pricing?lang=ms&theme=dark"), "https://x.test/ms/pricing");
+  assert.equal(r("https://x.test/pricing?lang=ms&theme=dark"), "https://x.test/ms/pricing?theme=dark");
   assert.equal(r("https://x.test/?lang=ms"), "https://x.test/ms");
-  assert.equal(r("https://x.test/?lang=en&theme=dark"), "https://x.test/");
+  assert.equal(r("https://x.test/?lang=en&theme=dark"), "https://x.test/?theme=dark");
   assert.equal(r("https://x.test/app/calls?lang=ms"), null);
   assert.equal(r("https://x.test/pricing"), null);
   for (const p of ["/login", "/signup", "/docs", "/self-host", "/api/x"])

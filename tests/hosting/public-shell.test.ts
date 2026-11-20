@@ -127,7 +127,16 @@ test("the root layout loads fonts locally and allows the theme script", () => {
   assert.match(layout, /import "\.\/public\.css"/);
   assert.match(layout, /PRE_PAINT_SCRIPT/);
   assert.doesNotMatch(layout, /fonts\.googleapis\.com|fonts\.gstatic\.com/);
+  // Fonts belong to the public shell only: the app has its own --font-*
+  // variables and must not get Plex Mono, nor preload the public faces.
+  assert.doesNotMatch(layout, /fonts|fontVariables/);
+  const shell = readFileSync("web/components/public/shell.tsx", "utf8");
+  assert.match(shell, /import \{ fontVariables \} from "@\/lib\/fonts"/);
+  assert.match(shell, /className=\{`public \$\{fontVariables\}`\}/);
   const fonts = readFileSync("web/lib/fonts.ts", "utf8");
+  const vars = [...fonts.matchAll(/variable: "([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(vars, ["--kaunter-font-display", "--kaunter-font-text", "--kaunter-font-mono"]);
+  assert.doesNotMatch(css, /var\(--font-(display|text|mono)\)/);
   assert.match(fonts, /from "next\/font\/local"/);
   assert.doesNotMatch(fonts, /next\/font\/google/);
   assert.equal(fonts.match(/display: "swap"/g)?.length, 3);
@@ -234,4 +243,16 @@ test("English and BM labels have the same keys and BM avoids Indonesian words", 
   const bm = JSON.stringify(common.ms).toLowerCase();
   for (const word of ["kamu", "uang", "kantor", "mobil", "bisa"])
     assert.doesNotMatch(bm, new RegExp(`\\b${word}\\b`), word);
+});
+
+test("the call to action keeps one width while the session check runs", () => {
+  // Every state reserves the other label's width, and phones use short labels,
+  // so the header never jumps or overflows at 360 px when signed in.
+  const cta = readFileSync("web/components/public/cta.tsx", "utf8");
+  assert.match(cta, /cta-reserve/);
+  assert.match(css, /\.public \.cta-reserve\s*\{[^}]*visibility:\s*hidden/);
+  assert.match(css, /@media \(max-width: 1023px\)[\s\S]*?\.public \.site-header \.cta-full\s*\{\s*display:\s*none/);
+  for (const locale of ["en", "ms"] as const) {
+    assert.ok(common[locale].openWorkspaceShort.length <= common[locale].getStarted.length + 2, locale);
+  }
 });

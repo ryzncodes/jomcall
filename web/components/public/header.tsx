@@ -50,7 +50,12 @@ export function Header({ locale, page }: { locale: PublicLocale; page: PublicPag
               {t.login}
             </AppLink>
           </div>
-          <Cta locale={locale} getStarted={t.getStarted} openWorkspace={t.openWorkspace} />
+          <Cta
+            locale={locale}
+            getStarted={t.getStarted}
+            openWorkspace={t.openWorkspace}
+            openWorkspaceShort={t.openWorkspaceShort}
+          />
           <div className="header-mobile">
             <MobileMenu
               entries={entries}

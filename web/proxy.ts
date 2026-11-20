@@ -12,8 +12,8 @@ export function legacyRedirect(url: URL): URL | null {
   if (!PUBLIC_PATHS.has(path)) return null;
   const target = new URL(url.href);
   target.pathname = lang === "ms" ? (path === "/" ? "/ms" : `/ms${path}`) : path;
+  // `theme` stays: the public page honours it once and stores it.
   target.searchParams.delete("lang");
-  target.searchParams.delete("theme");
   return target;
 }
 

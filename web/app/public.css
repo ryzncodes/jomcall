@@ -58,10 +58,10 @@
   --gutter: var(--space-4);
   --header-h: 64px;
 
-  /* Faces (next/font sets the variables on <html>). */
-  --face-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
-  --face-text: var(--font-text), ui-sans-serif, system-ui, sans-serif;
-  --face-mono: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* Faces (next/font sets the variables on the shell root). */
+  --face-display: var(--kaunter-font-display), ui-sans-serif, system-ui, sans-serif;
+  --face-text: var(--kaunter-font-text), ui-sans-serif, system-ui, sans-serif;
+  --face-mono: var(--kaunter-font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
 
   color-scheme: light;
   display: flex;
@@ -328,6 +328,29 @@ body:has(.public) {
 }
 .public .btn-block {
   width: 100%;
+}
+/* Call to action labels: the visible label and the other state's label
+   share one grid cell, so the button keeps one width. */
+.public .cta-label {
+  display: inline-grid;
+}
+.public .cta-label > span {
+  grid-area: 1 / 1;
+  text-align: center;
+}
+.public .cta-reserve {
+  visibility: hidden;
+}
+.public .cta-short {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .public .site-header .cta-full {
+    display: none;
+  }
+  .public .site-header .cta-short {
+    display: inline;
+  }
 }
 /* The call to action while the session check runs: the same box, no text. */
 .public .btn-wait {

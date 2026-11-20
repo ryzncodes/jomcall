@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { common } from "@/content/public/common";
+import { fontVariables } from "@/lib/fonts";
 import type { PublicLocale, PublicPageId } from "@/lib/site";
 import { Footer } from "./footer";
 import { Header } from "./header";
@@ -17,7 +18,7 @@ export function PublicShell({
   children: ReactNode;
 }) {
   return (
-    <div className="public" id="public-root" lang={locale}>
+    <div className={`public ${fontVariables}`} id="public-root" lang={locale}>
       <a className="skip" href="#main">
         {common[locale].skip}
       </a>
