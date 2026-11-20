@@ -1,9 +1,10 @@
 // Emails about phone number requests. The database answers
 // app_private.phone_request_notices() with the requests to write about and
-// marks each before this is sent: an open request is announced to the
+// marks an open request before this is sent: it is announced to the
 // operator (JOMCALL_OPERATOR_EMAIL) and again every 4 hours while it stays
-// open; a number that is ready is announced once to the organization's
-// owners, English then Bahasa Melayu. The operator email names the
+// open. A number that is ready is announced once to the organization's
+// owners, English then Bahasa Melayu; the engine confirms that send, and an
+// unconfirmed one is tried up to three times. The operator email names the
 // workspace and the person who asked; the owner email names only their own
 // number.
 export type OpenRequest = {
@@ -15,7 +16,13 @@ export type OpenRequest = {
   requestedAt: string;
   requestedBy: string | null;
 };
-export type ReadyRequest = { id: string; e164: string | null; emails: string[] };
+export type ReadyRequest = {
+  id: string;
+  e164: string | null;
+  emails: string[];
+  // The database returns a ready request at most three times.
+  lastTry?: boolean;
+};
 export type PhoneRequestNotices = { open: OpenRequest[]; ready: ReadyRequest[] };
 
 const line = (s: string | null) => (s ?? "").replace(/[\r\n\t]+/g, " ").slice(0, 200);

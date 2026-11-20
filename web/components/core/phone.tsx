@@ -288,8 +288,8 @@ function Forwarding({ e164 }: { e164: string }) {
       <h3>{w("Mobile line (Maxis, CelcomDigi, U Mobile, Unifi Mobile and others)", "Talian mudah alih (Maxis, CelcomDigi, U Mobile, Unifi Mobile dan lain-lain)")}</h3>
       <p>
         {w(
-          "On the phone that holds the line, open the keypad, type one code and press call. Type the second code the same way to stop.",
-          "Pada telefon yang memegang talian itu, buka pad kekunci, taip satu kod dan tekan panggil. Taip kod kedua dengan cara yang sama untuk berhenti.",
+          "On the phone that holds the line, open the keypad, type one code and press call. Type the second code the same way to stop. ##002# stops every kind of forwarding at once.",
+          "Pada telefon yang memegang talian itu, buka pad kekunci, taip satu kod dan tekan panggil. Taip kod kedua dengan cara yang sama untuk berhenti. ##002# menghentikan semua jenis pemajuan sekali gus.",
         )}
       </p>
       <ul className="forward-codes">

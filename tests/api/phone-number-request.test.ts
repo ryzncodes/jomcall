@@ -4,6 +4,7 @@ import pg from "pg";
 import { phoneFixture, fakeNumber } from "../helpers/phone.ts";
 import { entitle } from "../helpers/billing.ts";
 import { Engine } from "../../engine/src/engine.ts";
+import { phoneRoute } from "../../packages/domain/src/phone/routes.ts";
 import { FakeSender } from "../../engine/src/mail.ts";
 import {
   nationalNumber,
@@ -92,6 +93,9 @@ test("a number request: needs a plan with a number, one at a time, managers only
 
     // The engine's read, as the worker role: the operator is told once, and
     // not again inside four hours.
+    // (Every engine on this database reads the same function, so the row is
+    // reset first in case another one has just claimed it.)
+    await h.cleanup.query("update app.phone_number_request set operator_noticed_at=null where id=$1", [made.body.data.id]);
     const first = await notices();
     const mine = first.open.find((r) => r.id === made.body.data.id);
     assert.ok(mine);
@@ -106,8 +110,17 @@ test("a number request: needs a plan with a number, one at a time, managers only
     );
     assert.equal((await notices()).open.some((r) => r.id === made.body.data.id), true);
 
+    // A number that is off answers nothing.
+    const off = fakeNumber();
+    await h.cleanup.query(
+      "insert into app.phone_number(org_id,location_id,agent_id,e164,active)values($1,$2,$3,$4,false)",
+      [h.orgA.id, h.orgA.locationId, h.orgA.agentId, off],
+    );
+    assert.equal((await req("GET", "/phone-numbers")).body.data.request.state, "open");
+    await h.cleanup.query("delete from app.phone_number where e164=$1", [off]);
+
     // The operator adds the number: the request is answered and the owners
-    // are told once.
+    // are told, again until the engine confirms the send, three times at most.
     const e164 = await p.addNumber();
     list = (await req("GET", "/phone-numbers")).body.data;
     assert.equal(list.request.state, "ready");
@@ -117,7 +130,21 @@ test("a number request: needs a plan with a number, one at a time, managers only
     assert.ok(told);
     assert.equal(told.e164, e164);
     assert.equal(told.emails.length, 1);
+    assert.equal(told.lastTry, false);
     assert.equal(ready.open.some((r) => r.id === made.body.data.id), false);
+    assert.equal((await notices()).ready.some((r) => r.id === made.body.data.id), true);
+    const third = (await notices()).ready.find((r) => r.id === made.body.data.id);
+    assert.equal(third?.lastTry, true);
+    assert.equal((await notices()).ready.some((r) => r.id === made.body.data.id), false);
+    // Confirmed: never returned again.
+    await h.cleanup.query("update app.phone_number_request set owner_attempts=0 where id=$1", [made.body.data.id]);
+    const c = new pg.Client({ connectionString: process.env.WORKER_DATABASE_URL });
+    await c.connect();
+    try {
+      await c.query("select app_private.phone_request_sent($1)", [made.body.data.id]);
+    } finally {
+      await c.end();
+    }
     assert.equal((await notices()).ready.some((r) => r.id === made.body.data.id), false);
 
     // With a number, there is nothing more to ask for.
@@ -164,10 +191,11 @@ test("the engine mails the operator for an open request and each owner for a rea
       open: [{ id: "r1", orgId: "o1", orgName: "Kedai Contoh", area: "any", forwardFrom: null, requestedAt: "2026-11-20T03:00:00Z", requestedBy: null }],
       ready: [
         { id: "r2", e164: "+60412345678", emails: ["a@example.test", "b@example.test"] },
-        { id: "r3", e164: null, emails: ["c@example.test"] },
+        { id: "r3", e164: null, emails: ["c@example.test"], lastTry: true },
       ],
     };
     let checks = 0;
+    const confirmed: string[] = [];
     const mail = new FakeSender();
     engine = await Engine.create(p.h.namespace, {
       mail,
@@ -176,6 +204,9 @@ test("the engine mails the operator for an open request and each owner for a rea
         everyMs: 300_000,
         now: () => t,
         operatorEmail: "ops@example.test",
+        sent: async (_pool, id) => {
+          confirmed.push(id);
+        },
         notices: async () => {
           checks++;
           const a = answer;
@@ -196,6 +227,11 @@ test("the engine mails the operator for an open request and each owner for a rea
     const sent = mail.sent.filter((m) => /phone/i.test(m.operationId));
     assert.deepEqual(sent.map((m) => m.to).sort(), ["a@example.test", "b@example.test", "ops@example.test"]);
     assert.ok(lines.includes("PHONE_NUMBER_REQUESTED open=1"));
+    // Only the request whose owners were all written to is confirmed; the
+    // one with no number is logged on its last try.
+    assert.deepEqual(confirmed, ["r2"]);
+    assert.ok(lines.includes("PHONE_REQUEST_READY_UNSENT id=r3"));
+    assert.ok(sent.every((m) => !m.operationId.includes("@")));
     t += 300_000;
     await engine.tick();
     assert.equal(checks, 2);
@@ -204,5 +240,30 @@ test("the engine mails the operator for an open request and each owner for a rea
     console.error = original;
     await engine?.close();
     await p.close();
+  }
+});
+
+test("hosted mode: a number cannot be added from the app, whoever asks", async () => {
+  // The guard sits before any database use, so no connection is needed.
+  const saved = process.env.JOMCALL_MODE;
+  const ctx = {
+    identity: { userId: "00000000-0000-4000-8000-000000000001", sessionId: "s", confirmedEmail: "owner@example.test" },
+    orgId: "00000000-0000-4000-8000-000000000002",
+    role: "owner",
+  } as never;
+  const body = {
+    e164: fakeNumber(),
+    locationId: "00000000-0000-4000-8000-000000000003",
+    agentId: "00000000-0000-4000-8000-000000000004",
+  };
+  try {
+    process.env.JOMCALL_MODE = "hosted";
+    await assert.rejects(
+      () => phoneRoute({} as never, ctx, "POST", "/phone-numbers", body, "k", new URLSearchParams()),
+      (e: any) => e.code === "FORBIDDEN" && e.status === 403,
+    );
+  } finally {
+    if (saved === undefined) delete process.env.JOMCALL_MODE;
+    else process.env.JOMCALL_MODE = saved;
   }
 });

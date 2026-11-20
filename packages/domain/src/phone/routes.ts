@@ -8,6 +8,7 @@ import {
   type PhoneNumber,
   type PhoneNumberRequest,
 } from "../../../contracts/src/phone.ts";
+import { isHosted } from "../../../contracts/src/hosting.ts";
 import { manager } from "../authorization.ts";
 import { command, audit } from "../../../db/src/receipts.ts";
 import { telephonyReadiness } from "./telephony.ts";
@@ -169,6 +170,11 @@ export async function phoneRoute(
       };
     if (method === "POST" && !id) {
       manager(ctx);
+      // Hosted numbers all sit on one shared trunk, and a call is routed by
+      // the dialled number alone: a workspace that could add any number
+      // could answer another business's callers. There the operator adds the
+      // row (RUNBOOK step 11); customers ask through /phone-number-requests.
+      if (isHosted()) throw new AppError("FORBIDDEN", 403);
       const v = phoneNumberCreate.parse(body);
       return command(
         tx, ctx, key, "createPhoneNumber", v,

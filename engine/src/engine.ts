@@ -132,14 +132,16 @@ async function bytesCeilingNotice(pool: pg.Pool) {
 // requests are always logged as PHONE_NUMBER_REQUESTED with a count and go
 // to the operator when JOMCALL_OPERATOR_EMAIL is set; a ready number goes to
 // the organization's owners. The database marks each row before the email
-// goes out: a failed send is logged, an open request comes back after four
-// hours, a ready one does not.
+// goes out, and it comes back after four hours. A ready request is confirmed
+// after its send and otherwise tried three times, then logged as
+// PHONE_REQUEST_READY_UNSENT.
 export type PhoneRequestOptions = {
   firstAfterMs?: number;
   everyMs?: number;
   retryMs?: number;
   now?: () => number;
   notices?: (pool: pg.Pool) => Promise<PhoneRequestNotices>;
+  sent?: (pool: pg.Pool, id: string) => Promise<void>;
   operatorEmail?: string | null;
 };
 async function phoneRequestNotices(pool: pg.Pool) {
@@ -148,6 +150,9 @@ async function phoneRequestNotices(pool: pg.Pool) {
       "select app_private.phone_request_notices() as value",
     )
   ).rows[0].value;
+}
+async function phoneRequestSent(pool: pg.Pool, id: string) {
+  await pool.query("select app_private.phone_request_sent($1)", [id]);
 }
 async function queuePlanNotices(pool: pg.Pool, namespace: string) {
   await pool.query("select app_private.queue_plan_notices($1)", [namespace]);
@@ -210,6 +215,7 @@ export class Engine {
       retryMs: 300_000,
       now: Date.now,
       notices: phoneRequestNotices,
+      sent: phoneRequestSent,
       operatorEmail: this.ceiling.operatorEmail,
       ...requests,
     };
@@ -409,18 +415,29 @@ export class Engine {
       }
     }
     for (const r of n.ready) {
-      if (!r.e164) continue;
-      for (const to of r.emails) {
-        try {
-          await this.mail.send({
-            to,
-            ...readyRequestMail(r, this.mail.inviteBase),
-            operationId: `phone-ready-${r.id}-${to}`,
-          });
-        } catch {
-          console.error("PHONE_REQUEST_MAIL_FAILED", "kind=owner");
+      let sent = 0;
+      if (r.e164)
+        for (const [i, to] of r.emails.entries()) {
+          try {
+            await this.mail.send({
+              to,
+              ...readyRequestMail(r, this.mail.inviteBase),
+              operationId: `phone-ready-${r.id}:${i}`,
+            });
+            sent++;
+          } catch {
+            console.error("PHONE_REQUEST_MAIL_FAILED", "kind=owner");
+          }
         }
-      }
+      // Confirmed only when every owner was written to; otherwise the
+      // database returns it again, three times in all.
+      if (r.e164 && r.emails.length > 0 && sent === r.emails.length) {
+        try {
+          await this.requests.sent(this.pool, r.id);
+        } catch {
+          console.error("PHONE_REQUEST_CONFIRM_FAILED");
+        }
+      } else if (r.lastTry) console.error("PHONE_REQUEST_READY_UNSENT", `id=${r.id}`);
     }
   }
   async tick(failAt?: "after-enqueue" | "before-commit") {
