@@ -2840,3 +2840,13 @@
     padding: 20px 16px;
   }
 }
+
+.access-terms {
+  margin: 0;
+  font-size: 13px;
+  color: var(--secondary);
+}
+.access-terms a {
+  color: var(--ink);
+  text-decoration: underline;
+}

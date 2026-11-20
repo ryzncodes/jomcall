@@ -150,7 +150,7 @@
   "selected": "Panggilan dipilih",
   "version": "Ejen versi 1",
   "fakeNote": "Semua nama, panggilan dan kos adalah rekaan. Tiada aktiviti atau bil sebenar.",
-  "disclosure": "Makluman AI + rakaman",
+  "disclosure": "Makluman AI",
   "enabled": "Diaktifkan",
   "consent": "Persetujuan",
   "consentValue": "Pengakuan contoh",
@@ -171,9 +171,9 @@
   "testIntro": "Uji perbualan sebelum alihkan sebarang panggilan. Pratonton ini hanya mensimulasikan teks.",
   "controlEyebrow": "Kepercayaan bermula dengan butiran",
   "controlTitle": "Bisnes anda.\nAnda tentukan batasnya.",
-  "controlBody": "AI perkenalkan dirinya. Rakaman dimaklumkan. Kenalan ada rekod persetujuan. Pasukan anda kekal mengawal.",
+  "controlBody": "AI perkenalkan dirinya. Panggilan tidak dirakam. Kenalan ada rekod persetujuan. Pasukan anda kekal mengawal.",
   "control1": "Pengenalan yang jujur",
-  "control1Body": "Tetapkan cara AI memperkenalkan diri dan menerangkan rakaman pada awal panggilan.",
+  "control1Body": "Pilih cara AI memperkenalkan diri pada awal setiap panggilan.",
   "control2": "Manusia bila diperlukan",
   "control2Body": "Pilih bila hendak sambungkan kepada staf, dan apa perlu dibuat jika tiada siapa dapat jawab.",
   "control3": "Data yang boleh diurus",
@@ -1455,7 +1455,7 @@
     "planBodies": {
       "starter": "Satu talian perniagaan yang menjawab setiap panggilan.",
       "growth": "Lebih banyak minit, serta ejen WhatsApp pada nombor anda sendiri.",
-      "payg": "Tiada yuran bulanan. Untuk mencuba ejen dalam pelayar dan ujian bertaip."
+      "payg": "Tiada yuran bulanan dan tiada nombor telefon. Cuba ejen anda dalam pelayar sebelum memilih pelan."
     },
     "planMonth": "/ bulan",
     "planNoFee": "Tiada yuran bulanan",
@@ -1463,7 +1463,7 @@
     "planNoNumber": "Tiada nombor telefon",
     "planMinutes": "{n} minit suara termasuk setiap bulan",
     "planOverage": "Selepas itu RM {rate} seminit, dikira sesaat",
-    "planPaygRate": "RM {rate} seminit, dikira sesaat",
+    "planPaygRate": "Pilih Starter atau Growth untuk menerima panggilan telefon",
     "planWhatsapp": "Ejen WhatsApp termasuk. Anda sambungkan nombor WhatsApp anda sendiri, dan Meta mengebil yuran mesejnya terus kepada anda. Yuran ejen JomCall: RM {rate} setiap perbualan.",
     "planNoWhatsapp": "Ejen WhatsApp tidak termasuk",
     "planEstimateHint": "Anggaran sebulan bagi setiap pelan pada jumlah minit suara ini.",

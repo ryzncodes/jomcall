@@ -85,12 +85,11 @@ export function LocalAuth({
           </small>
         </section>
         <section className="access-form">
-          <span className="remaining-chip">
-            {w(
-              HOSTED ? "Workspace" : "Local workspace",
-              HOSTED ? "Ruang kerja" : "Ruang kerja setempat",
-            )}
-          </span>
+          {!HOSTED && (
+            <span className="remaining-chip">
+              {w("Local workspace", "Ruang kerja setempat")}
+            </span>
+          )}
           <h2>{title}</h2>
           <Notice
             error={error}
@@ -236,10 +235,14 @@ export function LocalAuth({
                     {(mode !== "forgot" || reset) && (
                       <Field
                         label={w("Password", "Kata laluan")}
-                        hint={w(
-                          "At least 8 characters",
-                          "Sekurang-kurangnya 8 aksara",
-                        )}
+                        hint={
+                          mode === "login"
+                            ? undefined
+                            : w(
+                                "At least 8 characters",
+                                "Sekurang-kurangnya 8 aksara",
+                              )
+                        }
                       >
                         <input
                           name="password"
@@ -285,6 +288,14 @@ export function LocalAuth({
                           ? w("Reset password", "Tetapkan semula")
                           : w("Sign in", "Log masuk")}
                 </button>
+                {mode === "signup" && (
+                  <p className="access-terms">
+                    {w("By creating an account, you agree to the ", "Dengan mencipta akaun, anda bersetuju dengan ")}
+                    <a href={href("/terms")}>{w("Terms of use", "Terma penggunaan")}</a>
+                    {w(" and the ", " dan ")}
+                    <a href={href("/privacy")}>{w("Privacy notice", "Notis privasi")}</a>.
+                  </p>
+                )}
               </fieldset>
             </form>
           )}
@@ -337,12 +348,11 @@ export function OpenLink() {
     <PublicFrame>
       <main id="content" tabIndex={-1} className="access-layout access-single">
         <section className="access-form">
-          <span className="remaining-chip">
-            {w(
-              HOSTED ? "Workspace" : "Local workspace",
-              HOSTED ? "Ruang kerja" : "Ruang kerja setempat",
-            )}
-          </span>
+          {!HOSTED && (
+            <span className="remaining-chip">
+              {w("Local workspace", "Ruang kerja setempat")}
+            </span>
+          )}
           {failed ? (
             <div className="access-success" role="status">
               <h2>

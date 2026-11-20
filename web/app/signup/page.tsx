@@ -1,5 +1,6 @@
 import { mode, turnstileSiteKey } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
+export const metadata = { title: "Create account" };
 export default async function Page({
   searchParams,
 }: {

@@ -12,7 +12,7 @@ import { HOSTED } from "@/lib/hosted";
 // The hosted site is the real product and may be indexed; the mock preview
 // shows fictional calls and stays out of search results.
 export const metadata: Metadata = {
-  title: "JomCall — Every hello. Handled.",
+  title: { default: "JomCall — Every hello. Handled.", template: "%s · JomCall" },
   description: HOSTED
     ? "An AI receptionist for Malaysian businesses. It answers your phone calls in Bahasa Melayu, English and Mandarin, takes bookings and passes callers to your team."
     : "An AI front desk for Malaysian businesses. Frontend preview with fictional calls.",

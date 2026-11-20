@@ -254,7 +254,7 @@ export function PublicPages({
                 <div className="pricing-rate">
                   <PhoneIncoming size={25} />
                   <strong>{money(publicPrices.voiceSenPerMinute)}</strong>
-                  <span>/ {p.minutes.toLowerCase()}</span>
+                  <span>/ {li ? "minit" : "minute"}</span>
                 </div>
               </section>
               <section className="pricing-calculator">

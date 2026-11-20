@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
+export const metadata = { title: "Opening hours" };
 export default async function Page({
   searchParams,
 }: {

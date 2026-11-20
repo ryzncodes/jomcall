@@ -150,7 +150,7 @@
   "selected": "Selected call",
   "version": "Agent version 1",
   "fakeNote": "All names, calls and costs are fictional. No live activity or billing.",
-  "disclosure": "AI + recording disclosure",
+  "disclosure": "AI disclosure",
   "enabled": "Enabled",
   "consent": "Consent",
   "consentValue": "Sample acknowledgement",
@@ -171,9 +171,9 @@
   "testIntro": "Test your conversation before forwarding a single call. This preview simulates text only.",
   "controlEyebrow": "Trust is built in the details",
   "controlTitle": "Your business.\nYou set the boundaries.",
-  "controlBody": "The AI introduces itself. Recording is disclosed. Contacts have consent records. Your team stays in charge.",
+  "controlBody": "The AI introduces itself. Calls are not recorded. Contacts have consent records. Your team stays in charge.",
   "control1": "An honest introduction",
-  "control1Body": "Configure how your AI introduces itself and explains recording at the start of a call.",
+  "control1Body": "Choose how your AI introduces itself at the start of every call.",
   "control2": "A person when it matters",
   "control2Body": "Choose when to transfer to staff, and what to do if nobody can pick up.",
   "control3": "Data you can manage",
@@ -1455,7 +1455,7 @@
     "planBodies": {
       "starter": "One business line that answers every call.",
       "growth": "More minutes, plus the WhatsApp agent on your own number.",
-      "payg": "No monthly fee. For trying the agent in the browser and typed tests."
+      "payg": "No monthly fee and no phone number. Try your agent in the browser before you choose a plan."
     },
     "planMonth": "/ month",
     "planNoFee": "No monthly fee",
@@ -1463,7 +1463,7 @@
     "planNoNumber": "No phone number",
     "planMinutes": "{n} voice minutes included each month",
     "planOverage": "Then RM {rate} a minute, billed per second",
-    "planPaygRate": "RM {rate} a minute, billed per second",
+    "planPaygRate": "Choose Starter or Growth to take phone calls",
     "planWhatsapp": "WhatsApp agent included. You connect your own WhatsApp number, and Meta bills its message fees to you directly. JomCall agent fee: RM {rate} per conversation.",
     "planNoWhatsapp": "WhatsApp agent not included",
     "planEstimateHint": "Estimated month on each plan at this many voice minutes.",

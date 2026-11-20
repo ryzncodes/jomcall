@@ -2,7 +2,7 @@ import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
 // Where a confirmation or recovery email link lands. Loading this page uses
 // nothing; the button on it does.
-export const metadata = { referrer: "no-referrer" as const };
+export const metadata = { title: "Open link", referrer: "no-referrer" as const };
 export default async function Page({
   searchParams,
 }: {
