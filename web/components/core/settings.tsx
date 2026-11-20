@@ -1,4 +1,5 @@
 "use client";
+import { roleWords, inviteWords, deliveryWords } from "@/lib/core/member-words";
 import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useEffect, useState } from "react";
@@ -42,7 +43,7 @@ export function LocalSettings() {
             onChange={switchWorkspace}
             options={session.memberships.map((m) => ({
               value: m.id,
-              label: `${m.name} · ${m.role}`,
+              label: `${m.name} · ${w(...roleWords(m.role))}`,
             }))}
           />
         </Field>
@@ -208,7 +209,7 @@ function Team() {
                 {m.user_id === session.userId ? w("You", "Anda") : m.email}
               </h3>
               <p>
-                {m.role} ·{" "}
+                {w(...roleWords(m.role))} ·{" "}
                 {m.active
                   ? w("Active", "Aktif")
                   : w("Revoked", "Ditarik balik")}
@@ -315,7 +316,8 @@ function Team() {
             <article className="core-record" key={i.id}>
               <strong>{i.email}</strong>
               <p>
-                {i.role} · {i.state} · {i.delivery_state}
+                {w(...roleWords(i.role))} · {w(...inviteWords(i.state))} ·{" "}
+                {w(...deliveryWords(i.delivery_state))}
               </p>
               {i.state === "pending" &&
                 (workspace.role === "owner" || i.role === "staff") && (

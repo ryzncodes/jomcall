@@ -25,6 +25,7 @@ import {
   LEGAL_EFFECTIVE_DATE,
 } from "@/lib/operator";
 import { HOSTED } from "@/lib/hosted";
+import { useSignedIn } from "./signed-in";
 import {
   WHATSAPP_WAITING_FOR_META,
   whatsappWaiting,
@@ -71,6 +72,15 @@ const rate = (sen: number) => (sen / 100).toFixed(2);
 export function PublicFrame({ children }: { children: React.ReactNode }) {
   const { t, href, mode, locale } = useExperience(),
     p = t.remaining;
+  // A signed-in visitor gets a link back to the app instead of Log in.
+  const signedIn = Boolean(useSignedIn(mode !== "mock"));
+  const account = signedIn ? (
+    <a href={href("/app")}>
+      {locale === "ms" ? "Buka ruang kerja" : "Open your workspace"}
+    </a>
+  ) : (
+    <a href={href("/login")}>{p.login}</a>
+  );
   return (
     <>
       <a className="skip-link" href="#content">
@@ -82,7 +92,7 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
           <a href={href("/pricing")}>{p.pricing}</a>
           {/* The guides describe the mock preview's sample screens. */}
           {mode !== "hosted" && <a href={href("/docs")}>{p.docs}</a>}
-          <a href={href("/login")}>{p.login}</a>
+          {account}
         </nav>
         <Controls />
       </header>
@@ -98,7 +108,7 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
               <a href={href("/admin")}>{p.platform}</a>
             </>
           )}
-          {mode === "hosted" && <a href={href("/login")}>{p.login}</a>}
+          {mode === "hosted" && account}
         </nav>
         <OperatorDetails />
         <small>

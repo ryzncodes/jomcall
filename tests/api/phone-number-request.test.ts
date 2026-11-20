@@ -47,11 +47,12 @@ test("a number request: needs a plan with a number, one at a time, managers only
     });
     const channels = async () =>
       (await api.request(h.alice, h.orgA.id, "GET", "/api/v1/channels")).body.data;
-    // No plan: nothing to ask for, and the page stays hidden.
+    // No plan: nothing to ask for, but the page shows, so the owner learns
+    // a plan brings a number.
     let list = (await req("GET", "/phone-numbers")).body.data;
     assert.equal(list.request, null);
     assert.equal(list.planIncludesNumber, false);
-    assert.equal((await channels()).phone, false);
+    assert.equal((await channels()).phone, true);
     const refused = await req("POST", "/phone-number-requests", { area: "penang" });
     assert.equal(refused.status, 409);
     assert.equal(refused.body.error.code, "PLAN_REQUIRED");

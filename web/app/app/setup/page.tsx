@@ -1,6 +1,7 @@
 import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
-export const metadata = { title: "Setup" };
+import { pageTitle } from "@/lib/page-title";
+export const generateMetadata = pageTitle("Setup", "Persediaan");
 export default async function Page({
   searchParams,
 }: {

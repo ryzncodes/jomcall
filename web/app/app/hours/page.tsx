@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
-export const metadata = { title: "Opening hours" };
+import { pageTitle } from "@/lib/page-title";
+export const generateMetadata = pageTitle("Opening hours", "Waktu operasi");
 export default async function Page({
   searchParams,
 }: {

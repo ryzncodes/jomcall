@@ -1,8 +1,9 @@
 import { mode } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
+import { pageTitle } from "@/lib/page-title";
 // Where a confirmation or recovery email link lands. Loading this page uses
 // nothing; the button on it does.
-export const metadata = { title: "Open link", referrer: "no-referrer" as const };
+export const generateMetadata = pageTitle("Open link", "Buka pautan", { referrer: "no-referrer" });
 export default async function Page({
   searchParams,
 }: {

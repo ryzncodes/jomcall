@@ -209,7 +209,7 @@ export function KnowledgeCoreEditor({
                         onChange={(e) => setEdits({ ...edits, [id]: e.target.value })}
                       />
                     </Field>
-                    <button className="button" disabled={busy || !value.trim() || edits[id] === undefined}>
+                    <button className="button secondary-button" disabled={busy || !value.trim() || edits[id] === undefined}>
                       {w("Save", "Simpan")}
                     </button>
                   </form>
@@ -253,7 +253,7 @@ export function KnowledgeCoreEditor({
           <Field label={w("Fact", "Fakta")}>
             <textarea rows={2} maxLength={3800} value={fact.value} disabled={busy} onChange={(e) => setFact({ ...fact, value: e.target.value })} />
           </Field>
-          <button className="button" disabled={busy || !fact.title.trim() || !fact.value.trim()}>
+          <button className="button secondary-button" disabled={busy || !fact.title.trim() || !fact.value.trim()}>
             {w("Add fact", "Tambah fakta")}
           </button>
         </form>
@@ -293,10 +293,16 @@ export function KnowledgeCoreEditor({
                   </label>
                   <details>
                     <summary>{w("Edit wording", "Ubah ayat")}</summary>
-                    <textarea rows={3} maxLength={1000} value={text} disabled={busy} onChange={(e) => setEdits({ ...edits, [id]: e.target.value })} />
-                    <button className="button" disabled={busy || !text.trim()} onClick={() => save(on, text)}>
-                      {w("Save rule", "Simpan peraturan")}
-                    </button>
+                    <div className="core-form">
+                      <Field label={w("Rule wording", "Ayat peraturan")}>
+                        <textarea rows={3} maxLength={1000} value={text} disabled={busy} onChange={(e) => setEdits({ ...edits, [id]: e.target.value })} />
+                      </Field>
+                      <div className="core-actions">
+                        <button className="button secondary-button" disabled={busy || !text.trim()} onClick={() => save(on, text)}>
+                          {w("Save rule", "Simpan peraturan")}
+                        </button>
+                      </div>
+                    </div>
                   </details>
                 </article>
               );
@@ -333,7 +339,7 @@ export function KnowledgeCoreEditor({
           <Field label={w("Rule", "Peraturan")}>
             <textarea rows={2} maxLength={1000} value={rule.text} disabled={busy} onChange={(e) => setRule({ ...rule, text: e.target.value })} />
           </Field>
-          <button className="button" disabled={busy || !rule.text.trim()}>
+          <button className="button secondary-button" disabled={busy || !rule.text.trim()}>
             {w("Add rule", "Tambah peraturan")}
           </button>
         </form>
@@ -374,7 +380,7 @@ export function KnowledgeCoreEditor({
         )}
         <div className="core-actions">
           <button
-            className="button"
+            className="button secondary-button"
             disabled={busy || !paste.trim()}
             onClick={() => {
               const parsed = parseRows(paste);
@@ -392,13 +398,15 @@ export function KnowledgeCoreEditor({
           >
             {w("Add as drafts", "Tambah sebagai draf")}
           </button>
-          <button
-            className="button button-dark"
-            disabled={busy || !data.catalogue.drafts}
-            onClick={() => exec((call) => call("confirmKnowledge", { agentId }))}
-          >
-            {w("I checked the drafts: confirm", "Saya sudah semak draf: sahkan")}
-          </button>
+          {data.catalogue.drafts > 0 && (
+            <button
+              className="button button-dark"
+              disabled={busy}
+              onClick={() => exec((call) => call("confirmKnowledge", { agentId }))}
+            >
+              {w("I checked the drafts: confirm", "Saya sudah semak draf: sahkan")}
+            </button>
+          )}
         </div>
         <ul className="core-list">
           {data.catalogue.rows.slice(0, 100).map((r) => (

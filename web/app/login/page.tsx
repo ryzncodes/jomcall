@@ -1,6 +1,7 @@
 import { mode, turnstileSiteKey } from "@/lib/server/config";
 import { Experience } from "@/components/experience";
-export const metadata = { title: "Sign in" };
+import { pageTitle } from "@/lib/page-title";
+export const generateMetadata = pageTitle("Sign in", "Log masuk");
 export default async function Page({
   searchParams,
 }: {

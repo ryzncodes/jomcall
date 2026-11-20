@@ -151,7 +151,7 @@ test("the call log reads real rows; staff get no words; other businesses see not
   }
 });
 
-test("channels: phone needs a configured provider and a number; whatsapp follows its switch; staff can read", async () => {
+test("channels: phone follows a configured provider; whatsapp follows its switch; staff can read", async () => {
   const names = [
     ...ENV,
     "LIVEKIT_URL",
@@ -169,7 +169,8 @@ test("channels: phone needs a configured provider and a number; whatsapp follows
   try {
     for (const k of names) delete process.env[k];
     assert.deepEqual(await channels(), { phone: false, whatsapp: false, integrations: false });
-    // Configured provider, no number yet: still false.
+    // Configured provider, no number and no plan: the page shows (it says
+    // a plan brings a number).
     Object.assign(process.env, {
       JOMCALL_TELEPHONY_PROVIDER: "livekit_sip",
       JOMCALL_VOICE_PROVIDER: "hosted",
@@ -177,7 +178,7 @@ test("channels: phone needs a configured provider and a number; whatsapp follows
       LIVEKIT_API_KEY: "test-key",
       LIVEKIT_API_SECRET: "test-secret",
     });
-    assert.equal((await channels()).phone, false);
+    assert.equal((await channels()).phone, true);
     // A number but no provider: false.
     const made = await req("POST", "/phone-numbers", {
       e164: fakeNumber(),
@@ -189,10 +190,10 @@ test("channels: phone needs a configured provider and a number; whatsapp follows
     assert.equal((await channels()).phone, false);
     process.env.JOMCALL_TELEPHONY_PROVIDER = "livekit_sip";
     assert.equal((await channels(h.staff)).phone, true);
-    // Another organization has no number.
+    // Another organization, with no number, sees the page too.
     assert.equal(
       (await api.request(h.bob, h.orgB.id, "GET", "/api/v1/channels")).body.data.phone,
-      false,
+      true,
     );
     process.env.JOMCALL_WHATSAPP_PROVIDER = "fake";
     assert.equal((await channels(h.staff)).whatsapp, true);

@@ -12,7 +12,6 @@ import {
   Users,
   CalendarBlank,
   PlugsConnected,
-  ArrowLeft,
   ChatCircleDots,
   Robot,
   Headphones,
@@ -218,10 +217,6 @@ export function WorkspaceChrome({
               </strong>
             </p>
           </div>
-          <a href={href("/")}>
-            <ArrowLeft size={17} />
-            {t.home}
-          </a>
         </div>
       </aside>
       <div className="workspace-body">

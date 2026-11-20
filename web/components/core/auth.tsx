@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { HttpCoreClient } from "@/lib/core/client";
 import { forgetInvite, rememberInvite, validInvite } from "@/lib/core/invite";
 import { PublicFrame } from "../public-pages";
+import { useSignedIn } from "../signed-in";
 import { useExperience } from "../experience";
 import { Field } from "./field";
 import { Notice, useWords } from "./state";
@@ -30,6 +31,10 @@ export function LocalAuth({
   useEffect(() => {
     if (mode === "invite") rememberInvite(token);
   }, [mode, token]);
+  // Someone already signed in sees where they are, not the form again. An
+  // invitation link keeps its form: it may be for another address.
+  const signedIn = useSignedIn((mode === "login" || mode === "signup") && !invite);
+  const [leaving, setLeaving] = useState(false);
   // Hosted mode with Turnstile configured, on sign-up and sign-in only.
   const guarded =
     !!turnstileSiteKey && !reset && (mode === "login" || mode === "signup");
@@ -90,12 +95,41 @@ export function LocalAuth({
               {w("Local workspace", "Ruang kerja setempat")}
             </span>
           )}
-          <h2>{title}</h2>
+          <h2>{signedIn ? w("Welcome back.", "Selamat kembali.") : title}</h2>
           <Notice
             error={error}
             context={mode === "invite" ? "invite" : undefined}
           />
-          {done ? (
+          {signedIn ? (
+            <div className="access-success" role="status">
+              <h3>{w("You're already signed in.", "Anda sudah log masuk.")}</h3>
+              <p>
+                {w("Signed in as ", "Log masuk sebagai ")}
+                <strong>{signedIn}</strong>
+              </p>
+              <div className="core-actions">
+                <a className="button button-dark" href={href("/app")}>
+                  {w("Open your workspace", "Buka ruang kerja")}
+                </a>
+                <button
+                  type="button"
+                  className="button secondary-button"
+                  disabled={leaving}
+                  onClick={async () => {
+                    setLeaving(true);
+                    try {
+                      await new HttpCoreClient({}).auth("logout", {});
+                    } catch {
+                      // Reload either way: the page shows what is true now.
+                    }
+                    window.location.reload();
+                  }}
+                >
+                  {w("Sign out", "Log keluar")}
+                </button>
+              </div>
+            </div>
+          ) : done ? (
             <div className="access-success" role="status">
               <h3>
                 {reset
@@ -299,15 +333,23 @@ export function LocalAuth({
               </fieldset>
             </form>
           )}
-          <div className="core-actions">
-            <a href={href(mode === "signup" ? "/login" : "/signup")}>
-              {mode === "signup"
-                ? w("Already have an account?", "Sudah mempunyai akaun?")
-                : w("Create account", "Cipta akaun")}
-            </a>
-            <a href={href("/forgot-password")}>
-              {w("Forgot password?", "Lupa kata laluan?")}
-            </a>
+          <div className="core-actions" hidden={!!signedIn}>
+            {mode === "forgot" ? (
+              <a href={href("/login")}>
+                {w("Back to sign in", "Kembali ke log masuk")}
+              </a>
+            ) : (
+              <>
+                <a href={href(mode === "signup" ? "/login" : "/signup")}>
+                  {mode === "signup"
+                    ? w("Already have an account?", "Sudah mempunyai akaun?")
+                    : w("Create account", "Cipta akaun")}
+                </a>
+                <a href={href("/forgot-password")}>
+                  {w("Forgot password?", "Lupa kata laluan?")}
+                </a>
+              </>
+            )}
           </div>
         </section>
       </main>
