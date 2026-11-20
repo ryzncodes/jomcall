@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { launchCopy } from "@/lib/launch";
 import {
   House,
   GitBranch,
@@ -239,8 +240,8 @@ export function WorkspaceChrome({
               {mode === "local"
                 ? hosted
                   ? locale === "ms"
-                    ? "Beta tertutup"
-                    : "Closed beta"
+                    ? launchCopy.badge[1]
+                    : launchCopy.badge[0]
                   : locale === "ms"
                     ? "Data setempat"
                     : "Local data"
