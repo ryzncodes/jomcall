@@ -29,6 +29,7 @@
   "sample": "Contoh perbualan",
   "sampleShort": "Pratonton interaktif",
   "sampleNotice": "Simulasi teks · tanpa mikrofon atau audio",
+  "sampleVoiceNotice": "Contoh panggilan · suara AI dirakam, perniagaan rekaan",
   "heroCaller": "Pelanggan Contoh A",
   "heroOutcome": "Esok, 3:00 petang",
   "heroOutcomeLabel": "Dari panggilan ke tempahan",
@@ -55,12 +56,12 @@
   "demoDescription": "Pemanggil tanya dalam BM. AI semak masa. Anda terima butirannya. Cuba contoh perbualan rekaan di bawah.",
   "caller": "Pemanggil",
   "agent": "Penyambut tetamu AI",
-  "turn0": "Hai, saya pembantu AI. Contoh panggilan ini termasuk makluman AI dan rakaman. Boleh saya bantu?",
+  "turn0": "Hai, ini Studio Contoh. Saya pembantu AI, dan panggilan ini mungkin dirakam. Boleh saya bantu?",
   "turn1": "Boleh book esok, pukul tiga?",
   "turn2": "Boleh. Saya semak esok pukul 3 petang untuk anda.",
   "turn3": "Kalendar contoh disemak. Pukul 3 petang masih kosong.",
   "turn4": "Boleh, masa tu sesuai. Terima kasih.",
-  "turn5": "Dah siap. Janji temu contoh anda ditetapkan esok, pukul 3 petang. Jumpa nanti!",
+  "turn5": "Dah siap. Janji temu anda ditetapkan esok, pukul 3 petang. Jumpa nanti!",
   "play": "Mulakan contoh",
   "pause": "Jeda contoh",
   "resume": "Sambung contoh",
@@ -84,22 +85,22 @@
     "Mandarin"
   ],
   "turnsEnglish": [
-    "Hi, I'm an AI assistant. This sample includes an AI and recording disclosure. How can I help?",
+    "Hi, you've reached Studio Contoh. I'm an AI assistant, and this call may be recorded. How can I help?",
     "Can I book tomorrow at three?",
     "Let me check tomorrow at 3 pm.",
     "Sample calendar checked. 3 pm is available.",
     "Yes, please. That works for me.",
-    "Your sample appointment is set for tomorrow at 3 pm. See you then!"
+    "Your appointment is set for tomorrow at 3 pm. See you then!"
   ],
   "turnsMandarin": [
-    "您好，我是 AI 助手。这是包含 AI 和录音告知的示例。有什么可以帮您？",
+    "您好，这里是 Studio Contoh。我是 AI 助手，本通话可能会被录音。有什么可以帮您？",
     "可以预约明天下午三点吗？",
     "好的，我帮您看看明天下午三点。",
     "示例日历已检查。下午三点有空位。",
     "可以，谢谢。",
-    "示例预约已确认，明天下午三点见！"
+    "预约已确认，明天下午三点见！"
   ],
-  "voiceDisclaimer": "Contoh bahasa menunjukkan cara ejen menjawab. Contoh ini teks sahaja.",
+  "voiceDisclaimer": "Contoh bahasa menunjukkan cara ejen menjawab. Kedua-dua suara ialah AI; pemanggil bukan orang sebenar.",
   "workflowTitle": "Penyambut tetamu anda, sentiasa selaras.",
   "workflowBody": "Panggilan, tempahan dan susulan. Satu rekod jelas tentang apa yang berlaku dan apa yang perlukan anda.",
   "workflow1": "Kekalkan nombor anda",

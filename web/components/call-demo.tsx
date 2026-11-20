@@ -10,6 +10,13 @@ import {
   CalendarBlank,
 } from "@phosphor-icons/react";
 import { useExperience } from "./experience";
+import demoClips from "@/lib/demo-call.json";
+
+// Recorded lines of the sample call (npm run voice:demo). A clip plays only
+// while the text it was made from still equals the caption; otherwise that
+// line falls back to the silent timer.
+type Clip = { file: string; text: string };
+const clips = demoClips as Record<string, Record<string, Clip>>;
 export function Wave({
   active = false,
   compact = false,
@@ -35,30 +42,68 @@ export function Wave({
   );
 }
 export function CallDemo() {
-  const { t } = useExperience();
+  const { t, locale } = useExperience();
   const reduced = useReducedMotion();
   const [step, setStep] = useState(-1);
   const [running, setRunning] = useState(false);
   const [language, setLanguage] = useState(0);
   const transcript = useRef<HTMLDivElement>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
+  const loaded = useRef<string | null>(null);
   const turns =
     language === 1
       ? t.turnsEnglish
       : language === 2
         ? t.turnsMandarin
         : [t.turn0, t.turn1, t.turn2, t.turn3, t.turn4, t.turn5];
+  const clipSet =
+    language === 1
+      ? "en"
+      : language === 2
+        ? "zh"
+        : locale === "ms"
+          ? "ms"
+          : "manglish";
+  const clipFor = (line: number) => {
+    const clip = clips[clipSet]?.[String(line)];
+    return clip && clip.text === turns[line] ? `/demo-call/${clip.file}` : null;
+  };
+  // Line 3 is the calendar check: shown, not spoken.
+  const src = step >= 0 && step !== 3 ? clipFor(step) : null;
+  const player = () => (audio.current ??= new Audio());
   useEffect(() => {
     if (!running) return;
-    const timer = setTimeout(
-      () => {
-        if (step >= 5) {
-          setRunning(false);
-        } else setStep((n) => n + 1);
-      },
-      step === -1 ? 250 : 2500,
-    );
-    return () => clearTimeout(timer);
-  }, [step, running]);
+    const advance = () => {
+      if (step >= 5) setRunning(false);
+      else setStep((n) => n + 1);
+    };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!src) {
+      timer = setTimeout(advance, step === -1 ? 250 : step === 3 ? 1100 : 2500);
+      return () => clearTimeout(timer);
+    }
+    const el = player();
+    const ended = () => {
+      timer = setTimeout(advance, 350);
+    };
+    const failed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(advance, 2500);
+    };
+    el.addEventListener("ended", ended);
+    el.addEventListener("error", failed);
+    if (loaded.current !== src) {
+      el.src = src;
+      loaded.current = src;
+    }
+    el.play().catch(failed);
+    return () => {
+      el.removeEventListener("ended", ended);
+      el.removeEventListener("error", failed);
+      clearTimeout(timer);
+      el.pause();
+    };
+  }, [step, running, src]);
   useEffect(() => {
     if (step >= 0 && transcript.current)
       transcript.current.scrollTo({
@@ -67,12 +112,22 @@ export function CallDemo() {
       });
   }, [step, reduced]);
   const reset = () => {
+    audio.current?.pause();
+    loaded.current = null;
     setStep(-1);
     setRunning(false);
   };
   const toggle = () => {
-    if (step === 5) {
-      setStep(-1);
+    if (step === -1 || step === 5) {
+      // Start the first clip inside the tap, so mobile browsers allow sound.
+      const first = clipFor(0);
+      if (first) {
+        const el = player();
+        el.src = first;
+        loaded.current = first;
+        el.play().catch(() => undefined);
+      }
+      setStep(0);
       setRunning(true);
     } else setRunning((v) => !v);
   };
@@ -120,7 +175,7 @@ export function CallDemo() {
             <div className="transcript-preview">
               <span>{t.caller}</span>
               <p>{turns[1]}</p>
-              <small>{t.sampleNotice}</small>
+              <small>{t.sampleVoiceNotice}</small>
             </div>
           ) : (
             turns.slice(1, step + 1).map((turn, i) => (
@@ -213,7 +268,7 @@ export function CallDemo() {
             <ArrowCounterClockwise size={20} />
           </button>
         </div>
-        <small>{step === 5 ? t.demoEnd : t.sampleNotice}</small>
+        <small>{step === 5 ? t.demoEnd : t.sampleVoiceNotice}</small>
       </div>
     </div>
   );

@@ -157,7 +157,7 @@ export function Marketing() {
                   <Play size={17} weight="fill" />
                 </span>
               </div>
-              <small>{t.sampleNotice}</small>
+              <small>{t.sampleVoiceNotice}</small>
             </a>
             <div className="scene-label">
               <span>JomCall</span>

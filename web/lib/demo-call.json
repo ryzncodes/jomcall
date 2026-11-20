@@ -1,0 +1,90 @@
+{
+  "en": {
+    "0": {
+      "file": "en-0.m4a",
+      "text": "Hi, you've reached Studio Contoh. I'm an AI assistant, and this call may be recorded. How can I help?"
+    },
+    "1": {
+      "file": "en-1.m4a",
+      "text": "Can I book tomorrow at three?"
+    },
+    "2": {
+      "file": "en-2.m4a",
+      "text": "Let me check tomorrow at 3 pm."
+    },
+    "4": {
+      "file": "en-4.m4a",
+      "text": "Yes, please. That works for me."
+    },
+    "5": {
+      "file": "en-5.m4a",
+      "text": "Your appointment is set for tomorrow at 3 pm. See you then!"
+    }
+  },
+  "manglish": {
+    "0": {
+      "file": "manglish-0.m4a",
+      "text": "Hi, you've reached Studio Contoh. I'm an AI assistant, and this call may be recorded. How can I help?"
+    },
+    "1": {
+      "file": "manglish-1.m4a",
+      "text": "Boleh book esok, pukul tiga?"
+    },
+    "2": {
+      "file": "manglish-2.m4a",
+      "text": "Boleh. Let me check tomorrow at 3 pm for you."
+    },
+    "4": {
+      "file": "manglish-4.m4a",
+      "text": "Yes, please. That works for me."
+    },
+    "5": {
+      "file": "manglish-5.m4a",
+      "text": "Dah siap. Your appointment is set for tomorrow, 3 pm. See you then!"
+    }
+  },
+  "ms": {
+    "0": {
+      "file": "ms-0.m4a",
+      "text": "Hai, ini Studio Contoh. Saya pembantu AI, dan panggilan ini mungkin dirakam. Boleh saya bantu?"
+    },
+    "1": {
+      "file": "ms-1.m4a",
+      "text": "Boleh book esok, pukul tiga?"
+    },
+    "2": {
+      "file": "ms-2.m4a",
+      "text": "Boleh. Saya semak esok pukul 3 petang untuk anda."
+    },
+    "4": {
+      "file": "ms-4.m4a",
+      "text": "Boleh, masa tu sesuai. Terima kasih."
+    },
+    "5": {
+      "file": "ms-5.m4a",
+      "text": "Dah siap. Janji temu anda ditetapkan esok, pukul 3 petang. Jumpa nanti!"
+    }
+  },
+  "zh": {
+    "0": {
+      "file": "zh-0.m4a",
+      "text": "您好，这里是 Studio Contoh。我是 AI 助手，本通话可能会被录音。有什么可以帮您？"
+    },
+    "1": {
+      "file": "zh-1.m4a",
+      "text": "可以预约明天下午三点吗？"
+    },
+    "2": {
+      "file": "zh-2.m4a",
+      "text": "好的，我帮您看看明天下午三点。"
+    },
+    "4": {
+      "file": "zh-4.m4a",
+      "text": "可以，谢谢。"
+    },
+    "5": {
+      "file": "zh-5.m4a",
+      "text": "预约已确认，明天下午三点见！"
+    }
+  }
+}
