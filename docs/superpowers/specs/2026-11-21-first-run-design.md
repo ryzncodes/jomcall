@@ -82,13 +82,13 @@ Six steps. The source of truth stays `checklist()` in `web/lib/core/home-rules.t
 | 3 | Publish the agent / Terbitkan ejen | agent published (unchanged) | Publish |
 | 4 | Choose a plan / Pilih pelan | paid plan with a started period (unchanged) | Choose plan, or Pay fee |
 | 5 | Get a phone number / Dapatkan nombor telefon | an active number (unchanged; "Waiting for your number" while a request is open) | Request number |
-| 6 | **Forward your number and take a first call** / **Majukan nombor anda dan terima panggilan pertama** | **new:** at least one real call with `state = 'ended'` and an `outcome` other than `refused` or `abandoned` | Show me how (opens `/app/phone-numbers`, where the forwarding codes are) |
+| 6 | **Take your first real call** / **Terima panggilan sebenar pertama** | **new:** at least one real call with `state = 'ended'` and an `outcome` other than `refused` or `abandoned` | Show me how (opens `/app/phone-numbers`, where the forwarding codes are) |
 
 Step 6 details:
 
-- Under the label: "Forward your business number to <your JomCall number>, then call it from another phone." The number is shown in local format, as the forwarding panel does. The step is shown only when step 5 applies (a phone line is offered) and only to owners and admins.
+- Under the label: "Forward your business number to <your JomCall number>, then call your usual business number from another phone to check." The label names only what JomCall can measure, an answered real call. A call dialled straight to the JomCall number also counts and proves nothing about forwarding; nothing in the call row tells the two apart, so the step does not claim forwarding is done. The number is shown in local format, as the forwarding panel does. The step is shown only when step 5 applies (a phone line is offered) and only to owners and admins.
 - **Once done, it stays done.** It is not worked out from the latest 100 calls: refused calls are rows in `app.call` too, so a run of refusals (empty wallet, no plan) would push an answered call out of that window and bring the list back. Instead, the new read `firstRun` (5.4) returns the workspace's earliest answered real call (`id`, `started_at`) or none. It uses one indexed query on `app.call` by `org_id`. No migration is needed. A deleted call or a replaced number does not undo the step once a later answered call exists. If every answered call is deleted, the step goes back to not done, which is true.
-- The owner's own check call counts. That is intended: it proves forwarding works.
+- The owner's own check call counts. Dialled to the usual business number it proves forwarding works; dialled straight to the JomCall number it proves only that the agent answers.
 - It has no "mark as done" button. A self-mark would need storage and could be wrong.
 
 The list's other rules:
@@ -129,14 +129,14 @@ The owner asked that owners can link their company's pages during setup: Faceboo
 - **What the agent does with them.** On WhatsApp and typed chat it can give a link when asked. On a phone call it should name the page ("search Kedai Contoh on Facebook") rather than spell out a URL. The current prompt has no rule for this.
   - Adding one is a prompt change and needs both paid gates re-run, with the owner's go.
   - Until then, a spoken URL is a known rough edge, noted in section 8.
-  - The builder must also check whether the fact's label is rendered into the prompt. If changing the label to name Website and LinkedIn changes prompt bytes, it falls under the same gate rule. Old published versions are frozen and unaffected.
+  - The fact's label **is** rendered into the prompt (`packages/domain/src/knowledge/prompt.ts`, line 98), so this round leaves the `social_links` label unchanged. The review card's own field labels name Website and LinkedIn. No prompt byte changes and no gate is needed.
 - **Privacy.** These are the business's own public pages, not customer data. No new PDPA scope.
 
 ### 5.3 One list, three places
 
 - **Home** owns the list (5.1).
 - **Setup's live page** (`finish.tsx`) replaces its three hand-written next steps with the same `checklist()` steps from step 4 on, rendered from the same rules and words. The two can then never disagree. The WhatsApp line there stays as today (the "waiting for Meta" text) until WhatsApp joins the list.
-- **The sidebar** gets one small link above the navigation for owners and admins until the list is complete: "Getting started: 3 of 6" / "Bermula: 3 daripada 6". It opens Home and disappears when every step is done. It has no dismiss button. Market products hide theirs on completion, and one line costs little.
+- **The sidebar** gets one small link above the navigation for owners and admins until the list is complete: "Getting started: N of M" / "Bermula: N daripada M", with N and M from `checklist()` (four steps for staff, and for workspaces with no phone line on offer). It opens Home and disappears when every step is done. It has no dismiss button. Market products hide theirs on completion, and one line costs little.
 - **The agent page** keeps its status card and its setup link before the first publish. It gets no list of its own. When the agent is published but the list is not complete, the card's line already names the channels the agent answers on (pull request #82); it adds nothing about plan or number.
 
 ### 5.4 One read for the list
@@ -181,7 +181,7 @@ If the owner approves it later, the design should hold at least these:
 ## 7. Decisions (my recommendations, accepted under the owner's delegation of 2026-11-21)
 
 - F1. Approach A: extend the Home checklist.
-- F2. Add step 6, "Forward your number and take a first call", done on the first answered real call, read by `firstRun` so it stays done. No self-mark.
+- F2. Add step 6, "Take your first real call", with the forwarding steps under it, done on the first answered real call, read by `firstRun` so it stays done. No self-mark.
 - F3. Home stays on the list until step 6 is done, where it applies. "Needs you" shows under the list when it has rows.
 - F4. Setup's live page renders the same steps as Home from step 4 on.
 - F5. A sidebar progress link for owners and admins until the list is complete. No dismiss. One new read, `firstRun`, serves Home, the sidebar and the live page.
@@ -218,7 +218,7 @@ If the owner approves it later, the design should hold at least these:
   - the sidebar link;
   - the live page after Publish.
 - API tests for `firstRun`: tenant isolation, staff refused, the earliest answered call returned, refused and abandoned calls ignored.
-- No migration. No paid model gate, unless the `social_links` label change alters prompt bytes (5.2a); then both gates run once, with the owner's go.
+- No migration and no paid model gate: no prompt, pack or tool list changes (the `social_links` label stays as it is, 5.2a).
 
 ## 10. Left to the builder
 
