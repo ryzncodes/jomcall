@@ -15,4 +15,4 @@ export const OPERATOR = {
 export const PRIVACY_CONTACT_EMAIL = "privacy@jomcall.com";
 
 // Effective date of the privacy notice and terms. The same words in BM and English.
-export const LEGAL_EFFECTIVE_DATE = "14 November 2026";
+export const LEGAL_EFFECTIVE_DATE = "20 November 2026";

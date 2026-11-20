@@ -25,7 +25,11 @@ import {
   LEGAL_EFFECTIVE_DATE,
 } from "@/lib/operator";
 import { HOSTED } from "@/lib/hosted";
-import { WHATSAPP_WAITING_FOR_META, whatsappWaiting } from "@/lib/launch";
+import {
+  WHATSAPP_WAITING_FOR_META,
+  whatsappWaiting,
+  launchCopy,
+} from "@/lib/launch";
 import { legalCopy } from "@/messages/legal";
 
 // Fills operator facts into legal text. Facts live only in lib/operator.ts.
@@ -76,7 +80,8 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
         <Brand />
         <nav aria-label={p.docs}>
           <a href={href("/pricing")}>{p.pricing}</a>
-          <a href={href("/docs")}>{p.docs}</a>
+          {/* The guides describe the mock preview's sample screens. */}
+          {mode !== "hosted" && <a href={href("/docs")}>{p.docs}</a>}
           <a href={href("/login")}>{p.login}</a>
         </nav>
         <Controls />
@@ -86,16 +91,19 @@ export function PublicFrame({ children }: { children: React.ReactNode }) {
         <Brand />
         <nav aria-label={t.footerNote}>
           <a href={href("/pricing")}>{p.pricing}</a>
-          <a href={href("/docs")}>{p.docs}</a>
-          <a href={href("/self-host")}>{p.selfhost}</a>
-          <a href={href("/admin")}>{p.platform}</a>
+          {mode !== "hosted" && (
+            <>
+              <a href={href("/docs")}>{p.docs}</a>
+              <a href={href("/self-host")}>{p.selfhost}</a>
+              <a href={href("/admin")}>{p.platform}</a>
+            </>
+          )}
+          {mode === "hosted" && <a href={href("/login")}>{p.login}</a>}
         </nav>
         <OperatorDetails />
         <small>
           {mode === "hosted"
-            ? locale === "ms"
-              ? "Beta tertutup · talian telefon sedia · WhatsApp menunggu kelulusan Meta"
-              : "Closed beta · phone line ready · WhatsApp waiting for Meta's approval"
+            ? launchCopy.footer[locale === "ms" ? 1 : 0]
             : mode === "local"
               ? locale === "ms"
                 ? "Pembangunan setempat · tiada saluran disambungkan"
@@ -115,6 +123,7 @@ export function PublicPages({
     p = t.remaining,
     [minutes, setMinutes] = useState(300),
     [guide, setGuide] = useState<number | null>(null);
+  const li = locale === "ms" ? 1 : 0;
   const routes = [
     "/app/setup",
     "/app/phone-numbers",
@@ -144,7 +153,13 @@ export function PublicPages({
           </span>
           <h1>{doc ? doc.title : p[`${page}Title`]}</h1>
           <p>
-            {doc ? doc.intro : page === "docs" ? p.docsIntro : p.pricingIntro}
+            {doc
+              ? doc.intro
+              : page === "docs"
+                ? p.docsIntro
+                : HOSTED
+                  ? launchCopy.pricingIntro[li]
+                  : p.pricingIntro}
           </p>
         </div>
         {page === "pricing" ? (
@@ -200,7 +215,7 @@ export function PublicPages({
                     </li>
                   </ul>
                   <a className="button button-dark" href={href("/signup")}>
-                    {p.signup}
+                    {HOSTED ? launchCopy.planButton[li] : p.signup}
                     <ArrowUpRight size={18} />
                   </a>
                 </section>
@@ -235,7 +250,7 @@ export function PublicPages({
               <section className="pricing-story">
                 <p className="eyebrow">{p.pricing}</p>
                 <h2>{p.paygo}</h2>
-                <p>{p.paygoBody}</p>
+                <p>{HOSTED ? launchCopy.paygoBody[li] : p.paygoBody}</p>
                 <div className="pricing-rate">
                   <PhoneIncoming size={25} />
                   <strong>{money(publicPrices.voiceSenPerMinute)}</strong>
@@ -259,7 +274,11 @@ export function PublicPages({
                 </label>
                 <p className="plan-note">{p.planEstimateHint}</p>
                 <dl className="estimate-plans">
-                  {publicPlans.map((plan) => (
+                  {publicPlans
+                    // Pay as you go has no phone number, so on the hosted
+                    // site it cannot take the calls this estimate counts.
+                    .filter((plan) => !HOSTED || plan.phoneNumbers > 0)
+                    .map((plan) => (
                     <div key={plan.code}>
                       <dt>{p.planNames[plan.code]}</dt>
                       <dd>{money(monthlyEstimateSen(plan, minutes))}</dd>
@@ -267,7 +286,7 @@ export function PublicPages({
                   ))}
                 </dl>
                 <a className="text-link" href={href("/app/billing")}>
-                  {p.walletLink}
+                  {HOSTED ? launchCopy.walletLink[li] : p.walletLink}
                   <ArrowRight size={18} />
                 </a>
               </section>

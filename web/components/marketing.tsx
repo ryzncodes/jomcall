@@ -22,8 +22,21 @@ import {
 import { Brand, Controls, useExperience } from "./experience";
 import { CallDemo, Wave } from "./call-demo";
 import { MiniWorkspace } from "./workspace";
+import { launchCopy } from "@/lib/launch";
+import { publicPlans } from "@/lib/pricing";
+import { money } from "@/lib/api/client";
 export function Marketing() {
-  const { t, href, mode } = useExperience();
+  const { t, href, mode, locale } = useExperience();
+  // The hosted site sells the phone line: its answers are not the mock's.
+  const hosted = mode === "hosted",
+    li = locale === "ms" ? 1 : 0,
+    starter = publicPlans[0];
+  const faqAnswer = (i: number) =>
+    hosted && launchCopy.faqA[i]
+      ? launchCopy.faqA[i][li]
+          .replace("{fee}", money(starter.monthlyFeeSen))
+          .replace("{minutes}", String(starter.includedVoiceSeconds / 60))
+      : t.faqA[i];
   // The mock preview has no accounts: it opens the sample app instead.
   const real = mode !== "mock";
   const [menu, setMenu] = useState(false);
@@ -251,8 +264,8 @@ export function Marketing() {
               </div>
               <div>
                 <p>{t.productBody}</p>
-                <a className="text-link" href={href("/app/calls")}>
-                  {t.viewCallLog}
+                <a className="text-link" href={href(hosted ? "/pricing" : "/app/calls")}>
+                  {hosted ? launchCopy.seePricing[li] : t.viewCallLog}
                   <ArrowUpRight size={19} />
                 </a>
               </div>
@@ -299,7 +312,7 @@ export function Marketing() {
                   {q}
                   <Plus size={20} />
                 </summary>
-                <p>{t.faqA[i]}</p>
+                <p>{faqAnswer(i)}</p>
               </details>
             ))}
           </div>
@@ -330,7 +343,7 @@ export function Marketing() {
         </div>
         <div className="site-footer-links">
           <a href={href("/pricing")}>{t.remaining.pricing}</a>
-          <a href={href("/docs")}>{t.remaining.docs}</a>
+          {!hosted && <a href={href("/docs")}>{t.remaining.docs}</a>}
           <a href={href("/login")}>{t.remaining.login}</a>
         </div>
         <OperatorDetails />

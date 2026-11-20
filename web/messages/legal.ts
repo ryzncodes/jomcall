@@ -48,7 +48,7 @@ const en: LegalCopy = {
       {
         heading: "Where the service stands today",
         paragraphs: [
-          "JomCall is in an invitation-only preview. It does not yet answer real customer calls or WhatsApp messages for any business. This notice describes how we handle personal data now and how we will handle it once businesses connect their phone lines and WhatsApp accounts.",
+          "JomCall answers phone calls for the businesses that have connected a phone line. Answering WhatsApp messages is waiting for Meta's approval and is not open to businesses yet. This notice describes how we handle personal data for both.",
         ],
       },
       {
@@ -183,7 +183,7 @@ const en: LegalCopy = {
   terms: {
     title: "Terms of use",
     intro:
-      "The terms for using JomCall during its invitation-only preview. Short and plain on purpose.",
+      "The terms for using JomCall. Short and plain on purpose.",
     effective: "Effective {date}",
     sections: [
       {
@@ -193,9 +193,9 @@ const en: LegalCopy = {
         ],
       },
       {
-        heading: "Preview stage",
+        heading: "A new service",
         paragraphs: [
-          "JomCall is in an invitation-only preview. Features may change, pause or be removed, and data in the preview may be reset. We do not promise any level of uptime or availability during the preview. Do not rely on JomCall as your only way to receive important calls.",
+          "JomCall is a new service. Features may change, pause or be removed, and data may be lost. We do not promise any level of uptime or availability. Do not rely on JomCall as your only way to receive important calls.",
         ],
       },
       {
@@ -227,7 +227,7 @@ const en: LegalCopy = {
       {
         heading: "Fees",
         paragraphs: [
-          "Fees are the plans and rates shown on our pricing page at the time you use the service: a monthly plan fee, or no monthly fee on pay-as-you-go, plus usage such as voice minutes beyond a plan's allowance and WhatsApp conversations. Amounts are in Malaysian ringgit (MYR), before SST, and are taken from a prepaid wallet; no card is charged automatically. Message fees that Meta charges for your WhatsApp number are billed to you by Meta, not by us. Prices during the preview may change; we will give notice in the app before a change applies to you.",
+          "Fees are the plans and rates shown on our pricing page at the time you use the service: a monthly plan fee, or no monthly fee on pay-as-you-go, plus usage such as voice minutes beyond a plan's allowance and WhatsApp conversations. Amounts are in Malaysian ringgit (MYR), before SST, and are taken from a prepaid wallet; no card is charged automatically. Message fees that Meta charges for your WhatsApp number are billed to you by Meta, not by us. Prices may change; we will give notice in the app before a change applies to you.",
         ],
       },
       {
@@ -239,13 +239,13 @@ const en: LegalCopy = {
       {
         heading: "Limitation of liability",
         paragraphs: [
-          "The preview is provided “as is”. To the extent Malaysian law allows, we are not liable for indirect or consequential losses, such as lost bookings, lost profit or missed calls, and our total liability to you is limited to the fees you paid us in the three months before the claim. Nothing in these terms limits liability that cannot be limited by law.",
+          "The service is provided “as is”. To the extent Malaysian law allows, we are not liable for indirect or consequential losses, such as lost bookings, lost profit or missed calls, and our total liability to you is limited to the fees you paid us in the three months before the claim. Nothing in these terms limits liability that cannot be limited by law.",
         ],
       },
       {
         heading: "Ending use",
         paragraphs: [
-          "You can stop using JomCall and ask us to close your account at any time. We may suspend or close an account that breaks these terms or puts others at risk, and we may end the preview with reasonable notice. Unused prepaid wallet balance will be handled as set out in the app's billing terms when payments go live.",
+          "You can stop using JomCall and ask us to close your account at any time. We may suspend or close an account that breaks these terms or puts others at risk, and we may end the service with reasonable notice. Unused prepaid wallet balance will be handled as set out in the app's billing terms when payments go live.",
         ],
       },
       {
@@ -280,7 +280,7 @@ const ms: LegalCopy = {
       {
         heading: "Status perkhidmatan sekarang",
         paragraphs: [
-          "JomCall kini dalam pratonton dengan jemputan sahaja. Ia belum menjawab panggilan atau mesej WhatsApp pelanggan sebenar bagi mana-mana perniagaan. Notis ini menerangkan cara kami mengendalikan data peribadi sekarang, dan cara kami akan mengendalikannya apabila perniagaan menyambungkan talian telefon dan akaun WhatsApp mereka.",
+          "JomCall menjawab panggilan telefon bagi perniagaan yang telah menyambungkan talian telefon. Menjawab mesej WhatsApp masih menunggu kelulusan Meta dan belum dibuka kepada perniagaan. Notis ini menerangkan cara kami mengendalikan data peribadi bagi kedua-duanya.",
         ],
       },
       {
@@ -417,7 +417,7 @@ const ms: LegalCopy = {
   terms: {
     title: "Terma penggunaan",
     intro:
-      "Terma untuk menggunakan JomCall semasa pratonton dengan jemputan sahaja. Sengaja ringkas dan mudah.",
+      "Terma untuk menggunakan JomCall. Sengaja ringkas dan mudah.",
     effective: "Berkuat kuasa {date}",
     sections: [
       {
@@ -427,9 +427,9 @@ const ms: LegalCopy = {
         ],
       },
       {
-        heading: "Peringkat pratonton",
+        heading: "Perkhidmatan baharu",
         paragraphs: [
-          "JomCall kini dalam pratonton dengan jemputan sahaja. Ciri boleh berubah, dihentikan sementara atau dibuang, dan data dalam pratonton mungkin ditetapkan semula. Kami tidak menjanjikan apa-apa tahap masa operasi atau ketersediaan semasa pratonton. Jangan bergantung pada JomCall sebagai satu-satunya cara untuk menerima panggilan penting.",
+          "JomCall ialah perkhidmatan baharu. Ciri boleh berubah, dihentikan sementara atau dibuang, dan data mungkin hilang. Kami tidak menjanjikan apa-apa tahap masa operasi atau ketersediaan. Jangan bergantung pada JomCall sebagai satu-satunya cara untuk menerima panggilan penting.",
         ],
       },
       {
@@ -461,7 +461,7 @@ const ms: LegalCopy = {
       {
         heading: "Bayaran",
         paragraphs: [
-          "Bayaran ialah pelan dan kadar yang ditunjukkan di halaman harga kami semasa anda menggunakan perkhidmatan: yuran pelan bulanan, atau tiada yuran bulanan bagi bayar ikut guna, serta penggunaan seperti minit suara melebihi peruntukan pelan dan perbualan WhatsApp. Amaun dalam ringgit Malaysia (MYR), sebelum SST, dan diambil daripada dompet prabayar; tiada kad dicaj secara automatik. Caj mesej yang dikenakan oleh Meta bagi nombor WhatsApp anda dibilkan terus kepada anda oleh Meta, bukan oleh kami. Harga semasa pratonton boleh berubah; kami akan memberi notis dalam aplikasi sebelum sesuatu perubahan terpakai kepada anda.",
+          "Bayaran ialah pelan dan kadar yang ditunjukkan di halaman harga kami semasa anda menggunakan perkhidmatan: yuran pelan bulanan, atau tiada yuran bulanan bagi bayar ikut guna, serta penggunaan seperti minit suara melebihi peruntukan pelan dan perbualan WhatsApp. Amaun dalam ringgit Malaysia (MYR), sebelum SST, dan diambil daripada dompet prabayar; tiada kad dicaj secara automatik. Caj mesej yang dikenakan oleh Meta bagi nombor WhatsApp anda dibilkan terus kepada anda oleh Meta, bukan oleh kami. Harga boleh berubah; kami akan memberi notis dalam aplikasi sebelum sesuatu perubahan terpakai kepada anda.",
         ],
       },
       {
@@ -473,13 +473,13 @@ const ms: LegalCopy = {
       {
         heading: "Had liabiliti",
         paragraphs: [
-          "Pratonton disediakan “seadanya”. Setakat yang dibenarkan oleh undang-undang Malaysia, kami tidak bertanggungjawab atas kerugian tidak langsung atau berbangkit, seperti tempahan yang terlepas, kehilangan keuntungan atau panggilan yang tidak dijawab, dan jumlah liabiliti kami kepada anda terhad kepada bayaran yang anda bayar kepada kami dalam tiga bulan sebelum tuntutan. Tiada apa-apa dalam terma ini mengehadkan liabiliti yang tidak boleh dihadkan oleh undang-undang.",
+          "Perkhidmatan disediakan “seadanya”. Setakat yang dibenarkan oleh undang-undang Malaysia, kami tidak bertanggungjawab atas kerugian tidak langsung atau berbangkit, seperti tempahan yang terlepas, kehilangan keuntungan atau panggilan yang tidak dijawab, dan jumlah liabiliti kami kepada anda terhad kepada bayaran yang anda bayar kepada kami dalam tiga bulan sebelum tuntutan. Tiada apa-apa dalam terma ini mengehadkan liabiliti yang tidak boleh dihadkan oleh undang-undang.",
         ],
       },
       {
         heading: "Menamatkan penggunaan",
         paragraphs: [
-          "Anda boleh berhenti menggunakan JomCall dan meminta kami menutup akaun anda pada bila-bila masa. Kami boleh menggantung atau menutup akaun yang melanggar terma ini atau membahayakan orang lain, dan kami boleh menamatkan pratonton dengan notis yang munasabah. Baki dompet prabayar yang tidak digunakan akan dikendalikan mengikut terma bil dalam aplikasi apabila pembayaran dihidupkan.",
+          "Anda boleh berhenti menggunakan JomCall dan meminta kami menutup akaun anda pada bila-bila masa. Kami boleh menggantung atau menutup akaun yang melanggar terma ini atau membahayakan orang lain, dan kami boleh menamatkan perkhidmatan dengan notis yang munasabah. Baki dompet prabayar yang tidak digunakan akan dikendalikan mengikut terma bil dalam aplikasi apabila pembayaran dihidupkan.",
         ],
       },
       {

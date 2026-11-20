@@ -1,5 +1,6 @@
 "use client";
 import { HOSTED } from "@/lib/hosted";
+import { launchCopy } from "@/lib/launch";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { HttpCoreClient } from "@/lib/core/client";
@@ -75,10 +76,10 @@ export function LocalAuth({
           <small>
             {w(
               HOSTED
-                ? "Closed beta"
+                ? launchCopy.badge[0]
                 : "Local development · email stays on this computer",
               HOSTED
-                ? "Beta tertutup"
+                ? launchCopy.badge[1]
                 : "Pembangunan setempat · e-mel kekal di komputer ini",
             )}
           </small>
