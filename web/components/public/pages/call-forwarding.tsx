@@ -3,7 +3,7 @@ import type { PublicLocale } from "@/lib/site";
 import { CodesCard } from "../codes-card";
 import { ArticlePage, Points, Prose } from "./article";
 
-// The call forwarding guide: the app's three code pairs as a code card, which
+// The call forwarding guide: the app's four code pairs as a code card, which
 // to pick, the steps on a mobile line, an office line, and the check call.
 export function CallForwardingPage({ locale }: { locale: PublicLocale }) {
   const t = forwarding[locale];
