@@ -144,9 +144,9 @@ test("hosted users see no local wording and no simulator hint", () => {
   assert.match(code.slice(hint - 400, hint), /!HOSTED &&/);
 });
 
-test("the chrome shows Inbox only when WhatsApp is on, and the local app renders it", () => {
+test("the chrome shows Inbox only once WhatsApp is connected here, and the local app renders it", () => {
   const chrome = readFileSync("web/components/core/chrome.tsx", "utf8");
-  assert.match(chrome, /channels\?\.whatsapp \? \[\] : \["inbox"\]/);
+  assert.match(chrome, /channels\?\.live\?\.whatsapp \? \[\] : \["inbox"\]/);
   const app = readFileSync("web/components/core/local-app.tsx", "utf8");
   const at = app.indexOf('screen === "inbox"');
   assert.ok(at >= 0, "no inbox screen branch");

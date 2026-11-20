@@ -189,17 +189,11 @@ function AgentTestManager({
     <>
       {heading && (
         <Heading
-          eyebrow={w(
-            "Agent studio · text and voice test",
-            "Studio ejen · ujian teks dan suara",
-          )}
-          title={w(
-            "A good conversation starts here.",
-            "Perbualan yang baik bermula di sini.",
-          )}
+          eyebrow={w("Text and voice test", "Ujian teks dan suara")}
+          title={w("Test your agent", "Uji ejen anda")}
           description={w(
-            "Ask a question. Follow the sources. Review what your agent would do before it reaches a customer.",
-            "Tanya soalan. Semak sumber. Lihat tindakan ejen sebelum berhubung dengan pelanggan.",
+            "Ask what a customer would ask. See each answer, where it came from and what your agent would do, before a customer does.",
+            "Tanya soalan seperti pelanggan. Lihat setiap jawapan, dari mana ia datang dan apa yang ejen akan buat, sebelum pelanggan melihatnya.",
           )}
         >
           <a className="button secondary-button" href={href("/app/agent")}>
@@ -220,7 +214,7 @@ function AgentTestManager({
                 "Ujian suara tiada dalam pratonton ini",
               )
             : readiness.data?.voice.configured
-              ? w("Voice test ready", "Ujian suara sedia")
+              ? w("Voice test available", "Ujian suara tersedia")
               : w("Voice test not set up", "Ujian suara belum disediakan")}
         </small>
         <span className="core-model-state">

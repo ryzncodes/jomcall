@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-for (const page of ["docs", "admin", "self-host"]) {
+for (const page of ["docs", "admin", "self-host", "app/outbound", "app/integrations"]) {
   test(`/${page} is not found on the hosted site`, () => {
     const src = readFileSync(`web/app/${page}/page.tsx`, "utf8");
     assert.match(src, /import \{ notFound \} from "next\/navigation";/);
