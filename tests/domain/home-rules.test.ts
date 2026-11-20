@@ -64,7 +64,9 @@ test("checklist: test done", () => {
 test("checklist: plan done", () => {
   for (const s of ["free", "charged"])
     assert.equal(step(fullOwner({ plan: plan(s) }), "plan")!.state, "done");
-  assert.equal(step(fullOwner({ plan: plan("none", "payg") }), "plan")!.state, "done");
+  // A new workspace starts on payg; the plan card reads that as "choose".
+  assert.equal(step(fullOwner({ plan: plan("none", "payg") }), "plan")!.state, "todo");
+  assert.equal(step(fullOwner({ plan: plan("downgraded") }), "plan")!.state, "todo");
   for (const s of ["none", "unpaid"])
     assert.equal(step(fullOwner({ plan: plan(s) }), "plan")!.state, "todo");
 });

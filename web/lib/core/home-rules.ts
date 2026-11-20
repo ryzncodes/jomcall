@@ -54,10 +54,12 @@ export function checklist(f: HomeFacts): Step[] {
   ];
   if (!f.manager) return steps;
   if (f.plan) {
+    // A paid plan with a started period. Pay as you go is where every
+    // workspace starts, and the plan card reads it as "choose a plan"; an
+    // unpaid fee is its own row in the needs list once live.
     const ok =
-      f.plan.plan === "payg" ||
-      f.plan.periodState === "free" ||
-      f.plan.periodState === "charged";
+      f.plan.plan !== "payg" &&
+      (f.plan.periodState === "free" || f.plan.periodState === "charged");
     steps.push({ id: "plan", state: done(ok), href: "/app/billing" });
   }
   if (f.phones && phoneOffered(f)) {
