@@ -40,3 +40,5 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - Nav data (header menus, footer groups, language link) lives in `web/components/public/nav.ts`, a plain module, so tests check it without loading client components.
 - `fillOperator` is written again in `web/components/public/operator.tsx`; the copy in `public-pages.tsx` is a client module and stays until that file is removed.
 - The mobile menu uses `@radix-ui/react-dialog` (already a dependency) for the focus trap, Escape and focus return; its portal mounts inside `#public-root` so the scoped tokens apply.
+
+- Task 3: claims patterns skip a match when a negation word (not, no, never, tidak, belum ...) sits in the 20 characters before it in the same sentence; `free trial` is `strict` (no negation exemption, allowed only by key `faq.trial` or `pricing.trial`). Spec lists no BM patterns; BM equivalents were added where natural.

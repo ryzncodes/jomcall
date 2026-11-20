@@ -1,7 +1,7 @@
 // Labels shared by every public page: header, menus, footer and the call to
-// action. English and Bahasa Melayu have the same shape. (The public content
-// model, with its types and checks, reshapes this file later.)
+// action. English and Bahasa Melayu have the same shape.
 import type { PublicPageId } from "../../lib/site.ts";
+import type { Bilingual } from "./types.ts";
 
 const en = {
   skip: "Skip to content",
@@ -16,8 +16,6 @@ const en = {
   openWorkspaceShort: "Workspace",
   darkTheme: "Dark theme",
   language: "Bahasa Melayu",
-  languageShort: "BM",
-  languageSwitch: "Baca halaman ini dalam Bahasa Melayu",
   groups: {
     product: "Product",
     industries: "Industries",
@@ -70,8 +68,6 @@ const ms: typeof en = {
   openWorkspaceShort: "Ruang kerja",
   darkTheme: "Tema gelap",
   language: "English",
-  languageShort: "EN",
-  languageSwitch: "Read this page in English",
   groups: {
     product: "Produk",
     industries: "Industri",
@@ -111,5 +107,5 @@ const ms: typeof en = {
   preview: "Binaan pratonton. Ini bukan laman JomCall yang sebenar.",
 };
 
-export const common = { en, ms };
 export type CommonLabels = typeof en;
+export const common: Bilingual<CommonLabels> = { en, ms };
