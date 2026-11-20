@@ -392,6 +392,33 @@ Staging, 2026-11-19 (Twilio, owner's choice that day): steps 1, 2, 3 and 5 are d
 - Port 5060 was probed by scanners within a day. Put the cloud firewall in place before leaving the line on. The rules, with the supplier's address ranges, are in `infra/hosted/firewall.md`.
 - The agent logs `PHONE_SIP_CONFIG_MISSING reason=NO_SIP_TRUNK` or `reason=NO_DISPATCH_RULE` at start and every five minutes while LiveKit has no trunk or rule (after a Valkey restart), and `PHONE_SIP_CONFIG_OK` once when they are back. Run the command above when it appears.
 
+### A phone number for a customer (operator, costs money)
+
+`scripts/hosted/phone-provision.ts` finds, buys and wires one Twilio number. It is for an operator only; no customer screen calls it. Buying bills the Twilio account every month until the number is released, and releasing gives the number up for good, so each `--buy` and `--release` needs the owner's yes.
+
+One-time setup, **[OWNER]**:
+
+1. In Twilio, create a Standard API key (Account, API keys and tokens). Note the key SID and its secret.
+2. Find the SIDs of the approved bundle (`BU...`), its address (`AD...`), the trunk `jomcall-staging` (`TK...`) and the account (`AC...`).
+3. On the server, write `/etc/jomcall/twilio.env` (root, mode 0600) with `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_API_KEY_SECRET`, `TWILIO_BUNDLE_SID`, `TWILIO_ADDRESS_SID`, `TWILIO_TRUNK_SID`, and optionally `TWILIO_MAX_NUMBERS` (default 5: the command refuses to buy past it). No service reads this file; it is loaded only for a run of the command.
+
+Each run, from `/opt/jomcall/infra/hosted`, with the values taken from the file and never typed on the command line:
+
+```bash
+set -a; . /etc/jomcall/twilio.env; set +a
+T="-e TWILIO_ACCOUNT_SID -e TWILIO_API_KEY_SID -e TWILIO_API_KEY_SECRET -e TWILIO_BUNDLE_SID -e TWILIO_ADDRESS_SID -e TWILIO_TRUNK_SID -e TWILIO_MAX_NUMBERS"
+RUN="docker compose exec -T $T -w /app agent node --import tsx scripts/hosted/phone-provision.ts"
+```
+
+- `$RUN --search` lists up to ten Malaysian local numbers Twilio offers (`--contains +603` narrows it). Costs nothing.
+- `$RUN --list` shows the numbers the account holds and the limit. Costs nothing.
+- `$RUN --buy <number> --label "<customer>" --allowed <the supplier ranges from firewall.md, comma separated>` buys it on the trunk and adds it to LiveKit's inbound trunk. Safe to repeat for the same number: it is not bought twice.
+- `$RUN --release <number>` releases it at Twilio.
+
+Then add the number on the customer's Phone numbers screen (the command does not write to JomCall's database), and switch it off there after a release.
+
+Not known: whether Twilio allows numbers bought under the operator's own bundle to serve other businesses. Twilio's pages define the bundle's end user as the one who answers the calls and do not answer this for a platform; ask Twilio before selling numbers widely. A number's prefix must also match the locality of the bundle's address, which Twilio checks at purchase.
+
 [CHECK] the first test call checklist in the owner-steps document: disclosure first, read-back before a booking, transfer and ring-out, the call log, a second caller hearing the busy line.
 
 [ROLLBACK] set `JOMCALL_TELEPHONY_PROVIDER=disabled` in Vercel and `agent.env`, `docker compose up -d agent`; point the provider's number back at the owner's phone.
