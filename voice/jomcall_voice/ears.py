@@ -1,6 +1,7 @@
 """Hearing: LiveKit's Deepgram plugin, configured to the measured speech rules.
 
-nova-3, language "multi", 300 ms endpointing, interim results on. The plugin
+nova-3, language "multi", 300 ms endpointing, interim results on, and a fixed
+list of Malaysian place names as key terms. The plugin
 expresses all of that, so no custom adapter is needed. Interim text is never
 logged or passed on (only the fact that words were heard); only the endpointed, final transcript leaves this module.
 """
@@ -25,6 +26,7 @@ def build_stt() -> deepgram.STT:
         interim_results=True,
         endpointing_ms=config.STT_ENDPOINTING_MS,
         sample_rate=config.STT_SAMPLE_RATE,
+        keyterm=list(config.STT_KEYTERMS),
         api_key=config.env("DEEPGRAM_API_KEY"),
     )
 

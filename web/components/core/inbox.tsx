@@ -1,5 +1,6 @@
 "use client";
 import { HOSTED } from "@/lib/hosted";
+import { waPieces } from "@/lib/core/wa-format";
 // The shared WhatsApp inbox for the local and hosted app. Every record comes
 // from the inbox commands; on an error the screen says so and offers a retry,
 // never sample data. The send rules live on the server: the screen shows the
@@ -971,7 +972,11 @@ function Message({
           </p>
         )}
         {(m.body || (!m.media && m.kind !== "unsupported")) && (
-          <p dir="auto">{m.body}</p>
+          <p dir="auto">
+            {waPieces(m.body ?? "").map((piece, i) =>
+              piece.bold ? <strong key={i}>{piece.text}</strong> : piece.text,
+            )}
+          </p>
         )}
         {mediaHelp && (
           <span className="wa-status">

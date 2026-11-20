@@ -36,6 +36,22 @@ STT_MODEL = "nova-3"
 STT_LANGUAGE = "multi"
 STT_ENDPOINTING_MS = 300
 STT_SAMPLE_RATE = 16_000
+# Malaysian place names the recogniser otherwise hears as English words
+# ("Penang" came back as "Phoenix" on the first real call). Sent as Deepgram
+# key terms: nova-3 only, mono and multilingual, 500 tokens per request at
+# most, and Deepgram advises 20 to 50 terms. Proper nouns keep their capitals.
+STT_KEYTERMS = (
+    # States and federal territories
+    "Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang",
+    "Penang", "Pulau Pinang", "Perak", "Perlis", "Sabah", "Sarawak",
+    "Selangor", "Terengganu", "Kuala Lumpur", "Putrajaya", "Labuan",
+    # Cities and towns callers name most
+    "Johor Bahru", "Ipoh", "Shah Alam", "Petaling Jaya", "Subang Jaya",
+    "Klang", "Puchong", "Kajang", "Ampang", "Cheras", "Cyberjaya", "Rawang",
+    "Seremban", "Kuantan", "Kota Bharu", "Kuala Terengganu", "Alor Setar",
+    "George Town", "Butterworth", "Kuching", "Kota Kinabalu", "Miri",
+    "Langkawi", "Bangsar", "Damansara",
+)
 
 # Deepgram sometimes sends final transcripts and no end-of-speech (seen once: 15 s).
 # If words are pending and nothing was heard for this long, the utterance has ended.

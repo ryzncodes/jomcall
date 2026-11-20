@@ -41,7 +41,9 @@ type Env = Record<string, string | undefined>;
 // because the spoken brain and the speech services are the same ones.
 export function telephonyConfig(
   env: Env = process.env,
-): { config: TelephonyConfig; reason: null } | { config: null; reason: string } {
+):
+  | { config: TelephonyConfig; reason: null }
+  | { config: null; reason: string } {
   const provider = env.JOMCALL_TELEPHONY_PROVIDER ?? "disabled";
   if (provider !== "disabled" && provider !== "livekit_sip")
     throw Error("TELEPHONY_PROVIDER_INVALID");
@@ -56,9 +58,15 @@ export function telephonyConfig(
     return { config: null, reason: "Phone calls need " + missing.join(", ") };
   const transferUri = env.JOMCALL_SIP_TRANSFER_URI || "tel:{e164}";
   if (!transferUri.includes("{e164}")) throw Error("TRANSFER_URI_INVALID");
-  const bounded = (raw: string | undefined, fallback: number, lo: number, hi: number) => {
+  const bounded = (
+    raw: string | undefined,
+    fallback: number,
+    lo: number,
+    hi: number,
+  ) => {
     const n = raw === undefined || raw === "" ? fallback : Number(raw);
-    if (!Number.isInteger(n) || n < lo || n > hi) throw Error("TELEPHONY_LIMIT_INVALID");
+    if (!Number.isInteger(n) || n < lo || n > hi)
+      throw Error("TELEPHONY_LIMIT_INVALID");
     return n;
   };
   return {
@@ -114,11 +122,77 @@ export function liveKitTelephony(config: TelephonyConfig): Telephony {
         return { ok: true, reason: null };
       } catch (error) {
         const e = error as { metadata?: Record<string, string>; code?: string };
-        const reason = e.metadata?.sip_transfer_reason ?? e.code ?? "TRANSFER_FAILED";
-        return { ok: false, reason: /^[A-Za-z_]{1,40}$/.test(reason) ? reason : "TRANSFER_FAILED" };
+        const reason =
+          e.metadata?.sip_transfer_reason ?? e.code ?? "TRANSFER_FAILED";
+        return {
+          ok: false,
+          reason: /^[A-Za-z_]{1,40}$/.test(reason) ? reason : "TRANSFER_FAILED",
+        };
       }
     },
   };
+}
+
+// The SIP service rejects every call until LiveKit holds an inbound trunk and
+// a dispatch rule. On a self-hosted server they live in a message bus that
+// keeps nothing on disk, so a restart of it silently loses both. This reads
+// how many exist, for a warning in the agent's log; it changes nothing.
+export type SipConfigCount = { trunks: number; rules: number };
+export async function readSipConfig(
+  config: TelephonyConfig,
+): Promise<SipConfigCount> {
+  const sip = new SipClient(
+    config.url.replace(/^ws/, "http"),
+    config.apiKey,
+    config.apiSecret,
+  );
+  const [trunks, rules] = await Promise.all([
+    sip.listSipInboundTrunk(),
+    sip.listSipDispatchRule(),
+  ]);
+  return { trunks: trunks.length, rules: rules.length };
+}
+export function sipConfigProblem(
+  count: SipConfigCount,
+): "NO_SIP_TRUNK" | "NO_DISPATCH_RULE" | null {
+  if (count.trunks < 1) return "NO_SIP_TRUNK";
+  if (count.rules < 1) return "NO_DISPATCH_RULE";
+  return null;
+}
+// One check. Logs codes only: PHONE_SIP_CONFIG_MISSING while something is
+// missing (every check, so it cannot be overlooked), PHONE_SIP_CONFIG_OK once
+// when it is back, PHONE_SIP_CONFIG_CHECK_FAILED when LiveKit did not answer.
+// Never throws: a warning must not take the agent process down.
+export async function checkSipConfig(
+  read: () => Promise<SipConfigCount>,
+  log: (line: string) => void,
+  state: { problem: string | null },
+) {
+  let problem: string | null;
+  try {
+    problem = sipConfigProblem(await read());
+  } catch {
+    log("PHONE_SIP_CONFIG_CHECK_FAILED");
+    return;
+  }
+  if (problem) log(`PHONE_SIP_CONFIG_MISSING reason=${problem}`);
+  else if (state.problem) log("PHONE_SIP_CONFIG_OK");
+  state.problem = problem;
+}
+// Checks now and then every five minutes. Returns a function that stops it.
+export function watchSipConfig(
+  read: () => Promise<SipConfigCount>,
+  log: (line: string) => void = console.warn,
+  everyMs = 300_000,
+) {
+  const state = { problem: null as string | null };
+  void checkSipConfig(read, log, state);
+  const timer = setInterval(
+    () => void checkSipConfig(read, log, state),
+    everyMs,
+  );
+  timer.unref?.();
+  return () => clearInterval(timer);
 }
 
 // In-memory telephony for tests and the local simulator. Participants are
@@ -133,13 +207,19 @@ export class FakeTelephony implements Telephony {
     attributes: Record<string, string>,
     kind: SipParticipant["kind"] = "sip",
   ) {
-    this.participants.set(room + "\u0000" + identity, { kind, identity, attributes });
+    this.participants.set(room + "\u0000" + identity, {
+      kind,
+      identity,
+      attributes,
+    });
   }
   async participant(room: string, identity: string) {
     return this.participants.get(room + "\u0000" + identity) ?? null;
   }
   async transfer(room: string, identity: string, to: string) {
     this.transfers.push({ room, identity, to });
-    return this.outcomes.shift() ?? { ok: false, reason: "STR_RINGING_TIMEOUT" };
+    return (
+      this.outcomes.shift() ?? { ok: false, reason: "STR_RINGING_TIMEOUT" }
+    );
   }
 }
