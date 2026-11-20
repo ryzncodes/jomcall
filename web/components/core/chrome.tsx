@@ -171,6 +171,8 @@ export function WorkspaceChrome({
           // WhatsApp switch.
           ...(channels?.whatsapp ? [] : ["inbox"]),
           ...(channels?.integrations ? [] : ["integrations"]),
+          // Follow-up (outbound) is not built for real workspaces yet.
+          ...(hosted ? ["outbound"] : []),
           // Opening hours live on the agent page here; mock keeps its screen.
           "hours",
           ...(workspace.complete && active !== "setup" ? ["setup"] : []),
@@ -200,13 +202,13 @@ export function WorkspaceChrome({
           <div className="sidebar-disclosure">
             <ShieldCheck size={20} />
             <p>
-              {mode === "local"
+              {mode === "local" && !hosted
                 ? locale === "ms"
                   ? "Pengenalan AI wajib sebelum diterbitkan"
                   : "AI introduction required before publishing"
                 : p.disclosureAlways}
               <strong>
-                {mode === "local"
+                {mode === "local" && !hosted
                   ? locale === "ms"
                     ? "Panggilan belum disambungkan"
                     : "Calls not connected"

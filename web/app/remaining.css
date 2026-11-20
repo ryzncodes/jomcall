@@ -53,6 +53,11 @@
   line-height: 1.5;
   color: var(--ink);
 }
+/* A status chip above a panel heading needs room before the heading. */
+.remaining-chip + h2,
+.remaining-chip + h3 {
+  margin-top: 14px;
+}
 .remaining-chip.warn {
   border-color: var(--secondary);
 }

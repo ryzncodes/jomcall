@@ -1087,6 +1087,48 @@
   flex-shrink: 0;
   accent-color: #23392f;
 }
+/* Drawn by hand so the circle and box look the same on every phone and in
+   both themes; the browser's own control turns grey in dark mode. */
+.setup-option input[type="radio"],
+.setup-option input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  border: 1.5px solid var(--secondary);
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.setup-option input[type="checkbox"] {
+  border-radius: 5px;
+}
+.setup-option input[type="radio"]::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: scale(0);
+  transition: transform 0.12s ease;
+}
+.setup-option input[type="checkbox"]::before {
+  content: "";
+  width: 11px;
+  height: 11px;
+  background: currentColor;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+  transform: scale(0);
+  transition: transform 0.12s ease;
+}
+.setup-option input:checked {
+  border-color: currentColor;
+}
+.setup-option input:checked::before {
+  transform: scale(1);
+}
 .setup-option span {
   display: grid;
   gap: 2px;
@@ -2281,7 +2323,9 @@
   gap: 10px;
   margin-top: 8px;
   padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
-  background: var(--paper);
+  /* Same colour as the page behind it, so the bar reads as part of the page
+     and not as a narrower band. */
+  background: var(--surface);
   border-top: 1px solid var(--line);
 }
 .agent-bar .button {

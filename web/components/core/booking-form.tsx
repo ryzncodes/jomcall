@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { useState } from "react";
 import type {
   Resource,
@@ -138,22 +139,17 @@ export function BookingForm({
             </Field>
             <Notice error={contacts.error} />
             <Field label={w("Contact", "Kenalan")}>
-              <select
+              <Picker
                 required
                 value={contactId}
-                onChange={(e) => setContact(e.target.value)}
-              >
-                <option value="">
-                  {w("Choose a contact", "Pilih kenalan")}
-                </option>
-                {contacts.data?.items
-                  .filter((c) => !c.deletion_pending)
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-              </select>
+                onChange={setContact}
+                options={[
+                  { value: "", label: w("Choose a contact", "Pilih kenalan") },
+                  ...(contacts.data?.items
+                    .filter((c) => !c.deletion_pending)
+                    .map((c) => ({ value: c.id, label: c.name })) ?? []),
+                ]}
+              />
             </Field>
             <Field label={w("Appointment title", "Tajuk janji temu")}>
               <input
@@ -164,26 +160,24 @@ export function BookingForm({
               />
             </Field>
             <Field label={w("Resource", "Sumber")}>
-              <select
+              <Picker
                 required
                 value={resourceId}
-                onChange={(e) => {
-                  setResource(e.target.value);
+                onChange={(v) => {
+                  setResource(v);
                   setSlot("");
                   setCursor(undefined);
                 }}
-              >
-                <option value="">
-                  {w("Choose a resource", "Pilih sumber")}
-                </option>
-                {resources
-                  .filter((r) => r.active)
-                  .map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name} · {r.duration_minutes} min
-                    </option>
-                  ))}
-              </select>
+                options={[
+                  { value: "", label: w("Choose a resource", "Pilih sumber") },
+                  ...resources
+                    .filter((r) => r.active)
+                    .map((r) => ({
+                      value: r.id,
+                      label: `${r.name} · ${r.duration_minutes} min`,
+                    })),
+                ]}
+              />
             </Field>
             <Field label={w("Date · Kuala Lumpur", "Tarikh · Kuala Lumpur")}>
               <input

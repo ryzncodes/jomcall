@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { useState } from "react";
 import { readKnowledgeText } from "@/lib/core/text-file";
 import type {
@@ -135,21 +136,15 @@ function KnowledgeList() {
               : w("Add knowledge", "Tambah pengetahuan")}
           </h3>
           <Field label={w("Type", "Jenis")}>
-            <select
-              value={item.kind}
-              onChange={(e) =>
-                setItem((v) => ({
-                  ...v,
-                  kind: e.target.value as Knowledge["kind"],
-                }))
-              }
-            >
-              <option value="faq">FAQ</option>
-              <option value="services">{w("Services", "Perkhidmatan")}</option>
-              <option value="text-document">
-                {w("Text document", "Dokumen teks")}
-              </option>
-            </select>
+            <Picker<NonNullable<Knowledge["kind"]>>
+              value={item.kind ?? "faq"}
+              onChange={(kind) => setItem((v) => ({ ...v, kind }))}
+              options={[
+                { value: "faq", label: "FAQ" },
+                { value: "services", label: w("Services", "Perkhidmatan") },
+                { value: "text-document", label: w("Text document", "Dokumen teks") },
+              ]}
+            />
           </Field>
           {item.kind === "text-document" && (
             <Field

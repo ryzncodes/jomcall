@@ -1,4 +1,5 @@
 "use client";
+import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -261,21 +262,17 @@ function LocalWorkspace({ screen }: { screen: string }) {
               >
                 {/* The English label is stored (or, for "Something else", the
                     owner's own words), so setup can preselect the type. */}
-                <select
+                <Picker
                   name="businessType"
                   required
                   value={typeId}
-                  onChange={(e) => setTypeId(e.target.value)}
-                >
-                  <option value="" disabled>
-                    {w("Choose one", "Pilih satu")}
-                  </option>
-                  {businessTypes.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {w(t.en, t.ms)}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setTypeId}
+                  placeholder={w("Choose one", "Pilih satu")}
+                  options={businessTypes.map((t) => ({
+                    value: t.id,
+                    label: w(t.en, t.ms),
+                  }))}
+                />
               </Field>
               {typeId === "other" && (
                 <Field
@@ -334,8 +331,8 @@ function LocalWorkspace({ screen }: { screen: string }) {
                       <strong>{workspace.contactCount}</strong>
                       <small>
                         {w(
-                          "Real workspace records",
-                          "Rekod ruang kerja sebenar",
+                          "Customers saved in this workspace",
+                          "Pelanggan disimpan dalam ruang kerja ini",
                         )}
                       </small>
                     </a>
