@@ -50,6 +50,8 @@ web/next-env.d.ts
 # Voice picker samples: synthetic text-to-speech greetings from fixed
 # sentences (npm run voice:samples); never customer audio. AAC only.
 !web/public/voice-samples/*.m4a
+# Landing page sample call (npm run voice:demo): made-up lines, AI voices.
+!web/public/demo-call/*.m4a
 
 # Isolated local runtime outputs
 .next-mock/
