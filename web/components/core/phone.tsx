@@ -194,8 +194,8 @@ function NumberRequest({
   const [own, setOwn] = useState("");
   const open = data.request?.state === "open" ? data.request : null;
   const wait = w(
-    "We set each number up by hand. It is usually ready within 2 working hours (Monday to Friday, 9am to 6pm), and we email you when it is.",
-    "Kami menyediakan setiap nombor secara manual. Biasanya sedia dalam 2 jam bekerja (Isnin hingga Jumaat, 9 pagi hingga 6 petang), dan kami e-mel anda apabila sedia.",
+    "A person on our team sets up each number, and we email you when yours is ready.",
+    "Seorang daripada pasukan kami menyediakan setiap nombor, dan kami e-mel anda apabila nombor anda sedia.",
   );
   if (open)
     return (
