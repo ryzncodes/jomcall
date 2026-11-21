@@ -8,21 +8,17 @@ import { authPanel } from "../../web/lib/auth-panel.ts";
 import { findBannedClaims } from "../../web/content/public/claims.ts";
 
 test("the panel's step names equal the in-app checklist's", () => {
-  const home = readFileSync("web/components/core/home/home.tsx", "utf8");
-  const inApp = [...home.matchAll(/label: \["([^"]+)", "([^"]+)"\]/g)].map(
+  // The checklist's step labels live in the home copy since the first-run
+  // checklist (#85).
+  const copy = readFileSync("web/components/core/home/copy.ts", "utf8");
+  const inApp = [...copy.matchAll(/label: \["([^"]+)", "([^"]+)"\]/g)].map(
     (m) => [m[1], m[2]],
   );
-  assert.ok(inApp.length >= 5);
+  assert.equal(inApp.length, 6);
   assert.deepEqual(
-    authPanel.steps.slice(0, inApp.length).map((s) => [...s]),
+    authPanel.steps.map((s) => [...s]),
     inApp,
   );
-  // Until the app lists a sixth step, check ours against the spec text.
-  if (inApp.length === 5)
-    assert.deepEqual([...authPanel.steps[5]], [
-      "Take your first real call",
-      "Terima panggilan sebenar pertama",
-    ]);
 });
 
 test("a transfer is described as during opening hours only", () => {
