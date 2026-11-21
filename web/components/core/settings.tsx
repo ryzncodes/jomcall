@@ -428,16 +428,18 @@ function BranchSettings() {
     "settings-branches",
   );
   return (
-    <div>
-      <h2>{w("Branches", "Cawangan")}</h2>
-      <p>
-        <a href={href("/app/agent") + "#hours"}>
-          {w(
-            "Opening hours are on the agent page.",
-            "Waktu operasi ada di halaman ejen.",
-          )}
-        </a>
-      </p>
+    <div className="core-stack">
+      <div className="core-section-head">
+        <h2>{w("Branches", "Cawangan")}</h2>
+        <p>
+          <a href={href("/app/agent") + "#hours"}>
+            {w(
+              "Opening hours are on the agent page.",
+              "Waktu operasi ada di halaman ejen.",
+            )}
+          </a>
+        </p>
+      </div>
       <Notice error={branches.error} />
       {!branches.data ? (
         <Loading error={branches.error} />
