@@ -256,3 +256,12 @@ test("the call to action keeps one width while the session check runs", () => {
     assert.ok(common[locale].openWorkspaceShort.length <= common[locale].getStarted.length + 2, locale);
   }
 });
+
+// A margin reset on a whole band must carry no class weight, or it beats a
+// section's own spacing that comes earlier in the file (the problem band's
+// closing line once sat flush against the three cards).
+test("band margin reset has zero weight", () => {
+  const css = readFileSync("web/app/public.css", "utf8");
+  assert.doesNotMatch(css, /\.public \.band :where\(/);
+  assert.match(css, /\.public :where\(\.band\) :where\(h2, p\)/);
+});

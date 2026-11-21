@@ -2281,7 +2281,9 @@ body:has(.public) {
 .public :where(.art-hero, .art, .index-section, .index-other, .related-band) :where(h1, h2, h3, p, ol, ul, dl, dd, figure) {
   margin: 0;
 }
-.public .band :where(h2, p) {
+/* Zero weight on .band, so a section's own spacing (such as .problem-close)
+   still wins over this reset. */
+.public :where(.band) :where(h2, p) {
   margin: 0;
 }
 .public .art-hero {

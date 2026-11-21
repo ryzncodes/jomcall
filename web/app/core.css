@@ -15,6 +15,14 @@
   gap: 24px;
   min-width: 0;
 }
+/* A page heading and its one-line note, kept together above the panels. */
+.core-section-head {
+  display: grid;
+  gap: 6px;
+}
+.core-section-head > * {
+  margin: 0;
+}
 .core-stack > .core-advanced {
   margin: 0;
 }
