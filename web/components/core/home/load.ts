@@ -34,6 +34,7 @@ export async function loadHomeFacts(
     }),
     read("conversations", { attention: "needs" }),
     read("knowledgeGaps", { id: agent, status: "open" }, !!agent),
+    read("firstRun", {}, ctx.manager),
   ]);
   const v = <T>(i: number) =>
     r[i].status === "fulfilled" ? (r[i].value as T) : undefined;
@@ -52,5 +53,6 @@ export async function loadHomeFacts(
     toConfirm: items(8),
     chats: v(9),
     gaps: v(10),
+    firstRun: v(11),
   };
 }

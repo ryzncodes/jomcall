@@ -1,29 +1,22 @@
 "use client";
 // Home: a checklist until the agent is live, then today's numbers and what
 // needs the owner. Each read can fail alone; see load.ts.
-import { CaretRight, CheckCircle, Circle, Clock } from "@phosphor-icons/react";
+import { CaretRight } from "@phosphor-icons/react";
 import {
   checklist,
+  checklistFacts,
   homeState,
   keepLastGood,
   needsYou,
   todayCounts,
   type HomeFacts,
-  type StepId,
 } from "@/lib/core/home-rules";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useExperience } from "../../experience";
 import { Heading, Loading, useCore, useResource, useWords } from "../state";
 import { loadHomeFacts } from "./load";
 import { needText, todayParts, type W } from "./copy";
-
-const STEPS: Record<StepId, { label: [string, string]; button: [string, string] }> = {
-  setup: { label: ["Set up your business", "Sediakan perniagaan anda"], button: ["Setup", "Persediaan"] },
-  test: { label: ["Test the agent", "Uji ejen"], button: ["Try it", "Cuba"] },
-  publish: { label: ["Publish the agent", "Terbitkan ejen"], button: ["Publish", "Terbitkan"] },
-  plan: { label: ["Choose a plan", "Pilih pelan"], button: ["Choose plan", "Pilih pelan"] },
-  phone: { label: ["Get a phone number", "Dapatkan nombor telefon"], button: ["Request number", "Minta nombor"] },
-};
+import { ChecklistSteps } from "./steps";
 
 export function LocalHome() {
   const { client, workspace, refresh } = useCore(),
@@ -73,41 +66,24 @@ export function LocalHome() {
           </button>
         </section>
       )}
-      {state === "checklist" && (
-        <ol className="home-steps">
-          {steps.map((s) => {
-            const t = STEPS[s.id];
-            const Icon = s.state === "done" ? CheckCircle : s.state === "waiting" ? Clock : Circle;
-            return (
-              <li key={s.id} data-state={s.state}>
-                <Icon className="home-step-icon" size={22} weight={s.state === "done" ? "fill" : "regular"} aria-hidden />
-                <span className="home-step-label">
-                  {w(...t.label)}
-                  {s.state === "waiting" && (
-                    <small>{w("Waiting for your number", "Menunggu nombor anda")}</small>
-                  )}
-                  {s.state === "todo" && !manager && (
-                    <small>{w("An owner or admin does this step.", "Pemilik atau pentadbir melakukan langkah ini.")}</small>
-                  )}
-                  <span className="sr-only">
-                    {s.state === "done"
-                      ? w(" (done)", " (selesai)")
-                      : s.state === "waiting"
-                        ? ""
-                        : w(" (not done)", " (belum selesai)")}
-                  </span>
-                </span>
-                {s.state === "todo" && s.href && (
-                  <a className="button secondary-button" href={href(s.href)}>
-                    {s.unpaid ? w("Pay fee", "Bayar yuran") : w(...t.button)}
-                  </a>
-                )}
-              </li>
-            );
-          })}
-        </ol>
+      {state === "checklist" && facts && (
+        <>
+          <ChecklistSteps
+            steps={steps}
+            manager={manager}
+            activeE164={checklistFacts(facts).phone?.activeE164 ?? null}
+          />
+          {/* Billing problems and waiting customers are never hidden
+              behind the list; the panel shows only when it has rows. */}
+          <NeedsPanel facts={facts} w={w} href={href} hideEmpty />
+        </>
       )}
-      {state === "today" && facts && <Today facts={facts} w={w} href={href} />}
+      {state === "today" && facts && (
+        <>
+          <FirstCallLine facts={facts} orgId={workspace.workspace.id} w={w} href={href} />
+          <Today facts={facts} w={w} href={href} />
+        </>
+      )}
     </>
   );
 }
@@ -122,7 +98,6 @@ function Today({
   href: (p: string) => string;
 }) {
   const c = todayCounts(facts, new Date());
-  const needs = needsYou(facts);
   const parts = todayParts(c, w);
   return (
     <>
@@ -137,6 +112,26 @@ function Today({
           ))}
         </p>
       )}
+      <NeedsPanel facts={facts} w={w} href={href} />
+    </>
+  );
+}
+
+function NeedsPanel({
+  facts,
+  w,
+  href,
+  hideEmpty,
+}: {
+  facts: HomeFacts;
+  w: W;
+  href: (p: string) => string;
+  hideEmpty?: boolean;
+}) {
+  const needs = needsYou(facts);
+  const c = todayCounts(facts, new Date());
+  if (hideEmpty && !needs.length) return null;
+  return (
       <section className="core-panel home-needs">
         <h2>{w("Needs you", "Perlu tindakan anda")}</h2>
         {needs.length ? (
@@ -154,6 +149,40 @@ function Today({
           <p>{w("All clear", "Semua beres")}</p>
         )}
       </section>
-    </>
+  );
+}
+
+// Shown once per browser, on the first Today after the first real call.
+function FirstCallLine({
+  facts,
+  orgId,
+  w,
+  href,
+}: {
+  facts: HomeFacts;
+  orgId: string;
+  w: W;
+  href: (p: string) => string;
+}) {
+  const call = facts.firstRun?.firstCall;
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!call) return;
+    const key = `jomcall.firstCallSeen.${orgId}`;
+    try {
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, call.id);
+    } catch {
+      return;
+    }
+    setShow(true);
+  }, [call, orgId]);
+  if (!call || !show) return null;
+  return (
+    <p className="core-panel home-first-call" role="status">
+      <a href={href(`/app/calls/${call.id}`)}>
+        {w("Your agent answered its first real call.", "Ejen anda telah menjawab panggilan sebenar pertamanya.")}
+      </a>
+    </p>
   );
 }

@@ -266,8 +266,8 @@ export function BringStage({
             />
             <small id={`${id}-paste-hint`} className="setup-hint">
               {w(
-                "Up to 20,000 characters. Copy the cells from Excel or Google Sheets, or a price list from a chat.",
-                "Sehingga 20,000 aksara. Salin sel daripada Excel atau Google Sheets, atau senarai harga daripada WhatsApp.",
+                "Up to 20,000 characters. Copy the text from your website, Facebook or Instagram page, or Google Maps listing, or cells from a spreadsheet.",
+                "Sehingga 20,000 aksara. Salin teks daripada laman web, halaman Facebook atau Instagram, atau senarai Google Maps anda, atau sel daripada hamparan.",
               )}
             </small>
             <button

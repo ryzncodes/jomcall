@@ -1,4 +1,6 @@
 "use client";
+import type { FirstRun } from "../../../packages/contracts/src/first-run";
+import { stepsFrom } from "@/lib/core/home-rules";
 import { useEffect, useMemo, useState } from "react";
 import { launchCopy } from "@/lib/launch";
 import {
@@ -70,15 +72,24 @@ export function WorkspaceChrome({
     () => (mode === "local" && orgId ? new HttpCoreClient({ orgId }) : undefined),
     [mode, orgId],
   );
+  // The getting-started link: owners and admins only (staff get 403 and
+  // see nothing), read with the channels and on the same focus.
+  const [firstRun, setFirstRun] = useState<FirstRun>();
   useEffect(() => {
     setChannels(undefined);
+    setFirstRun(undefined);
     if (!channelClient) return;
     let alive = true;
-    const load = () =>
-      channelClient
+    const load = () => {
+      void channelClient
+        .execute("firstRun", {})
+        .then((v) => alive && setFirstRun(v))
+        .catch(() => alive && setFirstRun(undefined));
+      return channelClient
         .execute("channels", {})
         .then((v) => alive && setChannels(v))
         .catch(() => alive && setChannels(undefined));
+    };
     void load();
     const focus = () => {
       if (document.visibilityState === "visible") void load();
@@ -178,6 +189,8 @@ export function WorkspaceChrome({
         ]
       : [];
   const navigation = all.filter((item) => !hidden.includes(item.key));
+  const startSteps = firstRun ? stepsFrom({ manager: true, ...firstRun }) : undefined;
+  const startDone = startSteps?.filter((x) => x.state === "done").length ?? 0;
   // A real workspace never shows the sample business's name, even while its
   // own name is loading; the mock preview keeps the sample.
   const shownName =
@@ -199,6 +212,13 @@ export function WorkspaceChrome({
             <small>{workspace.location || "—"}</small>
           </div>
         </div>
+        {startSteps && startDone < startSteps.length && (
+          <a className="sidebar-start" href={href("/app")}>
+            {locale === "ms"
+              ? `Bermula: ${startDone} daripada ${startSteps.length}`
+              : `Getting started: ${startDone} of ${startSteps.length}`}
+          </a>
+        )}
         <WorkspaceNavigation
           active={active}
           entries={navigation}

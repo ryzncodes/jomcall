@@ -42,6 +42,7 @@ import {
   questionById,
   setupQuestions,
   type SetupQuestion,
+  OFFERED_FACTS,
 } from "./questions.ts";
 
 const itemColumns = "id,kind,key,payload,source,needs_check,check_reason,state";
@@ -949,9 +950,10 @@ export async function setupRoute(
           ).rows[0] as { pack: string | null } | undefined;
           if (row?.pack && active.includes(row.pack)) keepPack = row.pack;
           const listed =
-            field?.required &&
-            (!!row ||
-              (await view()).missing.some((x) => x.key === fieldKey));
+            (!!field && OFFERED_FACTS.has(`${packId}:${fieldKey}`)) ||
+            (field?.required &&
+              (!!row ||
+                (await view()).missing.some((x) => x.key === fieldKey)));
           if (listed)
             question = {
               id: questionId,

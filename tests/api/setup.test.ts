@@ -690,6 +690,35 @@ test("a missing required fact can be added from the review and is not counted as
   }
 });
 
+test("setup: social links are offered on review; other optional facts are not", async () => {
+  const { f, path, start } = await fixture();
+  try {
+    const s = (await start()).body.data;
+    const id = "missing:every-business:social_links";
+    const r = await f.req("PUT", `${path}/answers/${encodeURIComponent(id)}`, {
+      expectedRevision: s.session.revision,
+      answer: { kind: "fact", text: "Facebook: https://facebook.com/kedaicontoh" },
+    });
+    assert.equal(r.status, 200);
+    const item = r.body.data.items.find((i: any) => i.key === "social_links");
+    assert.equal(item.payload.value, "Facebook: https://facebook.com/kedaicontoh");
+    assert.equal(item.payload.packId, "every-business");
+    // An empty set of links is a skip.
+    const skip = await f.req("PUT", `${path}/answers/${encodeURIComponent(id)}`, {
+      expectedRevision: r.body.data.session.revision,
+      answer: { kind: "skip" },
+    });
+    assert.equal(skip.status, 200);
+    const other = await f.req("PUT", `${path}/answers/${encodeURIComponent("missing:every-business:branches")}`, {
+      expectedRevision: skip.body.data.session.revision,
+      answer: { kind: "fact", text: "Klang" },
+    });
+    assert.equal(other.status, 404);
+  } finally {
+    await f.close();
+  }
+});
+
 test("a skipped required fact still appears in missing", async () => {
   const { f, path, start } = await fixture();
   try {

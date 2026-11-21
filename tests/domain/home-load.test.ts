@@ -46,7 +46,7 @@ test("manager reads", async () => {
   await loadHomeFacts(f.client, { manager: true, published: false, agentId: "a1" }, now);
   assert.deepEqual(
     names(f.calls),
-    ["agentTests", "bookings", "bookings", "calls", "channels", "conversations", "knowledgeGaps", "phoneNumbers", "plan", "setup", "wallet"],
+    ["agentTests", "bookings", "bookings", "calls", "channels", "conversations", "firstRun", "knowledgeGaps", "phoneNumbers", "plan", "setup", "wallet"],
   );
   const input = (n: string, pick = (i: Record<string, unknown>) => true) =>
     f.calls.find(([k, i]) => k === n && pick(i))![1];
@@ -70,7 +70,7 @@ test("manager reads", async () => {
 test("staff never read billing or phone numbers", async () => {
   const f = fake();
   await loadHomeFacts(f.client, { manager: false, published: false, agentId: "a1" }, now);
-  for (const n of ["plan", "wallet", "phoneNumbers"])
+  for (const n of ["plan", "wallet", "phoneNumbers", "firstRun"])
     assert.ok(!names(f.calls).includes(n), n);
 });
 

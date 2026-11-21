@@ -53,3 +53,29 @@ export function needText(n: Need, w: W, balanceSen: number | null) {
       );
   }
 }
+
+// The getting-started steps. The names are fixed by the first-run design
+// (section 5.1); the public sign-up panel uses the same words.
+export const STEP_WORDS: Record<
+  import("../../../lib/core/home-rules").StepId,
+  { label: [string, string]; button: [string, string] }
+> = {
+  setup: { label: ["Set up your business", "Sediakan perniagaan anda"], button: ["Setup", "Persediaan"] },
+  test: { label: ["Test the agent", "Uji ejen"], button: ["Try it", "Cuba"] },
+  publish: { label: ["Publish the agent", "Terbitkan ejen"], button: ["Publish", "Terbitkan"] },
+  plan: { label: ["Choose a plan", "Pilih pelan"], button: ["Choose plan", "Pilih pelan"] },
+  phone: { label: ["Get a phone number", "Dapatkan nombor telefon"], button: ["Request number", "Minta nombor"] },
+  call: { label: ["Take your first real call", "Terima panggilan sebenar pertama"], button: ["Show me how", "Tunjukkan caranya"] },
+};
+
+export const HINT_WORDS: Record<"plan_first" | "number_first", [string, string]> = {
+  plan_first: ["Choose a plan first", "Pilih pelan dahulu"],
+  number_first: ["After your number is ready", "Selepas nombor anda sedia"],
+};
+
+// Under step six while it is open and a number is active.
+export const forwardLine = (local: string, w: W) =>
+  w(
+    `Forward your business number to ${local}, then call your usual business number from another phone to check.`,
+    `Majukan nombor perniagaan anda ke ${local}, kemudian telefon nombor perniagaan biasa anda dari telefon lain untuk menyemak.`,
+  );

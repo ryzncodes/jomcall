@@ -17,6 +17,11 @@ type Input = {
 
 export const MAX_QUESTIONS = 8;
 
+// Optional facts the review page offers outside the interview, through the
+// "missing:<pack>:<field>" answer path: the business's own links (first-run
+// design 5.2a). Required facts are offered there already.
+export const OFFERED_FACTS: ReadonlySet<string> = new Set(["every-business:social_links"]);
+
 export function factKeyOf(question: SetupQuestion): string | null {
   const hit = question.fills.find((f) => f.startsWith("facts."));
   return hit ? hit.slice("facts.".length) : null;

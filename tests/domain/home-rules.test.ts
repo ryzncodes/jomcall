@@ -6,6 +6,8 @@ import {
   checklist,
   homeState,
   isLive,
+  liveFrom,
+  stepsFrom,
   klDayRange,
   needsYou,
   keepLastGood,
@@ -48,7 +50,7 @@ test("checklist: new owner", () => {
     "/app/test",
     "/app/agent",
     "/app/billing",
-    "/app/phones",
+    "/app/phone-numbers",
   ]);
 });
 
@@ -233,4 +235,78 @@ test("minors: plurals in the needs list", () => {
   assert.equal(n("gaps", 1), "1 question the agent could not answer");
   assert.equal(n("gaps", 2), "2 questions the agent could not answer");
   assert.equal(needText(any({ id: "bookings", count: 1, href: "" }), bm, null), "1 tempahan perlu disahkan");
+});
+
+// First-run design (2026-11-21): step six and live after the first call.
+const call = { id: "c1", startedAt: "2026-11-21T02:00:00.000Z" };
+const withRun = (firstCall: unknown, f: Partial<HomeFacts> = {}) =>
+  fullOwner({ firstRun: any({ firstCall }), ...f });
+
+test("checklist: call step follows the phone step", () => {
+  const active = withRun(null, { phones: phones([{ active: true, e164: "+60311112222" }]) });
+  const last = checklist(active).at(-1)!;
+  assert.deepEqual(last, { id: "call", state: "todo", href: "/app/phone-numbers" });
+  const none = step(withRun(null), "call")!;
+  assert.deepEqual(none, { id: "call", state: "todo", href: null, hint: "number_first" });
+});
+
+test("checklist: call step done on the first call", () => {
+  const f = withRun(call, { phones: phones([{ active: true }]) });
+  assert.equal(step(f, "call")!.state, "done");
+  assert.equal(checklist(f).length, 6);
+});
+
+test("checklist: no call step without a phone line, for staff, or when firstRun failed", () => {
+  assert.ok(!ids(withRun(null, { channels: channels(false), phones: phones([], null, false) })).includes("call"));
+  assert.ok(!ids(owner({ manager: false, firstRun: any({ firstCall: null }) })).includes("call"));
+  assert.ok(!ids(fullOwner({ firstRun: undefined })).includes("call"));
+});
+
+test("checklist: phone button goes to /app/phone-numbers; plan first otherwise", () => {
+  assert.equal(step(fullOwner(), "phone")!.href, "/app/phone-numbers");
+  const p = any({ items: [], request: null, provider: { configured: true, reason: null }, planIncludesNumber: false });
+  assert.equal(step(fullOwner({ phones: p }), "phone")!.hint, "plan_first");
+});
+
+test("isLive: published, plan and number are not live until the first call", () => {
+  const ready = { plan: plan("charged"), published: true, phones: phones([{ active: true }]) };
+  assert.equal(isLive(withRun(null, ready)), false);
+  assert.equal(homeState(withRun(null, ready)), "checklist");
+  assert.equal(isLive(withRun(call, ready)), true);
+  // A failed firstRun read falls back to the rule before step six.
+  assert.equal(isLive(fullOwner(ready)), true);
+});
+
+test("stepsFrom: the firstRun read gives the same list as Home", () => {
+  const c = {
+    manager: true,
+    published: true,
+    setupApplied: true,
+    tested: true,
+    plan: { chosen: true, unpaid: false },
+    phone: { offered: true, active: true, activeE164: "+60311112222", requestOpen: false, planIncludesNumber: true },
+    firstCall: null,
+  };
+  const home = withRun(null, {
+    published: true,
+    setup: any({ session: { state: "applied" }, items: [] }),
+    tests: [any({})],
+    plan: plan("charged"),
+    phones: phones([{ active: true, e164: "+60311112222" }]),
+  });
+  assert.deepEqual(stepsFrom(c), checklist(home));
+  assert.equal(liveFrom(c), false);
+  assert.equal(liveFrom({ ...c, firstCall: call }), true);
+});
+
+test("checklist: an active number counts as a phone line without a provider, as on the server", () => {
+  const f = withRun(null, {
+    plan: plan("charged"),
+    published: true,
+    channels: channels(false),
+    phones: phones([{ active: true, e164: "+60311112222" }], null, false),
+  });
+  assert.equal(step(f, "phone")!.state, "done");
+  assert.equal(step(f, "call")!.state, "todo");
+  assert.equal(isLive(f), false);
 });
