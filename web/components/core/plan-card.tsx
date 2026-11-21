@@ -134,8 +134,8 @@ export function PlanCard({
               {ownNumber
                 ? `(${ownNumber})`
                 : w(
-                    "(ask for yours under Phone numbers; ready within about 2 working hours)",
-                    "(minta nombor anda di Nombor telefon; sedia dalam kira-kira 2 jam bekerja)",
+                    "(ask for yours under Phone numbers)",
+                    "(minta nombor anda di Nombor telefon)",
                   )}
             </small>
           </>
