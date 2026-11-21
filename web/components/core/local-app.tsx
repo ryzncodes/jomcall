@@ -213,7 +213,9 @@ function LocalWorkspace({ screen }: { screen: string }) {
                     ),
                     primaryLocationName: String(f.get("branch")),
                   });
-                  switchWorkspace(result.orgId);
+                  // Straight into setup: the owner has just named the
+                  // business (first-run design 5.2). Home shows the list.
+                  location.assign(href(`/app/setup?workspace=${result.orgId}`));
                 } catch (err) {
                   setCreationError(err);
                 } finally {

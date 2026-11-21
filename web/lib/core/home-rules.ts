@@ -9,6 +9,7 @@ import type { ConversationSummary } from "../../../packages/contracts/src/whatsa
 import type { KnowledgeGap } from "../../../packages/contracts/src/knowledge";
 import type { TestSession } from "../../../packages/contracts/src/agent-test";
 import type { Setup } from "../../../packages/contracts/src/setup";
+import type { FirstRun } from "../../../packages/contracts/src/first-run";
 import { klDate, lastGraceDay } from "./plan-rules";
 
 export type HomeFacts = {
@@ -25,22 +26,43 @@ export type HomeFacts = {
   toConfirm?: Booking[];
   chats?: ConversationSummary[];
   gaps?: KnowledgeGap[];
+  firstRun?: FirstRun;
 };
 
-export type StepId = "setup" | "test" | "publish" | "plan" | "phone";
+export type StepId = "setup" | "test" | "publish" | "plan" | "phone" | "call";
 export type Step = {
   id: StepId;
   state: "done" | "todo" | "waiting";
   href: string | null;
   // Plan step only: a chosen plan whose fee is unpaid (the button says pay).
   unpaid?: true;
+  // Why a step has no button yet.
+  hint?: "plan_first" | "number_first";
+};
+
+// What the list is worked out from: Home builds it from its own reads,
+// the sidebar and setup's live page from the firstRun read. A part left
+// undefined was not read (staff) or failed; its step is left out.
+export type ChecklistFacts = {
+  manager: boolean;
+  published: boolean;
+  setupApplied?: boolean;
+  tested?: boolean;
+  plan?: FirstRun["plan"];
+  phone?: FirstRun["phone"];
+  firstCall?: FirstRun["firstCall"];
 };
 
 // The phone line is offered when the service has telephony configured.
+// An active number counts too, as in the firstRun read, so Home and the
+// sidebar agree where no phone service is configured (a local workspace).
 function phoneOffered(f: HomeFacts) {
-  return !!f.phones?.provider.configured || !!f.channels?.phone;
+  return (
+    !!f.phones?.provider.configured ||
+    !!f.channels?.phone ||
+    !!f.phones?.items.some((n) => n.active)
+  );
 }
-const activeNumber = (f: HomeFacts) => !!f.phones?.items.some((n) => n.active);
 // A paid plan with a started period. Pay as you go is where every
 // workspace starts, and the plan card reads it as "choose a plan"; an
 // unpaid fee is its own row in the needs list once live.
@@ -48,53 +70,88 @@ function planChosen(p: PlanSummary) {
   return p.plan !== "payg" && (p.periodState === "free" || p.periodState === "charged");
 }
 
-export function checklist(f: HomeFacts): Step[] {
-  const link = (href: string) => (f.manager ? href : null);
+export function checklistFacts(f: HomeFacts): ChecklistFacts {
+  const active = f.phones?.items.find((n) => n.active);
+  return {
+    manager: f.manager,
+    published: f.published,
+    setupApplied: f.setup?.session?.state === "applied",
+    tested: !!f.tests?.length,
+    ...(f.plan
+      ? { plan: { chosen: planChosen(f.plan), unpaid: f.plan.periodState === "unpaid" } }
+      : {}),
+    ...(f.phones
+      ? {
+          phone: {
+            offered: phoneOffered(f),
+            active: !!active,
+            activeE164: active?.e164 ?? null,
+            requestOpen: f.phones.request?.state === "open",
+            planIncludesNumber: f.phones.planIncludesNumber,
+          },
+        }
+      : {}),
+    ...(f.firstRun ? { firstCall: f.firstRun.firstCall } : {}),
+  };
+}
+
+export function stepsFrom(c: ChecklistFacts): Step[] {
+  const link = (href: string) => (c.manager ? href : null);
   const done = (ok: boolean) => (ok ? "done" : "todo") as Step["state"];
   const steps: Step[] = [
-    {
-      id: "setup",
-      state: done(f.published || f.setup?.session?.state === "applied"),
-      href: link("/app/setup"),
-    },
-    { id: "test", state: done(!!f.tests?.length), href: link("/app/test") },
-    { id: "publish", state: done(f.published), href: link("/app/agent") },
+    { id: "setup", state: done(c.published || !!c.setupApplied), href: link("/app/setup") },
+    { id: "test", state: done(!!c.tested), href: link("/app/test") },
+    { id: "publish", state: done(c.published), href: link("/app/agent") },
   ];
-  if (!f.manager) return steps;
-  if (f.plan) {
+  if (!c.manager) return steps;
+  if (c.plan)
     steps.push({
       id: "plan",
-      state: done(planChosen(f.plan)),
+      state: done(c.plan.chosen),
       href: "/app/billing",
-      ...(f.plan.periodState === "unpaid" ? { unpaid: true as const } : {}),
+      ...(c.plan.unpaid ? { unpaid: true as const } : {}),
     });
-  }
-  if (f.phones && phoneOffered(f)) {
-    const waiting = !activeNumber(f) && f.phones.request?.state === "open";
+  const phone = c.phone;
+  if (phone?.offered) {
     steps.push(
-      waiting
+      !phone.active && phone.requestOpen
         ? { id: "phone", state: "waiting", href: null }
-        : {
-            id: "phone",
-            state: done(activeNumber(f)),
-            // Asking for a number is refused without a plan that includes
+        : phone.active
+          ? { id: "phone", state: "done", href: "/app/phone-numbers" }
+          : // Asking for a number is refused without a plan that includes
             // one, so the button waits for the plan step.
-            href: f.phones.planIncludesNumber ? "/app/phones" : null,
-          },
+            phone.planIncludesNumber
+            ? { id: "phone", state: "todo", href: "/app/phone-numbers" }
+            : { id: "phone", state: "todo", href: null, hint: "plan_first" },
     );
+    // Forwarding cannot be seen; the first answered real call is the sign.
+    if (c.firstCall !== undefined)
+      steps.push(
+        c.firstCall
+          ? { id: "call", state: "done", href: null }
+          : phone.active
+            ? { id: "call", state: "todo", href: "/app/phone-numbers" }
+            : { id: "call", state: "todo", href: null, hint: "number_first" },
+      );
   }
   return steps;
 }
 
+export const checklist = (f: HomeFacts): Step[] => stepsFrom(checklistFacts(f));
+
 // Live: published, a chosen plan (nothing is answered without one), plus an
-// active number when a phone line is offered. Staff cannot read billing or
-// phone numbers, and a failed read cannot tell, so those checks are skipped.
-export function isLive(f: HomeFacts): boolean {
-  if (!f.published) return false;
-  if (f.manager && f.plan && !planChosen(f.plan)) return false;
-  if (!f.manager || !f.phones || !phoneOffered(f)) return true;
-  return activeNumber(f);
+// active number and a first answered call when a phone line is offered.
+// Staff cannot read billing or phone numbers, and a failed read cannot
+// tell, so those checks are skipped.
+export function liveFrom(c: ChecklistFacts): boolean {
+  if (!c.published) return false;
+  if (c.manager && c.plan && !c.plan.chosen) return false;
+  if (!c.manager || !c.phone || !c.phone.offered) return true;
+  if (!c.phone.active) return false;
+  return c.firstCall === undefined || !!c.firstCall;
 }
+
+export const isLive = (f: HomeFacts): boolean => liveFrom(checklistFacts(f));
 
 // Kuala Lumpur has no daylight saving: its day starts at 16:00 UTC.
 export function klDayRange(now: Date): { from: string; to: string } {
@@ -165,6 +222,7 @@ const FETCHED = [
   "toConfirm",
   "chats",
   "gaps",
+  "firstRun",
 ] as const;
 
 export function homeState(f: HomeFacts): "failed" | "checklist" | "today" {

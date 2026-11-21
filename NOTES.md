@@ -134,3 +134,20 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 - BM pass: the two sample-call lines that say "Janji temu" (`sampleCall` line 5 and the bento's booking quote) were left as they are. They are what the recordings in `web/public/demo-call/` say (a test keeps line 5 equal to the clip text), so changing them to the house term "temu janji" would put words in the recording's mouth. Fix with the owner step to re-record the greetings.
 - Typecheck: `tests/hosting/auth-panel.test.ts` (commit `c6a0a36`) had added two implicit-`any` errors (TS7022) above the 13-error baseline. Typed the two locals; typecheck is back to 13, all in `tests/`.
 - Browser check: the hosted build runs under `next start` without hosted services. The one thing that fails is the header's session check, `GET /api/v1/session`, which answers 500 there (no Supabase). In the real hosted app a signed-out visitor gets 401 from the same request, and Chrome logs either as a "Failed to load resource" console entry on every public page. Not changed here (it is the app's auth API, from #81); listed for the final review.
+
+## 2026-11-21: first-run checklist (branch `feat/first-run-checklist`)
+
+Deviations from `docs/superpowers/plans/2026-11-21-first-run-checklist.md` and the design `docs/superpowers/specs/2026-11-21-first-run-design.md` (pull request #84), each with its reason.
+
+- **Link checks run in the browser only.** Design 5.2a says the checks are made "in the web service". The links are stored as the text of an ordinary fact through `answerSetup`. That command already stores any owner text for any fact, so a check on the server would only guard this one field. Nothing opens a link on either side.
+- **Home keeps its own reads and adds `firstRun`.** The other steps still come from Home's existing reads; only `firstCall` comes from `firstRun`. The sidebar and the live page use `firstRun` alone. Both feed `stepsFrom()`, and a test pins that both give the same list for the same facts.
+- **`localNumber()` moved to `web/lib/core/phone-format.ts`.** The forwarding panel in `phone.tsx` now calls it. That is the only change to `phone.tsx`; the forwarding codes stay there.
+- **Live page lead line.** "Three steps put it in front of real customers" became "These steps put it in front of real customers". The number of steps now varies by workspace.
+- **"Something else" on the confirmation heading.** The heading names the owner's own words, not the "Something else" label.
+- **Workspace creation.** The move to setup is a full page load to `/app/setup?workspace=<id>` from `local-app.tsx`. `auth.tsx` is untouched.
+- **Home counts an active number as a phone line.** The firstRun read already did. Without it, Home showed Today while the sidebar showed 5 of 6 on a workspace with no phone service configured (the local app). Found in the browser pass.
+- **The links card handles flagged and conflicting rows itself.** The design moved the links out of the answers list, but that list held the Confirm and keep-or-use-new controls. The card now draws both. Found by the branch review.
+- **The first real call is the first ended call with `answered_at` set, unless refused.** The plan used the outcome. A worker crash marks an answered call `abandoned`, which would have left step six open. Found by the branch review.
+- **Known, left as is.**
+  - If the firstRun read fails on the very first load of Home, a workspace with a number shows Today and then the checklist about 15 seconds later. After one good read, the last good value holds.
+  - Two existing screens still state a wait for a number: the plan card (`plan-card.tsx`) and the request panel (`phone.tsx`), "within about 2 working hours". This branch does not own them; they predate it.

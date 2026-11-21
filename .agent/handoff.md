@@ -24,6 +24,38 @@
 - Final whole-branch review done and its fixes re-reviewed clean; pull request #86 open, waiting for the owner. Hosting tests 270 of 270 after the fix wave; the full `check:core` was not re-run after the last test fix.
 - Owner steps: confirm `APP_ORIGIN` is set for builds in Vercel's environment; indexing turns on only when that origin is `jomcall.com`, so pointing it there is the owner's call; fix the privacy and terms text that says calls "may be recorded" and "Payments are not live yet" (the public pages say calls are not recorded, and legal text was left frozen), and `web/messages/legal.ts:64` (EN and BM), which says businesses use JomCall for "phone calls and WhatsApp messages" and conflicts with WhatsApp waiting for Meta; before indexing moves to jomcall.com, check Search Console for staging (it served `index, follow` from 2026-11-15, and with `Disallow: /` Google cannot recrawl to see noindex), and at the switch 301 staging to jomcall.com; confirm the SST wording on pricing ("before SST"); decide the concurrency default (`JOMCALL_MAX_CONCURRENT_CALLS` is 1, the spec says 2; the copy states no number); have a native BM speaker read the copy; re-record the four demo greetings without "this call may be recorded" (the call card skips line 0 until then). Once they are re-recorded, change the two sample lines that say "Janji temu" in `web/content/public/home.ts` (lines 47 and 373) to "Temu janji"; they stay as they are now because they must match the recordings.
 
+## 2026-11-21: first-run checklist built (branch `feat/first-run-checklist`, not merged)
+
+Design: `docs/superpowers/specs/2026-11-21-first-run-design.md` (pull request #84). Plan: `docs/superpowers/plans/2026-11-21-first-run-checklist.md`. No migration.
+
+**What changed**
+- New read `firstRun` (`GET /first-run`, managers only): setup applied, tested, published, plan, phone, and the first answered real call.
+- Home's checklist gains step six, "Take your first real call", shown only when a phone line is offered. Home goes live only after that call. The first time, a line links to the call.
+- One step list (`web/components/core/home/steps.tsx`) in three places: Home, the setup live page, and a "Getting started: N of M" link in the sidebar.
+- After a new workspace is created, the app opens setup. The business-type page asks the owner to confirm the type they picked.
+- Review page: a "Your links" card (website, Facebook, Instagram, TikTok, LinkedIn, Google Maps) saved into the `social_links` fact. JomCall checks the text only; it never opens the links.
+- The Phone numbers link now goes to `/app/phone-numbers` (it was a dead `/app/phones`).
+
+**Verified (local database, made-up workspace)**
+- Typecheck; guards 69 of 69; new and changed tests pass.
+- Browser at 375 px, EN and BM, light and dark:
+  - a new workspace opens setup on the confirmation heading;
+  - the links card saves and survives a reload, and a typed test answered with the stored links;
+  - publish, then the live page list;
+  - the sidebar link counting up;
+  - Home through plan, number (added on the local Phone numbers screen) and a faked answered call (SQL, since deleted);
+  - "Show me how" opens the forwarding codes.
+- Browser-pass fixes are in commit `868afb5`.
+
+**Not verified**
+- No person has used it. Nothing is on hosted staging.
+- A real forwarded call has not completed step six.
+- The BM links card was not seen in a browser.
+
+**Next**
+- Merge needs the owner's yes, through the orchestrating session.
+- Website reading (F12) is a separate, later pull request. It is approved with safety guards. When it ships, it goes on the AGENTS.md outbound list.
+
 ## 2026-11-20 (afternoon): staging is now production
 
 Owner decision. Read the entry "Staging is production" in `AGENTS.md` before touching the hosted environment: there is no second environment any more, no backups, and every write there is a production change.
@@ -1003,3 +1035,12 @@ Pull requests #66 and #67 merged and deployed. Hosted public pages read launch c
 - Verified: typecheck, test:guards 69/69, tests/domain 433/433, build:hosted, build:mock, build:local. Browser: new local workspace at desktop and 375 px, EN and BM, dark theme (checklist only).
 - Not verified: the Today and Needs you views in a browser (needs a published agent and a paid plan); staff view in a browser.
 - Next: deferred minors in the PR body (plurals, poll flicker, screen-reader text, dead channel-line.ts).
+
+## 2026-11-21: first-run design (docs only)
+
+Branch `docs/first-run-design`. Design `docs/superpowers/specs/2026-11-21-first-run-design.md`; no code.
+
+- Owner delegated the calls ("do whatever is recommended", relayed 2026-11-21). Recommended and recorded as F1-F9: extend the Home checklist with step 6 "Take your first real call" (done on the first answered real call), keep Home on the list until then with "Needs you" under it, same steps on setup's live page, a sidebar "Getting started: N of 6" link, open setup right after workspace creation, a paste hint naming website/Facebook/Instagram/Maps text, a "Your links" card on setup's review page storing links into the existing `social_links` fact (never fetched), and one new read `firstRun` for Home, the sidebar and the live page. Also found: step 5 links to `/app/phones`, which does not exist.
+- Website reading approved by the owner 2026-11-21 ("Yes, with safety guards", F12): own pull request after the checklist, every guard in section 6, then add to the AGENTS.md outbound list. Google Maps and social pages stay parked (F11). Setup reader confirmed on in production.
+- Not verified: Google Maps Platform storage terms for Places content; how forwarded calls arrive (caller number).
+- Next: owner reads the doc; then a build plan.

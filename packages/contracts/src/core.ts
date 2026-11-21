@@ -1,3 +1,4 @@
+import type { FirstRun } from "./first-run.ts";
 import {
   turnInput,
   voiceStart,
@@ -724,6 +725,7 @@ export const commands = {
   plan: route("GET", "/billing/plan", empty, out<PlanSummary>()),
   choosePlan: route("POST", "/billing/plan", planChoice, out<PlanChoice>()),
   channels: route("GET", "/channels", empty, out<Channels>()),
+  firstRun: route("GET", "/first-run", empty, out<FirstRun>()),
   phoneNumbers: route("GET", "/phone-numbers", empty, out<PhoneNumbers>()),
   createPhoneNumber: route(
     "POST",

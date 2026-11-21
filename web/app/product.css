@@ -2048,3 +2048,25 @@
 .product-main fieldset.busy-fields {
   display: contents;
 }
+
+/* Getting-started link above the sidebar navigation (first-run design 5.3). */
+.product-workspace .sidebar-start {
+  display: block;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--wash);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.product-workspace .sidebar-start:hover {
+  text-decoration: underline;
+}
+@media (max-width: 760px) {
+  .product-workspace .sidebar-start {
+    grid-column: 1/-1;
+    margin: 0;
+  }
+}
