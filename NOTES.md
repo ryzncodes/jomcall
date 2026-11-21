@@ -26,6 +26,12 @@ Deviations from `docs/superpowers/plans/2026-11-16-agent-page.md`, each with its
 - Next was upgraded from 16.4.1 to 16.4.6 on this branch (owner instruction, 2026-11-17). Next 16.4.1 ended its own build with a security notice.
 - One extra fix commit after the single planned fix wave (`6079064`): two small defects the fix wave itself introduced. It was checked by the controller and by tests, not by a separate reviewer.
 
+## 2026-11-21: public pages, merge with main and typecheck fix
+
+- The 13 typecheck errors this branch's notes called a baseline came from this branch. Tests now import `web/lib/public-meta.ts`, `root-meta.ts`, `page-title.ts`, `web/app/robots.ts` and `sitemap.ts`, which imported types from `"next"`; that loads `next/types/global.d.ts`, which makes `process.env.NODE_ENV` read-only across the root typecheck, so unrelated tests that set it failed. The types now come from `web/lib/next-metadata.ts`, which re-exports them from `next/dist/lib/metadata/types/metadata-interface.js` (a deep path inside Next; recheck it on a Next upgrade). Typecheck is 0 errors.
+- Merged `main` (#85 first-run checklist, #87 no time promise for a number). Only `.agent/handoff.md` and `NOTES.md` conflicted; both sides kept. The checklist labels moved to `web/components/core/home/copy.ts`, so the panel step test reads them there and expects all six.
+- `web/lib/launch.ts` launch notice: transfer is now "to your staff during opening hours" / "kepada staf anda dalam waktu operasi" (was "to your team when needed").
+
 ## 2026-11-21: public pages, Task 2 (branch `feat/public-pages-seo`)
 
 Deviations from the Task 2 brief and spec section 6, each with its reason.
@@ -132,7 +138,7 @@ Deviations from the Task 2 brief and spec section 6, each with its reason.
 
 - `<html lang>` deviation from the research doc's Tier 0 item 1 ("the server sends the right `<html lang>`"). Next has one root layout (`web/app/layout.tsx`), so every page, BM included, is built with `<html lang="en">`. A BM page instead: sets `lang="ms"` on the public shell and on `<main>` (`web/components/public/shell.tsx`), so the content reads as BM before any script runs; is served with `Content-Language: ms` (`web/next.config.ts`, `/ms` and `/ms/:path*`); and runs the pre-paint script (`web/lib/theme-script.ts`), which sets `document.documentElement.lang` to `ms` on BM public paths. Two root layouts (one per language, through route groups) would send the right `<html lang>` from the server; that was not done on this branch and is left to the final review. The research doc carries a dated amendment.
 - BM pass: the two sample-call lines that say "Janji temu" (`sampleCall` line 5 and the bento's booking quote) were left as they are. They are what the recordings in `web/public/demo-call/` say (a test keeps line 5 equal to the clip text), so changing them to the house term "temu janji" would put words in the recording's mouth. Fix with the owner step to re-record the greetings.
-- Typecheck: `tests/hosting/auth-panel.test.ts` (commit `c6a0a36`) had added two implicit-`any` errors (TS7022) above the 13-error baseline. Typed the two locals; typecheck is back to 13, all in `tests/`.
+- Typecheck: `tests/hosting/auth-panel.test.ts` (commit `c6a0a36`) had added two implicit-`any` errors (TS7022) above the 13-error baseline. Typed the two locals; typecheck is back to 13, all in `tests/`. (Correction, 2026-11-21: those 13 were not a `main` baseline; see the merge note below.)
 - Browser check: the hosted build runs under `next start` without hosted services. The one thing that fails is the header's session check, `GET /api/v1/session`, which answers 500 there (no Supabase). In the real hosted app a signed-out visitor gets 401 from the same request, and Chrome logs either as a "Failed to load resource" console entry on every public page. Not changed here (it is the app's auth API, from #81); listed for the final review.
 
 ## 2026-11-21: first-run checklist (branch `feat/first-run-checklist`)
