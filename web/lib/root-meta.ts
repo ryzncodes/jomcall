@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata } from "./next-metadata";
 import { isHostedSite, isIndexable } from "./site.ts";
 
 // The root layout's metadata, read at call time so a test can set the mode.

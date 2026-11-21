@@ -1,4 +1,4 @@
-import type { MetadataRoute } from "next";
+import type { MetadataRoute } from "../lib/next-metadata";
 import { isIndexable, siteOrigin } from "../lib/site";
 
 // Open only on the real site (jomcall.com). Everywhere else, search engines

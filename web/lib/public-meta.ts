@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata } from "./next-metadata";
 import { plainSpaces } from "../content/public/format.ts";
 import { canonicalPage, isIndexable, localePath, siteOrigin, type PublicLocale, type PublicPageId } from "./site.ts";
 

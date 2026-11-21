@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata } from "./next-metadata";
 
 type Props = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

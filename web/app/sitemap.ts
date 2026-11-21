@@ -1,4 +1,4 @@
-import type { MetadataRoute } from "next";
+import type { MetadataRoute } from "../lib/next-metadata";
 import { PUBLIC_PAGES, isIndexable, localePath, siteOrigin } from "../lib/site";
 
 // Every canonical public page in both languages, each pointing at its twin.
