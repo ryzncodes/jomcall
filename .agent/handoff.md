@@ -979,3 +979,12 @@ Pull requests #66 and #67 merged and deployed. Hosted public pages read launch c
 - Verified: typecheck, test:guards 69/69, tests/domain 433/433, build:hosted, build:mock, build:local. Browser: new local workspace at desktop and 375 px, EN and BM, dark theme (checklist only).
 - Not verified: the Today and Needs you views in a browser (needs a published agent and a paid plan); staff view in a browser.
 - Next: deferred minors in the PR body (plurals, poll flicker, screen-reader text, dead channel-line.ts).
+
+## 2026-11-21: first-run design (docs only)
+
+Branch `docs/first-run-design`. Design `docs/superpowers/specs/2026-11-21-first-run-design.md`; no code.
+
+- Owner delegated the calls ("do whatever is recommended", relayed 2026-11-21). Recommended and recorded as F1-F9: extend the Home checklist with step 6 "Take your first real call" (done on the first answered real call), keep Home on the list until then with "Needs you" under it, same steps on setup's live page, a sidebar "Getting started: N of 6" link, open setup right after workspace creation, a paste hint naming website/Facebook/Instagram/Maps text, a "Your links" card on setup's review page storing links into the existing `social_links` fact (never fetched), and one new read `firstRun` for Home, the sidebar and the live page. Also found: step 5 links to `/app/phones`, which does not exist.
+- Website reading approved by the owner 2026-11-21 ("Yes, with safety guards", F12): own pull request after the checklist, every guard in section 6, then add to the AGENTS.md outbound list. Google Maps and social pages stay parked (F11). Setup reader confirmed on in production.
+- Not verified: Google Maps Platform storage terms for Places content; how forwarded calls arrive (caller number).
+- Next: owner reads the doc; then a build plan.
