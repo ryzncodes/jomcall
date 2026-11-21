@@ -7,7 +7,6 @@ import en from "@/messages/en.json";
 import ms from "@/messages/ms.json";
 import type { Locale } from "@/lib/api/types";
 import { lazy, Suspense } from "react";
-import { Marketing } from "./marketing";
 import { PublicPages } from "./public-pages";
 import { LocalApp } from "./core/local-app";
 const MockExperience = lazy(() => import("./mock-experience"));
@@ -95,7 +94,6 @@ export function Experience({
   screen:
     | "home"
     | "settings"
-    | "marketing"
     | "app"
     | "setup"
     | "test"
@@ -111,10 +109,7 @@ export function Experience({
     | "platform"
     | "selfhost"
     | "hours"
-    | "pricing"
     | "docs"
-    | "privacy"
-    | "terms"
     | "login"
     | "signup"
     | "forgot"
@@ -163,15 +158,11 @@ export function Experience({
     >
       <MotionConfig reducedMotion="user">
         <div
-          className={`experience ${screen !== "marketing" ? "app-experience" : ""}`}
+          className="experience app-experience"
           data-theme={theme}
         >
-          {screen === "marketing" ? (
-            <Marketing />
-          ) : ["pricing", "docs", "privacy", "terms"].includes(screen) ? (
-            <PublicPages
-              page={screen as "pricing" | "docs" | "privacy" | "terms"}
-            />
+          {screen === "docs" ? (
+            <PublicPages />
           ) : mode !== "mock" ? (
             <LocalApp screen={screen} />
           ) : (

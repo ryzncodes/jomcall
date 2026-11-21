@@ -1,6 +1,6 @@
-// Every page except the home page names itself in the browser tab, in
-// English and Bahasa Melayu, so an owner with several tabs open can tell
-// them apart.
+// Every page names itself in the browser tab, in English and Bahasa Melayu,
+// so an owner with several tabs open can tell them apart.
+import { rootMetadata } from "../../web/lib/root-meta.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -15,15 +15,27 @@ function pages(dir: string): string[] {
 }
 
 test("the layout adds JomCall to every page title", () => {
-  const src = readFileSync("web/app/layout.tsx", "utf8");
-  assert.match(src, /template: "%s · JomCall"/);
+  const title = rootMetadata().title as { template: string };
+  assert.equal(title.template, "%s · JomCall");
+  // The layout takes its metadata from rootMetadata.
+  assert.match(readFileSync("web/app/layout.tsx", "utf8"), /metadata: Metadata = rootMetadata\(\)/);
 });
 
-for (const page of pages("web/app").filter((p) => p !== join("web/app", "page.tsx"))) {
+// Static public pages (English under app/(public), Bahasa Melayu under
+// app/ms) take a fixed title per language from pageMetadata, because reading
+// the query string would make them dynamic. Every other page keeps pageTitle.
+const isPublic = (p: string) =>
+  p.startsWith(join("web/app", "(public)") + "/") || p.startsWith(join("web/app", "ms") + "/");
+
+for (const page of pages("web/app")) {
   test(`${page} has its own title`, () => {
-    assert.match(
-      readFileSync(page, "utf8"),
-      /export const generateMetadata = pageTitle\("[^"]+", "[^"]+"/,
-    );
+    const src = readFileSync(page, "utf8");
+    // A public page under a [param] folder has one title per param, so it
+    // exports generateMetadata, which must return pageMetadata(...).
+    if (isPublic(page) && /\/\[[^/]+\]\//.test(page))
+      assert.match(src, /export async function generateMetadata\([\s\S]*?return pageMetadata\(/);
+    else if (isPublic(page))
+      assert.match(src, /export const metadata(?::\s*Metadata)?\s*=\s*pageMetadata\(/);
+    else assert.match(src, /export const generateMetadata = pageTitle\("[^"]+", "[^"]+"/);
   });
 }

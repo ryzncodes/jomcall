@@ -1,0 +1,14 @@
+import type { Metadata } from "next";
+import { LegalPage } from "@/components/public/pages/legal";
+import { fillOperator } from "@/components/public/operator";
+import { pageMetadata } from "@/lib/public-meta";
+import { legalCopy } from "@/messages/legal";
+
+export const metadata: Metadata = pageMetadata("terms", "en", {
+  title: legalCopy.en.terms.title,
+  description: fillOperator(legalCopy.en.terms.intro),
+});
+
+export default function Page() {
+  return <LegalPage kind="terms" locale="en" />;
+}

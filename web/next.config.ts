@@ -25,5 +25,14 @@ const nextConfig: NextConfig = {
   env: { NEXT_PUBLIC_JOMCALL_MODE: process.env.JOMCALL_MODE ?? "mock" },
   devIndicators: false,
   images: { qualities: [75, 85] },
+  async headers() {
+    return [
+      { source: "/ms", headers: [{ key: "Content-Language", value: "ms" }] },
+      {
+        source: "/ms/:path*",
+        headers: [{ key: "Content-Language", value: "ms" }],
+      },
+    ];
+  },
 };
 export default nextConfig;

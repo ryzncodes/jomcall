@@ -1,6 +1,7 @@
 "use client";
 import { HOSTED } from "@/lib/hosted";
 import { launchCopy } from "@/lib/launch";
+import { authPanel } from "@/lib/auth-panel";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { HttpCoreClient } from "@/lib/core/client";
@@ -56,28 +57,13 @@ export function LocalAuth({
             <i />
             <i />
           </span>
-          <h1>
-            {w(
-              "Every relationship. One workspace.",
-              "Setiap hubungan. Satu ruang kerja.",
-            )}
-          </h1>
-          <p>
-            {w(
-              "Build your front desk, keep customer context and give your team a shared place to work.",
-              "Bina kaunter hadapan anda, simpan konteks pelanggan dan bekerjasama dalam satu ruang.",
-            )}
-          </p>
-          <div className="access-lines" aria-hidden="true">
-            {Array.from({ length: 25 }, (_, i) => (
-              <i
-                key={i}
-                style={{
-                  height: `${24 + Math.sin(i * 0.8) * 15 + (i % 4) * 10}%`,
-                }}
-              />
+          <h1>{w(...authPanel.heading)}</h1>
+          <p>{w(...authPanel.intro)}</p>
+          <ol className="access-steps" role="list" aria-label={w(...authPanel.stepsLabel)}>
+            {authPanel.steps.map(([en, ms]) => (
+              <li key={en}>{w(en, ms)}</li>
             ))}
-          </div>
+          </ol>
           <small>
             {w(
               HOSTED

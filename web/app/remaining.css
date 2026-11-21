@@ -1643,3 +1643,44 @@
 .access-single .access-form p {
   margin: 12px 0 24px;
 }
+
+.access-steps {
+  list-style: none;
+  counter-reset: access-step;
+  margin: 24px 0 20px;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  gap: 10px;
+}
+.access-steps li {
+  counter-increment: access-step;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.4;
+  color: #f4f5e9;
+}
+.access-steps li::before {
+  content: counter(access-step);
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  background: #cfe1b5;
+  color: #1f3a1f;
+}
+@media (max-width: 760px) {
+  .access-steps {
+    margin: 16px 0 14px;
+    gap: 8px;
+  }
+  .access-steps li {
+    font-size: 14px;
+  }
+}
