@@ -3,8 +3,9 @@
 --
 -- One list of the items the agent leaves for people on real phone calls and
 -- WhatsApp: messages, booking requests and handoffs. A follow-up is created
--- by the database when the agent's turn completes (so only items the caller
--- or customer actually heard become follow-ups), holds a copy of the item's
+-- by the database when the agent's turn ends (completed, or for a call also
+-- cut off by a hang-up, a crash or a failure: a proposal that survives such a
+-- turn was recorded and is counted by the call log), holds a copy of the item's
 -- details, and is the only place an item's state is written: the source
 -- proposal's state is mirrored from it and the web role loses its update
 -- grants on both proposal tables.
@@ -15,6 +16,12 @@
 -- follow_up_close, follow_up_reopen and follow_up_assign. Staff still read
 -- nothing of what was said on a call (call_turn, call_tool_step,
 -- call_proposal keep their owner and admin rule).
+
+-- This migration locks both proposal tables, the turn tables and app.member
+-- until the back-fill commits. Give up after 5 seconds rather than queue
+-- behind a live call (and stall every query behind this one); a refused
+-- apply changes nothing and can be run again when the lines are quiet.
+set local lock_timeout='5s';
 
 create table app.follow_up(
  id uuid primary key default gen_random_uuid(),
@@ -72,16 +79,19 @@ grant update(state,revision)on app.call_proposal,app.conversation_proposal to jo
 grant select(id,org_id,call_id,state)on app.call_turn to jomcall_jobs;
 grant select(id,org_id,conversation_id,state,attempt)on app.conversation_turn to jomcall_jobs;
 grant select(id,org_id,namespace,contact_id)on app.call to jomcall_jobs;
-grant select(id,org_id,channel_id,contact_id,needs_attention,attention_reason,revision)on app.conversation to jomcall_jobs;
+grant select(id,org_id,channel_id,contact_id,needs_attention,attention_reason,handoff_turn_id,revision)on app.conversation to jomcall_jobs;
 grant update(needs_attention,attention_reason,revision)on app.conversation to jomcall_jobs;
 grant select(id,org_id,namespace)on app.whatsapp_channel to jomcall_jobs;
 
 grant create on schema app_private to jomcall_jobs;
 
--- Creation. A call turn's proposals become follow-ups when the turn
--- completes; for WhatsApp, only the proposals of the completed attempt
--- (an earlier failed attempt's proposals are never deleted and were never
--- heard). A proposal that already has a follow-up is left alone.
+-- Creation. A call turn's proposals become follow-ups when the turn ends:
+-- completed, or cancelled or failed by call_end, maintain or turn_fail,
+-- which keep the turn's proposals (turn_begin and turn_cancel delete a
+-- turn's proposals before cancelling it, so they leave nothing to create).
+-- For WhatsApp, only the proposals of the completed attempt (an earlier
+-- failed attempt's proposals are never deleted, were never heard, and the
+-- turn is tried again). A proposal that already has a follow-up is left alone.
 create function app_private.follow_up_from_call_turn()returns trigger language plpgsql security definer set search_path='' as $$begin
  insert into app.follow_up(org_id,namespace,source,call_id,call_proposal_id,contact_id,kind,details)
  select p.org_id,c.namespace,'call',p.call_id,p.id,c.contact_id,p.kind,p.details
@@ -117,15 +127,22 @@ create function app_private.follow_up_mirror()returns trigger language plpgsql s
 end$$;
 
 -- The chat's "needs attention" flag, when it was raised for an agent item,
--- clears once the chat's last open follow-up closes. Any other reason (a
--- STOP, a failed send, a customer reply) is left for staff. The chat row is
--- locked first, so two last items closing at once still clear it.
+-- clears once the chat's last open follow-up closes. HANDOFF_REQUESTED
+-- clears only when it came from the agent's handoff: the chat's handoff turn
+-- has a handoff follow-up (closing that one is what clears it). The
+-- customer's own "staff" keyword sets the same reason with no item, and
+-- closing an unrelated item must not wipe it. Any other reason (a STOP, a
+-- failed send, a customer reply) is left for staff. The chat row is locked
+-- first, so two last items closing at once still clear it.
 create function app_private.follow_up_chat_flag()returns trigger language plpgsql security definer set search_path='' as $$begin
  perform 1 from app.conversation where org_id=new.org_id and id=new.conversation_id for update;
  if not exists(select 1 from app.follow_up f where f.org_id=new.org_id and f.conversation_id=new.conversation_id and f.state='open')then
-  update app.conversation set needs_attention=false,attention_reason=null,revision=revision+1
-   where org_id=new.org_id and id=new.conversation_id and needs_attention
-    and attention_reason in('BOOKING_PROPOSED','MESSAGE_LEFT','HANDOFF_REQUESTED');
+  update app.conversation v set needs_attention=false,attention_reason=null,revision=v.revision+1
+   where v.org_id=new.org_id and v.id=new.conversation_id and v.needs_attention
+    and(v.attention_reason in('BOOKING_PROPOSED','MESSAGE_LEFT')
+     or(v.attention_reason='HANDOFF_REQUESTED' and v.handoff_turn_id is not null and exists(
+      select 1 from app.follow_up f join app.conversation_proposal p on p.org_id=f.org_id and p.id=f.conversation_proposal_id
+       where f.org_id=v.org_id and f.conversation_id=v.id and f.kind='handoff' and p.turn_id=v.handoff_turn_id)));
  end if;
  return null;
 end$$;
@@ -154,6 +171,9 @@ declare v_org uuid:=nullif(current_setting('app.org_id',true),'')::uuid;f app.fo
 end$$;
 
 -- Reopen a closed item (Undo, or from the Done list). Any active member.
+-- A reopened WhatsApp item raises its chat's flag again when nothing else
+-- holds it, with the reason the agent's item gave it (owner and the chat's
+-- handoff turn are left as they are: the worker reads those).
 create function app_private.follow_up_reopen(p_id uuid,p_revision int)returns jsonb language plpgsql security definer set search_path='' as $$
 declare v_org uuid:=nullif(current_setting('app.org_id',true),'')::uuid;f app.follow_up;begin
  if v_org is null or app_private.active_role(v_org)is null then raise exception 'NOT_FOUND';end if;
@@ -162,6 +182,11 @@ declare v_org uuid:=nullif(current_setting('app.org_id',true),'')::uuid;f app.fo
  if f.revision is distinct from p_revision or f.state='open' then raise exception 'CONFLICT';end if;
  update app.follow_up set state='open',closed_by=null,closed_at=null,booking_id=null,revision=revision+1,updated_at=now()
   where id=f.id returning * into f;
+ if f.source='whatsapp' then
+  update app.conversation set needs_attention=true,revision=revision+1,
+   attention_reason=case f.kind when 'handoff' then 'HANDOFF_REQUESTED' when 'booking' then 'BOOKING_PROPOSED' else 'MESSAGE_LEFT' end
+   where org_id=f.org_id and id=f.conversation_id and not needs_attention;
+ end if;
  return to_jsonb(f);
 end$$;
 
@@ -183,8 +208,10 @@ declare v_org uuid:=nullif(current_setting('app.org_id',true),'')::uuid;v_role t
  return to_jsonb(f);
 end$$;
 
--- Back-fill: follow-ups for the proposals of completed turns that have none
--- (pending or open as open; done and dismissed as they are), created_at kept
+-- Back-fill: follow-ups for the proposals of ended turns that have none
+-- (as the triggers: a call turn completed, cancelled or failed; a WhatsApp
+-- turn completed, its completed attempt only), pending or open as open,
+-- done and dismissed as they are, created_at kept
 -- from the proposal so the oldest item stays first. The transaction-local
 -- setting jomcall.follow_up_backfill is 'on' while it inserts, so later
 -- alert triggers queue no email for back-filled items. Returns the number
@@ -197,7 +224,7 @@ declare v_calls int;v_chats int;begin
   from app.call_proposal p
   join app.call_turn t on t.org_id=p.org_id and t.id=p.turn_id
   join app.call c on c.org_id=p.org_id and c.id=p.call_id
-  where t.state='completed' and not exists(select 1 from app.follow_up f where f.call_proposal_id=p.id)
+  where t.state in('completed','cancelled','failed') and not exists(select 1 from app.follow_up f where f.call_proposal_id=p.id)
  on conflict do nothing;
  get diagnostics v_calls=row_count;
  insert into app.follow_up(org_id,namespace,source,conversation_id,conversation_proposal_id,contact_id,kind,details,state,created_at)
@@ -236,7 +263,7 @@ grant execute on function app_private.follow_up_close(uuid,int,text,uuid),app_pr
  app_private.follow_up_assign(uuid,int,uuid,timestamptz)to jomcall_app;
 
 create trigger follow_up_from_call_turn after update of state on app.call_turn for each row
- when(new.state='completed' and old.state is distinct from 'completed')execute function app_private.follow_up_from_call_turn();
+ when(new.state in('completed','cancelled','failed') and old.state is distinct from new.state)execute function app_private.follow_up_from_call_turn();
 create trigger follow_up_from_conversation_turn after update of state on app.conversation_turn for each row
  when(new.state='completed' and old.state is distinct from 'completed')execute function app_private.follow_up_from_conversation_turn();
 create trigger follow_up_mirror after update of state on app.follow_up for each row
@@ -246,5 +273,5 @@ create trigger follow_up_chat_flag after update of state on app.follow_up for ea
 create trigger follow_up_member_inactive after update of active on app.member for each row
  when(old.active and not new.active)execute function app_private.follow_up_member_inactive();
 
--- Existing items of completed turns, once. No alerts.
+-- Existing items of ended turns, once. No alerts.
 select app_private.follow_up_backfill();

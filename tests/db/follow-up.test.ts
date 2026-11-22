@@ -1,5 +1,5 @@
 // The follow-up queue in the database (app.follow_up): creation when an
-// agent turn completes, the back-fill, who may close, reopen and assign,
+// agent turn ends, the back-fill, who may close, reopen and assign,
 // state mirroring to the source proposal, the chat flag and cascades.
 // Local database only; fake names and numbers.
 import test from "node:test";
@@ -155,6 +155,100 @@ test("no follow-up after turn_cancel deletes the proposal", async () => {
     await h.cleanup.query("select app_private.agent_call('turn_cancel',$1,$2,$3,$4,$5,'{}')", [h.namespace, c.callId, c.tokenHash, c.turnId, c.lease]);
     assert.equal((await h.cleanup.query("select state from app.call_turn where id=$1", [c.turnId])).rows[0].state, "cancelled");
     assert.equal((await followUps(h, "call_id=$1", [c.callId])).length, 0);
+  } finally {
+    await h.close();
+  }
+});
+
+// The owners and admins of org A who get a "new" alert.
+const managers = (h: Harness) =>
+  h.cleanup
+    .query("select user_id from app.member where org_id=$1 and active and role in('owner','admin') order by user_id", [h.orgA.id])
+    .then((r) => r.rows.map((x) => x.user_id as string));
+const newAlerts = (h: Harness, followUpId: string) =>
+  h.cleanup
+    .query(
+      `select a.user_id,(select count(*)::int from app.outbox o where o.kind='follow_up.alert' and o.resource_id=a.id) as outbox
+       from app.follow_up_alert a where a.follow_up_id=$1 and a.reason='new' order by a.user_id`,
+      [followUpId],
+    )
+    .then((r) => r.rows as { user_id: string; outbox: number }[]);
+const agentCall = (h: Harness, action: string, c: { callId: string; tokenHash: string; turnId: string; lease: string }, data: unknown) =>
+  h.cleanup.query("select app_private.agent_call($1,$2,$3,$4,$5,$6,$7)", [action, h.namespace, c.callId, c.tokenHash, c.turnId, c.lease, JSON.stringify(data)]);
+
+test("a call turn cut off by call_end keeps its proposal as an open follow-up, with the new alert", async () => {
+  const h = await createHarness();
+  try {
+    const c = await liveCall(h);
+    const details = { text: "Pesanan sebelum talian terputus." };
+    const proposalId = await callProposal(h, c, 0, "message", details);
+    await h.cleanup.query("select app_private.agent_call('call_end',$1,$2,$3,null,null,$4)", [
+      h.namespace,
+      c.callId,
+      c.tokenHash,
+      JSON.stringify({ reason: "hangup" }),
+    ]);
+    assert.equal((await h.cleanup.query("select state from app.call_turn where id=$1", [c.turnId])).rows[0].state, "cancelled");
+    const rows = await followUps(h, "call_proposal_id=$1", [proposalId]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].state, "open");
+    assert.equal(rows[0].kind, "message");
+    assert.deepEqual(rows[0].details, details);
+    const queued = await newAlerts(h, rows[0].id);
+    assert.deepEqual(
+      queued.map((a) => a.user_id),
+      await managers(h),
+    );
+    assert.ok(queued.length > 0 && queued.every((a) => a.outbox === 1));
+  } finally {
+    await h.close();
+  }
+});
+
+test("a call turn ended by turn_fail keeps its proposal as an open follow-up", async () => {
+  const h = await createHarness();
+  try {
+    const c = await liveCall(h);
+    const proposalId = await callProposal(h, c, 0, "handoff", { reason: "Mahu bercakap dengan staf." });
+    await agentCall(h, "turn_fail", c, { code: "MODEL_FAILED" });
+    assert.equal((await h.cleanup.query("select state from app.call_turn where id=$1", [c.turnId])).rows[0].state, "failed");
+    const rows = await followUps(h, "call_proposal_id=$1", [proposalId]);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].state, "open");
+    assert.equal(rows[0].kind, "handoff");
+    // The turn's state changing again creates nothing more.
+    await h.cleanup.query("update app.call_turn set state='cancelled' where id=$1", [c.turnId]);
+    assert.equal((await followUps(h, "call_id=$1", [c.callId])).length, 1);
+  } finally {
+    await h.close();
+  }
+});
+
+test("back-fill restores follow-ups of cancelled and failed call turns, with no alerts", async () => {
+  const h = await createHarness();
+  try {
+    const ended = await liveCall(h);
+    const cut = await callProposal(h, ended, 0, "message", { text: "Terputus" });
+    await h.cleanup.query("select app_private.agent_call('call_end',$1,$2,$3,null,null,'{\"reason\":\"hangup\"}')", [
+      h.namespace,
+      ended.callId,
+      ended.tokenHash,
+    ]);
+    const failing = await liveCall(h);
+    const failed = await callProposal(h, failing, 0, "message", { text: "Gagal" });
+    await agentCall(h, "turn_fail", failing, {});
+    const withdrawn = await liveCall(h);
+    const gone = await callProposal(h, withdrawn, 0, "message", { text: "Ditarik balik" });
+    await agentCall(h, "turn_cancel", withdrawn, {});
+    assert.equal((await h.cleanup.query("select count(*)::int n from app.call_proposal where id=$1", [gone])).rows[0].n, 0);
+
+    await h.cleanup.query("delete from app.follow_up where call_proposal_id = any($1)", [[cut, failed]]);
+    await h.cleanup.query("select app_private.follow_up_backfill()");
+    for (const id of [cut, failed]) {
+      const [f] = await followUps(h, "call_proposal_id=$1", [id]);
+      assert.equal(f?.state, "open", id);
+      assert.equal((await newAlerts(h, f.id)).length, 0);
+    }
   } finally {
     await h.close();
   }
@@ -395,6 +489,98 @@ test("the chat flag clears when its last open item closes, and only for an item 
       assert.equal(kept.needs_attention, true, reason);
       assert.equal(kept.attention_reason, reason);
     }
+  } finally {
+    await h.close();
+  }
+});
+
+const chatState = async (h: Harness, id: string) =>
+  (await h.cleanup.query("select owner,needs_attention,attention_reason,handoff_turn_id,revision from app.conversation where id=$1", [id])).rows[0];
+
+test("the customer's own staff keyword flag stays when an unrelated item closes; the agent's handoff clears it", async () => {
+  const h = await createHarness();
+  try {
+    // A chat with an open message item; then the customer types "staff"
+    // (the worker's keyword path: owner staff, HANDOFF_REQUESTED, no item).
+    const t = await liveChat(h);
+    const m = await chatProposal(h, t, 0, "message", { text: "Sila hubungi saya." });
+    await h.cleanup.query("update app.conversation set needs_attention=true,attention_reason='MESSAGE_LEFT' where id=$1", [t.conversationId]);
+    await completeChatTurn(h, t.turnId);
+    await h.cleanup.query("update app.conversation set owner='staff',needs_attention=true,attention_reason='HANDOFF_REQUESTED' where id=$1", [t.conversationId]);
+    const [fm] = await followUps(h, "conversation_proposal_id=$1", [m]);
+    await close(h, h.staff, fm.id, 1, "done");
+    const kept = await chatState(h, t.conversationId);
+    assert.equal(kept.needs_attention, true);
+    assert.equal(kept.attention_reason, "HANDOFF_REQUESTED");
+
+    // The agent's handoff (handoff_turn_id set, a handoff item from that
+    // turn): closing that item clears the flag.
+    const a = await liveChat(h);
+    const hp = await chatProposal(h, a, 0, "handoff", { reason: "Mahu staf." });
+    await h.cleanup.query("update app.conversation set owner='staff',needs_attention=true,attention_reason='HANDOFF_REQUESTED',handoff_turn_id=$2 where id=$1", [
+      a.conversationId,
+      a.turnId,
+    ]);
+    await completeChatTurn(h, a.turnId);
+    const [fh] = await followUps(h, "conversation_proposal_id=$1", [hp]);
+    const before = (await chatState(h, a.conversationId)).revision;
+    await close(h, h.staff, fh.id, 1, "done");
+    const cleared = await chatState(h, a.conversationId);
+    assert.equal(cleared.needs_attention, false);
+    assert.equal(cleared.attention_reason, null);
+    assert.equal(cleared.revision, before + 1);
+  } finally {
+    await h.close();
+  }
+});
+
+test("reopening a WhatsApp item raises its chat flag again, with the reason for its kind", async () => {
+  const h = await createHarness();
+  try {
+    for (const [kind, details, reason] of [
+      ["message", { text: "Satu" }, "MESSAGE_LEFT"],
+      ["booking", { resourceId: randomUUID(), startAt: "2026-12-01T02:00:00Z", title: "Dua" }, "BOOKING_PROPOSED"],
+      ["handoff", { reason: "Tiga" }, "HANDOFF_REQUESTED"],
+    ] as const) {
+      const t = await liveChat(h);
+      const p = await chatProposal(h, t, 0, kind, details);
+      await completeChatTurn(h, t.turnId);
+      const [f] = await followUps(h, "conversation_proposal_id=$1", [p]);
+      await close(h, h.staff, f.id, 1, "dismissed");
+      const quiet = await chatState(h, t.conversationId);
+      assert.equal(quiet.needs_attention, false, kind);
+      await reopen(h, h.staff, f.id, 2);
+      const raised = await chatState(h, t.conversationId);
+      assert.equal(raised.needs_attention, true, kind);
+      assert.equal(raised.attention_reason, reason);
+      assert.equal(raised.revision, quiet.revision + 1);
+      // Owner and the handoff turn are the worker's; reopen leaves them.
+      assert.equal(raised.owner, quiet.owner);
+      assert.equal(raised.handoff_turn_id, quiet.handoff_turn_id);
+      if (kind === "handoff") {
+        // A handoff item reopened after hand-back (no handoff turn) raises
+        // HANDOFF_REQUESTED, and closing it again does not clear it: the
+        // flag cannot be told from the customer's own keyword (known limit).
+        await close(h, h.staff, f.id, 3, "done");
+        assert.equal((await chatState(h, t.conversationId)).attention_reason, "HANDOFF_REQUESTED");
+      }
+    }
+    // A chat already flagged for something else keeps that reason.
+    const t = await liveChat(h);
+    const p = await chatProposal(h, t, 0, "message", { text: "Empat" });
+    await completeChatTurn(h, t.turnId);
+    const [f] = await followUps(h, "conversation_proposal_id=$1", [p]);
+    await close(h, h.staff, f.id, 1, "done");
+    await h.cleanup.query("update app.conversation set needs_attention=true,attention_reason='OPTED_OUT' where id=$1", [t.conversationId]);
+    const before = await chatState(h, t.conversationId);
+    await reopen(h, h.staff, f.id, 2);
+    const after = await chatState(h, t.conversationId);
+    assert.equal(after.attention_reason, "OPTED_OUT");
+    assert.equal(after.revision, before.revision);
+    // A call item reopens without touching any chat.
+    const c = await callItem(h);
+    await close(h, h.staff, c.followUp.id, 1, "done");
+    await reopen(h, h.staff, c.followUp.id, 2);
   } finally {
     await h.close();
   }
