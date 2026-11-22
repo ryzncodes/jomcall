@@ -19,6 +19,7 @@ import {
   followUpClose,
   followUpReopen,
   followUpAssign,
+  followUpConfirmBooking,
   type FollowUp,
   type FollowUpPage,
   type FollowUpCount,
@@ -396,6 +397,12 @@ export const commands = {
     "POST",
     "/follow-ups/:id/reopen",
     followUpReopen,
+    out<FollowUp>(),
+  ),
+  confirmFollowUpBooking: route(
+    "POST",
+    "/follow-ups/:id/confirm-booking",
+    followUpConfirmBooking,
     out<FollowUp>(),
   ),
   assignFollowUp: route(

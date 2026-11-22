@@ -20,6 +20,10 @@ export const followUpClose = z
 export const followUpReopen = z
   .object({ id: uuid, expectedRevision: revision })
   .strict();
+// Confirm a booking item into JomCall's calendar and close it as done.
+export const followUpConfirmBooking = z
+  .object({ id: uuid, expectedRevision: revision })
+  .strict();
 export const followUpAssign = z
   .object({
     id: uuid,

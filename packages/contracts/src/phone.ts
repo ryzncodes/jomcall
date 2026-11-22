@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { uuid } from "./index.ts";
+import type { FollowUp } from "./follow-up.ts";
 
 // Phone numbers and real calls (local app). E.164 only; fake numbers in tests.
 export const e164 = z.string().regex(/^\+[1-9][0-9]{6,14}$/);
@@ -113,7 +114,6 @@ export type CallDetail = CallSummary & {
   recording_enabled: boolean;
   // Managers only; staff see the summary without the words.
   turns: CallTurn[] | null;
-  proposals:
-    | { id: string; kind: string; state: string; details: unknown }[]
-    | null;
+  // Every role: the call's follow-up items.
+  followUps: FollowUp[];
 };

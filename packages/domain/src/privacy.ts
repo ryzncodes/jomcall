@@ -145,6 +145,14 @@ export async function privacyRoute(
           [ctx.orgId, c.id],
         )
       ).rows,
+      // Follow-up items for this contact, from calls and chats. Not who
+      // closed or holds them: staff user ids are not the contact's data.
+      followUps: (
+        await tx.query(
+          "select kind,source,details,state,created_at,closed_at,due_at from app.follow_up where org_id=$1 and contact_id=$2 order by created_at,id",
+          [ctx.orgId, c.id],
+        )
+      ).rows,
       // WhatsApp conversations with their messages and staff proposals. A
       // media message says it was a photo, voice note, video, document or
       // sticker (and a document's file name); the file itself was never

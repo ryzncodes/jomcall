@@ -11,6 +11,7 @@ import {
 import { isHosted } from "../../../contracts/src/hosting.ts";
 import { manager } from "../authorization.ts";
 import { command, audit } from "../../../db/src/receipts.ts";
+import { followUpsOf } from "../follow-up/routes.ts";
 import { telephonyReadiness } from "./telephony.ts";
 import { whatsappMode } from "../../../whatsapp/src/provider.ts";
 
@@ -270,14 +271,8 @@ export async function phoneRoute(
             )
           ).rows
         : null,
-      proposals: words
-        ? (
-            await tx.query(
-              "select id,kind,state,details from app.call_proposal where org_id=$1 and call_id=$2 order by created_at,id limit 50",
-              [ctx.orgId, id],
-            )
-          ).rows
-        : null,
+      // Every role: the follow-up items, from app.follow_up, not the proposals.
+      followUps: await followUpsOf(tx, ctx, "call", id),
     };
   }
 }

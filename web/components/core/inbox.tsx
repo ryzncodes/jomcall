@@ -700,7 +700,7 @@ function ConversationView({
             detail={detail}
             contactHref={href(`/app/contacts?contact=${detail.contact_id}`)}
           />
-          <Proposals items={detail.proposals} />
+          <FollowUps items={detail.followUps} />
           {detail.messages.length >= 200 && (
             <p className="editor-note">
               {w(
@@ -829,23 +829,30 @@ const proposalWords: Record<string, Pair> = {
   ],
 };
 
-// Read-only: no command acts on a chat's proposals yet.
-function Proposals({ items }: { items: ConversationDetail["proposals"] }) {
+// Read-only for now: the chat's open follow-up items. Closed ones are no
+// longer shown as open.
+function FollowUps({ items }: { items: ConversationDetail["followUps"] }) {
   const say = usePair();
   const open = items.filter((p) => p.state === "open");
   if (!open.length) return null;
   return (
     <ul className="wa-proposals">
-      {open.map((p) => (
-        <li key={p.id}>
-          {say(
-            proposalWords[p.kind] ?? [
-              `Agent proposal: ${p.kind}`,
-              `Cadangan ejen: ${p.kind}`,
-            ],
-          )}
-        </li>
-      ))}
+      {open.map((p) => {
+        const text = [p.details.text, p.details.reason, p.details.title].find(
+          (t) => typeof t === "string" && t,
+        ) as string | undefined;
+        return (
+          <li key={p.id}>
+            {say(
+              proposalWords[p.kind] ?? [
+                `Agent proposal: ${p.kind}`,
+                `Cadangan ejen: ${p.kind}`,
+              ],
+            )}
+            {text ? <> “{text}”</> : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }

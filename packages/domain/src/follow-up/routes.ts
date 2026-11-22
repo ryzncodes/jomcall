@@ -9,11 +9,13 @@ import {
   followUpClose,
   followUpReopen,
   followUpAssign,
+  followUpConfirmBooking,
   type FollowUp,
   type FollowUpPage,
   type FollowUpCount,
 } from "../../../contracts/src/follow-up.ts";
 import { command, audit } from "../../../db/src/receipts.ts";
+import { cancelFollowUpBooking, confirmFollowUpBooking } from "./booking.ts";
 
 const PAGE = 50;
 
@@ -37,6 +39,23 @@ export async function loadFollowUp(
     .rows[0];
   if (!row) throw new AppError("NOT_FOUND", 404);
   return row;
+}
+
+// The follow-ups of one call or one chat, oldest first, for the call and
+// conversation reads. Every role reads them; none of what was said.
+export async function followUpsOf(
+  tx: PoolClient,
+  ctx: TenantContext,
+  source: "call" | "conversation",
+  id: string,
+): Promise<FollowUp[]> {
+  const column = source === "call" ? "f.call_id" : "f.conversation_id";
+  return (
+    await tx.query(
+      `select * from (${SELECT} and ${column}=$2) x order by x.created_at,x.id limit 50`,
+      [ctx.orgId, id],
+    )
+  ).rows;
 }
 
 // Database refusals the shared error mapper does not know.
@@ -143,7 +162,9 @@ export async function followUpRoute(
     ).rows[0];
     return { open: r.open, mine: r.mine } satisfies FollowUpCount;
   }
-  const m = path.match(/^\/follow-ups\/([^/]+)\/(close|reopen|assign)$/);
+  const m = path.match(
+    /^\/follow-ups\/([^/]+)\/(close|reopen|assign|confirm-booking)$/,
+  );
   if (!m || method !== "POST") return;
   const action = m[2];
   const v = (
@@ -151,35 +172,63 @@ export async function followUpRoute(
       ? followUpClose
       : action === "reopen"
         ? followUpReopen
-        : followUpAssign
+        : action === "assign"
+          ? followUpAssign
+          : followUpConfirmBooking
   ).parse({ ...(body as object), id: m[1] }) as Record<string, any>;
+  const name = action === "confirm-booking" ? "confirm_booking" : action;
   return command<FollowUp>(
     tx,
     ctx,
     key,
-    `followUp.${action}`,
+    action === "confirm-booking" ? "followUp.confirmBooking" : `followUp.${action}`,
     v,
     () =>
       guarded(async () => {
-        if (action === "close")
+        if (action === "confirm-booking") {
+          const booking = await confirmFollowUpBooking(
+            tx,
+            ctx,
+            await loadFollowUp(tx, ctx, v.id),
+            v.expectedRevision,
+          );
+          await tx.query("select app_private.follow_up_close($1,$2,'done',$3)", [
+            v.id,
+            v.expectedRevision,
+            booking.id,
+          ]);
+        } else if (action === "close")
           await tx.query("select app_private.follow_up_close($1,$2,$3,null)", [
             v.id,
             v.expectedRevision,
             v.state,
           ]);
-        else if (action === "reopen")
+        else if (action === "reopen") {
+          // Read the linked booking first: reopening clears booking_id.
+          const before = await loadFollowUp(tx, ctx, v.id);
+          if (before.revision !== v.expectedRevision)
+            throw new AppError("CONFLICT", 409);
           await tx.query("select app_private.follow_up_reopen($1,$2)", [
             v.id,
             v.expectedRevision,
           ]);
-        else
+          // The reopen checked the same revision under its row lock, so
+          // the item read above is the one that was reopened.
+          if (before.booking_id && before.contact)
+            await cancelFollowUpBooking(
+              tx,
+              ctx,
+              before.booking_id,
+              before.contact.id,
+            );
+        } else
           await tx.query("select app_private.follow_up_assign($1,$2,$3,$4)", [
             v.id,
             v.expectedRevision,
             v.assigneeUserId,
             v.dueAt,
           ]);
-        await audit(tx, ctx, `follow_up.${action}`, "follow_up", v.id);
+        await audit(tx, ctx, `follow_up.${name}`, "follow_up", v.id);
         return { ref: { id: v.id }, data: await loadFollowUp(tx, ctx, v.id) };
       }),
     (ref) => loadFollowUp(tx, ctx, String(ref.id)),

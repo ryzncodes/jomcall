@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { uuid } from "./index.ts";
 import { boundedText } from "./agent-test.ts";
+import type { FollowUp } from "./follow-up.ts";
 
 // Latest Graph API version on Meta's changelog page on 2026-11-14 (released
 // 2026-11-04). The only place the version is named: the Cloud API client and
@@ -220,12 +221,6 @@ export type ConversationDetail = ConversationSummary & {
   };
   reply_outlook: ReplyOutlook;
   messages: ChatMessage[];
-  proposals: {
-    id: string;
-    kind: string;
-    details: unknown;
-    state: string;
-    created_at: string;
-  }[];
+  followUps: FollowUp[];
 };
 export { uuid };

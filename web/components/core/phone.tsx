@@ -570,20 +570,30 @@ function CallDetail({ id }: { id: string }) {
           ))}
         </ol>
       )}
-      {!!c.proposals?.length && (
+      {!!c.followUps.length && (
         <>
           <h3>{w("To follow up", "Untuk disusuli")}</h3>
           <ul>
-            {c.proposals.map((p) => (
-              <li key={p.id}>
-                {p.kind === "booking"
-                  ? w("Booking to confirm", "Tempahan untuk disahkan")
-                  : p.kind === "message"
-                    ? w("Message", "Mesej")
-                    : w("Staff follow-up", "Susulan staf")}{" "}
-                · {p.state}
-              </li>
-            ))}
+            {c.followUps.map((p) => {
+              const text = [p.details.text, p.details.reason, p.details.title].find(
+                (t) => typeof t === "string" && t,
+              ) as string | undefined;
+              return (
+                <li key={p.id}>
+                  {p.kind === "booking"
+                    ? w("Booking to confirm", "Tempahan untuk disahkan")
+                    : p.kind === "message"
+                      ? w("Message", "Mesej")
+                      : w("Staff follow-up", "Susulan staf")}
+                  {text ? <> · {text}</> : null} ·{" "}
+                  {p.state === "open"
+                    ? w("Open", "Terbuka")
+                    : p.state === "done"
+                      ? w("Done", "Selesai")
+                      : w("Dismissed", "Diketepikan")}
+                </li>
+              );
+            })}
           </ul>
         </>
       )}
