@@ -73,7 +73,8 @@ function parseCursor(raw: string | undefined, view: string) {
   if (!raw) return null;
   try {
     const [v, at, id] = JSON.parse(Buffer.from(raw, "base64url").toString());
-    if (v !== view || typeof at !== "string" || Number.isNaN(Date.parse(at)))
+    if (v !== view || typeof at !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?([+-]\d{2}(:?\d{2})?|Z)$/.test(at))
       throw new Error("bad");
     return { at, id: uuid.parse(id) };
   } catch {
@@ -109,6 +110,7 @@ export async function followUpRoute(
       where += ` and (${at},f.id)${op}($${values.length - 1}::timestamptz,$${values.length}::uuid)`;
     }
     const order = p.view === "done" ? `${at} desc,f.id desc` : `${at},f.id`;
+    // The pattern cannot rule out every impossible date; the database does.
     const rows = (
       await tx.query(
         `select * from (${SELECT}${where}) x order by ${order.replaceAll("f.", "x.")} limit ${PAGE + 1}`.replace(
@@ -116,7 +118,11 @@ export async function followUpRoute(
           `select ${at}::text as sort_at,f.id,`,
         ),
         values,
-      )
+      ).catch((e: { code?: string }) => {
+        if (after && ["22007", "22008", "22003", "22P02"].includes(e?.code ?? ""))
+          throw new AppError("INVALID_CURSOR", 422);
+        throw e;
+      })
     ).rows as (FollowUp & { sort_at: string })[];
     const items = rows.slice(0, PAGE);
     const next =

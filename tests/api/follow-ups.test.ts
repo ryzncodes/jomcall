@@ -181,6 +181,12 @@ test("cursors: bad one is refused; a well-formed one pages in both orders", asyn
     const done = await get(h.staff, h.orgA.id, "/follow-ups?view=done&cursor=" + cur("done", randomUUID()));
     assert.equal(done.status, 200);
     assert.equal(done.body.data.items.length, 2);
+    const raw = (at: string) => Buffer.from(JSON.stringify(["open", at, randomUUID()])).toString("base64url");
+    for (const at of ["1", "2026", "12/31/2026", "-271821-04-20T00:00:00Z", "2026-13-45T00:00:00Z", "0000-01-01T00:00:00Z"]) {
+      const r = await get(h.staff, h.orgA.id, "/follow-ups?cursor=" + raw(at));
+      assert.equal(r.status, 422, at);
+      assert.equal(r.body.error.code, "INVALID_CURSOR");
+    }
     assert.equal((await get(h.staff, h.orgA.id, "/follow-ups?view=open&cursor=" + cur("done", randomUUID()))).status, 422);
   } finally {
     await close();
