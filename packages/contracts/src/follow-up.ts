@@ -46,6 +46,8 @@ export type FollowUp = {
   closed_by: string | null;
   assignee: { userId: string; name: string } | null;
   booking_id: string | null;
+  // The linked booking's start while it is confirmed (reopen cancels it).
+  booking_start_at: string | null;
   contact: { id: string; name: string; phone: string | null } | null;
   call_id: string | null;
   conversation_id: string | null;

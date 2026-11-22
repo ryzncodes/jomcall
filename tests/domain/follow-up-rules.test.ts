@@ -23,20 +23,23 @@ const contact = { id: "c1", name: "Aisyah Contoh", phone: "+60123330001" };
 
 test("buttons: booking items confirm or decline; no contact means decline and Bookings", () => {
   const b = null;
-  assert.deepEqual(actionsFor({ kind: "message", state: "open", contact, booking_id: b }), ["done", "dismiss"]);
-  assert.deepEqual(actionsFor({ kind: "handoff", state: "open", contact: null, booking_id: b }), ["done", "dismiss"]);
-  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact, booking_id: b }), ["confirm", "decline"]);
-  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact: null, booking_id: b }), ["decline", "bookings"]);
-  assert.deepEqual(actionsFor({ kind: "message", state: "dismissed", contact, booking_id: b }), ["reopen"]);
-  assert.deepEqual(actionsFor({ kind: "message", state: "done", contact, booking_id: b }), ["reopen"]);
+  assert.deepEqual(actionsFor({ kind: "message", state: "open", contact, booking_id: b, booking_start_at: null }), ["done", "dismiss"]);
+  assert.deepEqual(actionsFor({ kind: "handoff", state: "open", contact: null, booking_id: b, booking_start_at: null }), ["done", "dismiss"]);
+  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact, booking_id: b, booking_start_at: null }), ["confirm", "decline"]);
+  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact: null, booking_id: b, booking_start_at: null }), ["decline", "bookings"]);
+  assert.deepEqual(actionsFor({ kind: "message", state: "dismissed", contact, booking_id: b, booking_start_at: null }), ["reopen"]);
+  assert.deepEqual(actionsFor({ kind: "message", state: "done", contact, booking_id: b, booking_start_at: null }), ["reopen"]);
 });
 
 test("reopening a confirmed booking says it cancels the booking; a declined one reopens plainly", () => {
-  const confirmed = { kind: "booking" as const, state: "done" as const, contact, booking_id: "b1" };
+  const confirmed = { kind: "booking" as const, state: "done" as const, contact, booking_id: "b1", booking_start_at: "2026-11-24T01:00:00.000Z" };
   assert.deepEqual(actionsFor(confirmed), ["reopen_booking"]);
   assert.deepEqual(ACTION_WORDS.reopen_booking, ["Cancel booking and reopen", "Batalkan tempahan dan buka semula"]);
   assert.deepEqual(actionsFor({ ...confirmed, state: "dismissed" }), ["reopen"]);
-  assert.deepEqual(actionsFor({ ...confirmed, booking_id: null }), ["reopen"]);
+  assert.deepEqual(actionsFor({ ...confirmed, booking_id: null, booking_start_at: null }), ["reopen"]);
+  // The booking was cancelled or moved to another contact elsewhere:
+  // reopening cancels nothing, so the button is plain Reopen.
+  assert.deepEqual(actionsFor({ ...confirmed, booking_start_at: null }), ["reopen"]);
   assert.deepEqual(ACTION_WORDS.reopen, ["Reopen", "Buka semula"]);
   // Both reopen the item; only one of them is a link.
   assert.equal(commandOf("reopen_booking"), "reopen");
@@ -117,6 +120,14 @@ test("refusal words: the brief's sentences, or the shared copy", () => {
   assert.equal(refusalWords("NOT_FOUND", "confirm", true)![1], "Tempahan ini tidak dapat disahkan: kalendarnya tiada lagi.");
   assert.equal(refusalWords("NOT_FOUND", "confirm", false)![0], "This item is no longer available.");
   assert.equal(refusalWords("NOT_FOUND", "done", true)![0], "This item is no longer available.");
-  assert.equal(refusalWords("SLOT_UNAVAILABLE", "confirm", true), undefined);
+  // A time that cannot be booked: a way forward, not "Choose another slot."
+  for (const code of ["SLOT_UNAVAILABLE", "INVALID_BOOKING_TIME", "OUTSIDE_OPEN_HOURS"]) {
+    assert.deepEqual(refusalWords(code, "confirm", true), [
+      "That time can't be booked now. Call the customer to agree a new time, add it in Bookings, then decline this request.",
+      "Masa itu tidak boleh ditempah sekarang. Hubungi pelanggan untuk setuju masa baharu, tambahkannya di Tempahan, kemudian tolak permintaan ini.",
+    ]);
+    assert.equal(refusalWords(code, "done", true), undefined);
+  }
+  assert.equal(refusalWords("CONTACT_REQUIRED", "confirm", true), undefined);
   assert.equal(refusalWords(null, "done", true), undefined);
 });

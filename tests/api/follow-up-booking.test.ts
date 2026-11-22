@@ -73,6 +73,12 @@ test("confirm booking: a confirmed staff booking, the item done, the slot no lon
     assert.equal(b.title, "Servis Contoh");
     assert.equal(Date.parse(b.start_at), Date.parse(f.slotStart));
     assert.equal(await offered(f), false);
+    assert.equal(Date.parse(res.body.data.booking_start_at), Date.parse(f.slotStart));
+    // Moved in Bookings since: the item names the booking's own time, which
+    // is what reopening would cancel.
+    await f.h.cleanup.query("update app.booking set start_at=start_at+interval '1 hour',end_at=end_at+interval '1 hour' where id=$1", [b.id]);
+    const done = (await get(f, f.h.staff, "/follow-ups?view=done")).body.data.items.find((x: { id: string }) => x.id === followUp.id);
+    assert.equal(Date.parse(done.booking_start_at), Date.parse(f.slotStart) + 3_600_000);
     const audits = (
       await f.h.cleanup.query("select action from app.audit_log where org_id=$1 and target_id in($2,$3)", [f.h.orgA.id, followUp.id, b.id])
     ).rows
@@ -85,11 +91,12 @@ test("confirm booking: a confirmed staff booking, the item done, the slot no lon
     assert.equal(re.status, 200, JSON.stringify(re.body));
     assert.equal(re.body.data.state, "open");
     assert.equal(re.body.data.booking_id, null);
+    assert.equal(re.body.data.booking_start_at, null);
     const [after] = await bookingRows(f);
     assert.equal(after.status, "cancelled");
     assert.equal(after.revision, b.revision + 1);
     assert.equal(
-      (await f.h.cleanup.query("select count(*)::int n from app.audit_log where org_id=$1 and action='booking.cancelled' and target_id=$2", [f.h.orgA.id, b.id]))
+      (await f.h.cleanup.query("select count(*)::int n from app.audit_log where org_id=$1 and action='booking.cancel' and target_id=$2", [f.h.orgA.id, b.id]))
         .rows[0].n,
       1,
     );

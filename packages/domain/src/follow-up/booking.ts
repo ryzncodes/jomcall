@@ -65,5 +65,5 @@ export async function cancelFollowUpBooking(
     [ctx.orgId, bookingId, contactId],
   );
   if (r.rowCount === 1)
-    await audit(tx, ctx, "booking.cancelled", "booking", bookingId);
+    await audit(tx, ctx, "booking.cancel", "booking", bookingId);
 }

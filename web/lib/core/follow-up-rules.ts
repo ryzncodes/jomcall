@@ -44,12 +44,16 @@ export function stateWords(item: Pick<FollowUp, "kind" | "state">): Pair {
 // confirming it into the calendar (the server refuses a plain Done), and it
 // cannot be booked without a contact: then Decline and a link to Bookings,
 // where staff can book it for a contact by hand (design D5). Reopening a
-// confirmed booking item cancels its booking, so that button says so.
+// confirmed booking item cancels its booking, so that button says so; once
+// the booking is no longer confirmed (booking_start_at null), reopening
+// cancels nothing and the button is plain Reopen.
 export function actionsFor(
-  item: Pick<FollowUp, "kind" | "state" | "contact" | "booking_id">,
+  item: Pick<FollowUp, "kind" | "state" | "contact" | "booking_id" | "booking_start_at">,
 ): FollowUpAction[] {
   if (item.state !== "open")
-    return item.kind === "booking" && item.state === "done" && item.booking_id ? ["reopen_booking"] : ["reopen"];
+    return item.kind === "booking" && item.state === "done" && item.booking_id && item.booking_start_at
+      ? ["reopen_booking"]
+      : ["reopen"];
   if (item.kind === "booking") return item.contact ? ["confirm", "decline"] : ["decline", "bookings"];
   return ["done", "dismiss"];
 }
@@ -74,8 +78,9 @@ export const ACTION_WORDS: Record<FollowUpAction, Pair> = {
   bookings: ["Bookings", "Tempahan"],
 };
 
-// The question before reopen_booking sends; `when` is the booking's time
-// as the screen shows it, or undefined when the item has none.
+// The question before reopen_booking sends; `when` is the linked booking's
+// own time (booking_start_at, not the time first asked for) as the screen
+// shows it, or undefined when the item has none.
 export function cancelQuestion(when: string | undefined): Pair {
   return when
     ? [`Cancel the booking for ${when}?`, `Batalkan tempahan untuk ${when}?`]
@@ -147,8 +152,16 @@ export const GONE: Pair = ["This item is no longer available.", "Item ini tiada 
 export function refusalWords(code: string | null, action: FollowUpAction, stillThere: boolean): Pair | undefined {
   if (code === "CONFLICT") return CHANGED;
   if (code === "NOT_FOUND") return calendarGone(code, action, stillThere) ? CALENDAR_GONE : GONE;
+  if (action === "confirm" && code !== null && TIME_REFUSALS.has(code)) return TIME_UNBOOKABLE;
   return undefined;
 }
+// The requested time cannot be booked: here there is no other slot to pick,
+// so the shared "Choose another slot." would be a dead end.
+const TIME_REFUSALS = new Set(["SLOT_UNAVAILABLE", "INVALID_BOOKING_TIME", "OUTSIDE_OPEN_HOURS"]);
+export const TIME_UNBOOKABLE: Pair = [
+  "That time can't be booked now. Call the customer to agree a new time, add it in Bookings, then decline this request.",
+  "Masa itu tidak boleh ditempah sekarang. Hubungi pelanggan untuk setuju masa baharu, tambahkannya di Tempahan, kemudian tolak permintaan ini.",
+];
 export const CALENDAR_GONE: Pair = [
   "This booking can't be confirmed: its calendar is no longer available.",
   "Tempahan ini tidak dapat disahkan: kalendarnya tiada lagi.",

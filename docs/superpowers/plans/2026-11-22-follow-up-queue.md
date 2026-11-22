@@ -169,7 +169,7 @@
 - Consumes: `loadFollowUp` (Task 3), `app_private.follow_up_close(…, p_booking)` (Task 1), `requestBookingInTransaction(tx, ctx, {contactId, resourceId, title, startAt}, "staff")`.
 - Produces `confirmBookingInTransaction(tx, ctx, bookingId: string, expectedRevision: number): Promise<Booking>` (same clash check and errors as today's confirm; `bookingCommand` calls it).
 - Produces command `confirmFollowUpBooking: route("POST", "/follow-ups/:id/confirm-booking", z.object({ id: uuid, expectedRevision }).strict(), out<FollowUp>())`: in one transaction, refuse unless `kind='booking'`, `state='open'` and a contact exists (`CONTACT_REQUIRED`, 409); request then confirm the booking from `details.resourceId`, `details.startAt`, `details.title`; close as `done` with the booking id; booking errors propagate unchanged and roll everything back.
-- `reopenFollowUp` (Task 3) gains: when the item has `booking_id` and that booking is `confirmed`, set it `cancelled` (revision + 1, audit `booking.cancelled`) before reopening.
+- `reopenFollowUp` (Task 3) gains: when the item has `booking_id` and that booking is `confirmed`, set it `cancelled` (revision + 1, audit `booking.cancel`, the name every booking cancel uses) before reopening.
 - Call detail returns `followUps` for **every role** from `app.follow_up` (fields of `FollowUp`); turns stay manager-only. Conversation detail returns `followUps` the same way.
 - PDPA export gains `followUps: [{kind, source, details, state, created_at, closed_at, due_at}]` for the contact (no user ids).
 

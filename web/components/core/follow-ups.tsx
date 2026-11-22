@@ -444,7 +444,7 @@ function AssignForm({
   ];
   const dueOptions: { value: DueKind; label: string }[] = [
     ...(item.due_at ? [{ value: "keep" as const, label: w("Keep the current time", "Kekalkan masa semasa") }] : []),
-    { value: "none", label: w("No due time", "Tiada masa") },
+    { value: "none", label: w("No due time", "Tiada tarikh akhir") },
     { value: "today", label: w("Today", "Hari ini") },
     { value: "tomorrow", label: w("Tomorrow", "Esok") },
     { value: "at", label: w("Date and time", "Tarikh dan masa") },
@@ -496,7 +496,7 @@ function AssignForm({
           <Field label={w("Assign to (email)", "Serahkan kepada (e-mel)")}>
             <Picker value={assignee} onChange={setAssignee} options={options} />
           </Field>
-          <Field label={w("Due · Kuala Lumpur time", "Masa · waktu Kuala Lumpur")}>
+          <Field label={w("Due · Kuala Lumpur time", "Tarikh akhir · waktu Kuala Lumpur")}>
             <Picker value={due} onChange={setDue} options={dueOptions} />
           </Field>
           {due === "at" && (

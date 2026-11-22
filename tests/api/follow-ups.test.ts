@@ -192,3 +192,52 @@ test("cursors: bad one is refused; a well-formed one pages in both orders", asyn
     await close();
   }
 });
+
+test("paging past 50: the server's own next cursor returns the rest, none twice, none missing", async () => {
+  const { h, get, close } = await setup();
+  try {
+    const { callId } = await callItem(h);
+    // 54 more items on one call, all completed in one statement: they share
+    // one created_at, so the id breaks the tie across the page boundary. A
+    // call has one running turn at most, so the turns start as failed with
+    // no lease (an ended turn becomes an item only on its state change).
+    await h.cleanup.query(
+      `with t as(
+         insert into app.call_turn(org_id,call_id,client_turn_id,input,state,lease_token,lease_until)
+         select $1,$2,gen_random_uuid(),'Pesanan '||g,'failed',null,null from generate_series(1,54)g returning id)
+       insert into app.call_proposal(org_id,call_id,turn_id,step,kind,details)
+       select $1,$2,t.id,0,'message','{"text":"Pesanan contoh"}' from t`,
+      [h.orgA.id, callId],
+    );
+    await h.cleanup.query("update app.call_turn set state='completed',completed_at=now() where call_id=$1 and state='failed'", [callId]);
+    const all = (await h.cleanup.query("select id from app.follow_up where org_id=$1 and call_id=$2", [h.orgA.id, callId])).rows.map((r) => r.id as string);
+    assert.equal(all.length, 55);
+    const pages = async (view: string) => {
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      let count = 0;
+      do {
+        const r = await get(h.staff, h.orgA.id, `/follow-ups?view=${view}` + (cursor ? `&cursor=${cursor}` : ""));
+        assert.equal(r.status, 200, JSON.stringify(r.body));
+        assert.ok(r.body.data.items.length <= 50);
+        seen.push(...r.body.data.items.map((x: { id: string }) => x.id));
+        cursor = r.body.data.next;
+        count++;
+      } while (cursor && count < 5);
+      return { seen, count };
+    };
+    const open = await pages("open");
+    assert.equal(open.count, 2);
+    assert.equal(new Set(open.seen).size, open.seen.length, "no item twice");
+    assert.deepEqual([...open.seen].sort(), [...all].sort());
+    // The Done tab pages newest first; back-filled-style rows with no close
+    // time sort by their shared created_at, so the id breaks the tie there too.
+    await h.cleanup.query("update app.follow_up set state='dismissed' where org_id=$1 and call_id=$2", [h.orgA.id, callId]);
+    const done = await pages("done");
+    assert.equal(done.count, 2);
+    assert.equal(new Set(done.seen).size, done.seen.length, "no item twice");
+    assert.deepEqual([...done.seen].sort(), [...all].sort());
+  } finally {
+    await close();
+  }
+});

@@ -21,12 +21,17 @@ const PAGE = 50;
 
 // Items whose contact awaits PDPA deletion are hidden everywhere. Never
 // selects from app.call: the web role has no grant on its billing columns.
+// booking_start_at is the linked booking's own time (it may have been
+// rescheduled since the request), only while reopening would cancel it:
+// confirmed and for the item's own contact (cancelFollowUpBooking's rule).
 const SELECT = `select f.id,f.kind,f.source,f.details,f.state,f.revision,f.created_at,f.due_at,f.closed_at,f.closed_by,
-  f.booking_id,f.call_id,f.conversation_id,
+  f.booking_id,case when b.status='confirmed' and b.contact_id=f.contact_id then b.start_at end as booking_start_at,
+  f.call_id,f.conversation_id,
   case when wm.user_id is not null then jsonb_build_object('userId',wm.user_id,'name',wm.email) end as assignee,
   case when c.id is not null then jsonb_build_object('id',c.id,'name',c.name,'phone',c.phone_e164) end as contact
  from app.follow_up f
  left join app.contact c on c.org_id=f.org_id and c.id=f.contact_id
+ left join app.booking b on b.org_id=f.org_id and b.id=f.booking_id
  left join app_private.workspace_members($1) wm on wm.user_id=f.assignee_user_id and wm.active
  where f.org_id=$1 and (c.id is null or not c.deletion_pending)`;
 
@@ -71,7 +76,7 @@ async function guarded<T>(run: () => Promise<T>): Promise<T> {
     if (
       e instanceof Error &&
       !(e instanceof AppError) &&
-      e.message in SQL_REFUSALS
+      Object.hasOwn(SQL_REFUSALS, e.message)
     )
       throw new AppError(e.message, SQL_REFUSALS[e.message]);
     throw e;

@@ -125,7 +125,8 @@ export function ActionButtons({
   // reopen_booking asks first: reopening cancels the confirmed booking.
   const [asking, setAsking] = useState(false);
   if (asking) {
-    const start = bookingStart(item);
+    // The booking's own time: it may have moved since the request.
+    const start = item.booking_start_at;
     return (
       <div className="follow-up-ask" role="group">
         <p>{say(cancelQuestion(start ? when(start) : undefined))}</p>

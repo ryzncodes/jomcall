@@ -9,7 +9,10 @@ import { FakeSender } from "../../engine/src/mail.ts";
 process.env.NODE_ENV = "test";
 type H = Awaited<ReturnType<typeof createHarness>>;
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
-const SECRET = { name: "Pemanggil Rahsia", phone: "+60123334444", text: "Nombor akaun saya 12345" };
+// The account number holds letters no id or hex link can contain, so a
+// match can only come from the message text.
+const ACCOUNT = "KXQ-7719-RZ";
+const SECRET = { name: "Pemanggil Rahsia", phone: "+60123334444", text: `Nombor akaun saya ${ACCOUNT}` };
 
 // One completed call turn with a message proposal, as in tests/db/follow-up-alerts.test.ts.
 async function callItem(h: H) {
@@ -65,7 +68,7 @@ test("a new follow-up is mailed once to each owner, with no customer data", asyn
     assert.equal(sent[0].to, h.alice.confirmedEmail);
     assert.equal(sent[0].subject, "New follow-up in JomCall / Susulan baharu dalam JomCall");
     assert.match(sent[0].text, /took a message from a phone call at /);
-    for (const secret of [SECRET.name, SECRET.phone, "12345", SECRET.text, "Studio Contoh"])
+    for (const secret of [SECRET.name, SECRET.phone, ACCOUNT, SECRET.text, "Studio Contoh"])
       assert.ok(!sent[0].subject.includes(secret) && !sent[0].text.includes(secret), secret);
     assert.deepEqual(await alertStates(h, c.followUpId), ["sent"]);
     await run(h, mail);
