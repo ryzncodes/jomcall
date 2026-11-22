@@ -36,6 +36,12 @@ export function needText(n: Need, w: W, balanceSen: number | null) {
         : w("Plan fee unpaid", "Yuran pelan belum dibayar");
     case "wallet_low":
       return w(`Wallet low: ${rm}`, `Baki dompet rendah: ${rm}`);
+    case "follow_ups": {
+      const mine = n.mine
+        ? w(` · ${n.mine} assigned to you`, ` · ${n.mine} diserahkan kepada anda`)
+        : "";
+      return w(`${n.count} to follow up`, `${n.count} untuk disusuli`) + mine;
+    }
     case "bookings":
       return w(
         `${n.count} ${n.count === 1 ? "booking" : "bookings"} to confirm`,

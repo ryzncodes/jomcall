@@ -93,6 +93,7 @@ export function Experience({
   initialTheme: Theme;
   screen:
     | "home"
+    | "follow-ups"
     | "settings"
     | "app"
     | "setup"

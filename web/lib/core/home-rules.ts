@@ -10,6 +10,7 @@ import type { KnowledgeGap } from "../../../packages/contracts/src/knowledge";
 import type { TestSession } from "../../../packages/contracts/src/agent-test";
 import type { Setup } from "../../../packages/contracts/src/setup";
 import type { FirstRun } from "../../../packages/contracts/src/first-run";
+import type { FollowUpCount } from "../../../packages/contracts/src/follow-up";
 import { klDate, lastGraceDay } from "./plan-rules";
 
 export type HomeFacts = {
@@ -27,6 +28,7 @@ export type HomeFacts = {
   chats?: ConversationSummary[];
   gaps?: KnowledgeGap[];
   firstRun?: FirstRun;
+  followUps?: FollowUpCount;
 };
 
 export type StepId = "setup" | "test" | "publish" | "plan" | "phone" | "call";
@@ -178,12 +180,21 @@ export type NeedId =
   | "wallet_grace"
   | "plan_unpaid"
   | "wallet_low"
+  | "follow_ups"
   | "bookings"
   | "chats"
   | "gaps";
-export type Need = { id: NeedId; count: number; href: string; date?: string };
+export type Need = {
+  id: NeedId;
+  count: number;
+  href: string;
+  date?: string;
+  // follow_ups only: how many of the open items are assigned to the viewer.
+  mine?: number;
+};
 
-// Billing first, then customers waiting, then knowledge gaps.
+// Billing first, then the follow-up queue, then customers waiting, then
+// knowledge gaps.
 export function needsYou(f: HomeFacts): Need[] {
   const out: Need[] = [];
   if (f.manager) {
@@ -201,6 +212,13 @@ export function needsYou(f: HomeFacts): Need[] {
     if (state === "low")
       out.push({ id: "wallet_low", count: 1, href: "/app/billing" });
   }
+  if (f.followUps?.open)
+    out.push({
+      id: "follow_ups",
+      count: f.followUps.open,
+      mine: f.followUps.mine,
+      href: "/app/follow-ups",
+    });
   const add = (id: NeedId, list: unknown[] | undefined, href: string) => {
     if (list?.length) out.push({ id, count: list.length, href });
   };
@@ -223,6 +241,7 @@ const FETCHED = [
   "chats",
   "gaps",
   "firstRun",
+  "followUps",
 ] as const;
 
 export function homeState(f: HomeFacts): "failed" | "checklist" | "today" {

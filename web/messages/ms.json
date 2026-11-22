@@ -629,6 +629,10 @@
     "languageRequired": "Pilih sekurang-kurangnya satu bahasa pemanggil.",
     "scheduleHint": "Waktu tersimpan di bawah digunakan dalam ujian. Suntingan jadual mingguan menggantikan ringkasan itu; import laman tidak ditukar menjadi jadual."
   },
+  "followUps": {
+    "nav": "Untuk disusuli",
+    "openCount": " terbuka"
+  },
   "inbox": {
     "nav": "Peti masuk",
     "title": "Setiap perbualan, lengkap konteksnya.",

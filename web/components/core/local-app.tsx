@@ -33,6 +33,12 @@ const SetupFlow =
   process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
     ? dynamic(() => import("./setup/flow").then((m) => m.SetupFlow))
     : null;
+// The follow-up queue, likewise local and hosted only.
+const FollowUpsScreen =
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "local" ||
+  process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
+    ? dynamic(() => import("./follow-ups").then((m) => m.LocalFollowUps))
+    : null;
 export function LocalApp({ screen }: { screen: string }) {
   return screen === "link" ? (
     <OpenLink />
@@ -284,6 +290,10 @@ function LocalWorkspace({ screen }: { screen: string }) {
             <div key={orgId}>
               {screen === "home" ? (
                 <LocalHome />
+              ) : screen === "follow-ups" ? (
+                FollowUpsScreen ? (
+                  <FollowUpsScreen />
+                ) : null
               ) : screen === "bookings" ? (
                 <LocalBookings />
               ) : screen === "test" ? (

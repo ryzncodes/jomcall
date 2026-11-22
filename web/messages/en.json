@@ -629,6 +629,10 @@
     "languageRequired": "Choose at least one caller language.",
     "scheduleHint": "Saved hours below are used in tests. Editing the weekly schedule replaces that summary; website imports are not parsed into a schedule."
   },
+  "followUps": {
+    "nav": "To follow up",
+    "openCount": " open"
+  },
   "inbox": {
     "nav": "Inbox",
     "title": "Every conversation, in context.",

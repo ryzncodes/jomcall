@@ -310,3 +310,18 @@ test("checklist: an active number counts as a phone line without a provider, as 
   assert.equal(step(f, "call")!.state, "todo");
   assert.equal(isLive(f), false);
 });
+
+test("needsYou: open follow-ups, with the ones assigned to you", () => {
+  const f = fullOwner({ followUps: { open: 3, mine: 1 }, chats: [any({})] });
+  const need = needsYou(f).find((n) => n.id === "follow_ups");
+  assert.deepEqual(need, { id: "follow_ups", count: 3, mine: 1, href: "/app/follow-ups" });
+  // Before the chats: a follow-up is the item to act on.
+  assert.deepEqual(needsYou(f).map((n) => n.id), ["follow_ups", "chats"]);
+  assert.deepEqual(needsYou({ ...f, manager: false }).map((n) => n.id), ["follow_ups", "chats"]);
+  assert.deepEqual(needsYou(fullOwner({ followUps: { open: 0, mine: 0 } })), []);
+  assert.deepEqual(needsYou(fullOwner({ followUps: undefined })), []);
+  assert.equal(needText(need!, en, null), "3 to follow up · 1 assigned to you");
+  assert.equal(needText(need!, bm, null), "3 untuk disusuli · 1 diserahkan kepada anda");
+  assert.equal(needText({ ...need!, count: 1, mine: 0 }, en, null), "1 to follow up");
+  assert.equal(needText({ ...need!, count: 1, mine: 0 }, bm, null), "1 untuk disusuli");
+});

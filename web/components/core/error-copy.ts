@@ -3,9 +3,20 @@ import { CoreError, ProxyError } from "../../lib/core/client";
 
 // Wording for an error code that means something different on one screen.
 // The shared table in state.tsx stays the default for every other case.
-export type ErrorContext = "voice" | "hours" | "invite";
+export type ErrorContext = "voice" | "hours" | "invite" | "followUp";
 
 const overrides: Record<ErrorContext, Record<string, [string, string]>> = {
+  followUp: {
+    // The screen reloads the item before it shows this.
+    CONFLICT: [
+      "Someone changed this item. It has been reloaded.",
+      "Seseorang telah mengubah item ini. Item dimuat semula.",
+    ],
+    NOT_FOUND: [
+      "This item is no longer available.",
+      "Item ini tiada lagi.",
+    ],
+  },
   invite: {
     // Someone who opened an invitation link without being signed in never
     // had a session, so "Session ended" would be wrong.
@@ -240,5 +251,21 @@ export const moreCopy: Record<string, [string, string]> = {
   NOT_READY: [
     "The export is not ready yet. Try again shortly.",
     "Eksport belum sedia. Cuba lagi sebentar lagi.",
+  ],
+  CONTACT_REQUIRED: [
+    "This request has no contact, so it cannot be booked. Decline it, or add the booking under Bookings.",
+    "Permintaan ini tiada kenalan, jadi tidak boleh ditempah. Tolak, atau tambah tempahan di Tempahan.",
+  ],
+  BOOKING_CONFIRM_REQUIRED: [
+    "Confirm the booking, or decline it.",
+    "Sahkan tempahan, atau tolaknya.",
+  ],
+  INVALID_STATE: [
+    "This cannot be done to this item. Reload and try again.",
+    "Ini tidak boleh dibuat pada item ini. Muat semula dan cuba lagi.",
+  ],
+  INVALID_ASSIGNEE: [
+    "That person is no longer in this workspace. Choose someone else.",
+    "Orang itu tiada lagi dalam ruang kerja ini. Pilih orang lain.",
   ],
 };
