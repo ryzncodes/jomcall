@@ -1,5 +1,26 @@
 # Handoff
 
+## 2026-11-22: follow-up queue (branch `feat/follow-up-queue`, pull request not yet open, not merged)
+
+Design: `docs/superpowers/specs/2026-11-22-follow-up-queue-design.md` (build note in section 10). Plan: `docs/superpowers/plans/2026-11-22-follow-up-queue.md`. Two migrations: `20261122100000_follow_up_queue.sql`, `20261122100100_follow_up_alerts.sql`.
+
+**What changed**
+- Agent proposals from completed real calls and WhatsApp turns become follow-up items. New page `/app/follow-ups` (Open, Mine, Done; Undo; assign and due time for owners and admins; Confirm booking / Decline for booking requests, confirmed into JomCall's own calendar). Counts on Home and the sidebar; items and buttons on the call page and the WhatsApp chat.
+- New items email the owner and every active admin; an assignment emails the assignee. Emails carry no customer data. The engine sends them (`engine/src/follow-up-alert.ts`).
+- The web role lost `update` on the two proposal tables; state mirrors from `app.follow_up`. First apply back-fills existing proposals and sends no email.
+
+**Verified (2026-11-22, local database and fakes only)**
+- `npm run typecheck` passes; `test:guards` 69 of 69; `check:core` 1396 of 1396 (the flickering `tests/local/model.test.mjs` guard passed); `db:verify-migrations` 62 RLS tables; `build:local`, `build:mock`, `build:hosted` (test `APP_ORIGIN`) pass.
+- Browser (controller, local app, made-up workspace): list in English, Done and Undo, Confirm booking and clash message, BM at 375 px, dark at 375 px, assign to staff, call page item, "Cancel booking and reopen" on a confirmed booking.
+
+**Not verified**
+- No person has used it. Staff view, WhatsApp chat buttons, `?item=` highlight and the Bookings link not seen in a browser. No real email sent. Nothing on hosted staging. Agent gates not re-run (prompts unchanged).
+
+**Next**
+- Owner step (production change, needs an explicit yes): apply both migrations before rebuilding the engine and web (`infra/hosted/RUNBOOK.md` step 18). Do not roll the engine back past this change while `follow_up.alert` rows are queued.
+- Known limits are in design section 10 (duplicate email if an ack fails, demoted admin still gets a queued `new` email, no polling of the sidebar count, assignee shown by email, and others).
+- The branch also edits `packages/domain/src/privacy.ts`, which `fix/privacy-export-calls` edits too: expect a merge conflict.
+
 ## 2026-11-21: public pages and SEO (branch `feat/public-pages-seo`, pull request #86, not merged)
 
 **What changed**

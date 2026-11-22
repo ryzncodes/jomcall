@@ -553,6 +553,21 @@ Outside check: `.github/workflows/uptime.yml` fetches `https://staging.jomcall.c
 
 Simultaneous calls: `JOMCALL_MAX_CONCURRENT_CALLS` in `agent.env` (default 1, at most 20) caps live phone calls and browser voice tests together, for the whole service; a caller over the cap hears the busy message. It was set to 2 on 2026-11-20 with the server at 1 vCPU and 2 GB. Before raising it, read the load log during busy hours; refused calls are counted with `select count(*) from app.call where refusal='LINES_BUSY'`. Changing it needs the agent recreated: `JOMCALL_IMAGE_TAG=<agent tag> docker compose up -d --no-deps --no-build agent`.
 
+## Step 18. Follow-up queue, [OWNER], applies two migrations; the engine then emails owners and admins about new items
+
+Branch `feat/follow-up-queue`. Every reply the agent leaves for staff (message, callback, booking request) becomes an item on `/app/follow-ups`, and new items email the owner and every active admin. Nothing here has run on hosted staging or production. Applying migrations is a production change: do it only with the owner's explicit yes.
+
+1. **[OWNER]** Apply both migrations to staging first, from a clean release folder: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. They are `20261122100000_follow_up_queue.sql` and then `20261122100100_follow_up_alerts.sql`. Apply them before rebuilding the engine and web: the new engine claims `follow_up.alert` jobs and calls `app_private` functions the second migration adds, and the new web reads `app.follow_up`.
+   - On first apply the back-fill turns the existing agent proposals of completed turns into follow-ups. It sends no email.
+   - The web role loses `update` on `app.call_proposal` and `app.conversation_proposal`; their state now mirrors from `app.follow_up`.
+2. **[OWNER]** Rebuild and restart on the server: `docker compose up -d --build engine agent`. Redeploy the web service on Vercel.
+
+[CHECK] with a made-up workspace: a typed or browser test does not create items (only completed real-channel turns do); a made-up call or chat that leaves a message adds an item at `/app/follow-ups`; the owner gets one email with no caller name, number or message text; Done then Undo returns the item to Open.
+
+[ROLLBACK] Do not roll the engine back to a build from before this change while `follow_up.alert` rows are queued: an older engine fails those jobs and leaves the alerts queued. Check first: `select count(*) from app.follow_up_alert where state = 'queued';`. The migrations stay (they add tables and functions).
+
+---
+
 ## Moving web to Cloudflare Workers later — NOT DONE
 
 Web stays on Vercel. It is kept swappable: application code uses no Vercel-only API; mode and origin come from `JOMCALL_MODE` and `APP_ORIGIN`; the client address comes from `x-real-ip` / `x-forwarded-for`. The only Vercel-specific lines are build settings (`web/vercel.json`, and `distDir` in `web/next.config.ts` keyed on `VERCEL`). A move would need, and none of it is built or tested:

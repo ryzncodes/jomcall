@@ -175,3 +175,34 @@ Follow-ups (4 open)        [Open] [Mine] [Done]
 - Whether `followUpCount` is its own command or part of an existing Home read.
 - Copy wording within the rules above (EN and BM, no customer data in email).
 - How the Done tab is ordered beyond "newest first" and how many rows it shows.
+
+## 10. Build note (2026-11-22, branch `feat/follow-up-queue`)
+
+Built in seven tasks (commits `f30914d` to the records commit). Deviations from this design and limits found while building:
+
+**Deviations**
+- Back-filled done or dismissed items have no `closed_by` or `closed_at` (unknown); the Done tab sorts by `coalesce(closed_at, created_at)`.
+- A caller with no active role in the organization gets `NOT_FOUND`, not `FORBIDDEN` (hides whether the item exists); staff on assign still get `FORBIDDEN`.
+- Reopening a confirmed booking item first checks the revision, reopens, then cancels the booking, all in one transaction. The screen asks "Cancel the booking for ...?" before it does (button "Cancel booking and reopen").
+- A booking item sent to confirm that is not a booking gets `INVALID_STATE` (422). An unknown resource on confirm gives 404, the same as a missing item; the screen reloads the item to tell them apart.
+- An alert for a contact whose deletion is pending is skipped. An alert for a recipient with no email address is skipped.
+- The follow-up list excludes items whose contact is pending deletion; direct SQL by staff can still see them.
+- The Done tab offers Reopen (the design mentions reopening, the brief listed no button).
+- No single-item read exists. `?item=` and the reload after a conflict read the open list (up to 10 pages of 50).
+- "Today" and "Tomorrow" due times mean 23:59 Kuala Lumpur on that day.
+- Undo after Confirm booking reads "Booking confirmed." because Undo also cancels the booking.
+
+**Known limits**
+- A send that succeeds but whose acknowledgement fails can email twice (same as billing notices).
+- A demoted admin still gets a `new` email that was queued while they were admin.
+- `follow_up_close` accepts a booking id from another contact; reopen only cancels a confirmed booking of the item's own contact.
+- At 390 px the quick bar shows Home / To follow up / Inbox (or Calls); Calls moves into the menu.
+- Home can count a WhatsApp handoff twice (as a follow-up and as a chat waiting).
+- The sidebar count does not poll; it updates on navigation.
+- `?item=` searches the first 500 open items; beyond that it reads as closed.
+- The assignee is shown by email address.
+- The local sidebar shows both "To follow up" and the older outbound "Follow-up" (the latter is hidden in hosted).
+- Saving an unchanged assignment from the menu re-sends it, bumps the revision and may email the assignee again.
+- The agent's prompts, tools and packs are unchanged, so the paid 48-case gates were not re-run.
+
+**Not verified**: no person has used it; the staff view, the WhatsApp chat buttons, the `?item=` highlight and the Bookings link (booking item without a contact) were not seen in a browser; no real email was sent (local mail catcher and fake sender only); nothing was applied to hosted staging.
