@@ -9,6 +9,7 @@ import {
 import { createMailSender, type MailSender } from "./mail.ts";
 import { decryptInvitationToken } from "../../packages/domain/src/invitation-crypto.ts";
 import { billingNoticeMail, parseBillingNotice } from "./billing-notice.ts";
+import { followUpAlertMail, parseFollowUpAlert } from "./follow-up-alert.ts";
 import { failureCode, invitationText } from "./work-text.ts";
 import {
   bytesCeilingMail,
@@ -29,6 +30,7 @@ const payload = z
       "privacy.process",
       "invitation.deliver",
       "billing.refusal_notice",
+      "follow_up.alert",
     ]),
   })
   .strict();
@@ -513,6 +515,28 @@ export class Engine {
                 [parsed.outboxId, this.namespace],
               );
             }
+          } else if (parsed.kind === "follow_up.alert") {
+            // Email for a new or assigned follow-up; no customer data.
+            const p = (
+              await this.pool.query(
+                "select app_private.follow_up_alert_payload($1,$2) as value",
+                [parsed.outboxId, this.namespace],
+              )
+            ).rows[0].value;
+            if (p) {
+              const a = parseFollowUpAlert(p);
+              const mail = followUpAlertMail(a, this.mail.inviteBase);
+              await this.mail.send({
+                to: a.email,
+                subject: mail.subject,
+                text: mail.text,
+                operationId: a.operationId,
+              });
+              await this.pool.query(
+                "select app_private.ack_follow_up_alert($1,$2,false)",
+                [parsed.outboxId, this.namespace],
+              );
+            }
           } else {
             const p = (
               await this.pool.query(
@@ -555,6 +579,11 @@ export class Engine {
           if (parsed?.kind === "billing.refusal_notice" && job.retryCount >= 4)
             await this.pool.query(
               "select app_private.ack_billing_notice($1,$2,true)",
+              [parsed.outboxId, this.namespace],
+            );
+          if (parsed?.kind === "follow_up.alert" && job.retryCount >= 4)
+            await this.pool.query(
+              "select app_private.ack_follow_up_alert($1,$2,true)",
               [parsed.outboxId, this.namespace],
             );
           if (parsed?.kind === "invitation.deliver" && job.retryCount >= 4)

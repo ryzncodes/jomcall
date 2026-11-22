@@ -74,7 +74,7 @@ end$$;
 -- Null when there is nothing to send. Marks the alert skipped (no email)
 -- when the item is no longer open, the recipient is no longer an active
 -- member or has no email address, or, for an assignment, is no longer the
--- assignee. Each payload handed out counts one attempt.
+-- assignee, or when the item's contact is waiting for deletion. Each payload handed out counts one attempt.
 create function app_private.follow_up_alert_payload(p_outbox uuid,p_namespace text)returns jsonb language plpgsql security definer set search_path='' as $$
 declare o app.outbox;a app.follow_up_alert;f app.follow_up;v_email text;begin
  select * into o from app.outbox where id=p_outbox and namespace=p_namespace and kind='follow_up.alert';if not found then return null;end if;
@@ -83,7 +83,8 @@ declare o app.outbox;a app.follow_up_alert;f app.follow_up;v_email text;begin
  select * into f from app.follow_up where org_id=a.org_id and id=a.follow_up_id;
  if found and f.state='open'
   and exists(select 1 from app.member m where m.org_id=a.org_id and m.user_id=a.user_id and m.active)
-  and(a.reason<>'assigned' or f.assignee_user_id is not distinct from a.user_id)then
+  and(a.reason<>'assigned' or f.assignee_user_id is not distinct from a.user_id)
+  and not exists(select 1 from app.contact c where c.org_id=f.org_id and c.id=f.contact_id and c.deletion_pending)then
   v_email=app_private.auth_user_email(a.user_id);
  end if;
  if v_email is null then

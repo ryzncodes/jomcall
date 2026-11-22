@@ -224,6 +224,13 @@ test("payload", async () => {
     assert.equal(await payload(s, await outboxFor(h, staffAlert.id)), null);
     assert.equal((await alertState(h, staffAlert.id)).state, "skipped");
 
+    // Contact waiting for deletion: null, skipped.
+    const g = await callItem(h);
+    const [ga] = await alerts(h, g.followUp.id);
+    await h.cleanup.query("update app.contact set deletion_pending=true where id=$1", [g.contactId]);
+    assert.equal(await payload(s, await outboxFor(h, ga.id)), null);
+    assert.equal((await alertState(h, ga.id)).state, "skipped");
+
     // Follow-up gone: the alert goes with it and the payload is null.
     const e = await callItem(h);
     const [ea] = await alerts(h, e.followUp.id);
