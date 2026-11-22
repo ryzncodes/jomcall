@@ -94,11 +94,23 @@ export function dueState(dueAt: string, now: Date): DueState {
 
 // After a refused CONFLICT or NOT_FOUND the screen reads the item again.
 // An unknown calendar also answers 404 to a confirm: when the item is still
-// there, the calendar is what is missing, and the item stays open. Every
-// other failure is worded by the shared error copy (follow-up context).
+// there, the calendar is what is missing, and the item stays open. Other
+// failures are worded by the shared error copy. These sentences live here,
+// not in the shared copy, so the mock preview bundle never carries them.
 export const needsReload = (code: string | null) => code === "CONFLICT" || code === "NOT_FOUND";
 export function calendarGone(code: string | null, action: FollowUpAction, stillThere: boolean) {
   return code === "NOT_FOUND" && action === "confirm" && stillThere;
+}
+export const CHANGED: Pair = [
+  "Someone changed this item. It has been reloaded.",
+  "Seseorang telah mengubah item ini. Item dimuat semula.",
+];
+export const GONE: Pair = ["This item is no longer available.", "Item ini tiada lagi."];
+// The words after a refused command; undefined: use the shared error copy.
+export function refusalWords(code: string | null, action: FollowUpAction, stillThere: boolean): Pair | undefined {
+  if (code === "CONFLICT") return CHANGED;
+  if (code === "NOT_FOUND") return calendarGone(code, action, stillThere) ? CALENDAR_GONE : GONE;
+  return undefined;
 }
 export const CALENDAR_GONE: Pair = [
   "This booking can't be confirmed: its calendar is no longer available.",

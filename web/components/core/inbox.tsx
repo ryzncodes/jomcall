@@ -37,11 +37,10 @@ import {
   Loading,
 } from "./state";
 
-// The follow-up buttons exist only in the local and hosted builds. The mode
+// The follow-up buttons are left out of the mock preview build. The mode
 // is a build-time constant, so the mock bundle drops this import.
 const FollowUpInline =
-  process.env.NEXT_PUBLIC_JOMCALL_MODE === "local" ||
-  process.env.NEXT_PUBLIC_JOMCALL_MODE === "hosted"
+  process.env.NEXT_PUBLIC_JOMCALL_MODE !== "mock"
     ? dynamic(() => import("./follow-up-actions").then((m) => m.FollowUpInline))
     : null;
 

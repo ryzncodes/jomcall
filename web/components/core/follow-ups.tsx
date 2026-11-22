@@ -22,6 +22,7 @@ import {
   dueToInput,
   itemText,
   needsReload,
+  refusalWords,
   FOLLOW_UPS_CHANGED,
   stateWords,
   type FollowUpAction,
@@ -321,13 +322,12 @@ function ItemCard({
       </p>
       <p className="follow-up-contact">
         <span dir="auto">{f.contact?.name?.trim() || w("Unknown caller", "Pemanggil tidak dikenali")}</span>
-        {f.contact?.phone && (
-          <>
-            <span>{localNumber(f.contact.phone)}</span>
-            <a className="follow-up-link" href={`tel:${f.contact.phone}`}>
-              {w("Call", "Telefon")}
-            </a>
-          </>
+        {f.contact?.phone && <span>{localNumber(f.contact.phone)}</span>}
+        {/* A call item gets a tel: link; a WhatsApp item opens its chat. */}
+        {f.source === "call" && f.contact?.phone && (
+          <a className="follow-up-link" href={`tel:${f.contact.phone}`}>
+            {w("Call", "Telefon")}
+          </a>
         )}
         {source && (
           <a className="follow-up-link" href={href(source.href)}>
@@ -476,8 +476,10 @@ function AssignForm({
           window.dispatchEvent(new Event(FOLLOW_UPS_CHANGED));
           onDone(updated);
         } catch (err) {
-          setError(errorText(err, locale === "ms", "followUp"));
-          if (err instanceof CoreError && needsReload(err.code)) onConflict();
+          const code = err instanceof CoreError ? err.code : null;
+          const words = refusalWords(code, "done", false);
+          setError(words ? words[locale === "ms" ? 1 : 0] : errorText(err, locale === "ms"));
+          if (needsReload(code)) onConflict();
         } finally {
           setSaving(false);
         }

@@ -3,20 +3,9 @@ import { CoreError, ProxyError } from "../../lib/core/client";
 
 // Wording for an error code that means something different on one screen.
 // The shared table in state.tsx stays the default for every other case.
-export type ErrorContext = "voice" | "hours" | "invite" | "followUp";
+export type ErrorContext = "voice" | "hours" | "invite";
 
 const overrides: Record<ErrorContext, Record<string, [string, string]>> = {
-  followUp: {
-    // The screen reloads the item before it shows this.
-    CONFLICT: [
-      "Someone changed this item. It has been reloaded.",
-      "Seseorang telah mengubah item ini. Item dimuat semula.",
-    ],
-    NOT_FOUND: [
-      "This item is no longer available.",
-      "Item ini tiada lagi.",
-    ],
-  },
   invite: {
     // Someone who opened an invitation link without being signed in never
     // had a session, so "Session ended" would be wrong.

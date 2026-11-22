@@ -12,6 +12,7 @@ import {
   dueToInput,
   itemText,
   needsReload,
+  refusalWords,
   stateWords,
 } from "../../web/lib/core/follow-up-rules.ts";
 
@@ -75,4 +76,18 @@ test("a refused confirm whose item is still there means the calendar is gone", (
   assert.equal(needsReload("NOT_FOUND"), true);
   assert.equal(needsReload("SLOT_UNAVAILABLE"), false);
   assert.equal(needsReload(null), false);
+});
+
+test("refusal words: the brief's sentences, or the shared copy", () => {
+  assert.equal(refusalWords("CONFLICT", "done", true)![0], "Someone changed this item. It has been reloaded.");
+  assert.equal(refusalWords("CONFLICT", "done", false)![1], "Seseorang telah mengubah item ini. Item dimuat semula.");
+  assert.equal(
+    refusalWords("NOT_FOUND", "confirm", true)![0],
+    "This booking can't be confirmed: its calendar is no longer available.",
+  );
+  assert.equal(refusalWords("NOT_FOUND", "confirm", true)![1], "Tempahan ini tidak dapat disahkan: kalendarnya tiada lagi.");
+  assert.equal(refusalWords("NOT_FOUND", "confirm", false)![0], "This item is no longer available.");
+  assert.equal(refusalWords("NOT_FOUND", "done", true)![0], "This item is no longer available.");
+  assert.equal(refusalWords("SLOT_UNAVAILABLE", "confirm", true), undefined);
+  assert.equal(refusalWords(null, "done", true), undefined);
 });

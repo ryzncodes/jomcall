@@ -8,14 +8,13 @@ import type { FollowUp } from "../../../packages/contracts/src/follow-up";
 import { CoreError } from "@/lib/core/client";
 import {
   ACTION_WORDS,
-  CALENDAR_GONE,
   FOLLOW_UPS_CHANGED,
   KIND_WORDS,
   actionsFor,
   bookingStart,
-  calendarGone,
   itemText,
   needsReload,
+  refusalWords,
   stateWords,
   type FollowUpAction,
   type Pair,
@@ -96,15 +95,11 @@ export function useFollowUpCommand(find: (id: string) => Promise<FollowUp | unde
       } catch {
         again = undefined;
       }
-      setSaid({
-        id: item.id,
-        text: calendarGone(r.code, action, !!again)
-          ? CALENDAR_GONE[ms ? 1 : 0]
-          : errorText(r.error, ms, "followUp"),
-      });
+      const words = refusalWords(r.code, action, !!again);
+      setSaid({ id: item.id, text: words ? words[ms ? 1 : 0] : errorText(r.error, ms) });
       return;
     }
-    setSaid({ id: item.id, text: errorText(r.error, ms, "followUp") });
+    setSaid({ id: item.id, text: errorText(r.error, ms) });
   }
   return { act, busy, said, clear: () => setSaid(null) };
 }
@@ -183,7 +178,10 @@ export function UndoToast({
               const r = await run("reopen", item);
               if (!r) return;
               if (r.ok) onUndone(r.item);
-              else setError(errorText(r.error, locale === "ms", "followUp"));
+              else {
+                const words = refusalWords(r.code, "reopen", false);
+                setError(words ? words[locale === "ms" ? 1 : 0] : errorText(r.error, locale === "ms"));
+              }
               onClose();
             }}
           >
