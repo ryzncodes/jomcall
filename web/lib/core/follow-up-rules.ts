@@ -6,7 +6,17 @@ import type { FollowUp } from "../../../packages/contracts/src/follow-up";
 import { klDate } from "./plan-rules";
 
 export type Pair = [string, string];
-export type FollowUpAction = "done" | "dismiss" | "confirm" | "decline" | "reopen";
+// "reopen_booking" reopens a confirmed booking item, which also cancels its
+// booking (spec 5.2), so it is named for that and asks first. "bookings" is
+// a link to the Bookings page, not a command.
+export type FollowUpAction =
+  | "done"
+  | "dismiss"
+  | "confirm"
+  | "decline"
+  | "reopen"
+  | "reopen_booking"
+  | "bookings";
 
 export const KIND_WORDS: Record<FollowUp["kind"], Pair> = {
   message: ["Message", "Mesej"],
@@ -32,11 +42,25 @@ export function stateWords(item: Pick<FollowUp, "kind" | "state">): Pair {
 
 // The buttons an item gets. A booking item is closed as done only by
 // confirming it into the calendar (the server refuses a plain Done), and it
-// cannot be booked without a contact, so then only Decline is offered.
-export function actionsFor(item: Pick<FollowUp, "kind" | "state" | "contact">): FollowUpAction[] {
-  if (item.state !== "open") return ["reopen"];
-  if (item.kind === "booking") return item.contact ? ["confirm", "decline"] : ["decline"];
+// cannot be booked without a contact: then Decline and a link to Bookings,
+// where staff can book it for a contact by hand (design D5). Reopening a
+// confirmed booking item cancels its booking, so that button says so.
+export function actionsFor(
+  item: Pick<FollowUp, "kind" | "state" | "contact" | "booking_id">,
+): FollowUpAction[] {
+  if (item.state !== "open")
+    return item.kind === "booking" && item.state === "done" && item.booking_id ? ["reopen_booking"] : ["reopen"];
+  if (item.kind === "booking") return item.contact ? ["confirm", "decline"] : ["decline", "bookings"];
   return ["done", "dismiss"];
+}
+
+// The command an action sends; undefined for a link.
+export function commandOf(a: FollowUpAction): "close_done" | "close_dismissed" | "confirm" | "reopen" | undefined {
+  if (a === "done") return "close_done";
+  if (a === "dismiss" || a === "decline") return "close_dismissed";
+  if (a === "confirm") return "confirm";
+  if (a === "reopen" || a === "reopen_booking") return "reopen";
+  return undefined;
 }
 
 export const ACTION_WORDS: Record<FollowUpAction, Pair> = {
@@ -45,7 +69,20 @@ export const ACTION_WORDS: Record<FollowUpAction, Pair> = {
   confirm: ["Confirm booking", "Sahkan tempahan"],
   decline: ["Decline", "Tolak"],
   reopen: ["Reopen", "Buka semula"],
+  reopen_booking: ["Cancel booking and reopen", "Batalkan tempahan dan buka semula"],
+  // The Bookings page's own name (crm.bookings in the messages).
+  bookings: ["Bookings", "Tempahan"],
 };
+
+// The question before reopen_booking sends; `when` is the booking's time
+// as the screen shows it, or undefined when the item has none.
+export function cancelQuestion(when: string | undefined): Pair {
+  return when
+    ? [`Cancel the booking for ${when}?`, `Batalkan tempahan untuk ${when}?`]
+    : ["Cancel this booking?", "Batalkan tempahan ini?"];
+}
+export const CANCEL_YES: Pair = ["Yes, cancel", "Ya, batalkan"];
+export const CANCEL_KEEP: Pair = ["Keep it", "Kekalkan"];
 
 const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : undefined);
 

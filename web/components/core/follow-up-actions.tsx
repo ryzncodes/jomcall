@@ -8,6 +8,10 @@ import type { FollowUp } from "../../../packages/contracts/src/follow-up";
 import { CoreError } from "@/lib/core/client";
 import {
   ACTION_WORDS,
+  CANCEL_KEEP,
+  CANCEL_YES,
+  cancelQuestion,
+  commandOf,
   FOLLOW_UPS_CHANGED,
   KIND_WORDS,
   actionsFor,
@@ -51,15 +55,17 @@ export function useFollowUpRun() {
     lock.current = true;
     setBusy(item.id);
     const base = { id: item.id, expectedRevision: item.revision };
+    const command = commandOf(action);
     try {
+      if (!command) throw new Error("NOT_A_COMMAND");
       const updated =
-        action === "confirm"
+        command === "confirm"
           ? await client.execute("confirmFollowUpBooking", base)
-          : action === "reopen"
+          : command === "reopen"
             ? await client.execute("reopenFollowUp", base)
             : await client.execute("closeFollowUp", {
                 ...base,
-                state: action === "done" ? "done" : "dismissed",
+                state: command === "close_done" ? "done" : "dismissed",
               });
       window.dispatchEvent(new Event(FOLLOW_UPS_CHANGED));
       return { ok: true, item: updated };
@@ -113,21 +119,53 @@ export function ActionButtons({
   busy: boolean;
   onAct: (a: FollowUpAction) => void;
 }) {
-  const say = usePair();
+  const say = usePair(),
+    when = useKlWhen(),
+    { href, t } = useExperience();
+  // reopen_booking asks first: reopening cancels the confirmed booking.
+  const [asking, setAsking] = useState(false);
+  if (asking) {
+    const start = bookingStart(item);
+    return (
+      <div className="follow-up-ask" role="group">
+        <p>{say(cancelQuestion(start ? when(start) : undefined))}</p>
+        <button
+          type="button"
+          className="button button-small button-dark"
+          disabled={busy}
+          onClick={() => {
+            setAsking(false);
+            onAct("reopen_booking");
+          }}
+        >
+          {say(CANCEL_YES)}
+        </button>
+        <button type="button" className="button button-small secondary-button" onClick={() => setAsking(false)}>
+          {say(CANCEL_KEEP)}
+        </button>
+      </div>
+    );
+  }
   return (
     <>
-      {actionsFor(item).map((a, i) => (
-        <button
-          key={a}
-          type="button"
-          className={`button button-small ${i === 0 && a !== "reopen" ? "button-dark" : "secondary-button"}`}
-          disabled={busy}
-          aria-busy={busy || undefined}
-          onClick={() => onAct(a)}
-        >
-          {say(ACTION_WORDS[a])}
-        </button>
-      ))}
+      {actionsFor(item).map((a, i) =>
+        a === "bookings" ? (
+          <a key={a} className="button button-small secondary-button" href={href("/app/bookings")}>
+            {t.crm.bookings}
+          </a>
+        ) : (
+          <button
+            key={a}
+            type="button"
+            className={`button button-small ${i === 0 && a !== "reopen" && a !== "reopen_booking" ? "button-dark" : "secondary-button"}`}
+            disabled={busy}
+            aria-busy={busy || undefined}
+            onClick={() => (a === "reopen_booking" ? setAsking(true) : onAct(a))}
+          >
+            {say(ACTION_WORDS[a])}
+          </button>
+        ),
+      )}
     </>
   );
 }

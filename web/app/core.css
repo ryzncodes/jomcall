@@ -3048,3 +3048,14 @@
     line-height: 16px;
   }
 }
+.follow-up-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.follow-up-ask p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+}

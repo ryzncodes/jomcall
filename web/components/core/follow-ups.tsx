@@ -67,6 +67,7 @@ export function LocalFollowUps() {
   const [undo, setUndo] = useState<FollowUp | null>(null);
   const [highlight, setHighlight] = useState<string>();
   const [linkClosed, setLinkClosed] = useState(false);
+  const [linkError, setLinkError] = useState<unknown>();
   // Items replaced by a command's answer until the next read shows them.
   const [patched, setPatched] = useState<Record<string, FollowUp>>({});
 
@@ -110,8 +111,10 @@ export function LocalFollowUps() {
         try {
           found = await findOpen(linked);
           if (found) setMore({ view: "open", items: [found], next: first.data!.next });
-        } catch {
-          found = undefined;
+        } catch (e) {
+          // A failed read is not a closed item: say what went wrong.
+          setLinkError(e);
+          return;
         }
       }
       if (found) setHighlight(linked);
@@ -169,10 +172,11 @@ export function LocalFollowUps() {
         ))}
       </div>
       {linkClosed && view === "open" && (
-        <p className="core-success" role="status">
+        <p className="core-hint" role="status">
           {w("This item is already closed.", "Item ini sudah ditutup.")}
         </p>
       )}
+      {linkError && view === "open" ? <Notice error={linkError} /> : null}
       {said && !items.some((f) => f.id === said.id) && (
         <p className="storage-warning" role="alert">
           {said.text}

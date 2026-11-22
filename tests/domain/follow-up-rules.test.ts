@@ -3,7 +3,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  ACTION_WORDS,
   actionsFor,
+  cancelQuestion,
+  commandOf,
   bookingStart,
   calendarGone,
   dueChoice,
@@ -18,13 +21,39 @@ import {
 
 const contact = { id: "c1", name: "Aisyah Contoh", phone: "+60123330001" };
 
-test("buttons: booking items confirm or decline; no contact means decline only", () => {
-  assert.deepEqual(actionsFor({ kind: "message", state: "open", contact }), ["done", "dismiss"]);
-  assert.deepEqual(actionsFor({ kind: "handoff", state: "open", contact: null }), ["done", "dismiss"]);
-  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact }), ["confirm", "decline"]);
-  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact: null }), ["decline"]);
-  assert.deepEqual(actionsFor({ kind: "booking", state: "done", contact }), ["reopen"]);
-  assert.deepEqual(actionsFor({ kind: "message", state: "dismissed", contact }), ["reopen"]);
+test("buttons: booking items confirm or decline; no contact means decline and Bookings", () => {
+  const b = null;
+  assert.deepEqual(actionsFor({ kind: "message", state: "open", contact, booking_id: b }), ["done", "dismiss"]);
+  assert.deepEqual(actionsFor({ kind: "handoff", state: "open", contact: null, booking_id: b }), ["done", "dismiss"]);
+  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact, booking_id: b }), ["confirm", "decline"]);
+  assert.deepEqual(actionsFor({ kind: "booking", state: "open", contact: null, booking_id: b }), ["decline", "bookings"]);
+  assert.deepEqual(actionsFor({ kind: "message", state: "dismissed", contact, booking_id: b }), ["reopen"]);
+  assert.deepEqual(actionsFor({ kind: "message", state: "done", contact, booking_id: b }), ["reopen"]);
+});
+
+test("reopening a confirmed booking says it cancels the booking; a declined one reopens plainly", () => {
+  const confirmed = { kind: "booking" as const, state: "done" as const, contact, booking_id: "b1" };
+  assert.deepEqual(actionsFor(confirmed), ["reopen_booking"]);
+  assert.deepEqual(ACTION_WORDS.reopen_booking, ["Cancel booking and reopen", "Batalkan tempahan dan buka semula"]);
+  assert.deepEqual(actionsFor({ ...confirmed, state: "dismissed" }), ["reopen"]);
+  assert.deepEqual(actionsFor({ ...confirmed, booking_id: null }), ["reopen"]);
+  assert.deepEqual(ACTION_WORDS.reopen, ["Reopen", "Buka semula"]);
+  // Both reopen the item; only one of them is a link.
+  assert.equal(commandOf("reopen_booking"), "reopen");
+  assert.equal(commandOf("reopen"), "reopen");
+  assert.equal(commandOf("decline"), "close_dismissed");
+  assert.equal(commandOf("bookings"), undefined);
+  assert.deepEqual(cancelQuestion("24 Nov 2026, 9:00 am"), [
+    "Cancel the booking for 24 Nov 2026, 9:00 am?",
+    "Batalkan tempahan untuk 24 Nov 2026, 9:00 am?",
+  ]);
+  assert.deepEqual(cancelQuestion(undefined), ["Cancel this booking?", "Batalkan tempahan ini?"]);
+});
+
+test("the Bookings link uses the Bookings page's own words", async () => {
+  const en = (await import("../../web/messages/en.json", { with: { type: "json" } })).default;
+  const ms = (await import("../../web/messages/ms.json", { with: { type: "json" } })).default;
+  assert.deepEqual(ACTION_WORDS.bookings, [en.crm.bookings, ms.crm.bookings]);
 });
 
 test("state in words: a closed booking request reads confirmed or declined", () => {
