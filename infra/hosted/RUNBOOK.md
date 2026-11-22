@@ -555,16 +555,30 @@ Simultaneous calls: `JOMCALL_MAX_CONCURRENT_CALLS` in `agent.env` (default 1, at
 
 ## Step 18. Follow-up queue, [OWNER], applies two migrations; the engine then emails owners and admins about new items
 
-Branch `feat/follow-up-queue`. Every reply the agent leaves for staff (message, callback, booking request) becomes an item on `/app/follow-ups`, and new items email the owner and every active admin. Nothing here has run on hosted staging or production. Applying migrations is a production change: do it only with the owner's explicit yes.
+Branch `feat/follow-up-queue`. Every request the agent leaves for staff on a real phone call or WhatsApp chat (message, callback, booking request, handoff) becomes an item on `/app/follow-ups`, and new items email the owner and every active admin. Nothing here has run on hosted staging or production. Applying migrations is a production change: do it only with the owner's explicit yes, given for this step.
 
-1. **[OWNER]** Apply both migrations to staging first, from a clean release folder: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. They are `20261122100000_follow_up_queue.sql` and then `20261122100100_follow_up_alerts.sql`. Apply them before rebuilding the engine and web: the new engine claims `follow_up.alert` jobs and calls `app_private` functions the second migration adds, and the new web reads `app.follow_up`.
-   - On first apply the back-fill turns the existing agent proposals of completed turns into follow-ups. It sends no email.
+Order matters. Vercel deploys the web from `main` on merge, and the new web reads `app.follow_up` inside call detail and the WhatsApp chat, so a web deployed before the migrations breaks the call page and the chat. Apply both migrations **before the pull request is merged to `main`** (as in step 14). The web now on `main` keeps working against the migrated database: it never writes the proposal tables whose `update` grant the migration removes. Do the steps below in one sitting.
+
+1. **[OWNER]** Check that no call is live: `select count(*) from app.call where state = 'active';` must return 0. The first migration locks both proposal tables, the call and chat turn tables and `app.member` until its back-fill commits; it sets `lock_timeout` to 5 seconds, so instead of waiting behind a call it stops with a lock timeout. Then wait and run it again. Not checked here: whether `supabase db push` rolls back a file that stopped part way; if a second run fails with `already exists`, stop and ask.
+2. **[OWNER]** On the server, stop the engine: `docker compose stop engine`. An engine from before this change, still running after the migrations, claims `follow_up.alert` outbox rows (the second migration adds the kind to `claim_outbox`), cannot read them, fails the jobs and leaves the alerts `queued`. While it is stopped, privacy jobs, invitation and billing emails and plan charges wait in the database and run when the new engine starts.
+3. **[OWNER]** Apply both migrations to staging from a clean release folder on the branch: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. They are `20261122100000_follow_up_queue.sql` and then `20261122100100_follow_up_alerts.sql`.
+   - On first apply the back-fill turns the existing agent proposals of ended turns (call turns completed, or cut off by a hang-up, a crash or a failure; WhatsApp turns completed) into follow-ups. It sends no email.
    - The web role loses `update` on `app.call_proposal` and `app.conversation_proposal`; their state now mirrors from `app.follow_up`.
-2. **[OWNER]** Rebuild and restart on the server: `docker compose up -d --build engine agent`. Redeploy the web service on Vercel.
+4. **[OWNER]** Merge the pull request. Vercel then deploys the web from `main`.
+5. **[OWNER]** On the server: `cd /opt/jomcall && git pull --ff-only && docker compose up -d --build engine agent`.
+6. **[OWNER]** If the engine ran by mistake between steps 3 and 5, alerts can be left `queued` with no outbox row to send them. Fifteen minutes after step 5, count them: `select count(*) from app.follow_up_alert a where a.state = 'queued' and a.created_at < now() - interval '15 minutes' and not exists(select 1 from app.outbox o where o.kind = 'follow_up.alert' and o.resource_id = a.id and o.delivered_at is null);`. If it is not 0, queue them again (the engine checks each alert again before sending, so one for a closed item is skipped; an alert whose earlier job is still being retried may be emailed twice):
 
-[CHECK] with a made-up workspace: a typed or browser test does not create items (only completed real-channel turns do); a made-up call or chat that leaves a message adds an item at `/app/follow-ups`; the owner gets one email with no caller name, number or message text; Done then Undo returns the item to Open.
+```sql
+insert into app.outbox(org_id, namespace, kind, resource_id)
+select a.org_id, a.namespace, 'follow_up.alert', a.id
+from app.follow_up_alert a
+where a.state = 'queued' and a.created_at < now() - interval '15 minutes'
+  and not exists(select 1 from app.outbox o where o.kind = 'follow_up.alert' and o.resource_id = a.id and o.delivered_at is null);
+```
 
-[ROLLBACK] Do not roll the engine back to a build from before this change while `follow_up.alert` rows are queued: an older engine fails those jobs and leaves the alerts queued. Check first: `select count(*) from app.follow_up_alert where state = 'queued';`. The migrations stay (they add tables and functions).
+[CHECK] with a made-up workspace: a typed or browser test (text or voice) creates no items, because those tests write `app.test_session`, `app.test_turn` and `app.test_proposal`, which the follow-up triggers do not read (only phone call turns and WhatsApp turns create items; read from the code, no test asserts it); a made-up call or chat that leaves a message adds an item at `/app/follow-ups`; the owner gets one email with no caller name, number or message text; Done then Undo returns the item to Open.
+
+[ROLLBACK] Do not roll the engine back to a build from before this change while `follow_up.alert` rows are queued: an older engine fails those jobs and leaves the alerts queued (then use step 6). Check first: `select count(*) from app.follow_up_alert where state = 'queued';`. The migrations stay (they add tables and functions).
 
 ---
 

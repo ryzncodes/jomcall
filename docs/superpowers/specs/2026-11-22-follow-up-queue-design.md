@@ -191,6 +191,12 @@ Built in seven tasks (commits `f30914d` to the records commit). Deviations from 
 - No single-item read exists. `?item=` and the reload after a conflict read the open list (up to 10 pages of 50).
 - "Today" and "Tomorrow" due times mean 23:59 Kuala Lumpur on that day.
 - Undo after Confirm booking reads "Booking confirmed." because Undo also cancels the booking.
+- A call turn that ends without completing still makes items of the proposals it kept: `call_end` (hang-up, transfer, worker error) and `maintain` (crash) cancel or fail a running turn without deleting its proposals, and `turn_fail` keeps them too; the call log already counts them. `turn_begin` and `turn_cancel` delete a turn's proposals first, so they leave none. The back-fill does the same. WhatsApp stays completed-only (a failed attempt is tried again). Owner ruling in the final review, so that no recorded request silently disappears.
+- `HANDOFF_REQUESTED` clears only when the chat's handoff turn (`handoff_turn_id`) has a handoff item; closing the last open item clears it then. The customer's own "staff" keyword sets the same reason with no item and is left for staff (final review ruling).
+- Reopening a WhatsApp item (Undo or Reopen) raises the chat's flag again, with the reason for its kind, when nothing else holds it. Owner and the handoff turn are left as they are.
+- A done booking item carries `booking_start_at`, its booking's own time while that booking is confirmed for the item's contact; the cancel question names it, and when it is null (the booking was cancelled or changed elsewhere) the button is a plain Reopen.
+- A confirm refused because the time cannot be booked (`SLOT_UNAVAILABLE`, `INVALID_BOOKING_TIME`, `OUTSIDE_OPEN_HOURS`) says to agree a new time with the customer, add it in Bookings and decline the request; the shared "Choose another slot." stays elsewhere.
+- Reopening a confirmed booking item audits `booking.cancel`, the name every booking cancel uses (the plan said `booking.cancelled`).
 
 **Known limits**
 - A send that succeeds but whose acknowledgement fails can email twice (same as billing notices).
@@ -202,7 +208,14 @@ Built in seven tasks (commits `f30914d` to the records commit). Deviations from 
 - `?item=` searches the first 500 open items; beyond that it reads as closed.
 - The assignee is shown by email address.
 - The local sidebar shows both "To follow up" and the older outbound "Follow-up" (the latter is hidden in hosted).
-- Saving an unchanged assignment from the menu re-sends it, bumps the revision and may email the assignee again.
+- Saving an unchanged assignment from the menu re-sends it and bumps the revision; it emails nobody (the assigned alert needs a different assignee).
+- An email link opens the item in the active workspace, so a member of two workspaces may see "This item is no longer available." for an item of the other one.
+- Reopening a confirmed booking item after the booking was rescheduled cancels the booking at its new time (the question names that time).
+- A failed call turn's proposal becomes an item, but the agent's later turns see only completed turns, so it may record the same request again: two items, one to dismiss.
+- A handoff item reopened after the chat was handed back (no handoff turn) raises `HANDOFF_REQUESTED`, and closing it again leaves the flag; staff resolve it in the inbox. A customer's "staff" keyword on a chat that still has an earlier agent handoff turn (not handed back) clears with the last item like an agent handoff.
+- The call page and the chat show at most 50 items each (`followUpsOf`), with no notice past that.
+- An error from Undo in the chat can vanish before it is read (the chat's list shows open items only; review finding, not reproduced).
+- The Undo note after Confirm booking does not say that Undo also cancels the booking.
 - The agent's prompts, tools and packs are unchanged, so the paid 48-case gates were not re-run.
 
-**Not verified**: no person has used it; the staff view, the WhatsApp chat buttons, the `?item=` highlight and the Bookings link (booking item without a contact) were not seen in a browser; no real email was sent (local mail catcher and fake sender only); nothing was applied to hosted staging.
+**Not verified**: no person has used it; Undo was checked in the browser through an in-page script, not by a person's tap; the staff view, the WhatsApp chat buttons, the `?item=` highlight and the Bookings link (booking item without a contact) were not seen in a browser; no real email was sent (local mail catcher and fake sender only); nothing was applied to hosted staging.
