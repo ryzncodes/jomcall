@@ -10,6 +10,7 @@ import { firstRunRoute } from "../../../packages/domain/src/first-run.ts";
 import { commands } from "../../../packages/contracts/src/core.ts";
 import { privacyRoute } from "../../../packages/domain/src/privacy.ts";
 import "server-only";
+import { followUpRoute } from "../../../packages/domain/src/follow-up/routes.ts";
 import { contactsRoute } from "../../../packages/domain/src/contacts.ts";
 import { agentsRoute } from "../../../packages/domain/src/agents.ts";
 import { setupRoute } from "../../../packages/domain/src/setup/routes.ts";
@@ -266,6 +267,16 @@ async function dispatch(request: Request, deps: CoreDeps) {
           return privacyResult instanceof Response
             ? privacyResult
             : respond(privacyResult);
+        const followUpResult = await followUpRoute(
+          tx,
+          context,
+          method,
+          path,
+          body,
+          key,
+          new URL(request.url).searchParams,
+        );
+        if (followUpResult !== undefined) return respond(followUpResult);
         const contactResult = await contactsRoute(
           tx,
           context,

@@ -15,6 +15,15 @@ import {
   type KnowledgeHit,
 } from "./agent-test.ts";
 import {
+  followUpList,
+  followUpClose,
+  followUpReopen,
+  followUpAssign,
+  type FollowUp,
+  type FollowUpPage,
+  type FollowUpCount,
+} from "./follow-up.ts";
+import {
   bookingInput,
   bookingRevision,
   bookingReschedule,
@@ -369,6 +378,31 @@ export const commands = {
     "/booking-availability",
     slotsInput,
     out<Page<Slot>>(),
+  ),
+  followUps: route("GET", "/follow-ups", followUpList, out<FollowUpPage>()),
+  followUpCount: route(
+    "GET",
+    "/follow-ups/count",
+    empty,
+    out<FollowUpCount>(),
+  ),
+  closeFollowUp: route(
+    "POST",
+    "/follow-ups/:id/close",
+    followUpClose,
+    out<FollowUp>(),
+  ),
+  reopenFollowUp: route(
+    "POST",
+    "/follow-ups/:id/reopen",
+    followUpReopen,
+    out<FollowUp>(),
+  ),
+  assignFollowUp: route(
+    "POST",
+    "/follow-ups/:id/assign",
+    followUpAssign,
+    out<FollowUp>(),
   ),
   session: route("GET", "/session", empty, out<Session>()),
   organizations: route("GET", "/organizations", empty, out<Membership[]>()),
