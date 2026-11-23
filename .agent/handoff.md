@@ -1,5 +1,24 @@
 # Handoff
 
+## 2026-11-24: contact timeline (branch `feat/contact-timeline`, pull request not yet open, not merged)
+
+Design: `docs/superpowers/specs/2026-11-24-contact-timeline-design.md` (all decisions are the builder's best guess, at the owner's request; build note at the end). No migration.
+
+**What changed**
+- New read command `contactTimeline` (`GET /contacts/:id/timeline`): calls, WhatsApp chats, bookings, notes, consent and follow-ups for one contact, newest first, 30 per page, plus the open follow-ups on page one. Calls carry summary columns only; follow-ups hidden while PDPA deletion is pending.
+- Contact panel: "Still open", Appointments (moved up), "History" / "Sejarah" with View links, then notes, consent and privacy as before.
+
+**Verified (2026-11-24, local database only)**
+- `typecheck` passes; `test:guards` 69 of 69; `check:core` 1410 of 1410; `build:local`, `build:mock`, `build:hosted` (test `APP_ORIGIN`) pass.
+- Browser (controller, local app, made-up workspace, staff account): History at 375 px in English, new note at the top after saving, "Still open", BM with dark theme at 375 px, View link to the call.
+
+**Not verified**
+- No person has used it; owner view, chat and consent entries and "Show older" not seen in a browser (API and unit tests cover them); not measured on a large contact; nothing on staging.
+
+**Next**
+- Open the pull request; once merged, Vercel deploys the web (no migration, no engine change).
+- Possible follow-ups: contact link on the call page; contact filters on the call and chat lists.
+
 ## 2026-11-22: follow-up queue (branch `feat/follow-up-queue`, pull request not yet open, not merged)
 
 Design: `docs/superpowers/specs/2026-11-22-follow-up-queue-design.md` (build note in section 10). Plan: `docs/superpowers/plans/2026-11-22-follow-up-queue.md`. Two migrations: `20261122100000_follow_up_queue.sql`, `20261122100100_follow_up_alerts.sql`.

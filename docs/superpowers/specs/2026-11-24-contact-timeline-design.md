@@ -152,3 +152,18 @@ show before cutting it.
 - A link from the call page back to the contact (the call read has no
   contact id today).
 - Filters on the call and chat lists by contact.
+
+## Build note (2026-11-24)
+
+- The advisor review before building moved two things into the design: open
+  follow-ups are returned on page one (`open`), and the Appointments section
+  moved above History, so neither an old open item nor an upcoming booking
+  is buried by the created-time sort.
+- An open follow-up's line drops the word "Open", because its flag says it
+  (seen as a double "Open" in the browser check).
+- The call log's outcome wording moved to `web/lib/core/call-words.ts`;
+  entry wording, flags, links and page joining are in
+  `web/lib/core/timeline-rules.ts`.
+- The local browser check ran as the staff test account, so it also covered
+  the staff view: history shown, the privacy section hidden, and the call
+  page linked from History keeps the words for owners and admins.
