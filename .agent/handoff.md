@@ -1,5 +1,12 @@
 # Handoff
 
+## 2026-11-23: follow-up queue on staging (pull request #89 merged as `ca599fa`)
+
+- With the owner's yes, runbook step 18 was run in one sitting: no live call; engine stopped; both migrations applied (the owner typed the confirmation; 49 migrations recorded, back-fill 2 items, 0 alerts, web role lost `update` on `app.call_proposal`); pull request merged by the owner (the Claude Code permission check refused `gh pr merge`); `git pull` and `docker compose up -d --build engine agent` on the server at `ca599fa`.
+- Checked after: engine and agent healthy and `ready`; one `ENGINE_TICK_FAILED` at the engine's first tick, none in the next two minutes; queued alerts 0, stuck 0; Vercel staging deploy of `ca599fa` succeeded; `/api/health` gave one 503 then 200 three times; `/app/follow-ups` answers 200.
+- Not checked: no person has opened `/app/follow-ups` on staging; no follow-up email sent there (staging has no phone line or WhatsApp to make a new item).
+- Runbook step 18 named the wrong folder for Compose (`/opt/jomcall`; it is `/opt/jomcall/infra/hosted`); fixed on branch `docs/runbook-step18-folder`.
+
 ## 2026-11-22: follow-up queue (branch `feat/follow-up-queue`, pull request not yet open, not merged)
 
 Design: `docs/superpowers/specs/2026-11-22-follow-up-queue-design.md` (build note in section 10). Plan: `docs/superpowers/plans/2026-11-22-follow-up-queue.md`. Two migrations: `20261122100000_follow_up_queue.sql`, `20261122100100_follow_up_alerts.sql`.
