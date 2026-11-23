@@ -10,10 +10,12 @@ import {
   noteInput,
   consentInput,
   dncInput,
+  timelineInput,
 } from "../../contracts/src/contacts.ts";
 import { command, audit } from "../../db/src/receipts.ts";
 import { page } from "../../db/src/pagination.ts";
 import { manager } from "./authorization.ts";
+import { contactTimeline } from "./contact-timeline.ts";
 export async function contactsRoute(
   tx: PoolClient,
   ctx: TenantContext,
@@ -73,13 +75,17 @@ export async function contactsRoute(
     );
   }
   const m = path.match(
-    /^\/contacts\/([^/]+)(?:\/(notes|consents|do-not-contact))?$/,
+    /^\/contacts\/([^/]+)(?:\/(notes|consents|do-not-contact|timeline))?$/,
   );
   if (!m) return;
   const id = uuid.parse(m[1]),
     action = m[2];
   if (method === "GET") {
     const row = await load(id);
+    if (action === "timeline") {
+      const v = timelineInput.parse({ ...Object.fromEntries(query), id });
+      return contactTimeline(tx, ctx, row, v.cursor);
+    }
     if (action === "notes" || action === "consents")
       return page(tx, ctx.orgId, action, query, id);
     if (!action)
@@ -93,7 +99,6 @@ export async function contactsRoute(
           new URLSearchParams(),
           id,
         ),
-        activityAvailable: false,
       };
     return;
   }

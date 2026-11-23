@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { name } from "./index.ts";
+import { name, uuid } from "./index.ts";
 export const contactFields = {
   name,
   phone: z
@@ -36,3 +36,66 @@ export const dncInput = z
     reason: z.string().trim().min(1).max(2000),
   })
   .strict();
+
+// One contact's history, newest first (contact timeline design, 2026-11-24).
+export const timelineInput = z
+  .object({ id: uuid, cursor: z.string().max(300).optional() })
+  .strict();
+type Entry<K extends string, T> = { kind: K; id: string; at: string } & T;
+export type TimelineEntry =
+  // The call screen's summary facts only: never what was said.
+  | Entry<
+      "call",
+      {
+        state: "active" | "ended" | "refused";
+        refusal: string | null;
+        outcome: string | null;
+        duration_seconds: number | null;
+        after_hours: boolean;
+        transfer_result: string | null;
+      }
+    >
+  // One entry per WhatsApp conversation, sorted by its latest message.
+  | Entry<
+      "chat",
+      {
+        state: string;
+        owner: string;
+        needs_attention: boolean;
+        last_author: "customer" | "agent" | "staff" | "system" | null;
+        last_kind: "text" | "template" | "media" | "unsupported" | null;
+        // At most 200 characters; empty for media.
+        last_body: string | null;
+      }
+    >
+  | Entry<
+      "booking",
+      {
+        title: string;
+        start_at: string;
+        status: "requested" | "confirmed" | "cancelled";
+      }
+    >
+  | Entry<"note", { text: string }>
+  | Entry<
+      "consent",
+      { channel: string; purpose: string; granted: boolean; evidence: string }
+    >
+  | Entry<
+      "follow_up",
+      {
+        follow_up_kind: "booking" | "message" | "handoff";
+        source: "call" | "whatsapp";
+        state: "open" | "done" | "dismissed";
+        due_at: string | null;
+        // What the customer said or asked for, at most 200 characters.
+        text: string | null;
+      }
+    >;
+export type ContactTimeline = {
+  items: TimelineEntry[];
+  next: string | null;
+  // First page only: the contact's open follow-up items, oldest first, at
+  // most 10, so an old open item is never buried. Null on later pages.
+  open: TimelineEntry[] | null;
+};
