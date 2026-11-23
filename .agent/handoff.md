@@ -9,11 +9,11 @@ Design: `docs/superpowers/specs/2026-11-24-contact-timeline-design.md` (all deci
 - Contact panel: "Still open", Appointments (moved up), "History" / "Sejarah" with View links, then notes, consent and privacy as before.
 
 **Verified (2026-11-24, local database only)**
-- `typecheck` passes; `test:guards` 69 of 69; `check:core` 1410 of 1410; `build:local`, `build:mock`, `build:hosted` (test `APP_ORIGIN`) pass.
-- Browser (controller, local app, made-up workspace, staff account): History at 375 px in English, new note at the top after saving, "Still open", BM with dark theme at 375 px, View link to the call.
+- `typecheck` passes; `test:guards` 69 of 69; `check:core` 1410 of 1410 before the last fix (closed follow-up links, page reset); after it contacts, timeline, domain and privacy tests 478 of 478, guards 69 of 69, typecheck and three builds pass; `build:local`, `build:mock`, `build:hosted` (test `APP_ORIGIN`) pass.
+- Browser (controller, local app, made-up workspace, staff account): History at 375 px in English, new note at the top after saving, "Still open", BM with dark theme at 375 px, View links to the call and to the chat (Inbox opens with WhatsApp not connected), a closed follow-up linking to its call.
 
 **Not verified**
-- No person has used it; owner view, chat and consent entries and "Show older" not seen in a browser (API and unit tests cover them); not measured on a large contact; nothing on staging.
+- No person has used it; owner view, a consent entry, a chat with messages and "Show older" not seen in a browser (API and unit tests cover them); not measured on a large contact; nothing on staging.
 
 **Next**
 - Open the pull request; once merged, Vercel deploys the web (no migration, no engine change).

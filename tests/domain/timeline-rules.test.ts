@@ -44,8 +44,16 @@ test("a chat names who wrote last; files and empty chats have their own words", 
 
 test("follow-ups and bookings are flagged while they still need someone", () => {
   const f: TimelineEntry = {
-    kind: "follow_up", id: "f1", at, follow_up_kind: "booking", source: "call", state: "open", due_at: null, text: "Potong rambut",
+    kind: "follow_up", id: "f1", at, follow_up_kind: "booking", source: "call", state: "open", due_at: null,
+    call_id: "c9", conversation_id: null, text: "Potong rambut",
   };
+  // Open items open on the follow-up page; closed ones on their call or chat.
+  assert.deepEqual(linkOf(f), { path: "/app/follow-ups", param: "item", id: "f1" });
+  assert.deepEqual(linkOf({ ...f, state: "done" }), { path: "/app/calls", param: "call", id: "c9" });
+  assert.deepEqual(linkOf({ ...f, state: "dismissed", source: "whatsapp", call_id: null, conversation_id: "w9" }), {
+    path: "/app/inbox", param: "conversation", id: "w9",
+  });
+  assert.equal(linkOf({ ...f, state: "done", call_id: null }), null);
   assert.equal(entryLine(f, en), "Booking request · Potong rambut");
   assert.equal(marker(f, now), "open");
   assert.equal(entryLine({ ...f, state: "dismissed" }, en), "Booking request · Declined · Potong rambut");
@@ -60,9 +68,9 @@ test("consent reads channel, purpose and choice; links go to the record's page",
   const c: TimelineEntry = { kind: "consent", id: "k1", at, channel: "phone", purpose: "marketing", granted: false, evidence: "Minta berhenti" };
   assert.equal(entryLine(c, en), "Phone · Marketing · Withdrawn");
   assert.equal(linkOf(c), null);
-  assert.deepEqual(linkOf(call), { path: "/app/calls", param: "call" });
+  assert.deepEqual(linkOf(call), { path: "/app/calls", param: "call", id: "c1" });
   assert.deepEqual(linkOf({ kind: "chat", id: "w", at, state: "open", owner: "agent", needs_attention: false, last_author: null, last_kind: null, last_body: null }), {
-    path: "/app/inbox", param: "conversation",
+    path: "/app/inbox", param: "conversation", id: "w",
   });
 });
 

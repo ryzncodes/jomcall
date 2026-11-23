@@ -80,7 +80,7 @@ for its one line:
 | `booking` | `created_at` | title, start time, status | `/app/bookings?booking=<id>` |
 | `note` | `created_at` | text | none |
 | `consent` | `created_at` | channel, purpose, granted, evidence | none |
-| `follow_up` | `created_at` | kind, state, due time | `/app/follow-ups?item=<id>` |
+| `follow_up` | `created_at` | kind, state, due time, source call or chat | open: `/app/follow-ups?item=<id>`; closed: its call or chat |
 
 Rules:
 
@@ -167,3 +167,10 @@ show before cutting it.
 - The local browser check ran as the staff test account, so it also covered
   the staff view: history shown, the privacy section hidden, and the call
   page linked from History keeps the words for owners and admins.
+- A closed follow-up links to its call or chat, not to the follow-up page:
+  that page opens open items only and showed "This item is already closed"
+  with nothing highlighted (found in the browser check). Entries carry
+  `call_id` and `conversation_id` for this.
+- After page one changes (a saved note, a new call), older pages already
+  loaded are dropped, so no entry is skipped. Page one also refetches every
+  15 seconds; an unchanged page keeps them.

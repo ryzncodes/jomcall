@@ -91,14 +91,24 @@ export const MARKER_WORDS: Record<Exclude<Marker, null>, [string, string]> = {
   waiting: ["Waiting for staff", "Menunggu staf"],
 };
 
-// The page an entry opens and its query parameter, when there is one.
+// The page an entry opens, its query parameter and the id to pass, when
+// there is one. The follow-up page opens open items only, so a closed item
+// links to its call or chat, which list their items in every state.
 export function linkOf(
   e: TimelineEntry,
-): { path: string; param: string } | null {
-  if (e.kind === "call") return { path: "/app/calls", param: "call" };
-  if (e.kind === "chat") return { path: "/app/inbox", param: "conversation" };
-  if (e.kind === "booking") return { path: "/app/bookings", param: "booking" };
-  if (e.kind === "follow_up") return { path: "/app/follow-ups", param: "item" };
+): { path: string; param: string; id: string } | null {
+  if (e.kind === "call") return { path: "/app/calls", param: "call", id: e.id };
+  if (e.kind === "chat")
+    return { path: "/app/inbox", param: "conversation", id: e.id };
+  if (e.kind === "booking")
+    return { path: "/app/bookings", param: "booking", id: e.id };
+  if (e.kind === "follow_up") {
+    if (e.state === "open")
+      return { path: "/app/follow-ups", param: "item", id: e.id };
+    if (e.call_id) return { path: "/app/calls", param: "call", id: e.call_id };
+    if (e.conversation_id)
+      return { path: "/app/inbox", param: "conversation", id: e.conversation_id };
+  }
   return null;
 }
 

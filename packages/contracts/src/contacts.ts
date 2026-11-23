@@ -88,6 +88,10 @@ export type TimelineEntry =
         source: "call" | "whatsapp";
         state: "open" | "done" | "dismissed";
         due_at: string | null;
+        // Where it came from; a closed item links there, where it shows in
+        // every state (the follow-up page opens open items only).
+        call_id: string | null;
+        conversation_id: string | null;
         // What the customer said or asked for, at most 200 characters.
         text: string | null;
       }

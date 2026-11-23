@@ -3,7 +3,7 @@
 // of calls, chats, appointments, notes, consent and follow-ups, newest first
 // (docs/superpowers/specs/2026-11-24-contact-timeline-design.md). The
 // children (the appointments section) sit between the two.
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { TimelineEntry } from "../../../packages/contracts/src/contacts";
 import { useCore, useWords, useResource, Notice, Loading } from "./state";
 import { useExperience } from "../experience";
@@ -37,6 +37,11 @@ export function ContactHistory({
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<unknown>();
   const data = first.data;
+  // When page one changes (a saved note or a new call moves every entry
+  // down), older pages loaded before it would skip an entry: drop them.
+  // Page one also refetches every 15 seconds; an unchanged page keeps them.
+  const firstPage = data?.items.map((e) => e.kind + e.id + e.at).join("|");
+  useEffect(() => setOlder(undefined), [firstPage]);
   const items = data
     ? older
       ? appendPage(data.items, older.items)
@@ -145,7 +150,7 @@ function Entry({ e }: { e: TimelineEntry }) {
         <p className="core-timeline-detail">{e.evidence}</p>
       )}
       {link && (
-        <a className="text-link" href={`${href(link.path)}&${link.param}=${e.id}`}>
+        <a className="text-link" href={`${href(link.path)}&${link.param}=${link.id}`}>
           {w("View", "Lihat")}
         </a>
       )}

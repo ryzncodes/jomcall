@@ -110,6 +110,8 @@ test("every kind shows newest first; staff get no call words; open list on page 
       assert.equal(f.follow_up_kind, "message");
       assert.equal(f.state, "open");
       assert.equal(f.text, "Sila telefon semula.");
+      assert.equal(f.call_id, callId);
+      assert.equal(f.conversation_id, null);
       assert.deepEqual(t.open.map((e: { id: string }) => e.id), [followUpId]);
       assert.equal(t.items.find((e: { kind: string }) => e.kind === "booking").status, "confirmed");
     }

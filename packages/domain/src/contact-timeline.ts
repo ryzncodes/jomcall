@@ -25,6 +25,7 @@ const branch = (sql: string, at: string) =>
   `(${sql} and ${after(at)} order by ${at} desc,x.id desc limit ${PAGE + 1})`;
 
 const FOLLOW_UP_DATA = `jsonb_build_object('follow_up_kind',x.kind,'source',x.source,'state',x.state,'due_at',x.due_at,
+  'call_id',x.call_id,'conversation_id',x.conversation_id,
   'text',left(case x.kind when 'message' then x.details->>'text' when 'handoff' then x.details->>'reason' else x.details->>'title' end,200))`;
 
 const TIMELINE = [
