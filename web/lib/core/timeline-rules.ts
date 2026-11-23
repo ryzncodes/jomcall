@@ -63,7 +63,8 @@ export function entryLine(e: TimelineEntry, w: W): string {
     case "follow_up": {
       const k = KIND_WORDS[e.follow_up_kind],
         s = stateWords({ kind: e.follow_up_kind, state: e.state });
-      return [w(k[0], k[1]), w(s[0], s[1]), e.text]
+      // An open item carries the "Open" flag instead.
+      return [w(k[0], k[1]), e.state === "open" ? null : w(s[0], s[1]), e.text]
         .filter(Boolean)
         .join(" · ");
     }

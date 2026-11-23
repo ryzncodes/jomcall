@@ -46,7 +46,7 @@ test("follow-ups and bookings are flagged while they still need someone", () => 
   const f: TimelineEntry = {
     kind: "follow_up", id: "f1", at, follow_up_kind: "booking", source: "call", state: "open", due_at: null, text: "Potong rambut",
   };
-  assert.equal(entryLine(f, en), "Booking request · Open · Potong rambut");
+  assert.equal(entryLine(f, en), "Booking request · Potong rambut");
   assert.equal(marker(f, now), "open");
   assert.equal(entryLine({ ...f, state: "dismissed" }, en), "Booking request · Declined · Potong rambut");
   assert.equal(marker({ ...f, state: "done" }, now), null);
