@@ -3,6 +3,7 @@ import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useSearchParams } from "next/navigation";
 import { ContactBookings } from "./bookings";
+import { ContactHistory } from "./contact-history";
 import { useState } from "react";
 import { MagnifyingGlass, Users, ArrowLeft } from "@phosphor-icons/react";
 import type {
@@ -301,8 +302,10 @@ function ContactProfile({
           onSaved={() => setEditing(false)}
         />
       )}
+      <ContactHistory key={id} contactId={id}>
+        <ContactBookings contactId={id} />
+      </ContactHistory>
       <ContactRecords contact={c} />
-      <ContactBookings contactId={id} />
       {workspace.role !== "staff" && (
         <Privacy contact={c} onDeleted={onDeleted} />
       )}
