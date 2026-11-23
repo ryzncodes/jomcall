@@ -133,6 +133,65 @@ export async function requestBookingInTransaction(
   await audit(tx, ctx, "booking.requested", "booking", b.id);
   return b;
 }
+// Move a booking that exists: confirm, reschedule or cancel, under the
+// contact, resource and booking locks, with the clash check for a booking
+// that ends up confirmed. Writes the booking.<action> audit row.
+async function changeBookingInTransaction(
+  tx: PoolClient,
+  ctx: TenantContext,
+  id: string,
+  action: "confirm" | "reschedule" | "cancel",
+  v: { expectedRevision: number; startAt?: string },
+): Promise<Booking> {
+  const prior = await loadBooking(tx, ctx, id);
+  await lockBookingContact(tx, ctx, prior.contact_id);
+  const r = await lockResourceLocation(tx, ctx, prior.resource_id);
+  const b = await loadBooking(tx, ctx, id, true);
+  if (b.revision !== v.expectedRevision) throw new AppError("CONFLICT", 409);
+  if (b.status === "cancelled") throw new AppError("BOOKING_CANCELLED", 409);
+  let start = new Date(b.start_at).toISOString(),
+    end = new Date(b.end_at).toISOString();
+  let status: Booking["status"] = b.status;
+  if (action === "cancel") status = "cancelled";
+  else {
+    if (action === "confirm" && b.status !== "requested")
+      throw new AppError("CONFLICT", 409);
+    if (action === "reschedule" && v.startAt !== undefined)
+      start = instant.parse(v.startAt);
+    if (action === "confirm") status = "confirmed";
+    end = await validTime(
+      tx,
+      ctx,
+      r.id,
+      r.location_id,
+      start,
+      (new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) / 60000,
+      r.active,
+      status === "confirmed",
+      id,
+    );
+  }
+  const saved = (
+    await tx.query(
+      "update app.booking set start_at=$3,end_at=$4,status=$5,revision=revision+1 where org_id=$1 and id=$2 returning *",
+      [ctx.orgId, id, start, end, status],
+    )
+  ).rows[0] as Booking;
+  await audit(tx, ctx, "booking." + action, "booking", id);
+  return saved;
+}
+// Confirm a requested booking inside the caller's transaction: the same
+// locks, clash check and errors as the confirmBooking command.
+export function confirmBookingInTransaction(
+  tx: PoolClient,
+  ctx: TenantContext,
+  bookingId: string,
+  expectedRevision: number,
+): Promise<Booking> {
+  return changeBookingInTransaction(tx, ctx, bookingId, "confirm", {
+    expectedRevision,
+  });
+}
 export async function bookingCommand(
   tx: PoolClient,
   ctx: TenantContext,
@@ -162,44 +221,22 @@ export async function bookingCommand(
         );
         return { ref: { id: b.id }, data: b };
       }
-      const prior = await loadBooking(tx, ctx, id);
-      await lockBookingContact(tx, ctx, prior.contact_id);
-      const r = await lockResourceLocation(tx, ctx, prior.resource_id);
-      const b = await loadBooking(tx, ctx, id, true);
-      if (!("expectedRevision" in v) || b.revision !== v.expectedRevision)
-        throw new AppError("CONFLICT", 409);
-      if (b.status === "cancelled")
-        throw new AppError("BOOKING_CANCELLED", 409);
-      let start = new Date(b.start_at).toISOString(),
-        end = new Date(b.end_at).toISOString();
-      let status: Booking["status"] = b.status;
-      if (action === "cancel") status = "cancelled";
-      else {
-        if (action === "confirm" && b.status !== "requested")
-          throw new AppError("CONFLICT", 409);
-        if (action === "reschedule" && "startAt" in v)
-          start = instant.parse(v.startAt);
-        if (action === "confirm") status = "confirmed";
-        end = await validTime(
-          tx,
-          ctx,
-          r.id,
-          r.location_id,
-          start,
-          (new Date(b.end_at).getTime() - new Date(b.start_at).getTime()) /
-            60000,
-          r.active,
-          status === "confirmed",
-          id,
-        );
-      }
-      const saved = (
-        await tx.query(
-          "update app.booking set start_at=$3,end_at=$4,status=$5,revision=revision+1 where org_id=$1 and id=$2 returning *",
-          [ctx.orgId, id, start, end, status],
-        )
-      ).rows[0];
-      await audit(tx, ctx, "booking." + action, "booking", id);
+      const change = v as { expectedRevision: number; startAt?: string };
+      const saved =
+        action === "confirm"
+          ? await confirmBookingInTransaction(
+              tx,
+              ctx,
+              id,
+              change.expectedRevision,
+            )
+          : await changeBookingInTransaction(
+              tx,
+              ctx,
+              id,
+              action as "reschedule" | "cancel",
+              change,
+            );
       return { ref: { id }, data: saved };
     },
     (ref) => loadBooking(tx, ctx, String(ref.id)),

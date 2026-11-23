@@ -2875,3 +2875,187 @@
   color: var(--ink);
   text-decoration: underline;
 }
+
+/* To follow up (/app/follow-ups), its sidebar count, and the follow-up
+   list on the call page and in the chat. Mobile first (390 px). */
+.follow-ups {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  min-width: 0;
+}
+.follow-up-tabs {
+  margin-bottom: 0;
+}
+.follow-up-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.follow-up-item {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  min-width: 0;
+  scroll-margin: 96px;
+}
+.follow-up-item p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.follow-up-item[data-highlight] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.follow-up-item:focus-visible {
+  outline: 2px solid var(--ink);
+}
+.follow-up-meta,
+.follow-up-contact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+.follow-up-meta {
+  color: var(--secondary);
+}
+.follow-up-meta strong {
+  color: var(--ink);
+  font-weight: 500;
+}
+.follow-up-meta [data-overdue] {
+  color: var(--ink);
+  font-weight: 500;
+}
+.follow-up-contact > span:first-child {
+  font-weight: 500;
+}
+.follow-up-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.follow-up-text {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.follow-up-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.follow-up-foot .core-actions {
+  gap: 8px;
+}
+.follow-up-assignee {
+  font-size: 13px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.follow-up-more[aria-expanded="true"] {
+  background: var(--wash);
+}
+.follow-up-assign {
+  display: grid;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.follow-up-toast {
+  position: fixed;
+  z-index: 90;
+  inset-inline: 16px;
+  bottom: 16px;
+  margin-inline: auto;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14px;
+}
+.follow-up-toast button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--paper);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.follow-up-inline {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.follow-up-inline ul {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.follow-up-inline li {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--secondary);
+  font-size: 13px;
+}
+.follow-up-inline li p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.follow-up-inline .core-actions {
+  gap: 8px;
+}
+.navigation-count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 760px) {
+  .product-workspace .workspace-sidebar .app-quick-navigation .navigation-count {
+    position: absolute;
+    top: 4px;
+    left: calc(50% + 6px);
+    margin: 0;
+    min-width: 18px;
+    padding: 0 4px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+}
+.follow-up-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.follow-up-ask p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+}

@@ -241,4 +241,20 @@ export const moreCopy: Record<string, [string, string]> = {
     "The export is not ready yet. Try again shortly.",
     "Eksport belum sedia. Cuba lagi sebentar lagi.",
   ],
+  CONTACT_REQUIRED: [
+    "This request has no contact, so it cannot be booked. Decline it, or add the booking under Bookings.",
+    "Permintaan ini tiada kenalan, jadi tidak boleh ditempah. Tolak, atau tambah tempahan di Tempahan.",
+  ],
+  BOOKING_CONFIRM_REQUIRED: [
+    "Confirm the booking, or decline it.",
+    "Sahkan tempahan, atau tolaknya.",
+  ],
+  INVALID_STATE: [
+    "This cannot be done to this item. Reload and try again.",
+    "Ini tidak boleh dibuat pada item ini. Muat semula dan cuba lagi.",
+  ],
+  INVALID_ASSIGNEE: [
+    "That person is no longer in this workspace. Choose someone else.",
+    "Orang itu tiada lagi dalam ruang kerja ini. Pilih orang lain.",
+  ],
 };

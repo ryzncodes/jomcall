@@ -126,3 +126,83 @@ test("privacy jobs survive enqueue crash, export checks authority, deletion stay
     await h.close();
   }
 });
+
+test("contact export lists the contact's follow-ups without staff user ids", async () => {
+  const h = await createHarness(),
+    api = await createApiHarness(h);
+  let engine: Engine | undefined;
+  try {
+    const req = (method: string, path: string, body?: unknown) =>
+      api.request(h.alice, h.orgA.id, method, "/api/v1" + path, body);
+    const c = (
+      await req("POST", "/contacts", {
+        name: "Contoh Susulan",
+        phone: null,
+        preferredLanguage: "ms",
+      })
+    ).body.data;
+    // A completed call turn with a message proposal: the database creates
+    // the follow-up. Fake values only.
+    const callId = (
+      await h.cleanup.query(
+        `insert into app.call(org_id,namespace,location_id,agent_id,snapshot,dialled_e164,contact_id,sip_call_id,room,participant_identity,token_hash)
+         values($1,$2,$3,$4,'{}','+60112223333',$5,'SCL_'||gen_random_uuid(),'room-a','sip_a',md5(gen_random_uuid()::text)||md5(gen_random_uuid()::text))returning id`,
+        [h.orgA.id, h.namespace, h.orgA.locationId, h.orgA.agentId, c.id],
+      )
+    ).rows[0].id;
+    const turnId = (
+      await h.cleanup.query(
+        "insert into app.call_turn(org_id,call_id,client_turn_id,input,state,lease_token,lease_until)values($1,$2,gen_random_uuid(),'Boleh tinggal pesanan?','running',gen_random_uuid(),now()+interval '60 seconds')returning id",
+        [h.orgA.id, callId],
+      )
+    ).rows[0].id;
+    await h.cleanup.query(
+      "insert into app.call_proposal(org_id,call_id,turn_id,step,kind,details)values($1,$2,$3,0,'message',$4)",
+      [h.orgA.id, callId, turnId, JSON.stringify({ text: "Sila telefon semula esok." })],
+    );
+    await h.cleanup.query(
+      "update app.call_turn set state='completed',completed_at=now(),revision=revision+1 where id=$1",
+      [turnId],
+    );
+    const item = (
+      await h.cleanup.query("select id from app.follow_up where org_id=$1 and contact_id=$2", [h.orgA.id, c.id])
+    ).rows[0];
+    assert.equal(
+      (
+        await req("POST", `/follow-ups/${item.id}/assign`, {
+          expectedRevision: 1,
+          assigneeUserId: h.staff.userId,
+          dueAt: null,
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await req("POST", `/follow-ups/${item.id}/close`, { expectedRevision: 2, state: "done" })).status,
+      200,
+    );
+    const ex = (await req("POST", `/contacts/${c.id}/export`, { expectedRevision: 1 })).body.data;
+    engine = await Engine.create(h.namespace);
+    // The follow-up alerts queued above share the engine's small batches.
+    let download = await req("GET", `/jobs/${ex.id}/download`);
+    for (let i = 0; i < 5 && download.status !== 200; i++) {
+      await engine.tick();
+      download = await req("GET", `/jobs/${ex.id}/download`);
+    }
+    assert.equal(download.status, 200);
+    assert.equal(download.body.followUps.length, 1);
+    const [f] = download.body.followUps;
+    assert.deepEqual(Object.keys(f).sort(), ["closed_at", "created_at", "details", "due_at", "kind", "source", "state"]);
+    assert.equal(f.kind, "message");
+    assert.equal(f.source, "call");
+    assert.equal(f.state, "done");
+    assert.equal(f.details.text, "Sila telefon semula esok.");
+    assert.ok(f.closed_at);
+    assert.ok(!JSON.stringify(download.body.followUps).includes(h.staff.userId));
+    assert.ok(!JSON.stringify(download.body.followUps).includes(h.alice.userId));
+  } finally {
+    await engine?.close();
+    await api.close();
+    await h.close();
+  }
+});

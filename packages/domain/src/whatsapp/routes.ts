@@ -2,6 +2,7 @@
 // as jomcall_app under row-level security. Nothing here calls a provider:
 // sends are queued and the agent process applies the send rules.
 import type { PoolClient } from "pg";
+import { followUpsOf } from "../follow-up/routes.ts";
 import {
   AppError,
   uuid,
@@ -200,12 +201,7 @@ async function conversationDetail(
         [ctx.orgId, id],
       )
     ).rows.map((m) => ({ ...m, media: cleanMediaFacts(m.media) })),
-    proposals: (
-      await tx.query(
-        "select id,kind,details,state,created_at from app.conversation_proposal where org_id=$1 and conversation_id=$2 order by created_at,id",
-        [ctx.orgId, id],
-      )
-    ).rows,
+    followUps: await followUpsOf(tx, ctx, "conversation", id),
   };
 }
 

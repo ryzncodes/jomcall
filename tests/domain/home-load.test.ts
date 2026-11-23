@@ -17,6 +17,7 @@ function fake(fail: string[] = []) {
     calls: { items: [{ id: "c1" }], nextCursor: null },
     conversations: [{ id: "w1" }],
     knowledgeGaps: [{ id: "g1" }],
+    followUpCount: { open: 3, mine: 1 },
   };
   return {
     calls,
@@ -46,7 +47,7 @@ test("manager reads", async () => {
   await loadHomeFacts(f.client, { manager: true, published: false, agentId: "a1" }, now);
   assert.deepEqual(
     names(f.calls),
-    ["agentTests", "bookings", "bookings", "calls", "channels", "conversations", "firstRun", "knowledgeGaps", "phoneNumbers", "plan", "setup", "wallet"],
+    ["agentTests", "bookings", "bookings", "calls", "channels", "conversations", "firstRun", "followUpCount", "knowledgeGaps", "phoneNumbers", "plan", "setup", "wallet"],
   );
   const input = (n: string, pick = (i: Record<string, unknown>) => true) =>
     f.calls.find(([k, i]) => k === n && pick(i))![1];
@@ -54,6 +55,7 @@ test("manager reads", async () => {
   assert.deepEqual(input("setup"), { id: "a1" });
   assert.deepEqual(input("conversations"), { attention: "needs" });
   assert.deepEqual(input("knowledgeGaps"), { id: "a1", status: "open" });
+  assert.deepEqual(input("followUpCount"), {});
   assert.deepEqual(input("bookings", (i) => !i.status), {
     from: "2026-11-19T16:00:00.000Z",
     to: "2026-11-20T16:00:00.000Z",
@@ -72,6 +74,8 @@ test("staff never read billing or phone numbers", async () => {
   await loadHomeFacts(f.client, { manager: false, published: false, agentId: "a1" }, now);
   for (const n of ["plan", "wallet", "phoneNumbers", "firstRun"])
     assert.ok(!names(f.calls).includes(n), n);
+  // Every role has follow-ups to work through.
+  assert.ok(names(f.calls).includes("followUpCount"));
 });
 
 test("no agent id skips setup and gaps", async () => {
@@ -95,4 +99,10 @@ test("shapes", async () => {
   assert.deepEqual(v.calls, [{ id: "c1" }]);
   assert.deepEqual(v.bookingsToday!.map((b) => b.id), ["b1"]);
   assert.deepEqual(v.toConfirm!.map((b) => b.id), ["r1"]);
+  assert.deepEqual(v.followUps, { open: 3, mine: 1 });
+});
+
+test("a failed follow-up count leaves the fact undefined", async () => {
+  const v = await loadHomeFacts(fake(["followUpCount"]).client, { manager: false, published: true, agentId: "a1" }, now);
+  assert.equal(v.followUps, undefined);
 });

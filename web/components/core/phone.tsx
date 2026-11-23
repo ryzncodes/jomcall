@@ -3,6 +3,8 @@ import { localNumber } from "@/lib/core/phone-format";
 import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
 import { useState } from "react";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Phone } from "@phosphor-icons/react";
 import {
   phoneAreas,
@@ -13,6 +15,13 @@ import {
 import { useCore, useWords, useResource, useAction, Heading, Notice, Loading } from "./state";
 import { Field } from "./field";
 import { useExperience } from "../experience";
+
+// The follow-up buttons are left out of the mock preview build. The mode
+// is a build-time constant, so the mock bundle drops this import.
+const FollowUpInline =
+  process.env.NEXT_PUBLIC_JOMCALL_MODE !== "mock"
+    ? dynamic(() => import("./follow-up-actions").then((m) => m.FollowUpInline))
+    : null;
 
 const KL = "Asia/Kuala_Lumpur";
 const when = (iso: string, ms: boolean) =>
@@ -450,7 +459,10 @@ export function LocalCalls() {
     ms = useMs(),
     { client } = useCore();
   const [cursor, setCursor] = useState<string>();
-  const [selected, setSelected] = useState<string>();
+  // ?call=<id> opens that call (the follow-up page links here).
+  const [selected, setSelected] = useState<string | undefined>(
+    useSearchParams().get("call") ?? undefined,
+  );
   const list = useResource(() => client.execute("calls", { cursor, limit: 25 }), "calls|" + cursor);
   return (
     <>
@@ -570,22 +582,11 @@ function CallDetail({ id }: { id: string }) {
           ))}
         </ol>
       )}
-      {!!c.proposals?.length && (
-        <>
-          <h3>{w("To follow up", "Untuk disusuli")}</h3>
-          <ul>
-            {c.proposals.map((p) => (
-              <li key={p.id}>
-                {p.kind === "booking"
-                  ? w("Booking to confirm", "Tempahan untuk disahkan")
-                  : p.kind === "message"
-                    ? w("Message", "Mesej")
-                    : w("Staff follow-up", "Susulan staf")}{" "}
-                · {p.state}
-              </li>
-            ))}
-          </ul>
-        </>
+      {!!c.followUps.length && FollowUpInline && (
+        <FollowUpInline
+          items={c.followUps}
+          load={async () => (await client.execute("call", { id })).followUps}
+        />
       )}
     </div>
   );

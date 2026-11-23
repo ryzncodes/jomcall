@@ -7,6 +7,7 @@ import { waPieces } from "@/lib/core/wa-format";
 // server's outlook before a reply and the agent process's decision after it.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { ArrowLeft, ChatCircleDots } from "@phosphor-icons/react";
 import { CoreError } from "@/lib/core/client";
 import {
@@ -35,6 +36,13 @@ import {
   Notice,
   Loading,
 } from "./state";
+
+// The follow-up buttons are left out of the mock preview build. The mode
+// is a build-time constant, so the mock bundle drops this import.
+const FollowUpInline =
+  process.env.NEXT_PUBLIC_JOMCALL_MODE !== "mock"
+    ? dynamic(() => import("./follow-up-actions").then((m) => m.FollowUpInline))
+    : null;
 
 type Pair = [string, string];
 const zone = "Asia/Kuala_Lumpur";
@@ -700,7 +708,20 @@ function ConversationView({
             detail={detail}
             contactHref={href(`/app/contacts?contact=${detail.contact_id}`)}
           />
-          <Proposals items={detail.proposals} />
+          {FollowUpInline && (
+            <FollowUpInline
+              items={detail.followUps}
+              openOnly
+              load={async () => {
+                // The chat's own read, so its header and flag agree too.
+                const at = ++sequence.current;
+                const d = await client.execute("conversation", { id });
+                show(d, at);
+                changed();
+                return d.followUps;
+              }}
+            />
+          )}
           {detail.messages.length >= 200 && (
             <p className="editor-note">
               {w(
@@ -811,42 +832,6 @@ function ConversationView({
         </>
       )}
     </section>
-  );
-}
-
-const proposalWords: Record<string, Pair> = {
-  booking: [
-    "The agent proposed a booking. Confirm it with the customer, then add it in Bookings.",
-    "Ejen mencadangkan tempahan. Sahkan dengan pelanggan, kemudian tambahkannya dalam Tempahan.",
-  ],
-  message: [
-    "The customer left a message for your team.",
-    "Pelanggan meninggalkan mesej untuk pasukan anda.",
-  ],
-  handoff: [
-    "The agent handed this chat to your team.",
-    "Ejen menyerahkan perbualan ini kepada pasukan anda.",
-  ],
-};
-
-// Read-only: no command acts on a chat's proposals yet.
-function Proposals({ items }: { items: ConversationDetail["proposals"] }) {
-  const say = usePair();
-  const open = items.filter((p) => p.state === "open");
-  if (!open.length) return null;
-  return (
-    <ul className="wa-proposals">
-      {open.map((p) => (
-        <li key={p.id}>
-          {say(
-            proposalWords[p.kind] ?? [
-              `Agent proposal: ${p.kind}`,
-              `Cadangan ejen: ${p.kind}`,
-            ],
-          )}
-        </li>
-      ))}
-    </ul>
   );
 }
 

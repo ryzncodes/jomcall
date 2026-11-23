@@ -4,7 +4,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { CaretDown, CheckCircle, GearSix, List, Robot, X, type Icon } from "@phosphor-icons/react";
 import { useExperience } from "../experience";
 
-interface Entry { key: string; href: string; label: string; Icon: Icon }
+// count: a number shown beside the label (the open follow-ups); none when 0.
+interface Entry { key: string; href: string; label: string; Icon: Icon; count?: number }
 
 export function WorkspaceNavigation({ active, entries, setupComplete }: {
   active: string;
@@ -16,7 +17,7 @@ export function WorkspaceNavigation({ active, entries, setupComplete }: {
   const desktop = useRef<HTMLElement>(null);
   const mobileCurrent = useRef<HTMLAnchorElement>(null);
   const select = (keys: string[]) => keys.flatMap(key => entries.filter(item => item.key === key));
-  const daily = select(["home", "inbox", "calls", "contacts", "bookings", "outbound"]);
+  const daily = select(["home", "follow-ups", "inbox", "calls", "contacts", "bookings", "outbound"]);
   const quick = daily.slice(0, 3);
   const groups = [
     { id: "agent", label: t.navigation.agent, Icon: Robot, entries: select(["builder", "test", "setup"]) },
@@ -50,13 +51,19 @@ export function WorkspaceNavigation({ active, entries, setupComplete }: {
     return () => query.removeEventListener("change", closeOnDesktop);
   }, []);
 
-  const link = ({ key, href: url, label, Icon }: Entry, inDialog = false) => (
+  const link = ({ key, href: url, label, Icon, count }: Entry, inDialog = false) => (
     <a key={key} className={`navigation-link${active === key ? " active" : ""}`}
       ref={inDialog && active === key ? mobileCurrent : undefined}
       href={href(url)} aria-current={active === key ? "page" : undefined}
       onClick={() => setOpen(false)}>
       <Icon size={19} aria-hidden="true" />
       <span>{label}</span>
+      {!!count && (
+        <span className="navigation-count">
+          {count > 99 ? "99+" : count}
+          <span className="sr-only">{t.followUps.openCount}</span>
+        </span>
+      )}
       {key === "setup" && setupComplete && <CheckCircle className="navigation-complete" size={15} aria-hidden="true" />}
     </a>
   );

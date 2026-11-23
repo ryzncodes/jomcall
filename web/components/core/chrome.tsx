@@ -20,13 +20,17 @@ import {
   PhoneIncoming,
   ShieldCheck,
   SlidersHorizontal,
+  ListChecks,
 } from "@phosphor-icons/react";
 import { WorkspaceNavigation } from "../product/navigation";
 import { Brand, Controls, useExperience } from "../experience";
 import { HttpCoreClient } from "@/lib/core/client";
 import type { Channels } from "../../../packages/contracts/src/phone";
+import type { FollowUpCount } from "../../../packages/contracts/src/follow-up";
+import { FOLLOW_UPS_CHANGED } from "@/lib/core/follow-up-rules";
 export type ActiveScreen =
   | "home"
+  | "follow-ups"
   | "settings"
   | "calls"
   | "setup"
@@ -75,12 +79,22 @@ export function WorkspaceChrome({
   // The getting-started link: owners and admins only (staff get 403 and
   // see nothing), read with the channels and on the same focus.
   const [firstRun, setFirstRun] = useState<FirstRun>();
+  // The open follow-ups, for every role; read on focus and after any
+  // follow-up command on this page. A failed read shows no number.
+  const [followUps, setFollowUps] = useState<FollowUpCount>();
   useEffect(() => {
     setChannels(undefined);
     setFirstRun(undefined);
+    setFollowUps(undefined);
     if (!channelClient) return;
     let alive = true;
+    const count = () =>
+      void channelClient
+        .execute("followUpCount", {})
+        .then((v) => alive && setFollowUps(v))
+        .catch(() => alive && setFollowUps(undefined));
     const load = () => {
+      count();
       void channelClient
         .execute("firstRun", {})
         .then((v) => alive && setFirstRun(v))
@@ -95,13 +109,22 @@ export function WorkspaceChrome({
       if (document.visibilityState === "visible") void load();
     };
     window.addEventListener("focus", focus);
+    window.addEventListener(FOLLOW_UPS_CHANGED, count);
     return () => {
       alive = false;
       window.removeEventListener("focus", focus);
+      window.removeEventListener(FOLLOW_UPS_CHANGED, count);
     };
   }, [channelClient]);
   const all = [
     { key: "home", href: "/app", label: t.admin.nav, Icon: House },
+    {
+      key: "follow-ups",
+      href: "/app/follow-ups",
+      label: t.followUps.nav,
+      Icon: ListChecks,
+      count: followUps?.open,
+    },
     {
       key: "inbox",
       href: "/app/inbox",
@@ -187,7 +210,8 @@ export function WorkspaceChrome({
           "hours",
           ...(workspace.complete && active !== "setup" ? ["setup"] : []),
         ]
-      : [];
+      : // The follow-up queue holds real calls and chats only.
+        ["follow-ups"];
   const navigation = all.filter((item) => !hidden.includes(item.key));
   const startSteps = firstRun ? stepsFrom({ manager: true, ...firstRun }) : undefined;
   const startDone = startSteps?.filter((x) => x.state === "done").length ?? 0;
