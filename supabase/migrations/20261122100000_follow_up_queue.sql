@@ -19,8 +19,10 @@
 
 -- This migration locks both proposal tables, the turn tables and app.member
 -- until the back-fill commits. Give up after 5 seconds rather than queue
--- behind a live call (and stall every query behind this one); a refused
--- apply changes nothing and can be run again when the lines are quiet.
+-- behind a live call (and stall every query behind this one). A refused
+-- apply changes nothing only if the runner wraps this file in one
+-- transaction (not verified for every runner); then it can be run again
+-- when the lines are quiet.
 set local lock_timeout='5s';
 
 create table app.follow_up(
