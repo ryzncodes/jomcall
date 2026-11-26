@@ -133,7 +133,8 @@ export type CallTurn = {
   state: string;
   created_at: string;
 };
-export type CallDetail = CallSummary & {
+// The detail carries the whole summary below, so not the list row's reason.
+export type CallDetail = Omit<CallSummary, "reason_en" | "reason_ms"> & {
   disclosure_played_at: string | null;
   recording_enabled: boolean;
   // Managers only; staff see the summary without the words.

@@ -37,6 +37,9 @@ test("every member reads the summary; staff still get no turns; other businesses
   try {
     const id = await p.call("done");
     const d = (await req("GET", `/calls/${id}`)).body.data;
+    // The detail's one source for the reason is `summary`, not top-level fields.
+    assert.equal("reason_en" in d, false);
+    assert.equal("reason_ms" in d, false);
     assert.equal(d.summary.state, "done");
     assert.equal(d.summary.reason_en, "Asked about opening hours");
     assert.equal(d.summary.reason_ms, "Bertanya waktu buka");
