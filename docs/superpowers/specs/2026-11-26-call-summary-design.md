@@ -61,7 +61,7 @@ Anti-goals: what would make this a failure even if it works
 
 ### 6.1 Data
 
-New table `app.call_summary` (one row per summarized call or voice test session):
+New table `app.call_summary` (one row per summarized call):
 
 - `id`, `org_id`, `namespace`
 - `call_id` (unique), foreign key cascading on delete of the call
@@ -76,7 +76,7 @@ Row-level security: every active member of the organization reads rows (D1). Own
 
 ### 6.2 When a summary is queued
 
-- Real call: when `app_private.agent_call` ends a call (`call_end`, or `maintain` after a crash) that was answered and has at least one completed turn, it inserts a `pending` row in the same transaction. Unanswered and refused calls get no row.
+- Real call: a trigger (`call_summary_queue`) on `app.call` inserts a `pending` row in the same transaction when an answered call ends (`call_end`, or `maintain` after a crash). Unanswered and refused calls get no row.
 - Skip rule (builder's call on the number, start point): fewer than 2 completed turns or under 15 seconds answered: row written as `skipped` with `TOO_SHORT`; no model call. The screen says nothing for skipped calls.
 
 ### 6.3 The worker
@@ -88,7 +88,7 @@ Row-level security: every active member of the organization reads rows (D1). Own
 - Prompt rules: paraphrase, never quote; describe only what happened in the turns; a booking request is "asked to book", never "booked", unless the outcome says a booking was made; a message for staff is "left a message", never "sent"; if the call is unclear, say so plainly ("Reason unclear") rather than guess.
 - Guards (builder's call after review): a real call never creates an `app.booking` row, only a `booking` proposal (outcome `booking_proposed`), so the summary may never say a booking was made. The guard rejects booking-confirmation phrases on every real call ("booking confirmed", "booked for", "has been booked", "tempahan disahkan", "telah ditempah", and the Mandarin equivalents) and "message sent" / "pesanan dihantar" phrases; plain words like "confirmed their address" pass. The prompt says "asked to book" and "left a message".
 - Prompt rule for D5: name the kind of detail, never the detail.
-- After writing, a code check rejects a summary that contains any run of 8 or more consecutive words from a caller turn (quote guard), a personal-detail pattern (a run of 7 or more digits with spaces or dashes allowed, a Malaysian IC pattern `\d{6}-?\d{2}-?\d{4}`, an email address, or the caller's number in any format) (detail guard), or a success word ("booked", "confirmed", "sent", "ditempah", "disahkan", "dihantar") when no booking or message exists; rejected output counts as a failed attempt.
+- After writing, a code check rejects a summary that contains any run of 8 or more consecutive words from a caller turn (quote guard), a personal-detail pattern (a run of 7 or more digits with spaces or dashes allowed, a Malaysian IC pattern `\d{6}-?\d{2}-?\d{4}`, an email address, or the caller's number in any format) (detail guard); rejected output counts as a failed attempt.
 
 ### 6.4 Screens
 
