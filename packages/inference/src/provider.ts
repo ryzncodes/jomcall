@@ -1,5 +1,6 @@
 import {
   liveKitUrlProblem,
+  callSummary,
   setupReader,
 } from "../../contracts/src/hosting.ts";
 import type {
@@ -134,6 +135,18 @@ export function agentSetupReader(env: Env = process.env) {
   const value = setupReader(env);
   if (value === "anthropic" && !env.ANTHROPIC_API_KEY?.trim())
     throw Error("SETUP_READER_KEY_MISSING: ANTHROPIC_API_KEY");
+  return value;
+}
+
+// The call summary switch (defined beside the other hosted guards).
+export { callSummary };
+
+// What the agent process writes call summaries with. Calls Anthropic directly,
+// so "anthropic" without the key is refused at start. Never echoes a value.
+export function agentCallSummary(env: Env = process.env) {
+  const value = callSummary(env);
+  if (value === "anthropic" && !env.ANTHROPIC_API_KEY?.trim())
+    throw Error("CALL_SUMMARY_KEY_MISSING: ANTHROPIC_API_KEY");
   return value;
 }
 

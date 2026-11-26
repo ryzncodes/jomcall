@@ -1,5 +1,30 @@
 # Handoff
 
+## 2026-11-26: AI call summaries (branch `feat/call-summary`, pull request not yet open, not merged)
+
+Design: `docs/superpowers/specs/2026-11-26-call-summary-design.md`. Plan: `docs/superpowers/plans/2026-11-26-call-summary.md`. One migration: `20261126100000_call_summary.sql`. Deviations: `NOTES.md`.
+
+**What changed**
+- A worker in the agent process (`engine/src/agent/call-summary.ts`) summarizes each answered real phone call of 15 s or more with 2 or more completed turns, or 1 when the outcome is `transferred`, `transfer_failed`, `handoff`, `message` or `booking_proposed` with `claude-haiku-5-5`: reason, outcome, next step, each in English and Bahasa Melayu. Switch `JOMCALL_CALL_SUMMARY` (`disabled` default, `anthropic`); agent process only, web gets no key; allowed on staging and production. Free: no billing.
+- Queued by an `after update of state on app.call` trigger; lease 60 s, 3 attempts, then `failed`; `TOO_SHORT` and `NO_TURNS` are skipped. Code guards in `packages/inference/src/call-summary.ts` reject a quote of the caller, a personal detail and a "booking confirmed" or "message sent" claim.
+- Call page: Summary block for every member, "Written by AI" / "Edited"; call list shows the reason; owners and admins Edit and Clear (`updateCallSummary`); PDPA contact export carries `summary` per call; deleted with the call.
+- Paid check script `npm run check:call-summary` (`--dry` sends nothing, `--paid` spends) with 16 made-up cases in `scripts/calls/summary-cases.json`.
+- Final-review fixes (2026-11-26): false-success guard by English and BM phrase families with request, pending and negated wording exempt; paid check fails a case on any `forbidden` caller detail (names, streets, estates, email local parts) in any of the six fields and records the result's model; tighter reason keywords; one-turn calls with a staff outcome are summarized; a summary that arrives while the worker closes is still written; `max_tokens` 1000 and a dates-in-words prompt line; the export carries `edited_at`; clearly fake IC and phone numbers in tests and cases. Known limit: names and addresses are kept out of real summaries by the prompt alone (`NOTES.md`).
+
+**Verified (2026-11-26, local database and fakes only)**
+- `typecheck` passes; `test:guards` 69 of 69; `test:offline` 473 tests, 472 pass, 1 skipped (after the guard follow-ups); `check:core` 1447 of 1447 (one run, after the final-review fixes except the last guard commit, which `test:offline` covers); `db:verify-migrations` passes (63 tables with row-level security); `build:local`, `build:mock`, `build:hosted` pass.
+- Browser (controller, local app, 375 px, made-up workspace, SQL-seeded fake calls): EN light list and call page, owner edit and clear, BM dark writing, failed and clear, staff sees the summary without Edit or Clear.
+
+**Not verified**
+- The paid check ran once (2026-11-26, `03e783d`, owner's go-ahead): 16 of 16 passed; record `docs/qa/2026-11-26-call-summary.md`. No person has read the 16 outputs yet. One run only; real-call quality unknown.
+- No person has read summaries of real calls. Not seen in a browser: EN dark, BM light, desktop width. Nothing on staging.
+
+**Next**
+- Owner: read the 16 outputs in `docs/qa/2026-11-26-call-summary.md` and mark them read.
+- Owner: `infra/hosted/RUNBOOK.md` step 19 (migration before merge, rebuild the agent, then the switch).
+- Owner: add AI summaries to the privacy and terms text (legal text is the owner's).
+- Open the pull request (the controller does it after the final review).
+
 ## 2026-11-26: phone calls in the PDPA contact export (branch `fix/export-phone-calls`)
 
 - `packages/domain/src/privacy.ts`: the export download gains `calls`, each with `turns` and `proposals`; named columns only (no snapshot, tokens, SIP identifiers, billing columns, timings or tool steps). The knowledge-gap comment now says gaps come from calls and chats too. No migration: owners and admins already read these tables.

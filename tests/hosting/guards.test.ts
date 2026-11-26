@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   appOrigin,
+  callSummary,
   cookieNames,
   databaseConnection,
   isLoopbackHost,
@@ -552,4 +553,14 @@ test("every worker database pool is built with databaseConnection", () => {
     assert.match(source, /databaseConnection\(/, file);
     assert.doesNotMatch(source, /LOCAL_DATABASE_REQUIRED/, file);
   }
+});
+
+test("callSummary is off by default, accepts anthropic and never echoes a bad value", () => {
+  assert.equal(callSummary({}), "disabled");
+  assert.equal(callSummary({ JOMCALL_CALL_SUMMARY: "" }), "disabled");
+  assert.equal(callSummary({ JOMCALL_CALL_SUMMARY: "anthropic" }), "anthropic");
+  assert.throws(
+    () => callSummary({ JOMCALL_CALL_SUMMARY: "yes" }),
+    (e: Error) => /^CALL_SUMMARY_UNKNOWN: JOMCALL_CALL_SUMMARY$/.test(e.message) && !e.message.includes("yes"),
+  );
 });

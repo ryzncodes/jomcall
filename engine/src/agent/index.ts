@@ -2,10 +2,12 @@ import { AgentRunner } from "./runner.ts";
 import { AgentRepository } from "./repository.ts";
 import { startVoiceServer } from "./voice-server.ts";
 import {
+  agentCallSummary,
   agentSetupReader,
   agentVoiceProvider,
 } from "../../../packages/inference/src/provider.ts";
 import { SetupReadWorker } from "./setup-reader.ts";
+import { CallSummaryWorker } from "./call-summary.ts";
 import {
   queueNamespace,
   voiceListen,
@@ -45,6 +47,9 @@ const embedder = createEmbedder();
 // SETUP_READER_UNKNOWN for an unknown value, SETUP_READER_KEY_MISSING for
 // "anthropic" without ANTHROPIC_API_KEY (even when voice is off).
 const readerChoice = agentSetupReader();
+// CALL_SUMMARY_UNKNOWN for an unknown value, CALL_SUMMARY_KEY_MISSING for
+// "anthropic" without ANTHROPIC_API_KEY.
+const summaryChoice = agentCallSummary();
 const listen = provider === "hosted" ? voiceListen() : undefined;
 const runner = await AgentRunner.create(ns, undefined, embedder);
 let lastTickAt = 0;
@@ -65,6 +70,11 @@ async function startWhatsApp() {
 // must not hold up typed turns, WhatsApp replies or the health check.
 const setupRead = await SetupReadWorker.create(ns, {
   enabled: readerChoice === "anthropic",
+});
+// Call summaries: the same arrangement, its own loop. With the switch off it
+// still returns expired leases to the queue and claims nothing.
+const callSummary = await CallSummaryWorker.create(ns, {
+  enabled: summaryChoice === "anthropic",
 });
 // Spoken turns are served only when the owner opted into the hosted model.
 let voiceRepository: AgentRepository | undefined;
@@ -108,6 +118,7 @@ if (provider === "hosted") {
     await callRepository?.close();
     await voiceRepository?.close();
     await setupRead.close();
+    await callSummary.close();
     await runner.close();
     throw error;
   }
@@ -134,12 +145,15 @@ async function stop() {
   // Aborts a read in progress (its attempt is given back) and ends the loop.
   await setupRead.close();
   await setupLoop;
+  await callSummary.close();
+  await summaryLoop;
   await runner.close();
 }
 process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
 // Its own loop: 1 s after a read, 5 s when idle, maintain every 30 s.
 const setupLoop = setupRead.run();
+const summaryLoop = callSummary.run();
 while (!stopping) {
   try {
     await runner.tick();

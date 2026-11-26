@@ -173,6 +173,10 @@ export const moreCopy: Record<string, [string, string]> = {
     "The agent's answer is not finished yet. Wait for it, then try again.",
     "Jawapan ejen belum selesai. Tunggu, kemudian cuba lagi.",
   ],
+  SUMMARY_NOT_READY: [
+    "This summary is still being written. Try again in a minute.",
+    "Ringkasan ini sedang disediakan. Cuba sebentar lagi.",
+  ],
   NUMBER_IN_USE: [
     "This phone number is already in use.",
     "Nombor telefon ini sudah digunakan.",

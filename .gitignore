@@ -68,6 +68,7 @@ output/phase2/
 
 # Setup reading check results (npm run check:setup-reader)
 output/setup-reader/
+output/call-summary/
 
 # Local agent tooling and private keys
 .claude/

@@ -43,6 +43,8 @@ import {
   phoneNumberRequestCreate,
   phoneNumberUpdate,
   callList,
+  callSummaryUpdate,
+  type CallAiSummary,
   type PhoneNumber,
   type Channels,
   type PhoneNumbers,
@@ -796,6 +798,12 @@ export const commands = {
   ),
   calls: route("GET", "/calls", callList, out<Page<CallSummary>>()),
   call: route("GET", "/calls/:id", id, out<CallDetail>()),
+  updateCallSummary: route(
+    "PATCH",
+    "/calls/:id/summary",
+    callSummaryUpdate.extend({ id: uuid }),
+    out<CallAiSummary>(),
+  ),
   whatsappOverview: route(
     "GET",
     "/channels/whatsapp",

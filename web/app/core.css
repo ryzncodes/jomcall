@@ -3121,3 +3121,34 @@
 .core-timeline .core-actions {
   margin-top: 16px;
 }
+
+.directory-row small.call-reason {
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.call-summary {
+  margin: 16px 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.call-summary-lines {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.call-summary-lines dt {
+  font-size: 10px;
+  color: var(--secondary);
+}
+.call-summary-lines dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+.call-summary-tag {
+  display: block;
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--secondary);
+}

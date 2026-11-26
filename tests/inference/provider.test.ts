@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  agentCallSummary,
   agentVoiceProvider,
   configuredProvider,
   createModelClient,
@@ -122,4 +123,16 @@ test("agent voice provider: empty means disabled, hosted needs the model key", (
         }),
       /^Error: VOICE_MODEL_KEY_MISSING$/,
     );
+});
+
+test("agentCallSummary needs the Anthropic key and never echoes a value", () => {
+  assert.equal(agentCallSummary({}), "disabled");
+  assert.throws(
+    () => agentCallSummary({ JOMCALL_CALL_SUMMARY: "anthropic" }),
+    /^Error: CALL_SUMMARY_KEY_MISSING: ANTHROPIC_API_KEY$/,
+  );
+  assert.equal(
+    agentCallSummary({ JOMCALL_CALL_SUMMARY: "anthropic", ANTHROPIC_API_KEY: "k" }),
+    "anthropic",
+  );
 });
