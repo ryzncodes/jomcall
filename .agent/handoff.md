@@ -1,5 +1,12 @@
 # Handoff
 
+## 2026-11-26: phone calls in the PDPA contact export (branch `fix/export-phone-calls`)
+
+- `packages/domain/src/privacy.ts`: the export download gains `calls`, each with `turns` and `proposals`; named columns only (no snapshot, tokens, SIP identifiers, billing columns, timings or tool steps). The knowledge-gap comment now says gaps come from calls and chats too. No migration: owners and admins already read these tables.
+- Test: `tests/engine/privacy.test.ts` "contact export lists the contact's phone calls…" (another contact's call is left out; secrets and billing values are absent). typecheck, guards 69 of 69 and `check:core` 1411 of 1411 pass.
+- Not verified: no person has downloaded an export with a real call; nothing on staging until merged (web only, Vercel deploys it).
+- Next from the CRM gap report: AI summary on each call; contact fields and CSV import.
+
 ## 2026-11-24: contact timeline (branch `feat/contact-timeline`, pull request #91)
 
 Design: `docs/superpowers/specs/2026-11-24-contact-timeline-design.md` (all decisions are the builder's best guess, at the owner's request; build note at the end). No migration.
