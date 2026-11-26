@@ -157,3 +157,13 @@ Deviations from `docs/superpowers/plans/2026-11-21-first-run-checklist.md` and t
 - **Known, left as is.**
   - If the firstRun read fails on the very first load of Home, a workspace with a number shows Today and then the checklist about 15 seconds later. After one good read, the last good value holds.
   - Two existing screens still state a wait for a number: the plan card (`plan-card.tsx`) and the request panel (`phone.tsx`), "within about 2 working hours". This branch does not own them; they predate it.
+
+## 2026-11-26: AI call summaries (branch `feat/call-summary`)
+
+Deviations from `docs/superpowers/specs/2026-11-26-call-summary-design.md`, each with its reason, and the controller's rulings a reader of the code needs.
+
+- Queue by trigger, not in `agent_call`. Spec 6.2 says `app_private.agent_call` inserts the row. That function is redefined in many migrations; the build queues from an `after update of state on app.call` trigger instead (same pattern as `app_private.follow_up_from_call_turn`), which covers both `call_end` and `maintain`.
+- One success rule, not two. Spec 6.3 has two success-word rules. The build implements the stricter phrase guard of the "Guards (builder's call after review)" bullet; the older single-word rule is dropped because a real call never creates a booking. Task 1 updated the spec's text to match.
+- PATCH sets each field exactly as given, in both language columns; null means empty. There is no "leave unchanged": the edit form sends all three fields, and a next step of "none" must be expressible. All three null clears the summary. A partial PATCH from another client would blank the fields it left out.
+- The browser check of the screens was done by the controller, not the implementer (the implementer's environment may lack the browser pane and the local dev server): 375 px, English light, Bahasa Melayu dark, staff view. English dark, Bahasa Melayu light and desktop width were not checked.
+- The paid summary check (`npm run check:call-summary -- --paid`) was not run in the build: it spends on Anthropic and waits for the owner's go-ahead.

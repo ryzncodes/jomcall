@@ -1,5 +1,29 @@
 # Handoff
 
+## 2026-11-26: AI call summaries (branch `feat/call-summary`, pull request not yet open, not merged)
+
+Design: `docs/superpowers/specs/2026-11-26-call-summary-design.md`. Plan: `docs/superpowers/plans/2026-11-26-call-summary.md`. One migration: `20261126100000_call_summary.sql`. Deviations: `NOTES.md`.
+
+**What changed**
+- A worker in the agent process (`engine/src/agent/call-summary.ts`) summarizes each answered real phone call (2 or more completed turns and 15 s or more) with `claude-haiku-5-5`: reason, outcome, next step, each in English and Bahasa Melayu. Switch `JOMCALL_CALL_SUMMARY` (`disabled` default, `anthropic`); agent process only, web gets no key; allowed on staging and production. Free: no billing.
+- Queued by an `after update of state on app.call` trigger; lease 60 s, 3 attempts, then `failed`; `TOO_SHORT` and `NO_TURNS` are skipped. Code guards in `packages/inference/src/call-summary.ts` reject a quote of the caller, a personal detail and a "booking confirmed" or "message sent" claim.
+- Call page: Summary block for every member, "Written by AI" / "Edited"; call list shows the reason; owners and admins Edit and Clear (`updateCallSummary`); PDPA contact export carries `summary` per call; deleted with the call.
+- Paid check script `npm run check:call-summary` (`--dry` sends nothing, `--paid` spends) with 16 made-up cases in `scripts/calls/summary-cases.json`.
+
+**Verified (2026-11-26, local database and fakes only)**
+- `typecheck` passes; `test:guards` 69 of 69; `test:offline` 467 tests, 466 pass, 1 skipped; `check:core` 1442 of 1442 (one run); `db:verify-migrations` passes (63 tables with row-level security); `build:local`, `build:mock`, `build:hosted` pass.
+- Browser (controller, local app, 375 px, made-up workspace, SQL-seeded fake calls): EN light list and call page, owner edit and clear, BM dark writing, failed and clear, staff sees the summary without Edit or Clear.
+
+**Not verified**
+- The paid check (`npm run check:call-summary -- --paid`) has NOT run: it spends on Anthropic and awaits the owner's go-ahead. The QA record in `docs/qa/` is not written. No real model call has been made.
+- No person has read summaries of real calls. Not seen in a browser: EN dark, BM light, desktop width. Nothing on staging.
+
+**Next**
+- Owner: say go for the paid check (about 16 model calls), read the 16 outputs, record them in `docs/qa/`.
+- Owner: `infra/hosted/RUNBOOK.md` step 19 (migration before merge, rebuild the agent, then the switch).
+- Owner: add AI summaries to the privacy and terms text (legal text is the owner's).
+- Open the pull request (the controller does it after the final review).
+
 ## 2026-11-26: phone calls in the PDPA contact export (branch `fix/export-phone-calls`)
 
 - `packages/domain/src/privacy.ts`: the export download gains `calls`, each with `turns` and `proposals`; named columns only (no snapshot, tokens, SIP identifiers, billing columns, timings or tool steps). The knowledge-gap comment now says gaps come from calls and chats too. No migration: owners and admins already read these tables.

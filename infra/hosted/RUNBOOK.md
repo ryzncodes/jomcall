@@ -582,6 +582,28 @@ where a.state = 'queued' and a.created_at < now() - interval '15 minutes'
 
 ---
 
+## Step 19. AI call summaries, [OWNER], applies a migration; the agent then sends call turns to Anthropic
+
+Branch `feat/call-summary`. After an answered real phone call, the agent process writes a short summary (reason, outcome, next step, in English and Bahasa Melayu) that every member sees on the call page. Nothing here has run on hosted staging or production. Applying a migration is a production change: do it only with your explicit yes.
+
+Order matters. Vercel deploys the web from `main` on merge, and the new web reads `app.call_summary` inside the call page and the call list, so apply the migration **before the pull request is merged to `main`** (as in steps 14 and 18). The web now on `main` does not read the table.
+
+1. **[OWNER]** Check that no call is live: `select count(*) from app.call where state = 'active';` must return 0 (the migration adds a trigger on `app.call`).
+2. **[OWNER]** Apply the migration to staging from a clean release folder on the branch: `npm run hosted:migrate -- --target staging --env-file ~/secure/release-staging.env`. It is `20261126100000_call_summary.sql`. It adds the table `app.call_summary`, a trigger on `app.call` that queues a row when an answered call ends, and the worker functions. It back-fills nothing: calls that ended before this get no summary.
+3. **[OWNER]** Merge the pull request. Vercel then deploys the web from `main`.
+4. **[OWNER]** On the server: `cd /opt/jomcall && git pull --ff-only && cd infra/hosted && JOMCALL_IMAGE_TAG=$(git rev-parse --short HEAD) docker compose up -d --build agent`. With the switch unset the worker claims nothing; rows queued meanwhile stay `pending` and the screen shows nothing for a pending row older than 10 minutes.
+5. **[OWNER]** Run the paid check before the switch goes on: `npm run check:call-summary -- --paid` (about 16 model calls to Anthropic with made-up calls, `ANTHROPIC_API_KEY` in the environment). Read all 16 outputs; the record goes in `docs/qa/`. Not run yet.
+6. **[OWNER]** When ready, set `JOMCALL_CALL_SUMMARY=anthropic` in the agent's environment (`/etc/jomcall/agent.env`; `ANTHROPIC_API_KEY` is already there for voice and setup reading) and rebuild the agent as in step 4. Without the key the agent refuses to start (`CALL_SUMMARY_KEY_MISSING`); an unknown value is refused (`CALL_SUMMARY_UNKNOWN`). The web service gets no key. Rows left `pending` while the switch was off are then claimed and summarized.
+7. **[OWNER]** Update the privacy and terms text to say calls are summarized by AI. The legal text is yours; the build does not edit it.
+
+[CHECK] After a made-up phone call with a few turns (fake name and number) ends, a summary shows on its call page within about a minute, marked "Written by AI", and the call list shows the reason under the outcome; staff see it too but not Edit or Clear; an owner can edit and clear it; the contact export lists it. A one-turn call shows no summary. Agent log lines carry ids and codes only: `CALL_SUMMARY_FAILED`, `CALL_SUMMARY_TICK_FAILED`, `CALL_SUMMARY_NO_CLIENT`, `CALL_SUMMARY_DATABASE_POOL_ERROR`.
+
+[ROLLBACK] Set `JOMCALL_CALL_SUMMARY=disabled` (or remove it) and rebuild the agent: no more calls are sent to Anthropic and existing summaries stay on screen. The migration stays (it adds a table, a trigger and functions).
+
+Known limits: the summary is written by a model and can be wrong; the owner can correct or clear it. No back-fill. Browser test calls and WhatsApp chats get none.
+
+---
+
 ## Moving web to Cloudflare Workers later — NOT DONE
 
 Web stays on Vercel. It is kept swappable: application code uses no Vercel-only API; mode and origin come from `JOMCALL_MODE` and `APP_ORIGIN`; the client address comes from `x-real-ip` / `x-forwarded-for`. The only Vercel-specific lines are build settings (`web/vercel.json`, and `distDir` in `web/next.config.ts` keyed on `VERCEL`). A move would need, and none of it is built or tested:
