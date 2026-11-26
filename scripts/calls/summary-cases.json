@@ -8,7 +8,8 @@
           { "input": "Helo, saya nak buat temu janji untuk servis aircond rumah saya hari Sabtu ni.", "answer": "Baik, boleh. Pukul berapa yang sesuai untuk puan?" },
           { "input": "Pukul sepuluh pagi boleh? Nama saya Siti Contoh.", "answer": "Saya catatkan permintaan Sabtu pukul 10 pagi, staf akan sahkan nanti." }
         ], "proposals": ["booking"] },
-      "reasonKeywords": { "en": ["book", "appointment", "service", "aircond", "air"], "ms": ["tempah", "temu janji", "servis", "aircond"] } },
+      "reasonKeywords": { "en": ["book", "appointment", "service", "aircond", "aircon", "air-con", "air conditioner", "air conditioning"], "ms": ["tempah", "temu janji", "servis", "aircond", "penghawa dingin"] },
+      "forbidden": ["Siti Contoh", "Siti"] },
     {
       "id": "c02", "language": "ms",
       "input": { "outcome": "message", "transferResult": null, "afterHours": false, "callerE164": "+60115550102",
@@ -16,14 +17,16 @@
           { "input": "Saya nak tinggalkan pesanan untuk Encik Contoh Bin Ujian, tolong suruh dia telefon saya balik pasal invois bulan lepas.", "answer": "Baik, saya catatkan pesanan itu untuk staf." },
           { "input": "Terima kasih, saya Hajar Palsu.", "answer": "Sama-sama, pesanan akan disampaikan kepada staf." }
         ], "proposals": ["message"] },
-      "reasonKeywords": { "en": ["message", "invoice", "call back", "callback", "return"], "ms": ["pesanan", "invois", "telefon", "hubungi"] } },
+      "reasonKeywords": { "en": ["invoice", "call back", "callback", "return call", "return their call"], "ms": ["invois", "telefon semula", "telefon balik", "hubungi semula", "panggilan semula"] },
+      "forbidden": ["Contoh Bin Ujian", "Encik Contoh", "Hajar Palsu", "Hajar"] },
     {
       "id": "c03", "language": "ms",
       "input": { "outcome": "transferred", "transferResult": "answered", "afterHours": false, "callerE164": "+60115550103",
         "turns": [
           { "input": "Boleh saya cakap dengan pengurus? Ada masalah dengan penghantaran barang saya.", "answer": "Baik, saya sambungkan kepada staf sekarang." }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["manager", "staff", "speak", "deliver", "problem", "issue"], "ms": ["pengurus", "staf", "cakap", "hantar", "masalah"] } },
+      "reasonKeywords": { "en": ["manager", "staff", "speak", "deliver", "problem", "issue"], "ms": ["pengurus", "staf", "cakap", "hantar", "masalah"] },
+      "forbidden": [] },
     {
       "id": "c04", "language": "ms",
       "input": { "outcome": "answered", "transferResult": null, "afterHours": false, "callerE164": "+60115550104",
@@ -31,7 +34,8 @@
           { "input": "Eh, hello? Ha. Tak apalah.", "answer": "Maaf, boleh ulang? Apa yang boleh saya bantu?" },
           { "input": "Tak ada apa. Okey bye.", "answer": "Baik, terima kasih kerana menelefon." }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["unclear"], "ms": ["tidak jelas"] } },
+      "reasonKeywords": { "en": ["unclear", "not clear", "no clear", "did not say", "didn't say", "no reason"], "ms": ["tidak jelas", "kurang jelas", "tak jelas", "tidak menyatakan", "tiada"] },
+      "forbidden": [] },
     {
       "id": "c05", "language": "en",
       "input": { "outcome": "answered", "transferResult": null, "afterHours": false, "callerE164": "+60115550105",
@@ -39,7 +43,8 @@
           { "input": "Hi, how much do you charge for a full home aircon servicing, and do you do wall units?", "answer": "A wall unit service is listed at RM80 per unit, and a full chemical wash is RM150." },
           { "input": "Okay thanks, that's all I needed.", "answer": "You're welcome, have a good day." }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["price", "pricing", "cost", "charge", "rate", "how much"], "ms": ["harga", "kos", "bayaran", "caj", "kadar"] } },
+      "reasonKeywords": { "en": ["price", "pricing", "cost", "charge", "rate", "how much"], "ms": ["harga", "kos", "bayaran", "caj", "kadar"] },
+      "forbidden": [] },
     {
       "id": "c06", "language": "en",
       "input": { "outcome": "handoff", "transferResult": null, "afterHours": false, "callerE164": "+60115550106",
@@ -47,7 +52,8 @@
           { "input": "I want to complain. The technician damaged my cabinet last week and nobody has replied to my emails.", "answer": "I'm sorry to hear that. I'll flag this for a staff member to follow up with you." },
           { "input": "Please make sure someone calls me this time.", "answer": "I've marked it for staff to call you back." }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["complain", "damage", "technician", "cabinet"], "ms": ["aduan", "rosak", "juruteknik", "kabinet", "komplen"] } },
+      "reasonKeywords": { "en": ["complain", "damage", "technician", "cabinet"], "ms": ["aduan", "rosak", "juruteknik", "kabinet", "komplen"] },
+      "forbidden": [] },
     {
       "id": "c07", "language": "en",
       "input": { "outcome": "message", "transferResult": null, "afterHours": true, "callerE164": "+60115550107",
@@ -55,7 +61,8 @@
           { "input": "Hello, is anyone there? It's quite late, I know. I need someone to look at a leaking pipe tomorrow morning.", "answer": "We're closed right now. I can take a message for the team to call you in the morning." },
           { "input": "Yes please, my name is Daniel Sample.", "answer": "Noted. Staff will see your message when they open." }
         ], "proposals": ["message"] },
-      "reasonKeywords": { "en": ["leak", "pipe", "plumb", "repair"], "ms": ["bocor", "paip", "baik pulih", "pemasang"] } },
+      "reasonKeywords": { "en": ["leak", "pipe", "plumb", "repair"], "ms": ["bocor", "paip", "baik pulih", "pemasang"] },
+      "forbidden": ["Daniel Sample", "Daniel"] },
     {
       "id": "c08", "language": "en",
       "input": { "outcome": "message", "transferResult": null, "afterHours": false, "callerE164": "+60115550108",
@@ -63,7 +70,8 @@
           { "input": "I'd like to register for the service plan. My IC number is 991332-99-9999.", "answer": "Thank you. I can pass your details to staff." },
           { "input": "My address is 12 Jalan Contoh 3, Taman Ujian, 50000 Kuala Lumpur, and my email is amir.palsu@example.test.", "answer": "Got it. I've noted that for staff to follow up." }
         ], "proposals": ["message"] },
-      "reasonKeywords": { "en": ["regist", "service plan", "sign up", "plan", "enrol"], "ms": ["daftar", "pelan", "langgan"] } },
+      "reasonKeywords": { "en": ["regist", "service plan", "sign up", "sign-up", "enrol", "subscri"], "ms": ["daftar", "pelan servis", "pelan perkhidmatan", "langgan"] },
+      "forbidden": ["991332-99-9999", "12 Jalan Contoh", "Jalan Contoh", "Taman Ujian", "50000", "Kuala Lumpur", "amir.palsu", "Amir"] },
     {
       "id": "c09", "language": "manglish",
       "input": { "outcome": "booking_proposed", "transferResult": null, "afterHours": false, "callerE164": "+60115550109",
@@ -71,14 +79,16 @@
           { "input": "Hi boss, I nak book slot potong rambut untuk Jumaat petang lah, around four can?", "answer": "Boleh, saya catat Jumaat dalam pukul 4 petang untuk staf sahkan." },
           { "input": "Okay okay, nama Jason Fiktif. Thanks ya.", "answer": "Sama-sama, staf akan confirm nanti." }
         ], "proposals": ["booking"] },
-      "reasonKeywords": { "en": ["book", "haircut", "hair", "appointment", "slot"], "ms": ["tempah", "potong rambut", "rambut", "temu janji", "slot"] } },
+      "reasonKeywords": { "en": ["book", "haircut", "hair", "appointment", "slot"], "ms": ["tempah", "potong rambut", "rambut", "temu janji", "slot"] },
+      "forbidden": ["Jason Fiktif", "Jason"] },
     {
       "id": "c10", "language": "manglish",
       "input": { "outcome": "handoff", "transferResult": null, "afterHours": false, "callerE164": "+60115550110",
         "turns": [
           { "input": "Eh I received wrong item lah, order minggu lepas. Tolong lah somebody settle this, I dah malas nak chat.", "answer": "Maaf pasal tu. Saya tandakan untuk staf hubungi you balik." }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["wrong", "order", "item", "complain", "incorrect"], "ms": ["salah", "pesanan", "barang", "aduan", "tempahan"] } },
+      "reasonKeywords": { "en": ["wrong", "incorrect", "complain", "received the wrong"], "ms": ["salah", "silap", "aduan", "komplen"] },
+      "forbidden": [] },
     {
       "id": "c11", "language": "manglish",
       "input": { "outcome": "answered", "transferResult": null, "afterHours": false, "callerE164": "+60115550111",
@@ -86,7 +96,8 @@
           { "input": "Hello, berapa harga untuk tukar bateri phone? iPhone lama punya, can or not?", "answer": "Tukar bateri bermula RM90, bergantung pada model." },
           { "input": "Oh okay, I think I fikir dulu lah. Thanks.", "answer": "Okay, terima kasih kerana call." }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["price", "cost", "battery", "how much", "charge"], "ms": ["harga", "bateri", "kos", "berapa"] } },
+      "reasonKeywords": { "en": ["price", "cost", "battery", "how much", "charge"], "ms": ["harga", "bateri", "kos", "berapa"] },
+      "forbidden": [] },
     {
       "id": "c12", "language": "manglish",
       "input": { "outcome": "message", "transferResult": null, "afterHours": false, "callerE164": "+60115550112",
@@ -94,7 +105,8 @@
           { "input": "Nak daftar untuk kelas yoga, IC saya 991332-99-9999, address saya No 7 Lorong Fiktif 2, Taman Palsu, Shah Alam.", "answer": "Okay, saya catat untuk staf. Ada email untuk hubungi?" },
           { "input": "Ada, rina.contoh@example.test. Tolong inform staf ya.", "answer": "Baik, saya sampaikan kepada staf." }
         ], "proposals": ["message"] },
-      "reasonKeywords": { "en": ["regist", "yoga", "class", "sign up", "enrol"], "ms": ["daftar", "yoga", "kelas"] } },
+      "reasonKeywords": { "en": ["regist", "yoga", "class", "sign up", "sign-up", "enrol"], "ms": ["daftar", "yoga", "kelas"] },
+      "forbidden": ["991332-99-9999", "Lorong Fiktif", "Taman Palsu", "Shah Alam", "rina.contoh", "Rina"] },
     {
       "id": "c13", "language": "zh",
       "input": { "outcome": "message", "transferResult": null, "afterHours": false, "callerE164": "+60115550113",
@@ -102,7 +114,8 @@
           { "input": "你好，我想留个口信给陈经理，请他明天回电给我，关于上个月的报价单。", "answer": "好的，我会把您的留言转告给工作人员。" },
           { "input": "谢谢，我姓李。", "answer": "不客气，工作人员会尽快联系您。" }
         ], "proposals": ["message"] },
-      "reasonKeywords": { "en": ["message", "quote", "quotation", "call back", "callback"], "ms": ["pesanan", "sebut harga", "sebutharga", "telefon", "hubungi"] } },
+      "reasonKeywords": { "en": ["quote", "quotation", "call back", "callback", "return call"], "ms": ["sebut harga", "sebutharga", "telefon semula", "telefon balik", "hubungi semula", "panggilan semula"] },
+      "forbidden": ["陈", "李"] },
     {
       "id": "c14", "language": "zh",
       "input": { "outcome": "message", "transferResult": null, "afterHours": true, "callerE164": "+60115550114",
@@ -110,14 +123,16 @@
           { "input": "现在是不是已经关门了？我想问一下明天能不能来看车。", "answer": "是的，现在已下班。我可以替您留言，明天上班后员工会联系您。" },
           { "input": "好的，请留言吧。", "answer": "已记录您的留言，员工会在上班后查看。" }
         ], "proposals": ["message"] },
-      "reasonKeywords": { "en": ["car", "view", "visit", "vehicle", "closed", "after hours", "after-hours"], "ms": ["kereta", "lawat", "melawat", "kenderaan", "tutup", "luar waktu"] } },
+      "reasonKeywords": { "en": ["car", "view", "visit", "vehicle", "closed", "after hours", "after-hours"], "ms": ["kereta", "lawat", "melawat", "kenderaan", "tutup", "luar waktu"] },
+      "forbidden": [] },
     {
       "id": "c15", "language": "zh",
       "input": { "outcome": "transferred", "transferResult": "answered", "afterHours": false, "callerE164": "+60115550115",
         "turns": [
           { "input": "我要找负责维修的师傅，我家的冷气一直滴水，很急。", "answer": "好的，我马上帮您转接给工作人员。" }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["repair", "air", "aircon", "leak", "drip", "technician"], "ms": ["pembaikan", "baik pulih", "penghawa", "aircond", "bocor", "menitis", "juruteknik"] } },
+      "reasonKeywords": { "en": ["repair", "aircon", "air-con", "air conditioner", "air conditioning", "leak", "drip", "technician"], "ms": ["pembaikan", "baik pulih", "penghawa dingin", "aircond", "bocor", "menitis", "juruteknik"] },
+      "forbidden": [] },
     {
       "id": "c16", "language": "zh",
       "input": { "outcome": "answered", "transferResult": null, "afterHours": false, "callerE164": "+60115550116",
@@ -125,6 +140,7 @@
           { "input": "喂？喂？听得到吗？", "answer": "您好，请问有什么可以帮您？" },
           { "input": "嗯……算了，没事了。", "answer": "好的，欢迎随时再来电。" }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["unclear"], "ms": ["tidak jelas"] } }
+      "reasonKeywords": { "en": ["unclear", "not clear", "no clear", "did not say", "didn't say", "no reason"], "ms": ["tidak jelas", "kurang jelas", "tak jelas", "tidak menyatakan", "tiada"] },
+      "forbidden": [] }
   ]
 }

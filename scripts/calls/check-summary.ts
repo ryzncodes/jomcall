@@ -5,12 +5,16 @@
 // request locally and sends nothing (no network). With --paid it calls the
 // Anthropic API (api.anthropic.com) once per case, which costs money, and
 // writes every output to output/call-summary/<timestamp>.json (git ignores
-// output/). The console shows ids, counts and error codes only, never turn
-// text or summary text.
+// output/). A case fails on a guard or model error, on a reason with none of
+// its keywords, or when any of the six fields repeats one of its forbidden
+// details (named in the output file as FORBIDDEN:<detail>). The console shows
+// ids, counts and error codes only, never turn text, summary text or a
+// forbidden detail.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  summaryModel,
   summaryRequest,
   writeSummary,
   type SummaryInput,
@@ -28,6 +32,9 @@ export type SummaryCase = {
   language: "ms" | "en" | "manglish" | "zh";
   input: SummaryInput;
   reasonKeywords: { en: string[]; ms: string[] };
+  // Details the caller gave (name parts, street and estate names, email
+  // local parts and the like) that no summary field may repeat.
+  forbidden: string[];
 };
 type Result = Awaited<ReturnType<typeof writeSummary>>;
 type Options = { paid: boolean; dry: boolean; only?: string[]; out?: string };
@@ -73,8 +80,19 @@ export function parseArgs(argv: string[]): Options | { error: string } {
   return o;
 }
 
+const FIELD_KEYS = ["reason_en", "reason_ms", "outcome_en", "outcome_ms", "next_step_en", "next_step_ms"] as const;
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Case-insensitive; a Latin entry must not sit inside a longer word ("Chen"
+// is not a hit in "kitchen").
+const LATIN = "[\\p{Script=Latin}\\p{N}]";
+const forbiddenHit = (text: string, f: string) =>
+  new RegExp(`(?<!${LATIN})${escape(f)}(?!${LATIN})`, "iu").test(text);
+
 export function scoreCase(c: SummaryCase, result: Result): { pass: boolean; why: string[] } {
   if ("error" in result) return { pass: false, why: [result.error] };
+  const why: string[] = [];
+  const texts = FIELD_KEYS.map((k) => result.fields[k]).filter((v): v is string => typeof v === "string");
+  for (const f of c.forbidden) if (texts.some((t) => forbiddenHit(t, f))) why.push(`FORBIDDEN:${f}`);
   const has = (text: string, kws: string[]) => {
     const t = text.toLowerCase();
     return kws.some((k) => t.includes(k.toLowerCase()));
@@ -82,7 +100,8 @@ export function scoreCase(c: SummaryCase, result: Result): { pass: boolean; why:
   const hit =
     has(result.fields.reason_en, c.reasonKeywords.en) ||
     has(result.fields.reason_ms, c.reasonKeywords.ms);
-  return hit ? { pass: true, why: [] } : { pass: false, why: ["REASON_KEYWORD_MISSING"] };
+  if (!hit) why.push("REASON_KEYWORD_MISSING");
+  return { pass: why.length === 0, why };
 }
 
 type Deps = {
@@ -122,18 +141,22 @@ export async function run(argv: string[], deps: Deps): Promise<number> {
   }
   const client = deps.makeClient();
   const rows: unknown[] = [];
+  const models = new Set<string>();
   let passed = 0;
   for (const c of cases) {
     const signal = AbortSignal.timeout(CASE_TIMEOUT_MS);
     const result = await writeSummary(client, c.input, { signal });
+    if ("model" in result) models.add(result.model);
     const score = scoreCase(c, result);
     if (score.pass) passed++;
-    deps.print(`${c.id} ${c.language} ${score.pass ? "pass" : `FAIL ${score.why.join(",")}`}`);
+    // The console gets codes only; the named detail goes to the output file.
+    const codes = [...new Set(score.why.map((w) => w.split(":")[0]))];
+    deps.print(`${c.id} ${c.language} ${score.pass ? "pass" : `FAIL ${codes.join(",")}`}`);
     rows.push({ id: c.id, language: c.language, result, pass: score.pass, why: score.why });
   }
   const file = join(OUT_DIR, opts.out ?? `${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
   mkdirSync(OUT_DIR, { recursive: true });
-  writeFileSync(file, JSON.stringify({ model: "claude-haiku-5-5", passed, total: cases.length, rows }, null, 2));
+  writeFileSync(file, JSON.stringify({ model: [...models].join(",") || summaryModel, passed, total: cases.length, rows }, null, 2));
   deps.print(`${passed} of ${cases.length} passed; outputs in ${file}`);
   return passed === cases.length ? 0 : 1;
 }
