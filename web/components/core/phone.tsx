@@ -3,7 +3,8 @@ import { localNumber } from "@/lib/core/phone-format";
 import { outcomeText } from "@/lib/core/call-words";
 import { Picker } from "@/components/picker";
 import { HOSTED } from "@/lib/hosted";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { summaryView } from "@/lib/core/call-summary-rules";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Phone } from "@phosphor-icons/react";
@@ -11,6 +12,7 @@ import {
   phoneAreas,
   type PhoneNumber,
   type PhoneNumbers,
+  type CallAiSummary,
   type CallSummary,
 } from "../../../packages/contracts/src/phone";
 import { useCore, useWords, useResource, useAction, Heading, Notice, Loading } from "./state";
@@ -481,6 +483,9 @@ export function LocalCalls() {
                       .filter(Boolean)
                       .join(" · ")}
                   </small>
+                  {(ms ? c.reason_ms : c.reason_en) && (
+                    <small className="call-reason">{ms ? c.reason_ms : c.reason_en}</small>
+                  )}
                 </span>
               </button>
             ))
@@ -515,7 +520,7 @@ export function LocalCalls() {
 function CallDetail({ id }: { id: string }) {
   const w = useWords(),
     ms = useMs(),
-    { client } = useCore();
+    { client, workspace } = useCore();
   const call = useResource(() => client.execute("call", { id }), "call|" + id);
   if (call.error) return <Notice error={call.error} />;
   if (!call.data) return <Loading />;
@@ -531,6 +536,12 @@ function CallDetail({ id }: { id: string }) {
           ? w("AI disclosure played", "Makluman AI dimainkan")
           : w("Disclosure not played (call not answered)", "Makluman tidak dimainkan (panggilan tidak dijawab)")}
       </p>
+      <SummaryBlock
+        id={id}
+        summary={c.summary}
+        manager={workspace.role !== "staff"}
+        reload={call.reload}
+      />
       {c.turns === null ? (
         <p className="core-empty">
           {w(
@@ -561,5 +572,161 @@ function CallDetail({ id }: { id: string }) {
         />
       )}
     </div>
+  );
+}
+
+// The AI summary above the turns. Everyone reads it; owners and admins can
+// edit or clear it. The edit form starts from the text in the viewer's
+// language and sends all three fields; an emptied field is sent as null.
+function SummaryBlock({
+  id,
+  summary,
+  manager,
+  reload,
+}: {
+  id: string;
+  summary: CallAiSummary | null;
+  manager: boolean;
+  reload: () => void;
+}) {
+  const w = useWords(),
+    ms = useMs(),
+    { client } = useCore();
+  const action = useAction();
+  const [mode, setMode] = useState<"view" | "edit" | "clear">("view");
+  const [draft, setDraft] = useState({ reason: "", outcome: "", nextStep: "" });
+  const key = useRef(crypto.randomUUID());
+  const view = summaryView(summary, ms ? "ms" : "en", Date.now());
+  if (view.kind === "hidden" || !summary) return null;
+  const heading = <h3>{w("Summary", "Ringkasan")}</h3>;
+  if (view.kind === "writing")
+    return (
+      <section className="call-summary" role="status">
+        {heading}
+        <p>{w("Writing summary…", "Menulis ringkasan…")}</p>
+      </section>
+    );
+  if (view.kind === "unavailable")
+    return (
+      <section className="call-summary">
+        {heading}
+        <p>{w("Summary not available", "Ringkasan tidak tersedia")}</p>
+      </section>
+    );
+  const send = async (body: { reason: string | null; outcome: string | null; nextStep: string | null }) => {
+    const done = await action.run(() =>
+      client.execute("updateCallSummary", { id, ...body, expectedRevision: summary.revision }, key.current),
+    );
+    if (done) {
+      key.current = crypto.randomUUID();
+      setMode("view");
+      reload();
+    }
+  };
+  const orNull = (v: string) => (v.trim() ? v.trim() : null);
+  const none = w("None", "Tiada");
+  const lines: [string, string | null][] = [
+    [w("Reason", "Sebab"), view.reason],
+    [w("Outcome", "Hasil"), view.outcome],
+    [w("Next step", "Langkah seterusnya"), view.nextStep],
+  ];
+  return (
+    <section className="call-summary">
+      {heading}
+      {mode === "edit" ? (
+        <form
+          className="core-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send({
+              reason: orNull(draft.reason),
+              outcome: orNull(draft.outcome),
+              nextStep: orNull(draft.nextStep),
+            });
+          }}
+        >
+          {(
+            [
+              ["reason", lines[0][0]],
+              ["outcome", lines[1][0]],
+              ["nextStep", lines[2][0]],
+            ] as const
+          ).map(([field, label]) => (
+            <Field key={field} label={label}>
+              <textarea
+                rows={2}
+                maxLength={300}
+                value={draft[field]}
+                onChange={(e) => setDraft({ ...draft, [field]: e.target.value })}
+              />
+            </Field>
+          ))}
+          <Notice error={action.error} />
+          <div className="core-actions">
+            <button className="button button-dark" type="submit" disabled={action.busy}>
+              {w("Save", "Simpan")}
+            </button>
+            <button type="button" disabled={action.busy} onClick={() => setMode("view")}>
+              {w("Cancel", "Batal")}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {view.cleared ? (
+            <p>{w("Summary cleared", "Ringkasan dikosongkan")}</p>
+          ) : (
+            <>
+              <dl className="call-summary-lines">
+                {lines.map(([label, text]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{text ?? none}</dd>
+                  </div>
+                ))}
+              </dl>
+              <small className="call-summary-tag">
+                {view.edited ? w("Edited", "Disunting") : w("Written by AI", "Ditulis oleh AI")}
+              </small>
+            </>
+          )}
+          {manager && mode === "clear" && (
+            <div className="core-danger" role="alert">
+              <p>{w("Clear this summary?", "Kosongkan ringkasan ini?")}</p>
+              <Notice error={action.error} />
+              <div className="core-actions">
+                <button
+                  className="button button-dark"
+                  disabled={action.busy}
+                  onClick={() => void send({ reason: null, outcome: null, nextStep: null })}
+                >
+                  {w("Clear", "Kosongkan")}
+                </button>
+                <button disabled={action.busy} onClick={() => setMode("view")}>
+                  {w("Cancel", "Batal")}
+                </button>
+              </div>
+            </div>
+          )}
+          {manager && mode === "view" && (
+            <div className="core-actions">
+              <button
+                onClick={() => {
+                  setDraft({
+                    reason: view.reason ?? "",
+                    outcome: view.outcome ?? "",
+                    nextStep: view.nextStep ?? "",
+                  });
+                  setMode("edit");
+                }}
+              >
+                {w("Edit", "Sunting")}
+              </button>
+              {!view.cleared && <button onClick={() => setMode("clear")}>{w("Clear", "Kosongkan")}</button>}
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
