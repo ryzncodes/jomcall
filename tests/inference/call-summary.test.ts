@@ -116,6 +116,17 @@ test("false-success guard", () => {
     "Sent the message to staff.",
     "预约成功",
     "Asked whether it was confirmed; the booking has been confirmed.",
+    "Booking made for Saturday.",
+    "Appointment scheduled for Friday afternoon.",
+    "The caller booked Saturday morning.",
+    "Tempahan berjaya.",
+    "Tempahan dibuat untuk pagi Sabtu.",
+    "Message passed to staff.",
+    "Message forwarded to staff.",
+    "Mesej telah disampaikan kepada staf.",
+    "Forwarded the message to staff.",
+    "The booking is confirmed, and staff will call.",
+    "Staff confirmed the booking for Saturday.",
   ];
   for (const t of fail) assert.equal(guardSummary(fields({ outcome_en: t }), i), "FALSE_SUCCESS", t);
   const pass = [
@@ -147,8 +158,43 @@ test("false-success guard", () => {
     "If the booking is confirmed, call back.",
     "Saturday is booked up.",
     "Asked to have a message sent to staff.",
+    "Asked for an appointment and confirmed their contact number.",
+    "Asked for a booking on Saturday, and confirmed their name.",
+    "The caller confirmed the booking request details.",
+    "The caller confirmed the appointment time they wanted.",
+    "Saturday was booked, so the caller asked for Sunday.",
+    "It is booked on Saturday.",
+    "The 10 am slot was booked, so the caller asked for 11 am.",
+    "Minta temu janji dan mengesahkan nombor telefon.",
+    "Mengesahkan butiran permintaan tempahan.",
+    "Minta tempahan Sabtu, kemudian disahkan nama pemanggil.",
+    "Sabtu sudah ditempah, jadi pemanggil minta hari Ahad.",
+    "Asked to book Saturday morning.",
+    "Wanted to make a booking.",
+    "Minta dibuat tempahan untuk Sabtu.",
+    "Left a message for staff to pass on.",
+    "Asked for an appointment to be scheduled on Friday.",
+    "Wanted a message passed to the manager.",
+    "Asked for a message to be forwarded to staff.",
+    "Tempahan akan dibuat oleh staf.",
   ];
   for (const t of pass) assert.equal(guardSummary(fields({ outcome_en: t }), i), null, t);
+});
+
+test("false-success guard is fast on long adversarial text", () => {
+  const i = base();
+  const inputs = [
+    "booking ".repeat(70),
+    "booking was is has been ".repeat(25),
+    "asked whether to have to be ".repeat(20),
+    "message telah sudah ".repeat(30) + "x",
+    "tempahan ".repeat(50) + "dan disahkan",
+  ];
+  for (const t of inputs) {
+    const start = performance.now();
+    guardSummary(fields({ outcome_en: t }), i);
+    assert.ok(performance.now() - start < 50, `slow on ${t.slice(0, 30)}`);
+  }
 });
 
 test("writeSummary happy path, guard error, abort and failure", async () => {

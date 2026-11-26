@@ -161,37 +161,77 @@ function hasDetail(field: string, forms: string[]): boolean {
 // Claims that something was done, in English and Bahasa Melayu (the output
 // languages), matched after case and whitespace are normalized. A booking or
 // a message is only ever a request: staff confirm or pass it on later.
-const W = "[^\\s.;:!?]+"; // one word, never across a sentence break
+// A gap between a noun and its verb never crosses a clause break: a comma,
+// a sentence break or a joining word ("and", "dan", "then", "but"), so
+// "asked for a booking and confirmed their name" is not a claim.
+const JOIN = "(?:and|dan|then|kemudian|lalu|but|tetapi|so|jadi|or|atau)";
+const W = `(?!${JOIN}\\b)[^\\s.,;:!?]+`; // one word, never across a clause break
 const GAP = `(?:\\s+${W}){0,3}?\\s+`; // up to three words between
 const BOOKING = "(?:booking|appointment|slot|reservation|tempahan|temu janji)";
 const MESSAGE = "(?:message|mesej|pesanan)";
 const AUX = "(?:has been|have been|had been|was|were|is|are|been|telah|sudah|berjaya|dah)";
+// A booking noun, then the verb directly or after an auxiliary within three
+// words: "booking confirmed", "the appointment for Saturday is confirmed".
+const BOOKING_DONE = "(?:confirmed|disahkan|made|scheduled|arranged|dibuat|berjaya)";
+const MESSAGE_DONE = "(?:sent|dihantar|passed|forwarded|relayed|delivered|disampaikan|diserahkan)";
+// Days and times of day, as the subject of "was booked": availability, not a claim.
+const WHEN =
+  "(?:it|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|morning|afternoon|evening|weekend|that day|that time|isnin|selasa|rabu|khamis|jumaat|sabtu|ahad|esok|pagi|petang|malam)";
 const FALSE_SUCCESS_RE = [
-  new RegExp(`\\b${BOOKING}${GAP}(?:confirmed|disahkan)\\b`),
-  new RegExp(`\\bconfirmed (?:the |a |an |their |his |her )?${BOOKING}\\b`),
+  new RegExp(`\\b${BOOKING}(?:${GAP}${AUX})? ${BOOKING_DONE}\\b`),
+  // "confirmed the booking", but not a read-back ("confirmed the booking
+  // request details", "confirmed the appointment time they wanted").
+  new RegExp(
+    `\\bconfirmed (?:the |a |an |their |his |her )?${BOOKING}\\b(?! (?:request|requests|details|time|times|date|day|they|he|she|the caller)\\b)`,
+  ),
   /\b(?:has|have|had|was|were|is|are|been) (?:now )?booked\b/,
-  /\bbooked (?:a|an|the|for|in|on|at)\b/,
+  /\bbooked (?:a|an|the|for|in|on|at|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|this|next)\b/,
   /\b(?:telah|sudah|berjaya|dah) (?:ditempah|menempah|membuat tempahan)\b/,
-  new RegExp(`\\b${MESSAGE} (?:sent|dihantar)\\b`),
-  new RegExp(`\\b${MESSAGE}${GAP}${AUX} (?:sent|dihantar)\\b`),
-  /\bsent (?:the |a |their |his |her )?(?:message|mesej|pesanan)\b/,
+  new RegExp(`\\b${MESSAGE} ${MESSAGE_DONE}\\b`),
+  new RegExp(`\\b${MESSAGE}${GAP}${AUX} ${MESSAGE_DONE}\\b`),
+  /\b(?:sent|forwarded|passed on|relayed) (?:the |a |their |his |her )?(?:message|mesej|pesanan)\b/,
 ];
 // Spans removed before matching: a question or condition up to the end of
 // its clause ("asked whether the booking was confirmed", "sama ada tempahan
 // telah disahkan", "if the booking is confirmed"), a request ("asked to be
-// booked", "asked to have a message sent", "minta untuk ditempah"),
-// something still to happen or not done ("to be confirmed", "not yet
-// confirmed", "akan disahkan", "belum disahkan") and "fully booked" or
-// "booked up".
+// booked", "asked to have a message sent", "asked for an appointment to be
+// scheduled", "wanted a message passed to the manager", "minta untuk
+// ditempah"), something still to happen or not done ("to be confirmed",
+// "not yet confirmed", "akan disahkan", "belum disahkan"), "fully booked" or
+// "booked up", and a day or time that was booked, or anything booked
+// followed by "so" or "jadi" (availability: "Saturday was booked, so the
+// caller asked for Sunday").
+const DONE_EN = "(?:booked|confirmed|sent|made|scheduled|arranged|passed|forwarded)";
+const DONE_MS = "(?:disahkan|ditempah|dihantar|dibuat|disampaikan)";
 const NOT_A_CLAIM = [
   /\b(?:whether|if|sama ada|samada|adakah|kalau)\b[^.;:!?]*/g,
-  /\b(?:asked|asks|asking|wants?|wanted|would like|requested|requesting|hoped|hopes|hoping)\b[^.;:!?]{0,40}?\bto (?:be|get) (?:booked|confirmed|sent)\b/g,
-  /\b(?:asked|asks|asking|wants?|wanted|would like|requested|requesting)\b[^.;:!?]{0,20}?\bto have\b(?: [^\s.;:!?]+){0,3}? (?:booked|confirmed|sent)\b/g,
-  /\b(?:minta|meminta|mahu|mahukan|hendak|nak|ingin|mohon|memohon)\b[^.;:!?]{0,40}?\buntuk (?:ditempah|disahkan|dihantar)\b/g,
-  /\b(?:to be|yet to be|still to be|will be|would be|can be|could be|needs? to be|awaiting|not|never)(?: yet)?(?: been)? (?:confirmed|booked|sent)\b/g,
-  /\b(?:akan|belum|masih belum|perlu|untuk|boleh|tidak|bakal|menunggu) (?:disahkan|ditempah|dihantar)\b/g,
+  new RegExp(
+    `\\b(?:asked|asks|asking|wants?|wanted|would like|requested|requesting|hoped|hopes|hoping)\\b[^.;:!?]{0,40}?\\bto (?:be|get) ${DONE_EN}\\b`,
+    "g",
+  ),
+  new RegExp(
+    `\\b(?:asked|asks|asking|wants?|wanted|would like|requested|requesting)\\b[^.;:!?]{0,20}?\\bto have\\b(?: [^\\s.;:!?]+){0,3}? ${DONE_EN}\\b`,
+    "g",
+  ),
+  new RegExp(
+    `\\b(?:asked for|wants?|wanted|would like|requested|requesting)(?: (?:a|an|the|their|his|her))? (?:${BOOKING}|${MESSAGE}) ${DONE_EN}\\b`,
+    "g",
+  ),
+  new RegExp(
+    `\\b(?:minta|meminta|mahu|mahukan|hendak|nak|ingin|mohon|memohon)\\b[^.;:!?]{0,40}?\\buntuk ${DONE_MS}\\b`,
+    "g",
+  ),
+  new RegExp(
+    `\\b(?:to be|yet to be|still to be|will be|would be|can be|could be|needs? to be|awaiting|not|never)(?: yet)?(?: been)? ${DONE_EN}\\b`,
+    "g",
+  ),
+  new RegExp(`\\b(?:akan|belum|masih belum|perlu|untuk|boleh|tidak|bakal|menunggu) ${DONE_MS}\\b`, "g"),
   /\bfully booked\b/g,
   /\bbooked (?:up|out)\b/g,
+  new RegExp(`\\b${WHEN} (?:is|was|are|were|has been|had been)(?: already)? booked\\b`, "g"),
+  new RegExp(`\\b${WHEN} (?:telah|sudah|dah)(?: penuh)? ditempah\\b`, "g"),
+  /\b(?:is|was|are|were|has been|had been)(?: already)? booked(?=,? (?:so|jadi)\b)/g,
+  /\b(?:telah|sudah|dah) ditempah(?=,? (?:so|jadi)\b)/g,
 ];
 const FALSE_SUCCESS_ZH = [
   "预约成功",

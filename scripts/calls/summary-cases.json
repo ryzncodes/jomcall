@@ -34,7 +34,7 @@
           { "input": "Eh, hello? Ha. Tak apalah.", "answer": "Maaf, boleh ulang? Apa yang boleh saya bantu?" },
           { "input": "Tak ada apa. Okey bye.", "answer": "Baik, terima kasih kerana menelefon." }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["unclear", "not clear", "no clear", "did not say", "didn't say", "no reason"], "ms": ["tidak jelas", "kurang jelas", "tak jelas", "tidak menyatakan", "tiada"] },
+      "reasonKeywords": { "en": ["unclear", "not clear", "no clear", "did not say", "didn't say", "no reason"], "ms": ["tidak jelas", "kurang jelas", "tak jelas", "tidak menyatakan"] },
       "forbidden": [] },
     {
       "id": "c05", "language": "en",
@@ -140,7 +140,7 @@
           { "input": "喂？喂？听得到吗？", "answer": "您好，请问有什么可以帮您？" },
           { "input": "嗯……算了，没事了。", "answer": "好的，欢迎随时再来电。" }
         ], "proposals": [] },
-      "reasonKeywords": { "en": ["unclear", "not clear", "no clear", "did not say", "didn't say", "no reason"], "ms": ["tidak jelas", "kurang jelas", "tak jelas", "tidak menyatakan", "tiada"] },
+      "reasonKeywords": { "en": ["unclear", "not clear", "no clear", "did not say", "didn't say", "no reason"], "ms": ["tidak jelas", "kurang jelas", "tak jelas", "tidak menyatakan"] },
       "forbidden": [] }
   ]
 }
