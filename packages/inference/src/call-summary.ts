@@ -157,14 +157,35 @@ function hasDetail(field: string, forms: string[]): boolean {
   return forms.some((f) => digits.includes(f));
 }
 
-const FALSE_SUCCESS = [
-  "booking confirmed",
-  "booked for",
-  "has been booked",
-  "tempahan disahkan",
-  "telah ditempah",
-  "message sent",
-  "pesanan dihantar",
+// Claims that something was done, in English and Bahasa Melayu (the output
+// languages), matched after case and whitespace are normalized. A booking or
+// a message is only ever a request: staff confirm or pass it on later.
+const W = "[^\\s.;:!?]+"; // one word, never across a sentence break
+const GAP = `(?:\\s+${W}){0,3}?\\s+`; // up to three words between
+const BOOKING = "(?:booking|appointment|slot|reservation|tempahan|temu janji)";
+const MESSAGE = "(?:message|mesej|pesanan)";
+const AUX = "(?:has been|have been|had been|was|were|is|are|been|telah|sudah|berjaya|dah)";
+const FALSE_SUCCESS_RE = [
+  new RegExp(`\\b${BOOKING}${GAP}(?:confirmed|disahkan)\\b`),
+  new RegExp(`\\bconfirmed (?:the |a |an |their |his |her )?${BOOKING}\\b`),
+  /\b(?:has|have|had|was|were|is|are|been) (?:now )?booked\b/,
+  /\bbooked (?:a|an|the|for|in|on|at)\b/,
+  /\b(?:telah|sudah|berjaya|dah) (?:ditempah|menempah|membuat tempahan)\b/,
+  new RegExp(`\\b${MESSAGE} (?:sent|dihantar)\\b`),
+  new RegExp(`\\b${MESSAGE}${GAP}${AUX} (?:sent|dihantar)\\b`),
+  /\bsent (?:the |a |their |his |her )?(?:message|mesej|pesanan)\b/,
+];
+// Spans removed before matching: a request ("asked to be booked", "minta
+// untuk ditempah"), something still to happen or not done ("to be confirmed",
+// "not yet confirmed", "akan disahkan", "belum disahkan") and "fully booked".
+const NOT_A_CLAIM = [
+  /\b(?:asked|asks|asking|wants?|wanted|would like|requested|requesting|hoped|hopes|hoping)\b[^.;:!?]{0,40}?\bto (?:be|get) (?:booked|confirmed|sent)\b/g,
+  /\b(?:minta|meminta|mahu|mahukan|hendak|nak|ingin|mohon|memohon)\b[^.;:!?]{0,40}?\buntuk (?:ditempah|disahkan|dihantar)\b/g,
+  /\b(?:to be|yet to be|still to be|will be|would be|can be|could be|needs? to be|awaiting|not|never)(?: yet)?(?: been)? (?:confirmed|booked|sent)\b/g,
+  /\b(?:akan|belum|masih belum|perlu|untuk|boleh|tidak|bakal|menunggu) (?:disahkan|ditempah|dihantar)\b/g,
+  /\bfully booked\b/g,
+];
+const FALSE_SUCCESS_ZH = [
   "预约成功",
   "已预约",
   "已经预约",
@@ -176,6 +197,13 @@ const FALSE_SUCCESS = [
   "留言已发送",
 ];
 
+function claimsSuccess(text: string): boolean {
+  let t = text.toLowerCase().replace(/\s+/g, " ").trim();
+  if (FALSE_SUCCESS_ZH.some((p) => t.includes(p))) return true;
+  for (const re of NOT_A_CLAIM) t = t.replace(re, " ");
+  return FALSE_SUCCESS_RE.some((re) => re.test(t));
+}
+
 export function guardSummary(f: SummaryFields, input: SummaryInput): GuardCode | null {
   const all = [...TEXT_KEYS.map((k) => f[k]), ...STEP_KEYS.map((k) => f[k])].filter(
     (v): v is string => typeof v === "string",
@@ -184,7 +212,7 @@ export function guardSummary(f: SummaryFields, input: SummaryInput): GuardCode |
   if (all.some((v) => quotes(v, turns))) return "QUOTE";
   const forms = callerForms(input.callerE164);
   if (all.some((v) => hasDetail(v, forms))) return "PERSONAL_DETAIL";
-  if (all.some((v) => FALSE_SUCCESS.some((p) => v.toLowerCase().includes(p)))) return "FALSE_SUCCESS";
+  if (all.some(claimsSuccess)) return "FALSE_SUCCESS";
   return null;
 }
 

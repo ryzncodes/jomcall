@@ -85,12 +85,61 @@ test("detail guard with no caller number", () => {
 
 test("false-success guard", () => {
   const i = base();
-  for (const t of ["booking confirmed", "has been booked", "tempahan disahkan", "telah ditempah", "预约成功", "message sent", "pesanan dihantar", "Booked for Saturday"]) {
-    assert.equal(guardSummary(fields({ outcome_en: t }), i), "FALSE_SUCCESS", t);
-  }
-  for (const t of ["confirmed their address", "asked to book a slot"]) {
-    assert.equal(guardSummary(fields({ outcome_en: t }), i), null, t);
-  }
+  const fail = [
+    "booking confirmed",
+    "Booking  CONFIRMED",
+    "The appointment for Saturday is confirmed.",
+    "The slot has been confirmed by staff.",
+    "Staff confirmed the booking.",
+    "Asked to book; booking confirmed.",
+    "has been booked",
+    "The caller was booked in.",
+    "They have been booked.",
+    "Booked for Saturday",
+    "Booked a slot for Friday.",
+    "booked the 10 am slot",
+    "tempahan disahkan",
+    "Tempahan untuk Sabtu telah disahkan.",
+    "Temu janji sudah disahkan.",
+    "telah ditempah",
+    "Slot sudah ditempah.",
+    "Berjaya ditempah untuk Jumaat.",
+    "Slot dah ditempah.",
+    "Pemanggil telah menempah slot.",
+    "message sent",
+    "The message has been sent to staff.",
+    "A message was sent to the manager.",
+    "pesanan dihantar",
+    "Pesanan telah dihantar kepada staf.",
+    "Mesej sudah dihantar.",
+    "Sent the message to staff.",
+    "预约成功",
+  ];
+  for (const t of fail) assert.equal(guardSummary(fields({ outcome_en: t }), i), "FALSE_SUCCESS", t);
+  const pass = [
+    "confirmed their address",
+    "asked to book a slot",
+    "Asked to be booked for Saturday.",
+    "Wanted to be booked in on Friday.",
+    "left a message",
+    "meninggalkan pesanan",
+    "Asked to book a slot, to be confirmed by staff.",
+    "The booking is not yet confirmed.",
+    "Booking pending confirmation.",
+    "Saturday is fully booked.",
+    "The slot has not been booked yet.",
+    "Minta untuk ditempah pada hari Sabtu.",
+    "Mahu slot itu untuk ditempah.",
+    "Tempahan akan disahkan oleh staf.",
+    "Tempahan belum disahkan.",
+    "Temu janji perlu disahkan.",
+    "Meminta tempahan slot.",
+    "Telefon untuk mengesahkan tempahan.",
+    "Menerima barang salah bagi pesanan minggu lepas.",
+    "Pesanan yang dihantar minggu lepas salah.",
+    "Left a message for staff to call back.",
+  ];
+  for (const t of pass) assert.equal(guardSummary(fields({ outcome_en: t }), i), null, t);
 });
 
 test("writeSummary happy path, guard error, abort and failure", async () => {
