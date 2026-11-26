@@ -166,14 +166,14 @@ function hasDetail(field: string, forms: string[]): boolean {
 // "asked for a booking and confirmed their name" is not a claim.
 const JOIN = "(?:and|dan|then|kemudian|lalu|but|tetapi|so|jadi|or|atau)";
 const W = `(?!${JOIN}\\b)[^\\s.,;:!?]+`; // one word, never across a clause break
-const GAP = `(?:\\s+${W}){0,5}?\\s+`; // up to five words between
+const GAP = `(?:\\s+${W}){0,8}?\\s+`; // up to eight words between
 const BOOKING = "(?:booking|appointment|slot|reservation|tempahan|temu janji)";
 const MESSAGE = "(?:message|mesej|pesanan)";
 const AUX = "(?:has been|have been|had been|was|were|is|are|been|telah|sudah|berjaya|dah)";
 // A booking noun, then the verb within five words with no clause break:
 // "booking confirmed", "Tempahan Sabtu disahkan", "the appointment for
 // Saturday morning is now confirmed".
-const BOOKING_DONE = "(?:confirmed|disahkan|made|scheduled|arranged|set|set up|successful|dibuat|berjaya)";
+const BOOKING_DONE = "(?:confirmed|disahkan|made|scheduled|arranged|set(?! (?:out|aside|apart))|set up|successful|went through|dibuat|berjaya)";
 const MESSAGE_DONE = "(?:sent|dihantar|passed|forwarded|relayed|delivered|disampaikan|diserahkan)";
 // Days and times of day, as the subject of "was booked" at the end of a
 // clause: availability, not a claim ("Saturday was booked." but not
@@ -191,6 +191,10 @@ const FALSE_SUCCESS_RE = [
   /\b(?:has|have|had|was|were|is|are|been) (?:now )?booked\b/,
   /\bbooked (?:a|an|the|for|in|on|at|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|this|next)\b/,
   /\b(?:telah|sudah|berjaya|dah) (?:ditempah|menempah|membuat tempahan)\b/,
+  /\breserved (?:a|an|the|for)\b/,
+  /\b(?:booked|scheduled|reserved) (?:them|him|her|the caller)\b/,
+  /\bconfirmed for (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|this|next)\b/,
+  new RegExp(`\\b${BOOKING}(?: ${W}){0,5}? and (?:it|this) (?:was|is|has been) (?:now )?confirmed\\b`),
   new RegExp(`\\b${MESSAGE} ${MESSAGE_DONE}\\b`),
   new RegExp(`\\b${MESSAGE}${GAP}${AUX} ${MESSAGE_DONE}\\b`),
   /\b(?:sent|forwarded|passed on|passed|relayed) (?:the |a |their |his |her )?(?:message|mesej|pesanan)\b/,
@@ -206,8 +210,11 @@ const FALSE_SUCCESS_RE = [
 // booking last week"), and availability: a day or time that was booked at
 // the end of a clause ("Saturday was booked, so the caller asked for
 // Sunday"), or anything booked followed by "so" or "jadi".
-const DONE_EN = "(?:booked|confirmed|sent|made|scheduled|arranged|set up|set|passed|forwarded)";
+const PAST_W = `(?!(?:as|asked|requested|diminta|seperti)\\b|${JOIN}\\b)[^\\s.,;:!?]+`; // a word, never a request or a joining word
+const DONE_EN = "(?:booked|confirmed|sent|made|scheduled|arranged|reserved|set up|set|passed|forwarded)";
 const DONE_MS = "(?:disahkan|ditempah|dihantar|dibuat|disampaikan)";
+// Verbs that only say a request was written down, never that it was done.
+const NEUTRAL = "(?:made|taken|noted|recorded|left|logged|dibuat|dicatat|diambil|direkodkan)";
 const NOT_A_CLAIM = [
   /\b(?:whether|if|sama ada|samada|adakah|kalau)\b[^.;:!?]*/g,
   new RegExp(
@@ -219,7 +226,11 @@ const NOT_A_CLAIM = [
     "g",
   ),
   new RegExp(
-    `\\b(?:asked for|wants?|wanted|would like|requested|requesting)(?: (?:a|an|the|their|his|her))? (?:${BOOKING}|${MESSAGE})(?:${GAP}| )${DONE_EN}\\b`,
+    `\\b(?:asked for|asked that|wants?|wanted|would like|requested|requesting|expects?|expected|expecting|needs?|make sure|makes sure)(?: (?:a|an|the|their|his|her))? (?:${BOOKING}|${MESSAGE})(?:${GAP}| )${DONE_EN}\\b`,
+    "g",
+  ),
+  new RegExp(
+    `\\b(?:mahu|mahukan|minta|meminta|ingin|berharap|harap|hendak|nak|perlu pastikan|pastikan)(?: ${W}){0,1}? ${BOOKING}(?:${GAP}| )${DONE_MS}\\b`,
     "g",
   ),
   new RegExp(
@@ -227,21 +238,26 @@ const NOT_A_CLAIM = [
     "g",
   ),
   new RegExp(
-    `\\b(?:to be|yet to be|still to be|will be|would be|can be|could be|needs? to be|awaiting|not|never)(?: yet)?(?: been)? ${DONE_EN}\\b`,
+    `\\b(?:to be|yet to be|still to be|will be|would be|can be|could be|needs? to be|be|gets?|getting|awaiting|not|never)(?: yet)?(?: been)? ${DONE_EN}\\b`,
     "g",
   ),
   new RegExp(`\\b(?:akan|belum|masih belum|perlu|untuk|boleh|tidak|bakal|menunggu) ${DONE_MS}\\b`, "g"),
   /\bfully booked\b/g,
   /\bbooked (?:up|out)\b/g,
-  new RegExp(`\\b${WHEN} (?:is|was|are|were|has been|had been)(?: already)? booked(?=[.,;:!?]|$)`, "g"),
-  new RegExp(`\\b${WHEN} (?:telah|sudah|dah)(?: penuh)? ditempah(?=[.,;:!?]|$)`, "g"),
+  new RegExp(`\\b${WHEN} (?:is|was|are|were|has been|had been)(?: already)? booked(?=[.,;:!?]|$| elsewhere\\b| by (?:another|someone|other)\\b)`, "g"),
+  new RegExp(`\\b${WHEN} (?:telah|sudah|dah)(?: penuh)? ditempah(?=[.,;:!?]|$| oleh (?:pelanggan|orang) lain\\b)`, "g"),
   // A booking request, or a past booking asked about, is not a claim:
   // "a booking request was made", "asked about an appointment made last week".
-  /\b(?:booking|appointment|reservation) requests?\b/g,
-  /\bpermintaan (?:tempahan|temu janji)\b/g,
+  new RegExp(`\\b(?:booking|appointment|reservation) requests?(?=(?:${GAP}| )${NEUTRAL}\\b)`, "g"),
+  new RegExp(`\\bpermintaan (?:tempahan|temu janji)(?=(?:${GAP}| )${NEUTRAL}\\b)`, "g"),
   new RegExp(`\\b(?:about|regarding|tentang|mengenai) (?:a |an |the |their |his |her )?${BOOKING} (?:made|dibuat)\\b`, "g"),
   // Something done in the past, before this call: "made a booking last week".
-  /\b(?:made|scheduled|arranged|booked|dibuat|ditempah|menempah)\b[^.,;:!?]{0,40}?\b(?:last (?:week|month|time)|yesterday|previously|minggu lepas|bulan lepas|semalam|sebelum ini)\b/g,
+  // The words between never include a request ("as requested yesterday",
+  // "seperti yang diminta semalam", "had asked about previously").
+  new RegExp(
+    `\\b(?:made|scheduled|arranged|booked|dibuat|ditempah|menempah)(?: ${PAST_W}){0,4}? (?:last (?:week|month|time)|yesterday|previously|minggu lepas|bulan lepas|semalam|sebelum ini)\\b`,
+    "g",
+  ),
   /\b(?:is|was|are|were|has been|had been)(?: already)? booked(?=,? (?:so|jadi)\b)/g,
   /\b(?:telah|sudah|dah) ditempah(?=,? (?:so|jadi)\b)/g,
 ];
