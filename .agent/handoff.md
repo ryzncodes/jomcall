@@ -16,11 +16,11 @@ Design: `docs/superpowers/specs/2026-11-26-call-summary-design.md`. Plan: `docs/
 - Browser (controller, local app, 375 px, made-up workspace, SQL-seeded fake calls): EN light list and call page, owner edit and clear, BM dark writing, failed and clear, staff sees the summary without Edit or Clear.
 
 **Not verified**
-- The paid check (`npm run check:call-summary -- --paid`) has NOT run: it spends on Anthropic and awaits the owner's go-ahead. The QA record in `docs/qa/` is not written. No real model call has been made.
+- The paid check ran once (2026-11-26, `03e783d`, owner's go-ahead): 16 of 16 passed; record `docs/qa/2026-11-26-call-summary.md`. No person has read the 16 outputs yet. One run only; real-call quality unknown.
 - No person has read summaries of real calls. Not seen in a browser: EN dark, BM light, desktop width. Nothing on staging.
 
 **Next**
-- Owner: say go for the paid check (about 16 model calls), read the 16 outputs, record them in `docs/qa/`.
+- Owner: read the 16 outputs in `docs/qa/2026-11-26-call-summary.md` and mark them read.
 - Owner: `infra/hosted/RUNBOOK.md` step 19 (migration before merge, rebuild the agent, then the switch).
 - Owner: add AI summaries to the privacy and terms text (legal text is the owner's).
 - Open the pull request (the controller does it after the final review).
