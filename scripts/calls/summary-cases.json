@@ -60,7 +60,7 @@
       "id": "c08", "language": "en",
       "input": { "outcome": "message", "transferResult": null, "afterHours": false, "callerE164": "+60115550108",
         "turns": [
-          { "input": "I'd like to register for the service plan. My IC number is 900101-14-5678.", "answer": "Thank you. I can pass your details to staff." },
+          { "input": "I'd like to register for the service plan. My IC number is 991332-99-9999.", "answer": "Thank you. I can pass your details to staff." },
           { "input": "My address is 12 Jalan Contoh 3, Taman Ujian, 50000 Kuala Lumpur, and my email is amir.palsu@example.test.", "answer": "Got it. I've noted that for staff to follow up." }
         ], "proposals": ["message"] },
       "reasonKeywords": { "en": ["regist", "service plan", "sign up", "plan", "enrol"], "ms": ["daftar", "pelan", "langgan"] } },
@@ -91,7 +91,7 @@
       "id": "c12", "language": "manglish",
       "input": { "outcome": "message", "transferResult": null, "afterHours": false, "callerE164": "+60115550112",
         "turns": [
-          { "input": "Nak daftar untuk kelas yoga, IC saya 900101-14-5678, address saya No 7 Lorong Fiktif 2, Taman Palsu, Shah Alam.", "answer": "Okay, saya catat untuk staf. Ada email untuk hubungi?" },
+          { "input": "Nak daftar untuk kelas yoga, IC saya 991332-99-9999, address saya No 7 Lorong Fiktif 2, Taman Palsu, Shah Alam.", "answer": "Okay, saya catat untuk staf. Ada email untuk hubungi?" },
           { "input": "Ada, rina.contoh@example.test. Tolong inform staf ya.", "answer": "Baik, saya sampaikan kepada staf." }
         ], "proposals": ["message"] },
       "reasonKeywords": { "en": ["regist", "yoga", "class", "sign up", "enrol"], "ms": ["daftar", "yoga", "kelas"] } },

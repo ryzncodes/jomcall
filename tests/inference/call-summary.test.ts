@@ -15,7 +15,7 @@ const base = (over: Partial<SummaryInput> = {}): SummaryInput => ({
   outcome: "booking_proposed",
   transferResult: null,
   afterHours: false,
-  callerE164: "+60123456789",
+  callerE164: "+60115550199",
   turns: [{ input: "saya nak tanya pasal servis kereta myvi hari sabtu ni boleh", answer: "Boleh." }],
   proposals: ["booking"],
   ...over,
@@ -36,7 +36,7 @@ const fake = (text: string): AnthropicLike => ({
 test("request leaves out the caller number", () => {
   const r = summaryRequest(base());
   const all = JSON.stringify(r.messages);
-  assert.ok(!all.includes("123456789"));
+  assert.ok(!all.includes("5550199"));
   for (const p of ["never quote", "Do not repeat names, numbers, addresses", "asked to book", "left a message", "Reason unclear"]) {
     assert.ok(r.system.includes(p), p);
   }
@@ -72,11 +72,11 @@ test("quote guard catches a CJK run", () => {
 
 test("detail guard", () => {
   const i = base();
-  for (const t of ["IC 900101-14-5678", "012-345 6789", "ali@example.test"]) {
+  for (const t of ["IC 991332-99-9999", "011-555 0199", "ali@example.test"]) {
     assert.equal(guardSummary(fields({ outcome_en: t }), i), "PERSONAL_DETAIL", t);
   }
   assert.equal(guardSummary(fields({ outcome_en: "gave their address for the delivery" }), i), null);
-  assert.equal(guardSummary(fields({ outcome_ms: "nombor 60-12-3456789" }), i), "PERSONAL_DETAIL");
+  assert.equal(guardSummary(fields({ outcome_ms: "nombor 60-11-5550199" }), i), "PERSONAL_DETAIL");
 });
 
 test("detail guard with no caller number", () => {

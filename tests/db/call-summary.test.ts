@@ -12,7 +12,7 @@ type Harness = Awaited<ReturnType<typeof createHarness>>;
 type Identity = Harness["alice"];
 
 const sha = (v: string) => createHash("sha256").update(v).digest("hex");
-const fakePhone = () => "+6011" + String(Math.floor(Math.random() * 9000000) + 1000000);
+const fakePhone = () => "+6011555" + String(Math.floor(Math.random() * 10000)).padStart(4, "0");
 
 // A live phone call for a fake caller.
 async function liveCall(h: Harness) {
@@ -22,7 +22,7 @@ async function liveCall(h: Harness) {
   const callId = (
     await h.cleanup.query(
       `insert into app.call(org_id,namespace,location_id,agent_id,snapshot,dialled_e164,caller_e164,contact_id,sip_call_id,room,participant_identity,token_hash)
-       values($1,$2,$3,$4,'{}','+60112223333','+60119998888',$5,'SCL_'||gen_random_uuid(),'room-a','sip_a',$6)returning id`,
+       values($1,$2,$3,$4,'{}','+60115550190','+60115550191',$5,'SCL_'||gen_random_uuid(),'room-a','sip_a',$6)returning id`,
       [h.orgA.id, h.namespace, h.orgA.locationId, h.orgA.agentId, contactId, sha("token-" + randomUUID())],
     )
   ).rows[0].id as string;
@@ -140,7 +140,7 @@ test("claim skips short calls and returns the next", async () => {
     assert.deepEqual(claim.turns.map((t) => t.input), ["Soalan 1", "Soalan 2"]);
     assert.deepEqual(claim.turns.map((t) => t.answer), ["Jawapan 1", "Jawapan 2"]);
     assert.deepEqual(claim.proposals, ["message"]);
-    assert.equal(claim.call.caller_e164, "+60119998888");
+    assert.equal(claim.call.caller_e164, "+60115550191");
     const [r1] = await summaries(h, first.callId);
     assert.deepEqual([r1.state, r1.skip_reason], ["skipped", "TOO_SHORT"]);
     const [r2] = await summaries(h, second.callId);

@@ -14,7 +14,7 @@ async function fixture() {
     const id = (
       await h.cleanup.query(
         `insert into app.call(org_id,namespace,location_id,agent_id,snapshot,dialled_e164,caller_e164,sip_call_id,room,participant_identity,token_hash,state,answered_at,ended_at,duration_seconds)
-         values($1,$2,$3,$4,'{}','+60112223333','+60119998888','SCL_'||gen_random_uuid(),'room-a','sip_a',$5,'ended',now(),now(),40)returning id`,
+         values($1,$2,$3,$4,'{}','+60115550190','+60115550191','SCL_'||gen_random_uuid(),'room-a','sip_a',$5,'ended',now(),now(),40)returning id`,
         [h.orgA.id, h.namespace, h.orgA.locationId, h.orgA.agentId, sha("t" + randomUUID())],
       )
     ).rows[0].id as string;

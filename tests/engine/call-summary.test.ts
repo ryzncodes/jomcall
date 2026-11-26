@@ -53,7 +53,7 @@ async function fixture() {
     const call = (
       await q(
         `insert into app.call(org_id,namespace,location_id,agent_id,snapshot,dialled_e164,caller_e164,contact_id,sip_call_id,room,participant_identity,token_hash)
-         values($1,$2,$3,$4,'{}','+60112223333','+60115550101',$5,'SCL_'||gen_random_uuid(),'room-a','sip_a',$6)returning id`,
+         values($1,$2,$3,$4,'{}','+60115550190','+60115550101',$5,'SCL_'||gen_random_uuid(),'room-a','sip_a',$6)returning id`,
         [h.orgA.id, h.namespace, h.orgA.locationId, h.orgA.agentId, contact, createHash("sha256").update(randomUUID()).digest("hex")],
       )
     ).rows[0].id as string;
