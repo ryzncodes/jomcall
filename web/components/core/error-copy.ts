@@ -175,7 +175,7 @@ export const moreCopy: Record<string, [string, string]> = {
   ],
   SUMMARY_NOT_READY: [
     "This summary is still being written. Try again in a minute.",
-    "Ringkasan ini masih ditulis. Cuba lagi sebentar lagi.",
+    "Ringkasan ini sedang disediakan. Cuba sebentar lagi.",
   ],
   NUMBER_IN_USE: [
     "This phone number is already in use.",

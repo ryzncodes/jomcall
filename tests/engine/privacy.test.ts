@@ -285,10 +285,12 @@ test("contact export lists the contact's phone calls with turns and proposals, w
     assert.equal(x.proposals[0].details.text, "Sila telefon semula esok.");
     assert.equal(x.summary.reason_en, "Asked when the shop opens.");
     assert.equal(x.summary.edited, false);
+    assert.equal(x.summary.edited_at, null);
     assert.deepEqual(Object.keys(x.summary).sort(), [
       "completed_at",
       "created_at",
       "edited",
+      "edited_at",
       "next_step_en",
       "next_step_ms",
       "outcome_en",

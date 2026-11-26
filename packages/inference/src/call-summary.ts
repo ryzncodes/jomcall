@@ -40,6 +40,7 @@ const SYSTEM = [
   "Paraphrase and never quote the caller or the agent; do not copy their words.",
   "Do not repeat names, numbers, addresses, IC or passport numbers, email addresses, account or card numbers, health details or money details. Say what kind of detail was given instead, for example \"gave their address for the delivery\".",
   "Describe only what happened in the turns. A booking request is \"asked to book\", never \"booked\" or \"confirmed\", because staff confirm it later. A message for staff is \"left a message\", never \"sent\".",
+  "Write dates and times in words, for example \"Saturday morning\" or \"Friday at four in the afternoon\" (Bahasa Melayu: \"pagi Sabtu\", \"Jumaat pukul empat petang\"), never as digits.",
   "If the call is unclear, say \"Reason unclear\" (Bahasa Melayu: \"Sebab tidak jelas\") rather than guess.",
 ].join("\n");
 
@@ -55,7 +56,7 @@ export function summaryRequest(input: SummaryInput) {
   return {
     system: SYSTEM,
     messages: [{ role: "user" as const, content: JSON.stringify(payload) }],
-    max_tokens: 700,
+    max_tokens: 1000,
   };
 }
 

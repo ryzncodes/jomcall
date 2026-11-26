@@ -166,3 +166,39 @@ test("close stops the loop promptly", () =>
     await loop;
     assert.ok(Date.now() - t0 < 2000);
   }));
+
+test("a summary that arrives while closing is still written", () =>
+  withFixture(async (x) => {
+    const call = await x.endedCall();
+    let closing: Promise<void> | undefined;
+    let w: Awaited<ReturnType<typeof x.worker>>;
+    // close() waits for the tick in progress, so it is started, not awaited,
+    // inside the model call.
+    const write: NonNullable<Write> = async () => {
+      closing = w.close();
+      return good();
+    };
+    w = await x.worker(write);
+    assert.equal(await w.tick(), true);
+    await closing;
+    const r = await x.row(call);
+    assert.equal(r.state, "done");
+    assert.equal(r.reason_en, fields.reason_en);
+  }));
+
+test("an error that arrives while closing leaves the lease to expire", () =>
+  withFixture(async (x) => {
+    const call = await x.endedCall();
+    let closing: Promise<void> | undefined;
+    let w: Awaited<ReturnType<typeof x.worker>>;
+    const write: NonNullable<Write> = async () => {
+      closing = w.close();
+      return { error: "MODEL_TIMEOUT" };
+    };
+    w = await x.worker(write);
+    assert.equal(await w.tick(), true);
+    await closing;
+    const r = await x.row(call);
+    assert.equal(r.state, "running");
+    assert.equal(r.error_code, null);
+  }));

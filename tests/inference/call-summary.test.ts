@@ -37,9 +37,10 @@ test("request leaves out the caller number", () => {
   const r = summaryRequest(base());
   const all = JSON.stringify(r.messages);
   assert.ok(!all.includes("5550199"));
-  for (const p of ["never quote", "Do not repeat names, numbers, addresses", "asked to book", "left a message", "Reason unclear"]) {
+  for (const p of ["never quote", "Do not repeat names, numbers, addresses", "asked to book", "left a message", "Reason unclear", "Write dates and times in words"]) {
     assert.ok(r.system.includes(p), p);
   }
+  assert.equal(r.max_tokens, 1000);
 });
 
 test("parse accepts strict JSON and trims", () => {

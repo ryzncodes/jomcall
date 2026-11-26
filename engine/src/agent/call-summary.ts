@@ -187,9 +187,13 @@ export class CallSummaryWorker {
     } catch {
       return fail("MODEL_FAILED");
     }
-    // Stopping (a deploy): leave the lease to expire; maintain re-queues it.
-    if (this.stop.signal.aborted) return;
-    if ("error" in result) return fail(result.error);
+    // Stopping (a deploy) and no summary: leave the lease to expire; maintain
+    // re-queues it. A summary that did arrive is still written: close() keeps
+    // the pool open until this tick ends.
+    if ("error" in result) {
+      if (this.stop.signal.aborted) return;
+      return fail(result.error);
+    }
     let r: { ok: boolean } | null;
     try {
       r = await this.op("write", id, lease, {
