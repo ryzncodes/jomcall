@@ -206,3 +206,75 @@ test("contact export lists the contact's follow-ups without staff user ids", asy
     await h.close();
   }
 });
+
+test("contact export lists the contact's phone calls with turns and proposals, without billing or call secrets", async () => {
+  const h = await createHarness(),
+    api = await createApiHarness(h);
+  let engine: Engine | undefined;
+  try {
+    const req = (method: string, path: string, body?: unknown) =>
+      api.request(h.alice, h.orgA.id, method, "/api/v1" + path, body);
+    const mk = async (name: string) =>
+      (await req("POST", "/contacts", { name, phone: null, preferredLanguage: "ms" })).body.data;
+    const c = await mk("Pemanggil Contoh"),
+      other = await mk("Pemanggil Lain");
+    // Fake calls only. The first has billing columns set, which the web
+    // role cannot read, to prove the export names its columns.
+    const call = async (contactId: string, snapshot: unknown) =>
+      (
+        await h.cleanup.query(
+          `insert into app.call(org_id,namespace,location_id,agent_id,snapshot,caller_e164,dialled_e164,contact_id,sip_call_id,room,participant_identity,token_hash,state,outcome,language,answered_at,ended_at,duration_seconds,billed_seconds,billing_check)
+           values($1,$2,$3,$4,$5,'+60123456789','+60112223333',$6,'SCL_'||gen_random_uuid(),'room-secret','sip_secret',md5(gen_random_uuid()::text)||md5(gen_random_uuid()::text),'ended','message','ms',now(),now(),42,42,'BILLING_CHECK_FAILED')returning id`,
+          [h.orgA.id, h.namespace, h.orgA.locationId, h.orgA.agentId, JSON.stringify(snapshot), contactId],
+        )
+      ).rows[0].id as string;
+    const callId = await call(c.id, { businessSecret: "snapshot-only" });
+    await call(other.id, {});
+    const turn = async (input: string, answer: string) =>
+      (
+        await h.cleanup.query(
+          "insert into app.call_turn(org_id,call_id,client_turn_id,input,answer,state,completed_at,timings)values($1,$2,gen_random_uuid(),$3,$4,'completed',now(),'{\"firstSoundMs\":900}')returning id",
+          [h.orgA.id, callId, input, answer],
+        )
+      ).rows[0].id as string;
+    await turn("Kedai buka pukul berapa?", "Kami buka pukul 9 pagi.");
+    const second = await turn("Boleh tinggal pesanan?", "Boleh, saya catat untuk staf.");
+    await h.cleanup.query(
+      "insert into app.call_proposal(org_id,call_id,turn_id,step,kind,details)values($1,$2,$3,0,'message',$4)",
+      [h.orgA.id, callId, second, JSON.stringify({ text: "Sila telefon semula esok." })],
+    );
+    const ex = (await req("POST", `/contacts/${c.id}/export`, { expectedRevision: 1 })).body.data;
+    engine = await Engine.create(h.namespace);
+    let download = await req("GET", `/jobs/${ex.id}/download`);
+    for (let i = 0; i < 5 && download.status !== 200; i++) {
+      await engine.tick();
+      download = await req("GET", `/jobs/${ex.id}/download`);
+    }
+    assert.equal(download.status, 200);
+    const { calls } = download.body;
+    assert.equal(calls.length, 1);
+    const [x] = calls;
+    assert.equal(x.id, callId);
+    assert.equal(x.caller_e164, "+60123456789");
+    assert.equal(x.outcome, "message");
+    assert.equal(x.duration_seconds, 42);
+    assert.deepEqual(
+      x.turns.map((t: any) => [t.input, t.answer, t.state]),
+      [
+        ["Kedai buka pukul berapa?", "Kami buka pukul 9 pagi.", "completed"],
+        ["Boleh tinggal pesanan?", "Boleh, saya catat untuk staf.", "completed"],
+      ],
+    );
+    assert.deepEqual(Object.keys(x.turns[0]).sort(), ["answer", "completed_at", "created_at", "input", "state"]);
+    assert.equal(x.proposals.length, 1);
+    assert.equal(x.proposals[0].kind, "message");
+    assert.equal(x.proposals[0].details.text, "Sila telefon semula esok.");
+    const text = JSON.stringify(calls);
+    for (const leaked of ["snapshot-only", "room-secret", "sip_secret", "billed_seconds", "billing_check", "token_hash", "firstSoundMs", "SCL_"])
+      assert.ok(!text.includes(leaked), leaked);
+  } finally {
+    await engine?.close();
+    await api.close();
+    await h.close();
+  }
+});

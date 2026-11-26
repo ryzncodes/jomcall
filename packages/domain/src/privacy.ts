@@ -137,8 +137,9 @@ export async function privacyRoute(
           [ctx.orgId, c.id],
         )
       ).rows,
-      // Questions the agent could not answer, asked in this contact's test
-      // sessions (the gap log stores no caller identity of its own).
+      // Questions the agent could not answer, asked by this contact in a
+      // test session, a phone call or a WhatsApp chat (the gap log stores no
+      // caller identity of its own).
       knowledgeGaps: (
         await tx.query(
           "select a.question,a.language,a.channel,a.answer,a.asked_at,g.status from app.knowledge_gap_ask a join app.knowledge_gap g on g.org_id=a.org_id and g.id=a.gap_id where a.org_id=$1 and a.contact_id=$2 order by a.asked_at,a.id",
@@ -150,6 +151,18 @@ export async function privacyRoute(
       followUps: (
         await tx.query(
           "select kind,source,details,state,created_at,closed_at,due_at from app.follow_up where org_id=$1 and contact_id=$2 order by created_at,id",
+          [ctx.orgId, c.id],
+        )
+      ).rows,
+      // Real phone calls with what the caller said, what the agent answered
+      // and what it left for staff. Columns are named because the web role
+      // cannot read the billing columns of app.call. Left out: the agent
+      // snapshot (the business's settings, not the caller's data), call
+      // tokens and SIP identifiers, turn timings, evidence and usage, and
+      // tool steps (internal lookups, as for WhatsApp chats).
+      calls: (
+        await tx.query(
+          `select x.id,x.caller_e164,x.dialled_e164,x.state,x.refusal,x.outcome,x.end_reason,x.language,x.after_hours,x.do_not_contact,x.transfer_result,x.disclosure_played_at,x.started_at,x.answered_at,x.ended_at,x.duration_seconds,coalesce((select jsonb_agg(jsonb_build_object('input',t.input,'answer',t.answer,'state',t.state,'created_at',t.created_at,'completed_at',t.completed_at)order by t.created_at,t.id)from app.call_turn t where t.org_id=x.org_id and t.call_id=x.id),'[]')as turns,coalesce((select jsonb_agg(jsonb_build_object('kind',p.kind,'details',p.details,'state',p.state,'created_at',p.created_at)order by p.created_at,p.id)from app.call_proposal p where p.org_id=x.org_id and p.call_id=x.id),'[]')as proposals from app.call x where x.org_id=$1 and x.contact_id=$2 order by x.started_at,x.id`,
           [ctx.orgId, c.id],
         )
       ).rows,
