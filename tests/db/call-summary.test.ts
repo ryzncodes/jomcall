@@ -185,6 +185,21 @@ test("write needs the live lease", async () => {
   }
 });
 
+test("write accepts a null next step", async () => {
+  const h = await createHarness();
+  try {
+    const c = await summarisedCall(h);
+    const claim = (await worker<Claim>(h, "claim"))!;
+    assert.deepEqual(await worker(h, "write", claim.id, claim.lease, { ...fields, next_step_en: null, next_step_ms: null, model: "m" }), { ok: true });
+    const [row] = await summaries(h, c.callId);
+    assert.equal(row.state, "done");
+    assert.equal(row.next_step_en, null);
+    assert.equal(row.next_step_ms, null);
+  } finally {
+    await h.close();
+  }
+});
+
 test("write after lease lost changes nothing", async () => {
   const h = await createHarness();
   try {

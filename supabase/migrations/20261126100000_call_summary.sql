@@ -85,8 +85,12 @@ declare s app.call_summary;c app.call;v_turns int;v_lease uuid;v_n int;v_i int;v
   return null;
 
  elsif p_action='write' then
-  foreach v_f in array array['reason_en','reason_ms','outcome_en','outcome_ms','next_step_en','next_step_ms']loop
+  foreach v_f in array array['reason_en','reason_ms','outcome_en','outcome_ms']loop
    if jsonb_typeof(p_data->v_f)is distinct from 'string' or char_length(p_data->>v_f)not between 1 and 300 then raise exception 'SUMMARY_INVALID';end if;
+  end loop;
+  -- Next step may be null or absent (nothing left to do); else a 1-300 character string.
+  foreach v_f in array array['next_step_en','next_step_ms']loop
+   if jsonb_typeof(p_data->v_f)is not null and jsonb_typeof(p_data->v_f)<>'null' and(jsonb_typeof(p_data->v_f)<>'string' or char_length(p_data->>v_f)not between 1 and 300)then raise exception 'SUMMARY_INVALID';end if;
   end loop;
   if jsonb_typeof(p_data->'model')is distinct from 'string' or char_length(p_data->>'model')not between 1 and 100 then raise exception 'SUMMARY_INVALID';end if;
   update app.call_summary set state='done',reason_en=p_data->>'reason_en',reason_ms=p_data->>'reason_ms',outcome_en=p_data->>'outcome_en',outcome_ms=p_data->>'outcome_ms',

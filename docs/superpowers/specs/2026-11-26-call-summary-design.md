@@ -122,7 +122,7 @@ Agent: ...
 
 ### 6.6 Checks
 
-- Unit and database tests with a fake summarizer: queueing on end and crash, skip rule, lease, retries, quote guard, success-word guard, RLS (staff read, staff cannot edit, other org cannot read), export, cascade.
+- Unit and database tests with a fake summarizer: queueing on end and crash, skip rule, lease, retries, quote guard, detail guard, phrase-based false-success guard (6.3), RLS (staff read, staff cannot edit, other org cannot read), export, cascade.
 - Paid check (`npm run check:call-summary -- --paid`): about 16 made-up calls across BM, English, Manglish and Mandarin, including a booking request, a message, a handoff, a transfer, a dropped call and an unclear call. Pass: no quote-guard, detail-guard or false-success failure (cases include a caller giving an IC number, an address and an email), and each reason contains at least one expected keyword from the case's list (EN and BM keywords per case); all 16 outputs are also written to the QA record and read by a person. No model is used as a judge (builder's call: that would be another Anthropic use). Run once and recorded in `docs/qa/`.
 
 ## 7. Left to the builder
