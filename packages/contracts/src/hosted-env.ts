@@ -7,6 +7,7 @@ import {
   curlecKeyMode,
   databaseConnection,
   isLoopbackHost,
+  callSummary,
   cloudflareMailSettings,
   liveKitUrlProblem,
   mailProvider,
@@ -47,6 +48,7 @@ export type Setting = {
 
 const voiceOn = (env: Env) => env.JOMCALL_VOICE_PROVIDER === "hosted";
 const readerOn = (env: Env) => env.JOMCALL_SETUP_READER === "anthropic";
+const summaryOn = (env: Env) => env.JOMCALL_CALL_SUMMARY === "anthropic";
 const whatsappOn = (env: Env) =>
   !["", "disabled"].includes(env.JOMCALL_WHATSAPP_PROVIDER?.trim() ?? "");
 const cloudflareMail = (env: Env) =>
@@ -205,6 +207,14 @@ export const SETTINGS: Setting[] = [
     required: false,
     description:
       "Optional: disabled (default) or anthropic; the agent reads setup uploads with Anthropic. Same value in web and agent",
+  },
+  {
+    name: "JOMCALL_CALL_SUMMARY",
+    services: ["agent"],
+    secret: false,
+    required: false,
+    description:
+      "Optional: disabled (default) or anthropic; the agent writes call summaries with Anthropic",
   },
   {
     name: "LIVEKIT_URL",
@@ -417,9 +427,9 @@ export const SETTINGS: Setting[] = [
     name: "ANTHROPIC_API_KEY",
     services: ["agent"],
     secret: true,
-    required: (env) => voiceOn(env) || readerOn(env),
+    required: (env) => voiceOn(env) || readerOn(env) || summaryOn(env),
     description:
-      "Spoken-path and setup-reader model key (when JOMCALL_VOICE_PROVIDER=hosted or JOMCALL_SETUP_READER=anthropic)",
+      "Spoken-path, setup-reader and call-summary model key (when JOMCALL_VOICE_PROVIDER=hosted, JOMCALL_SETUP_READER=anthropic or JOMCALL_CALL_SUMMARY=anthropic)",
   },
   {
     name: "JOMCALL_VOICE_BIND",
@@ -715,6 +725,8 @@ export function readiness(service: Service, env: Env): Finding[] {
     check("JOMCALL_QUEUE_NAMESPACE", () => queueNamespace(hostedEnv));
   if (service === "web" || service === "agent")
     check("JOMCALL_SETUP_READER", () => setupReader(hostedEnv));
+  if (service === "agent")
+    check("JOMCALL_CALL_SUMMARY", () => callSummary(hostedEnv));
   if (service === "web") {
     check("TURNSTILE_SITE_KEY", () => turnstileSettings(hostedEnv));
     check("JOMCALL_SIGNUP_ALLOW", () => signupAllow(hostedEnv));

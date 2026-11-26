@@ -272,6 +272,31 @@ test("the setup reader needs the model key in the agent only, even with voice of
   }
 });
 
+test("call summaries need the model key in the agent, in staging and prod", () => {
+  for (const ns of ["staging", "prod"]) {
+    const agent = {
+      JOMCALL_MODE: "hosted",
+      JOMCALL_QUEUE_NAMESPACE: ns,
+      JOMCALL_DATABASE_HOSTS: "db.example.test",
+      AGENT_DATABASE_URL: "postgresql://a:b@db.example.test:5432/postgres",
+      QUEUE_DATABASE_URL: "postgresql://a:b@db.example.test:5432/postgres",
+      JOMCALL_MODEL_PROVIDER: "disabled",
+      JOMCALL_VOICE_PROVIDER: "disabled",
+    };
+    assert.deepEqual(readiness("agent", { ...agent, JOMCALL_CALL_SUMMARY: "disabled" }), []);
+    assert.deepEqual(
+      readiness("agent", { ...agent, JOMCALL_CALL_SUMMARY: "anthropic", ANTHROPIC_API_KEY: SECRET }),
+      [],
+    );
+    assert.deepEqual(readiness("agent", { ...agent, JOMCALL_CALL_SUMMARY: "anthropic" }), [
+      { name: "ANTHROPIC_API_KEY", code: "MISSING" },
+    ]);
+    const bad = readiness("agent", { ...agent, JOMCALL_CALL_SUMMARY: "yes" });
+    assert.deepEqual(bad, [{ name: "JOMCALL_CALL_SUMMARY", code: "CALL_SUMMARY_UNKNOWN" }]);
+    assert.ok(!SETTINGS.find((s) => s.name === "JOMCALL_CALL_SUMMARY")!.services.includes("web" as never));
+  }
+});
+
 test("the readiness command prints names only and exits 1 when not ready", () => {
   const dir = mkdtempSync(join(tmpdir(), "jomcall-ready-"));
   const file = join(dir, "web.env");

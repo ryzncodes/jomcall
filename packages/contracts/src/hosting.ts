@@ -223,6 +223,19 @@ export function setupReader(env: Env = process.env): "disabled" | "anthropic" {
   return value;
 }
 
+// --- Call summaries ----------------------------------------------------------
+
+// The call summary switch. Unset, empty or "disabled" means off; "anthropic"
+// lets the agent process send a finished call's turns to Anthropic to write a
+// summary. Anything else throws, naming the variable and never its value.
+// Agent process only; the web service gets no key.
+export function callSummary(env: Env = process.env): "disabled" | "anthropic" {
+  const value = env.JOMCALL_CALL_SUMMARY || "disabled";
+  if (value !== "disabled" && value !== "anthropic")
+    throw Error("CALL_SUMMARY_UNKNOWN: JOMCALL_CALL_SUMMARY");
+  return value;
+}
+
 // --- Cookies ---------------------------------------------------------------
 
 // Hosted names carry the `__Host-` prefix: browsers accept such a cookie only
