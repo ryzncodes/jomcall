@@ -164,6 +164,58 @@ test("a call under 15 seconds is skipped as too short", async () => {
   }
 });
 
+// One completed turn is enough when the call ended with something staff act
+// on (transfer, handoff, message, booking request) and lasted 15 s or more.
+async function oneTurnCall(h: Harness, outcome: string | null, seconds = 40) {
+  const c = await liveCall(h);
+  await answer(h, c.callId);
+  await addTurn(h, c.callId, "Soalan satu", "completed", "Jawapan satu", 1000);
+  await h.cleanup.query("update app.call set outcome=$2 where id=$1", [c.callId, outcome]);
+  await endCall(h, c.callId, seconds);
+  return c;
+}
+
+test("a one-turn call with a staff outcome is summarized", async () => {
+  for (const outcome of ["transferred", "transfer_failed", "handoff", "message", "booking_proposed"]) {
+    const h = await createHarness();
+    try {
+      const c = await oneTurnCall(h, outcome);
+      const claim = (await worker<Claim>(h, "claim"))!;
+      assert.ok(claim, outcome);
+      assert.equal(claim.turns.length, 1);
+      assert.equal(claim.call.outcome, outcome);
+      assert.equal((await summaries(h, c.callId))[0].state, "running", outcome);
+    } finally {
+      await h.close();
+    }
+  }
+});
+
+test("a one-turn answered call is skipped as too short", async () => {
+  const h = await createHarness();
+  try {
+    const c = await oneTurnCall(h, "answered");
+    assert.equal(await worker(h, "claim"), null);
+    assert.deepEqual(
+      [(await summaries(h, c.callId))[0].state, (await summaries(h, c.callId))[0].skip_reason],
+      ["skipped", "TOO_SHORT"],
+    );
+  } finally {
+    await h.close();
+  }
+});
+
+test("a one-turn transferred call under 15 seconds is skipped as too short", async () => {
+  const h = await createHarness();
+  try {
+    const c = await oneTurnCall(h, "transferred", 10);
+    assert.equal(await worker(h, "claim"), null);
+    assert.equal((await summaries(h, c.callId))[0].skip_reason, "TOO_SHORT");
+  } finally {
+    await h.close();
+  }
+});
+
 test("write needs the live lease", async () => {
   const h = await createHarness();
   try {

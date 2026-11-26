@@ -56,8 +56,9 @@ create function app_private.call_summary_queue()returns trigger language plpgsql
 end$$;
 
 -- The worker's way in. claim: the oldest pending summary worth writing
--- (calls with no completed turn or under 2 turns or 15 seconds are marked
--- skipped on the way, at most 25 per call) with what the model reads. write
+-- (calls with no completed turn, under 15 seconds, or under 2 turns unless
+-- the outcome is one staff act on, are marked skipped on the way, at most 25
+-- per call) with what the model reads. write
 -- and fail need the live lease. maintain returns expired leases to the queue.
 create function app_private.call_summary(p_action text,p_namespace text,p_id uuid default null,p_lease uuid default null,p_data jsonb default '{}')returns jsonb language plpgsql security definer set search_path='' as $$
 declare s app.call_summary;c app.call;v_turns int;v_lease uuid;v_n int;v_i int;v_code text;v_f text;begin
@@ -71,7 +72,10 @@ declare s app.call_summary;c app.call;v_turns int;v_lease uuid;v_n int;v_i int;v
    select count(*)into v_turns from app.call_turn where org_id=s.org_id and call_id=s.call_id and state='completed';
    if v_turns=0 then
     update app.call_summary set state='skipped',skip_reason='NO_TURNS',revision=revision+1 where id=s.id;
-   elsif v_turns<2 or coalesce(c.duration_seconds,0)<15 then
+   -- One completed turn is enough when the call ended in a transfer, a
+   -- handoff, a message or a booking request (staff act on it and cannot
+   -- read the turns); otherwise 2 are needed.
+   elsif coalesce(c.duration_seconds,0)<15 or(v_turns<2 and coalesce(c.outcome,'')not in('transferred','transfer_failed','handoff','message','booking_proposed'))then
     update app.call_summary set state='skipped',skip_reason='TOO_SHORT',revision=revision+1 where id=s.id;
    else
     v_lease=gen_random_uuid();
