@@ -229,7 +229,19 @@ test("contact export lists the contact's phone calls with turns and proposals, w
         )
       ).rows[0].id as string;
     const callId = await call(c.id, { businessSecret: "snapshot-only" });
-    await call(other.id, {});
+    const otherCallId = await call(other.id, {});
+    // A call with no summary row exports summary as null.
+    const bareCallId = await call(c.id, {});
+    // Fake AI summaries: the caller's own call gets one, the other contact's
+    // call gets one with text that must not appear in this export.
+    const summary = async (id: string, reason: string) =>
+      h.cleanup.query(
+        `insert into app.call_summary(org_id,namespace,call_id,state,reason_en,reason_ms,outcome_en,outcome_ms,next_step_en,next_step_ms,model,attempts,completed_at)
+         values($1,$2,$3,'done',$4,'Tanya bila kedai buka',$5,'Jawab waktu buka.',null,null,'claude-haiku-5-5',1,now())`,
+        [h.orgA.id, h.namespace, id, reason, "Answered the opening hours."],
+      );
+    await summary(callId, "Asked when the shop opens.");
+    await summary(otherCallId, "OTHER-SUMMARY-TEXT");
     const turn = async (input: string, answer: string) =>
       (
         await h.cleanup.query(
@@ -252,9 +264,11 @@ test("contact export lists the contact's phone calls with turns and proposals, w
     }
     assert.equal(download.status, 200);
     const { calls } = download.body;
-    assert.equal(calls.length, 1);
-    const [x] = calls;
-    assert.equal(x.id, callId);
+    assert.equal(calls.length, 2);
+    const x = calls.find((r: any) => r.id === callId);
+    assert.ok(x);
+    assert.equal(calls.find((r: any) => r.id === bareCallId).summary, null);
+    assert.equal(calls.some((r: any) => r.id === otherCallId), false);
     assert.equal(x.caller_e164, "+60123456789");
     assert.equal(x.outcome, "message");
     assert.equal(x.duration_seconds, 42);
@@ -269,8 +283,22 @@ test("contact export lists the contact's phone calls with turns and proposals, w
     assert.equal(x.proposals.length, 1);
     assert.equal(x.proposals[0].kind, "message");
     assert.equal(x.proposals[0].details.text, "Sila telefon semula esok.");
+    assert.equal(x.summary.reason_en, "Asked when the shop opens.");
+    assert.equal(x.summary.edited, false);
+    assert.deepEqual(Object.keys(x.summary).sort(), [
+      "completed_at",
+      "created_at",
+      "edited",
+      "next_step_en",
+      "next_step_ms",
+      "outcome_en",
+      "outcome_ms",
+      "reason_en",
+      "reason_ms",
+      "state",
+    ]);
     const text = JSON.stringify(calls);
-    for (const leaked of ["snapshot-only", "room-secret", "sip_secret", "billed_seconds", "billing_check", "token_hash", "firstSoundMs", "SCL_"])
+    for (const leaked of ["snapshot-only", "room-secret", "sip_secret", "billed_seconds", "billing_check", "token_hash", "firstSoundMs", "SCL_", "OTHER-SUMMARY-TEXT", "claude-haiku-5-5", "lease_token"])
       assert.ok(!text.includes(leaked), leaked);
   } finally {
     await engine?.close();
