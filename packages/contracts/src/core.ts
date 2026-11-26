@@ -113,6 +113,8 @@ import {
   noteInput,
   consentInput,
   dncInput,
+  timelineInput,
+  type ContactTimeline,
 } from "./contacts.ts";
 import { parseMode, type Mode } from "./hosting.ts";
 export { parseMode, type Mode };
@@ -471,6 +473,12 @@ export const commands = {
     "/contacts/:id/consents",
     pages.extend({ id: uuid }),
     out<Page<Consent>>(),
+  ),
+  contactTimeline: route(
+    "GET",
+    "/contacts/:id/timeline",
+    timelineInput,
+    out<ContactTimeline>(),
   ),
   requestExport: route(
     "POST",
