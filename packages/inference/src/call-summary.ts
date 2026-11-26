@@ -176,15 +176,22 @@ const FALSE_SUCCESS_RE = [
   new RegExp(`\\b${MESSAGE}${GAP}${AUX} (?:sent|dihantar)\\b`),
   /\bsent (?:the |a |their |his |her )?(?:message|mesej|pesanan)\b/,
 ];
-// Spans removed before matching: a request ("asked to be booked", "minta
-// untuk ditempah"), something still to happen or not done ("to be confirmed",
-// "not yet confirmed", "akan disahkan", "belum disahkan") and "fully booked".
+// Spans removed before matching: a question or condition up to the end of
+// its clause ("asked whether the booking was confirmed", "sama ada tempahan
+// telah disahkan", "if the booking is confirmed"), a request ("asked to be
+// booked", "asked to have a message sent", "minta untuk ditempah"),
+// something still to happen or not done ("to be confirmed", "not yet
+// confirmed", "akan disahkan", "belum disahkan") and "fully booked" or
+// "booked up".
 const NOT_A_CLAIM = [
+  /\b(?:whether|if|sama ada|samada|adakah|kalau)\b[^.;:!?]*/g,
   /\b(?:asked|asks|asking|wants?|wanted|would like|requested|requesting|hoped|hopes|hoping)\b[^.;:!?]{0,40}?\bto (?:be|get) (?:booked|confirmed|sent)\b/g,
+  /\b(?:asked|asks|asking|wants?|wanted|would like|requested|requesting)\b[^.;:!?]{0,20}?\bto have\b(?: [^\s.;:!?]+){0,3}? (?:booked|confirmed|sent)\b/g,
   /\b(?:minta|meminta|mahu|mahukan|hendak|nak|ingin|mohon|memohon)\b[^.;:!?]{0,40}?\buntuk (?:ditempah|disahkan|dihantar)\b/g,
   /\b(?:to be|yet to be|still to be|will be|would be|can be|could be|needs? to be|awaiting|not|never)(?: yet)?(?: been)? (?:confirmed|booked|sent)\b/g,
   /\b(?:akan|belum|masih belum|perlu|untuk|boleh|tidak|bakal|menunggu) (?:disahkan|ditempah|dihantar)\b/g,
   /\bfully booked\b/g,
+  /\bbooked (?:up|out)\b/g,
 ];
 const FALSE_SUCCESS_ZH = [
   "预约成功",

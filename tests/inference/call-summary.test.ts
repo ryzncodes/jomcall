@@ -115,6 +115,7 @@ test("false-success guard", () => {
     "Mesej sudah dihantar.",
     "Sent the message to staff.",
     "预约成功",
+    "Asked whether it was confirmed; the booking has been confirmed.",
   ];
   for (const t of fail) assert.equal(guardSummary(fields({ outcome_en: t }), i), "FALSE_SUCCESS", t);
   const pass = [
@@ -139,6 +140,13 @@ test("false-success guard", () => {
     "Menerima barang salah bagi pesanan minggu lepas.",
     "Pesanan yang dihantar minggu lepas salah.",
     "Left a message for staff to call back.",
+    "Asked whether their booking was confirmed.",
+    "Bertanya sama ada tempahan Sabtu telah disahkan.",
+    "Asked if the message had been sent.",
+    "Wanted to check if the appointment is confirmed.",
+    "If the booking is confirmed, call back.",
+    "Saturday is booked up.",
+    "Asked to have a message sent to staff.",
   ];
   for (const t of pass) assert.equal(guardSummary(fields({ outcome_en: t }), i), null, t);
 });
