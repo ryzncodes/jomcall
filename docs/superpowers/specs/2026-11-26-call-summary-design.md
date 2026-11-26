@@ -78,6 +78,7 @@ Row-level security: every active member of the organization reads rows (D1). Own
 
 - Real call: a trigger (`call_summary_queue`) on `app.call` inserts a `pending` row in the same transaction when an answered call ends (`call_end`, or `maintain` after a crash). Unanswered and refused calls get no row.
 - Skip rule (builder's call on the number, start point): fewer than 2 completed turns or under 15 seconds answered: row written as `skipped` with `TOO_SHORT`; no model call. The screen says nothing for skipped calls.
+- Builder's note (2026-11-26, final review ruling): the skip rule is now: no completed turn is `NO_TURNS`; under 15 seconds is `TOO_SHORT`; a call with 1 completed turn is summarized when its outcome is `transferred`, `transfer_failed`, `handoff`, `message` or `booking_proposed`, and otherwise needs 2 completed turns (`TOO_SHORT`). Reason: §3 promises a summary from one completed turn and §7 leaves thresholds to the builder; staff cannot read turns, so a one-turn transfer or message call would otherwise show them nothing. Cost if wrong: a thin summary for a one-turn call (the prompt says "Reason unclear" rather than guess).
 
 ### 6.3 The worker
 
