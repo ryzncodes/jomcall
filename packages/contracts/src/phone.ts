@@ -101,7 +101,31 @@ export type CallSummary = {
   transfer_result: string | null;
   started_at: string;
   duration_seconds: number | null;
+  // The summary's reason, only once it is written (state 'done').
+  reason_en: string | null;
+  reason_ms: string | null;
 };
+export type CallAiSummary = {
+  state: "pending" | "running" | "done" | "skipped" | "failed";
+  reason_en: string | null;
+  reason_ms: string | null;
+  outcome_en: string | null;
+  outcome_ms: string | null;
+  next_step_en: string | null;
+  next_step_ms: string | null;
+  edited: boolean;
+  created_at: string;
+  completed_at: string | null;
+  revision: number;
+};
+export const callSummaryUpdate = z
+  .object({
+    reason: z.string().trim().min(1).max(300).nullable(),
+    outcome: z.string().trim().min(1).max(300).nullable(),
+    nextStep: z.string().trim().min(1).max(300).nullable(),
+    expectedRevision: z.number().int().positive(),
+  })
+  .strict();
 export type CallTurn = {
   id: string;
   input: string;
@@ -116,4 +140,6 @@ export type CallDetail = CallSummary & {
   turns: CallTurn[] | null;
   // Every role: the call's follow-up items.
   followUps: FollowUp[];
+  // Every role: the short summary, or null when the call has none.
+  summary: CallAiSummary | null;
 };

@@ -5,6 +5,8 @@ import {
   phoneNumberUpdate,
   phoneNumberRequestCreate,
   callList,
+  callSummaryUpdate,
+  type CallAiSummary,
   type PhoneNumber,
   type PhoneNumberRequest,
 } from "../../../contracts/src/phone.ts";
@@ -17,6 +19,23 @@ import { whatsappMode } from "../../../whatsapp/src/provider.ts";
 
 const SUMMARY =
   "id,caller_e164,dialled_e164,state,refusal,outcome,language,after_hours,do_not_contact,transfer_result,started_at,duration_seconds";
+// The list row also carries the AI summary's reason once it is written.
+const LIST_SUMMARY =
+  SUMMARY.split(",").map((c) => "c." + c).join(",") +
+  ",case when s.state='done' then s.reason_en end as reason_en,case when s.state='done' then s.reason_ms end as reason_ms";
+const AI_SUMMARY =
+  "state,reason_en,reason_ms,outcome_en,outcome_ms,next_step_en,next_step_ms,edited,created_at,completed_at,revision";
+
+async function aiSummary(tx: PoolClient, ctx: TenantContext, callId: string): Promise<CallAiSummary | null> {
+  return (
+    (
+      await tx.query(
+        `select ${AI_SUMMARY} from app.call_summary where org_id=$1 and call_id=$2`,
+        [ctx.orgId, callId],
+      )
+    ).rows[0] ?? null
+  );
+}
 
 // A dialled number may be active in one organization only. Other
 // organizations' rows are invisible here, so the unique index decides.
@@ -240,7 +259,7 @@ export async function phoneRoute(
     const after = parseCursor(v.cursor);
     const rows = (
       await tx.query(
-        `select ${SUMMARY} from app.call where org_id=$1 and ($2::timestamptz is null or (started_at,id)<($2,$3::uuid)) order by started_at desc,id desc limit $4`,
+        `select ${LIST_SUMMARY} from app.call c left join app.call_summary s on s.org_id=c.org_id and s.call_id=c.id where c.org_id=$1 and ($2::timestamptz is null or (c.started_at,c.id)<($2,$3::uuid)) order by c.started_at desc,c.id desc limit $4`,
         [ctx.orgId, after?.at ?? null, after?.id ?? null, limit + 1],
       )
     ).rows;
@@ -273,6 +292,32 @@ export async function phoneRoute(
         : null,
       // Every role: the follow-up items, from app.follow_up, not the proposals.
       followUps: await followUpsOf(tx, ctx, "call", id),
+      // Every role: the summary never quotes the caller.
+      summary: await aiSummary(tx, ctx, id),
     };
+  }
+  const edit = path.match(/^\/calls\/([^/]+)\/summary$/);
+  if (edit && method === "PATCH") {
+    manager(ctx);
+    const id = uuid.parse(edit[1]);
+    const v = callSummaryUpdate.parse(body);
+    return command(
+      tx, ctx, key, "updateCallSummary", { id, ...v },
+      async () => {
+        const cur = (
+          await tx.query("select state from app.call_summary where org_id=$1 and call_id=$2 for update", [ctx.orgId, id])
+        ).rows[0];
+        if (!cur) throw new AppError("NOT_FOUND", 404);
+        if (cur.state !== "done") throw new AppError("SUMMARY_NOT_READY", 409);
+        const done = await tx.query(
+          "update app.call_summary set reason_en=$3,reason_ms=$3,outcome_en=$4,outcome_ms=$4,next_step_en=$5,next_step_ms=$5,edited=true,edited_at=now(),revision=revision+1 where org_id=$1 and call_id=$2 and revision=$6",
+          [ctx.orgId, id, v.reason, v.outcome, v.nextStep, v.expectedRevision],
+        );
+        if (!done.rowCount) throw new AppError("CONFLICT", 409);
+        await audit(tx, ctx, "call_summary.updated", "call", id);
+        return { ref: { id }, data: (await aiSummary(tx, ctx, id))! };
+      },
+      async (ref) => (await aiSummary(tx, ctx, ref.id as string))!,
+    );
   }
 }
