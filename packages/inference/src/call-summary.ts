@@ -166,30 +166,34 @@ function hasDetail(field: string, forms: string[]): boolean {
 // "asked for a booking and confirmed their name" is not a claim.
 const JOIN = "(?:and|dan|then|kemudian|lalu|but|tetapi|so|jadi|or|atau)";
 const W = `(?!${JOIN}\\b)[^\\s.,;:!?]+`; // one word, never across a clause break
-const GAP = `(?:\\s+${W}){0,3}?\\s+`; // up to three words between
+const GAP = `(?:\\s+${W}){0,5}?\\s+`; // up to five words between
 const BOOKING = "(?:booking|appointment|slot|reservation|tempahan|temu janji)";
 const MESSAGE = "(?:message|mesej|pesanan)";
 const AUX = "(?:has been|have been|had been|was|were|is|are|been|telah|sudah|berjaya|dah)";
-// A booking noun, then the verb directly or after an auxiliary within three
-// words: "booking confirmed", "the appointment for Saturday is confirmed".
-const BOOKING_DONE = "(?:confirmed|disahkan|made|scheduled|arranged|dibuat|berjaya)";
+// A booking noun, then the verb within five words with no clause break:
+// "booking confirmed", "Tempahan Sabtu disahkan", "the appointment for
+// Saturday morning is now confirmed".
+const BOOKING_DONE = "(?:confirmed|disahkan|made|scheduled|arranged|set|set up|successful|dibuat|berjaya)";
 const MESSAGE_DONE = "(?:sent|dihantar|passed|forwarded|relayed|delivered|disampaikan|diserahkan)";
-// Days and times of day, as the subject of "was booked": availability, not a claim.
+// Days and times of day, as the subject of "was booked" at the end of a
+// clause: availability, not a claim ("Saturday was booked." but not
+// "Saturday was booked for the caller.").
 const WHEN =
-  "(?:it|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|morning|afternoon|evening|weekend|that day|that time|isnin|selasa|rabu|khamis|jumaat|sabtu|ahad|esok|pagi|petang|malam)";
+  "(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|morning|afternoon|evening|weekend|that day|that time|isnin|selasa|rabu|khamis|jumaat|sabtu|ahad|esok|pagi|petang|malam)";
 const FALSE_SUCCESS_RE = [
-  new RegExp(`\\b${BOOKING}(?:${GAP}${AUX})? ${BOOKING_DONE}\\b`),
-  // "confirmed the booking", but not a read-back ("confirmed the booking
-  // request details", "confirmed the appointment time they wanted").
+  new RegExp(`\\b${BOOKING}(?:${GAP}| )${BOOKING_DONE}\\b`),
+  // "confirmed / made / scheduled the booking", but not a read-back
+  // ("confirmed the booking request details", "confirmed the appointment
+  // time they wanted").
   new RegExp(
-    `\\bconfirmed (?:the |a |an |their |his |her )?${BOOKING}\\b(?! (?:request|requests|details|time|times|date|day|they|he|she|the caller)\\b)`,
+    `\\b(?:confirmed|made|scheduled|arranged|set up) (?:the |a |an |their |his |her )?${BOOKING}\\b(?! (?:request|requests|details|time|times|date|day|they|he|she|the caller)\\b)`,
   ),
   /\b(?:has|have|had|was|were|is|are|been) (?:now )?booked\b/,
   /\bbooked (?:a|an|the|for|in|on|at|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|this|next)\b/,
   /\b(?:telah|sudah|berjaya|dah) (?:ditempah|menempah|membuat tempahan)\b/,
   new RegExp(`\\b${MESSAGE} ${MESSAGE_DONE}\\b`),
   new RegExp(`\\b${MESSAGE}${GAP}${AUX} ${MESSAGE_DONE}\\b`),
-  /\b(?:sent|forwarded|passed on|relayed) (?:the |a |their |his |her )?(?:message|mesej|pesanan)\b/,
+  /\b(?:sent|forwarded|passed on|passed|relayed) (?:the |a |their |his |her )?(?:message|mesej|pesanan)\b/,
 ];
 // Spans removed before matching: a question or condition up to the end of
 // its clause ("asked whether the booking was confirmed", "sama ada tempahan
@@ -198,10 +202,11 @@ const FALSE_SUCCESS_RE = [
 // scheduled", "wanted a message passed to the manager", "minta untuk
 // ditempah"), something still to happen or not done ("to be confirmed",
 // "not yet confirmed", "akan disahkan", "belum disahkan"), "fully booked" or
-// "booked up", and a day or time that was booked, or anything booked
-// followed by "so" or "jadi" (availability: "Saturday was booked, so the
-// caller asked for Sunday").
-const DONE_EN = "(?:booked|confirmed|sent|made|scheduled|arranged|passed|forwarded)";
+// "booked up", a booking request or one done before the call ("made a
+// booking last week"), and availability: a day or time that was booked at
+// the end of a clause ("Saturday was booked, so the caller asked for
+// Sunday"), or anything booked followed by "so" or "jadi".
+const DONE_EN = "(?:booked|confirmed|sent|made|scheduled|arranged|set up|set|passed|forwarded)";
 const DONE_MS = "(?:disahkan|ditempah|dihantar|dibuat|disampaikan)";
 const NOT_A_CLAIM = [
   /\b(?:whether|if|sama ada|samada|adakah|kalau)\b[^.;:!?]*/g,
@@ -214,7 +219,7 @@ const NOT_A_CLAIM = [
     "g",
   ),
   new RegExp(
-    `\\b(?:asked for|wants?|wanted|would like|requested|requesting)(?: (?:a|an|the|their|his|her))? (?:${BOOKING}|${MESSAGE}) ${DONE_EN}\\b`,
+    `\\b(?:asked for|wants?|wanted|would like|requested|requesting)(?: (?:a|an|the|their|his|her))? (?:${BOOKING}|${MESSAGE})(?:${GAP}| )${DONE_EN}\\b`,
     "g",
   ),
   new RegExp(
@@ -228,8 +233,15 @@ const NOT_A_CLAIM = [
   new RegExp(`\\b(?:akan|belum|masih belum|perlu|untuk|boleh|tidak|bakal|menunggu) ${DONE_MS}\\b`, "g"),
   /\bfully booked\b/g,
   /\bbooked (?:up|out)\b/g,
-  new RegExp(`\\b${WHEN} (?:is|was|are|were|has been|had been)(?: already)? booked\\b`, "g"),
-  new RegExp(`\\b${WHEN} (?:telah|sudah|dah)(?: penuh)? ditempah\\b`, "g"),
+  new RegExp(`\\b${WHEN} (?:is|was|are|were|has been|had been)(?: already)? booked(?=[.,;:!?]|$)`, "g"),
+  new RegExp(`\\b${WHEN} (?:telah|sudah|dah)(?: penuh)? ditempah(?=[.,;:!?]|$)`, "g"),
+  // A booking request, or a past booking asked about, is not a claim:
+  // "a booking request was made", "asked about an appointment made last week".
+  /\b(?:booking|appointment|reservation) requests?\b/g,
+  /\bpermintaan (?:tempahan|temu janji)\b/g,
+  new RegExp(`\\b(?:about|regarding|tentang|mengenai) (?:a |an |the |their |his |her )?${BOOKING} (?:made|dibuat)\\b`, "g"),
+  // Something done in the past, before this call: "made a booking last week".
+  /\b(?:made|scheduled|arranged|booked|dibuat|ditempah|menempah)\b[^.,;:!?]{0,40}?\b(?:last (?:week|month|time)|yesterday|previously|minggu lepas|bulan lepas|semalam|sebelum ini)\b/g,
   /\b(?:is|was|are|were|has been|had been)(?: already)? booked(?=,? (?:so|jadi)\b)/g,
   /\b(?:telah|sudah|dah) ditempah(?=,? (?:so|jadi)\b)/g,
 ];
